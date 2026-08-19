@@ -1,0 +1,171 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile with role, wallet balance, and authentication metadata",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Unique Firebase Auth UID" },
+        "name": { "type": "string", "description": "Display name of the user" },
+        "email": { "type": "string", "format": "email", "description": "User email address" },
+        "photoURL": { "type": "string", "description": "Avatar image URL" },
+        "role": {
+          "type": "string",
+          "enum": ["reader", "writer", "advertiser", "admin"],
+          "description": "Platform role assigned to the user"
+        },
+        "createdAt": { "type": "string", "description": "ISO timestamp of user creation" },
+        "walletBalance": { "type": "number", "description": "Current wallet balance in USD" },
+        "bio": { "type": "string", "description": "Short user bio" },
+        "penName": { "type": "string", "description": "Pen name for writers" },
+        "companyName": { "type": "string", "description": "Company name for advertisers" },
+        "isVerified": { "type": "boolean", "description": "Whether user is verified" },
+        "followersCount": { "type": "number", "description": "Followers count" },
+        "followingCount": { "type": "number", "description": "Following count" }
+      },
+      "required": ["uid", "name", "email", "role", "createdAt", "walletBalance"]
+    },
+    "Article": {
+      "title": "Article",
+      "description": "Articles published or drafted by writers",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Article ID" },
+        "writerId": { "type": "string", "description": "UID of the author" },
+        "writerName": { "type": "string", "description": "Name of the writer" },
+        "writerAvatar": { "type": "string", "description": "Writer avatar URL" },
+        "writerIsVerified": { "type": "boolean", "description": "Verification flag" },
+        "title": { "type": "string", "description": "Article title" },
+        "slug": { "type": "string", "description": "URL slug" },
+        "description": { "type": "string", "description": "Brief summary" },
+        "content": { "type": "string", "description": "Full markdown or rich text body" },
+        "featuredImage": { "type": "string", "description": "Cover image URL" },
+        "category": { "type": "string", "description": "Main category" },
+        "subCategory": { "type": "string", "description": "Sub-category" },
+        "isLocked": { "type": "boolean", "description": "Paid/exclusive lock flag" },
+        "lockedPrice": { "type": "number", "description": "Unlock price in USD" },
+        "readingTimeMinutes": { "type": "number", "description": "Estimated reading duration" },
+        "status": {
+          "type": "string",
+          "enum": ["draft", "pending", "published", "rejected", "archived"],
+          "description": "Article workflow status"
+        },
+        "viewsCount": { "type": "number", "description": "Total view count" },
+        "likesCount": { "type": "number", "description": "Total like count" },
+        "sharesCount": { "type": "number", "description": "Total share count" },
+        "commentsCount": { "type": "number", "description": "Total comment count" },
+        "purchasesCount": { "type": "number", "description": "Total purchases" },
+        "revenueFromAds": { "type": "number", "description": "Ad revenue generated" },
+        "revenueFromSales": { "type": "number", "description": "Sales revenue generated" },
+        "totalRevenue": { "type": "number", "description": "Total revenue generated" },
+        "publishedAt": { "type": "string", "description": "Publication date" },
+        "tags": { "type": "array", "description": "List of tags" }
+      },
+      "required": ["writerId", "title", "content", "category", "status"]
+    },
+    "Ad": {
+      "title": "Ad",
+      "description": "Ad banners, native placements, or sponsored items",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Ad ID" },
+        "campaignId": { "type": "string", "description": "Associated Campaign ID" },
+        "advertiserId": { "type": "string", "description": "Advertiser UID" },
+        "advertiserName": { "type": "string", "description": "Advertiser name" },
+        "title": { "type": "string", "description": "Ad title" },
+        "adText": { "type": "string", "description": "Ad copy description" },
+        "imageUrl": { "type": "string", "description": "Banner creative URL" },
+        "destinationUrl": { "type": "string", "description": "Destination landing page" },
+        "pricingModel": { "type": "string", "enum": ["fixed", "cpm", "cpc"], "description": "Pricing model" },
+        "placementType": { "type": "string", "enum": ["platform", "writer"], "description": "Placement type" },
+        "status": { "type": "string", "enum": ["active", "paused", "completed"], "description": "Ad status" },
+        "impressionsCount": { "type": "number", "description": "Impression tally" },
+        "clicksCount": { "type": "number", "description": "Click tally" },
+        "createdAt": { "type": "string", "description": "Creation timestamp" }
+      },
+      "required": ["advertiserId", "title", "destinationUrl", "pricingModel", "status"]
+    },
+    "AdCampaign": {
+      "title": "AdCampaign",
+      "description": "High-level advertising campaign parameters and budget",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Campaign ID" },
+        "advertiserId": { "type": "string", "description": "Advertiser UID" },
+        "advertiserName": { "type": "string", "description": "Advertiser Name" },
+        "campaignName": { "type": "string", "description": "Campaign Title" },
+        "description": { "type": "string", "description": "Campaign details" },
+        "imageUrl": { "type": "string", "description": "Ad visual image URL" },
+        "destinationUrl": { "type": "string", "description": "Landing page URL" },
+        "type": { "type": "string", "description": "Campaign type" },
+        "pricingModel": { "type": "string", "enum": ["fixed", "cpm", "cpc"], "description": "Pricing model" },
+        "placementType": { "type": "string", "enum": ["platform", "writer"], "description": "Placement" },
+        "adText": { "type": "string", "description": "Ad text copy" },
+        "status": { "type": "string", "enum": ["active", "pending", "paused", "completed", "rejected"], "description": "Status" },
+        "startDate": { "type": "string", "description": "Start date" },
+        "endDate": { "type": "string", "description": "End date" },
+        "impressionsCount": { "type": "number", "description": "Impressions" },
+        "validImpressionsCount": { "type": "number", "description": "Valid impressions" },
+        "clicksCount": { "type": "number", "description": "Clicks" },
+        "validClicksCount": { "type": "number", "description": "Valid clicks" },
+        "conversionsCount": { "type": "number", "description": "Conversions" },
+        "totalSpent": { "type": "number", "description": "Total spent USD" },
+        "totalBudget": { "type": "number", "description": "Total budget USD" },
+        "cpcRate": { "type": "number", "description": "CPC rate USD" },
+        "cpmRate": { "type": "number", "description": "CPM rate USD" },
+        "fixedRate": { "type": "number", "description": "Fixed rate USD" },
+        "fraudShieldScore": { "type": "number", "description": "Fraud shield score" },
+        "blockedFraudClicks": { "type": "number", "description": "Blocked fraud clicks" },
+        "targetCategories": { "type": "array", "description": "Categories targeted" },
+        "targetCountries": { "type": "array", "description": "Countries targeted" },
+        "antiFraudLevel": { "type": "string", "description": "Anti fraud protection level" }
+      },
+      "required": ["advertiserId", "campaignName", "pricingModel", "totalBudget", "status"]
+    },
+    "Earning": {
+      "title": "Earning",
+      "description": "Earnings and financial revenue records",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Earning record ID" },
+        "userId": { "type": "string", "description": "Beneficiary UID" },
+        "userRole": { "type": "string", "description": "User role" },
+        "type": {
+          "type": "string",
+          "enum": ["ad_cpm", "ad_cpc", "ad_fixed", "article_sale", "subscription", "bonus"],
+          "description": "Earning classification"
+        },
+        "amount": { "type": "number", "description": "Amount credited in USD" },
+        "currency": { "type": "string", "description": "Currency code" },
+        "source": { "type": "string", "description": "Revenue source description" },
+        "articleId": { "type": "string", "description": "Associated article ID" },
+        "campaignId": { "type": "string", "description": "Associated campaign ID" },
+        "createdAt": { "type": "string", "description": "Timestamp created" },
+        "status": { "type": "string", "enum": ["credited", "pending", "withdrawn"], "description": "Status" }
+      },
+      "required": ["userId", "amount", "type", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profile records with credentials and wallet balance"
+    },
+    "/articles/{articleId}": {
+      "schema": { "$ref": "#/entities/Article" },
+      "description": "Editorial articles submitted and published on the platform"
+    },
+    "/ads/{adId}": {
+      "schema": { "$ref": "#/entities/Ad" },
+      "description": "Active ad placements and banners"
+    },
+    "/campaigns/{campaignId}": {
+      "schema": { "$ref": "#/entities/AdCampaign" },
+      "description": "Advertiser promotional campaigns"
+    },
+    "/earnings/{earningId}": {
+      "schema": { "$ref": "#/entities/Earning" },
+      "description": "Writer and publisher financial revenue logs"
+    }
+  }
+}

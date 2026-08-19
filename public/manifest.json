@@ -1,0 +1,18 @@
+{
+  "name": "LITERIUM | منصة ليتيريوم للأدب والفكر",
+  "short_name": "Literium",
+  "description": "منصة الفكر والأدب العربي، مقالات نخبة الكُتّاب، مكتبة رقمية، ومساعد ذكاء اصطناعي",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#090d16",
+  "theme_color": "#0d9488",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

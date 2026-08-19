@@ -1,0 +1,174 @@
+@import "tailwindcss";
+
+@layer base {
+  html {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    touch-action: manipulation;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    overscroll-behavior-y: contain;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(13, 148, 136, 0.3) transparent;
+  }
+  
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+  
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    background: rgba(13, 148, 136, 0.25);
+    border-radius: 9999px;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(13, 148, 136, 0.5);
+  }
+
+  /* Prevent text zoom on mobile inputs */
+  input, textarea, select {
+    font-size: 16px;
+  }
+}
+
+/* Card hover and smooth elevation */
+.literium-card {
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease;
+}
+
+.literium-card:hover {
+  transform: translateY(-2px);
+}
+
+.literium-card:active {
+  transform: translateY(0) scale(0.99);
+}
+
+/* Book Cover 3D Effect */
+.book-cover-3d {
+  box-shadow: -4px 6px 16px rgba(0, 0, 0, 0.18), -1px 2px 4px rgba(0, 0, 0, 0.12);
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease;
+}
+
+.book-cover-3d:hover {
+  transform: translateY(-4px) rotate(-1deg) scale(1.02);
+  box-shadow: -8px 14px 24px rgba(0, 0, 0, 0.25), -2px 4px 6px rgba(0, 0, 0, 0.15);
+}
+
+/* Android Ripple & Active Tap Feedback */
+.android-ripple {
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.15s ease, background-color 0.15s ease;
+}
+
+.android-ripple:active {
+  transform: scale(0.97);
+}
+
+/* Smooth custom slide and fade animations */
+@keyframes pullSpinner {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.animate-pull-spinner {
+  animation: pullSpinner 0.8s linear infinite;
+}
+
+@keyframes androidFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-android-in {
+  animation: androidFadeIn 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Shimmer animation for loading states */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
+}
+
+/* Article Typography Styling */
+.article-content p {
+  margin-bottom: 1.35rem;
+  line-height: 1.95;
+  font-size: 1.05rem;
+  color: inherit;
+}
+
+.article-content h2 {
+  font-size: 1.55rem;
+  font-weight: 800;
+  margin-top: 2.25rem;
+  margin-bottom: 1rem;
+  color: #0d9488;
+  letter-spacing: -0.01em;
+}
+
+.dark .article-content h2 {
+  color: #2dd4bf;
+}
+
+.article-content h3 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin-top: 1.75rem;
+  margin-bottom: 0.75rem;
+  color: #0284c7;
+}
+
+.dark .article-content h3 {
+  color: #38bdf8;
+}
+
+.article-content blockquote {
+  border-right: 4px solid #0d9488;
+  padding-right: 1.25rem;
+  margin: 1.75rem 0;
+  font-style: normal;
+  font-weight: 500;
+  color: #475569;
+  background: rgba(13, 148, 136, 0.04);
+  padding: 1rem 1.25rem;
+  border-radius: 0.75rem 0 0 0.75rem;
+}
+
+.dark .article-content blockquote {
+  border-right-color: #14b8a6;
+  color: #cbd5e1;
+  background: rgba(20, 184, 166, 0.06);
+}
+
+[dir="ltr"] .article-content blockquote {
+  border-right: none;
+  border-left: 4px solid #0d9488;
+  padding-right: 0;
+  padding-left: 1.25rem;
+  border-radius: 0 0.75rem 0.75rem 0;
+}

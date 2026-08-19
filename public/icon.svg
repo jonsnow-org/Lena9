@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="literium-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0d9488" />
+      <stop offset="50%" stop-color="#06b6d4" />
+      <stop offset="100%" stop-color="#0f766e" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="128" fill="#090d16" />
+  <rect x="32" y="32" width="448" height="448" rx="104" fill="url(#literium-grad)" filter="url(#shadow)" />
+  <g fill="#ffffff" transform="translate(140, 110)">
+    <path d="M40 280 L40 20 C40 9 49 0 60 0 L100 0 C111 0 120 9 120 20 L120 220 L210 220 C221 220 230 229 230 240 L230 280 C230 291 221 300 210 300 L60 300 C49 300 40 291 40 280 Z" />
+    <circle cx="210" cy="60" r="28" fill="#38bdf8" />
+  </g>
+</svg>

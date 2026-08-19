@@ -1,0 +1,125 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global Helper Functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+    
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == "brnardtsho@gmail.com" ||
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+      );
+    }
+
+    // A regular user may only ever set their OWN role to one of these three.
+    // 'admin' can never be self-assigned — it is only ever set by isAdmin()
+    // writes (the bootstrap owner email, or an existing admin promoting someone).
+    function isSelfAssignableRole(newRole) {
+      return newRole in ['reader', 'writer', 'advertiser'];
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Users Collection
+    match /users/{userId} {
+      allow read: if true; // Public author profiles, writer bios, reader stats
+      allow create: if isSignedIn() && request.auth.uid == userId &&
+        (isSelfAssignableRole(request.resource.data.role) || isAdmin());
+      allow update: if isAdmin() ||
+        (isOwner(userId) &&
+          (request.resource.data.role == resource.data.role || isSelfAssignableRole(request.resource.data.role)));
+      allow delete: if isAdmin();
+    }
+
+    // Articles Collection
+    match /articles/{articleId} {
+      allow read: if true; // Published articles are publicly readable
+      allow create: if isSignedIn() && request.resource.data.writerId == request.auth.uid;
+      allow update: if isSignedIn() &&
+        (
+          resource.data.writerId == request.auth.uid ||
+          isAdmin() ||
+          // Any signed-in reader may bump engagement counters only —
+          // they can never touch title/content/status/writerId this way.
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['viewsCount', 'likesCount', 'sharesCount', 'purchasesCount', 'revenueFromAds', 'revenueFromSales', 'totalRevenue'])
+        );
+      allow delete: if isSignedIn() && (resource.data.writerId == request.auth.uid || isAdmin());
+    }
+
+    // Ads Collection
+    match /ads/{adId} {
+      allow read: if true; // Ad units are served to readers
+      allow create, update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Campaigns Collection
+    match /campaigns/{campaignId} {
+      allow read: if true;
+      allow create: if isSignedIn() && request.resource.data.advertiserId == request.auth.uid;
+      allow update: if isSignedIn() &&
+        (
+          resource.data.advertiserId == request.auth.uid ||
+          isAdmin() ||
+          // Any signed-in reader may bump ad delivery counters only.
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['impressionsCount', 'validImpressionsCount', 'clicksCount', 'validClicksCount', 'conversionsCount', 'totalSpent', 'blockedFraudClicks'])
+        );
+      allow delete: if isSignedIn() && (resource.data.advertiserId == request.auth.uid || isAdmin());
+    }
+
+    // Earnings Collection
+    match /earnings/{earningId} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    // Fraud Flags Collection
+    match /fraudFlags/{flagId} {
+      allow read: if isSignedIn();
+      allow create: if true; // Telemetry reports
+      allow update, delete: if isAdmin();
+    }
+
+    // Direct Messages & Conversations
+    match /conversations/{conversationId} {
+      allow read, write: if isSignedIn();
+    }
+    match /messages/{messageId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // Comments & Reviews
+    match /comments/{commentId} {
+      allow read: if true;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() &&
+        (
+          resource.data.userId == request.auth.uid ||
+          isAdmin() ||
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likesCount', 'isLiked', 'replies'])
+        );
+      allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    // Notifications
+    match /notifications/{notificationId} {
+      allow read, update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn();
+    }
+  }
+}

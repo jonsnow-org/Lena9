@@ -1,0 +1,259 @@
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { AdCampaign } from '../types';
+import { logAdEvent } from '../services/firestoreService';
+import { VideoEmbed } from './VideoEmbed';
+import { parseVideoUrl } from '../utils/videoEmbed';
+
+/**
+ * رموز المواضع الإعلانية المعتمدة في المنصة.
+ * أي موضع جديد يجب أن يُضاف هنا وفي جدول SLOT_CONFIG أدناه.
+ */
+export type AdSlotId =
+  | 'home_hero'
+  | 'home_feed_1'
+  | 'home_feed_2'
+  | 'category_banner'
+  | 'category_feed'
+  | 'article_top'
+  | 'article_mid'
+  | 'article_bottom'
+  | 'writer_profile_top'
+  | 'writer_profile_feed'
+  | 'reader_profile';
+
+interface SlotConfig {
+  /** من يستفيد من عائد هذا الموضع */
+  beneficiary: 'platform' | 'writer';
+  /** حصة الكاتب من العائد (0 = لا حصة) */
+  writerShare: number;
+  /** موضع مخصص لراعي القسم حصراً */
+  sponsorOnly?: boolean;
+}
+
+export const SLOT_CONFIG: Record<AdSlotId, SlotConfig> = {
+  home_hero: { beneficiary: 'platform', writerShare: 0 },
+  home_feed_1: { beneficiary: 'platform', writerShare: 0 },
+  home_feed_2: { beneficiary: 'platform', writerShare: 0 },
+  category_banner: { beneficiary: 'platform', writerShare: 0, sponsorOnly: true },
+  category_feed: { beneficiary: 'platform', writerShare: 0 },
+  article_top: { beneficiary: 'writer', writerShare: 0.55 },
+  article_mid: { beneficiary: 'writer', writerShare: 0.55 },
+  article_bottom: { beneficiary: 'writer', writerShare: 0.55 },
+  writer_profile_top: { beneficiary: 'writer', writerShare: 0.5 },
+  writer_profile_feed: { beneficiary: 'writer', writerShare: 0.5 },
+  reader_profile: { beneficiary: 'platform', writerShare: 0 }
+};
+
+/**
+ * حد أقصى صارم: 3 وحدات إعلانية في أي صفحة واحدة.
+ * تجاوزه يعرّض حساب AdSense للرفض أو الإغلاق.
+ */
+const MAX_ADS_PER_PAGE = 3;
+let renderedAdsOnPage = 0;
+export function resetAdSlotCounter() {
+  renderedAdsOnPage = 0;
+}
+
+interface AdSlotProps {
+  slotId: AdSlotId;
+  campaigns?: AdCampaign[];
+  articleId?: string;
+  writerId?: string;
+  viewerId?: string | null;
+  /** التصنيف الحالي — يُستخدم لمطابقة راعي القسم */
+  category?: string;
+  /** true = الإعلان مدمج داخل نص المقال (تنسيق خاص) */
+  inRead?: boolean;
+  /** المستخدم مشترك في باقة بلا إعلانات */
+  adFree?: boolean;
+}
+
+export const AdSlot: React.FC<AdSlotProps> = ({
+  slotId,
+  campaigns = [],
+  articleId,
+  writerId,
+  viewerId = null,
+  category,
+  inRead = false,
+  adFree = false
+}) => {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const hasLoggedImpression = useRef(false);
+  const [slotIndex] = useState(() => renderedAdsOnPage++);
+
+  const config = SLOT_CONFIG[slotId];
+
+  /**
+   * اختيار الإعلان بالأولوية:
+   * 1. راعي القسم (لموضع category_banner فقط، ولا يشاركه أحد)
+   * 2. حملة معلن داخلية نشطة مناسبة للموضع
+   * 3. AdSense (المكان محجوز، غير مفعّل بعد)
+   * 4. لا شيء — لا تُعرض مساحة فارغة إطلاقاً
+   */
+  const selectedCampaign = useMemo(() => {
+    const active = campaigns.filter((c) => c.status === 'active');
+    if (active.length === 0) return null;
+
+    if (config.sponsorOnly) {
+      // راعي القسم: حملة من نوع رعاية تطابق التصنيف الحالي
+      return (
+        active.find(
+          (c: any) =>
+            c.placementType === 'category_sponsor' &&
+            (!category || (c.targetCategories || []).includes(category))
+        ) || null
+      );
+    }
+
+    // استبعاد حملات رعاية الأقسام من المواضع العادية
+    const eligible = active.filter((c: any) => c.placementType !== 'category_sponsor');
+    if (eligible.length === 0) return null;
+
+    // اختيار ثابت حسب ترتيب الموضع، لمنع ظهور نفس الإعلان مرتين في الصفحة
+    return eligible[slotIndex % eligible.length] || null;
+  }, [campaigns, config.sponsorOnly, category, slotIndex]);
+
+  // تسجيل الظهور مرة واحدة عند دخول الإعلان فعلياً إلى الشاشة.
+  // لا يُحتسب أي مبلغ هنا — الاحتساب يتم لاحقاً بمراجعة الأدمن.
+  useEffect(() => {
+    if (!selectedCampaign || hasLoggedImpression.current) return;
+    const el = containerRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting && !hasLoggedImpression.current) {
+            hasLoggedImpression.current = true;
+            logAdEvent({
+              campaignId: selectedCampaign.id,
+              slotId,
+              articleId,
+              writerId,
+              viewerId,
+              eventType: 'impression'
+            }).catch(() => {
+              /* تسجيل الظهور ليس حرجاً — لا نزعج المستخدم برسالة خطأ */
+            });
+            observer.disconnect();
+          }
+        });
+      },
+      { threshold: 0.5 }
+    );
+
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [selectedCampaign, slotId, articleId, writerId, viewerId]);
+
+  const handleClick = () => {
+    if (!selectedCampaign) return;
+    logAdEvent({
+      campaignId: selectedCampaign.id,
+      slotId,
+      articleId,
+      writerId,
+      viewerId,
+      eventType: 'click'
+    }).catch(() => {});
+
+    const url = (selectedCampaign as any).destinationUrl;
+    if (url) window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  // المشترك في باقة بلا إعلانات لا يرى أي موضع
+  if (adFree) return null;
+
+  // احترام الحد الأقصى للصفحة
+  if (slotIndex >= MAX_ADS_PER_PAGE) return null;
+
+  // لا إعلان متاح: لا تُعرض مساحة فارغة ولا هيكل عظمي
+  if (!selectedCampaign) return null;
+
+  const adText = (selectedCampaign as any).adText || (selectedCampaign as any).description || '';
+  const imageUrl = (selectedCampaign as any).imageUrl;
+  const videoUrl = (selectedCampaign as any).videoUrl;
+  const hasVideo = Boolean(videoUrl && parseVideoUrl(videoUrl));
+  const advertiserName = (selectedCampaign as any).advertiserName || 'معلن';
+
+  /**
+   * تنسيق الإعلان المدمج في النص.
+   *
+   * الميزان المقصود: يندمج في نمط المنصة، ويتميّز بوضوح في الهوية —
+   * يجب أن يعرف القارئ أنه إعلان خلال ثانية واحدة.
+   * ⚠️ لا تجعله يشبه المحتوى لدرجة الالتباس: التشابه المفرط يُصنَّف
+   * "نقراً مضللاً" وهو من أشهر أسباب إغلاق حسابات AdSense.
+   */
+  if (inRead) {
+    return (
+      <div ref={containerRef} className="my-8">
+        {/* فاصل علوي رفيع */}
+        <div className="h-px bg-slate-200 dark:bg-slate-800 mb-3" />
+
+        {/* وسم الإفصاح — إلزامي، لا يُحذف ولا يُصغّر لدرجة عدم القراءة */}
+        <div className="text-[11px] font-bold text-slate-400 dark:text-slate-500 mb-2 tracking-wide">
+          إعلان
+        </div>
+
+        <button
+          onClick={handleClick}
+          className="w-full text-start rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/50 p-4 hover:border-slate-300 dark:hover:border-slate-600 transition-colors"
+        >
+          {hasVideo ? (
+            <div className="mb-3" onClick={(e) => e.stopPropagation()}>
+              <VideoEmbed url={videoUrl} />
+            </div>
+          ) : (
+            imageUrl && (
+              <img
+                src={imageUrl}
+                alt=""
+                loading="lazy"
+                className="w-full max-h-[40vh] object-cover rounded-xl mb-3"
+              />
+            )
+          )}
+          <div className="text-sm text-slate-700 dark:text-slate-200 leading-relaxed font-medium">
+            {adText}
+          </div>
+          <div className="mt-2 text-[11px] text-slate-400 dark:text-slate-500">
+            محتوى مموّل — {advertiserName}
+          </div>
+        </button>
+
+        {/* فاصل سفلي رفيع */}
+        <div className="h-px bg-slate-200 dark:bg-slate-800 mt-3" />
+      </div>
+    );
+  }
+
+  // التنسيق القياسي لباقي المواضع
+  return (
+    <div ref={containerRef} className="my-5">
+      <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 mb-1.5">
+        {config.sponsorOnly ? 'برعاية' : 'إعلان'}
+      </div>
+      <button
+        onClick={handleClick}
+        className="w-full text-start rounded-2xl overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-purple-300 dark:hover:border-purple-700 transition-colors"
+      >
+        {hasVideo ? (
+          <div onClick={(e) => e.stopPropagation()}>
+            <VideoEmbed url={videoUrl} />
+          </div>
+        ) : (
+          imageUrl && (
+            <img src={imageUrl} alt="" loading="lazy" className="w-full max-h-52 object-cover" />
+          )
+        )}
+        <div className="p-3.5">
+          <div className="text-sm font-bold text-slate-800 dark:text-slate-100 leading-snug">
+            {adText}
+          </div>
+          <div className="mt-1 text-[11px] text-slate-400">{advertiserName}</div>
+        </div>
+      </button>
+    </div>
+  );
+};

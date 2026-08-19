@@ -1,0 +1,6 @@
+{
+  "name": "LITERIUM - منصة ليتيريوم للأدب والإعلانات",
+  "description": "منصة أدبية وثقافية عربية شاملة للقراء والكتاب والمعلنين مع نموذج تقاسم أرباح الإعلانات والمقالات المدفوعة والمحافظ الرقمية.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
