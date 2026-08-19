@@ -30,6 +30,7 @@ import {
   serverTimestamp
 } from 'firebase/firestore';
 import { User, UserRole, Article, AdCampaign, Transaction, AppNotification, FraudFlag } from './types';
+import { DEFAULT_FREE_DAILY_LIMIT } from './utils/aiQuota';
 
 // The platform owner's account. This exact email always resolves to the
 // 'admin' role (both here and in firestore.rules) — it can never be spoofed
@@ -205,7 +206,7 @@ export async function fetchUserFromFirestore(uid: string): Promise<User | null> 
         monthlyEarnings: data.monthlyEarnings || 0,
         joinedDate: data.createdAt ? new Date(data.createdAt).toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' }) : 'حديثاً',
         aiQuota: data.aiQuota || {
-          freeDailyLimit: 5,
+          freeDailyLimit: DEFAULT_FREE_DAILY_LIMIT,
           usedToday: 0,
           lastResetTime: new Date().toISOString(),
           isSubscriber: false,
@@ -319,7 +320,7 @@ export async function createOrUpdateUserDoc(
         monthlyEarnings: 0,
         joinedDate: 'اليوم',
         aiQuota: {
-          freeDailyLimit: 5,
+          freeDailyLimit: DEFAULT_FREE_DAILY_LIMIT,
           usedToday: 0,
           lastResetTime: new Date().toISOString(),
           isSubscriber: false,
@@ -369,7 +370,7 @@ export async function createOrUpdateUserDoc(
         monthlyEarnings: currentData.monthlyEarnings || 0,
         joinedDate: currentData.createdAt ? new Date(currentData.createdAt).toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' }) : 'سابقاً',
         aiQuota: currentData.aiQuota || {
-          freeDailyLimit: 5,
+          freeDailyLimit: DEFAULT_FREE_DAILY_LIMIT,
           usedToday: 0,
           lastResetTime: new Date().toISOString(),
           isSubscriber: false,

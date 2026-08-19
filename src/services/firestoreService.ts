@@ -14,6 +14,7 @@ import {
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { Article, AdCampaign, Transaction, FraudFlag, User, UserRole, Comment, AppNotification, ArticlePromotion } from '../types';
+import { DEFAULT_FREE_DAILY_LIMIT } from '../utils/aiQuota';
 
 // -------------------------------------------------------------------
 // Realtime Subscriptions & CRUD
@@ -324,7 +325,7 @@ export function subscribeToUsers(
           monthlyEarnings: data.monthlyEarnings || 0,
           joinedDate: data.createdAt ? new Date(data.createdAt).toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' }) : 'حديثاً',
           aiQuota: data.aiQuota || {
-            freeDailyLimit: 5,
+            freeDailyLimit: DEFAULT_FREE_DAILY_LIMIT,
             usedToday: 0,
             lastResetTime: new Date().toISOString(),
             isSubscriber: false,
@@ -551,7 +552,7 @@ export function subscribeToPromotions(
       onPromotions(list);
     },
     (error) => {
-      handleFirestoreError(error, OperationType.READ, 'promotions');
+      handleFirestoreError(error, OperationType.LIST, 'promotions');
       if (onError) onError(error);
     }
   );
@@ -636,7 +637,7 @@ export function subscribeToAdEvents(
       onEvents(list);
     },
     (error) => {
-      handleFirestoreError(error, OperationType.READ, 'adEvents');
+      handleFirestoreError(error, OperationType.LIST, 'adEvents');
       if (onError) onError(error);
     }
   );
@@ -731,7 +732,7 @@ export function subscribeToMoneyRequests(
       onRequests(list);
     },
     (error) => {
-      handleFirestoreError(error, OperationType.READ, collectionName);
+      handleFirestoreError(error, OperationType.LIST, collectionName);
       if (onError) onError(error);
     }
   );
@@ -797,7 +798,7 @@ export function subscribeToFollows(
       onFollows(list);
     },
     (error) => {
-      handleFirestoreError(error, OperationType.READ, 'follows');
+      handleFirestoreError(error, OperationType.LIST, 'follows');
       if (onError) onError(error);
     }
   );
@@ -896,7 +897,7 @@ export function subscribeToConversations(
       onConversations(list);
     },
     (error) => {
-      handleFirestoreError(error, OperationType.READ, 'conversations');
+      handleFirestoreError(error, OperationType.LIST, 'conversations');
       if (onError) onError(error);
     }
   );
@@ -921,7 +922,7 @@ export function subscribeToMessages(
       onMessages(list);
     },
     (error) => {
-      handleFirestoreError(error, OperationType.READ, 'messages');
+      handleFirestoreError(error, OperationType.LIST, 'messages');
       if (onError) onError(error);
     }
   );

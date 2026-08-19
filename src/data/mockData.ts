@@ -1,4 +1,5 @@
 import { Article, User, AdCampaign, Comment, AppNotification, Conversation, DirectMessage, Transaction, Book, FraudFlag } from '../types';
+import { DEFAULT_FREE_DAILY_LIMIT } from '../utils/aiQuota';
 
 export const INITIAL_USERS: User[] = [
   {
@@ -43,7 +44,7 @@ export const INITIAL_USERS: User[] = [
     twoFactorEnabled: true,
     notificationsEnabled: true,
     aiQuota: {
-      freeDailyLimit: 5,
+      freeDailyLimit: DEFAULT_FREE_DAILY_LIMIT,
       usedToday: 1,
       lastResetTime: new Date().toISOString(),
       isSubscriber: false,
@@ -77,7 +78,7 @@ export const INITIAL_USERS: User[] = [
     twoFactorEnabled: true,
     notificationsEnabled: true,
     aiQuota: {
-      freeDailyLimit: 5,
+      freeDailyLimit: DEFAULT_FREE_DAILY_LIMIT,
       usedToday: 0,
       lastResetTime: new Date().toISOString(),
       isSubscriber: true,
@@ -111,7 +112,7 @@ export const INITIAL_USERS: User[] = [
     twoFactorEnabled: false,
     notificationsEnabled: true,
     aiQuota: {
-      freeDailyLimit: 5,
+      freeDailyLimit: DEFAULT_FREE_DAILY_LIMIT,
       usedToday: 2,
       lastResetTime: new Date().toISOString(),
       isSubscriber: false,
@@ -148,7 +149,7 @@ export const INITIAL_USERS: User[] = [
     twoFactorEnabled: false,
     notificationsEnabled: true,
     aiQuota: {
-      freeDailyLimit: 5,
+      freeDailyLimit: DEFAULT_FREE_DAILY_LIMIT,
       usedToday: 2,
       lastResetTime: new Date().toISOString(),
       isSubscriber: false,
@@ -194,7 +195,7 @@ export const INITIAL_USERS: User[] = [
     twoFactorEnabled: true,
     notificationsEnabled: true,
     aiQuota: {
-      freeDailyLimit: 5,
+      freeDailyLimit: DEFAULT_FREE_DAILY_LIMIT,
       usedToday: 0,
       lastResetTime: new Date().toISOString(),
       isSubscriber: true,

@@ -23,7 +23,7 @@ export interface KycDetails {
 export type AiPlanType = 'none' | 'monthly' | 'annual';
 
 export interface AiQuota {
-  freeDailyLimit: number; // default 5
+  freeDailyLimit: number; // default 10
   usedToday: number;
   lastResetTime: string; // ISO string
   isSubscriber: boolean;

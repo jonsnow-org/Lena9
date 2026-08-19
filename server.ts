@@ -131,7 +131,7 @@ async function startServer() {
         }
         return res.status(429).json({
           error: 'quota_exceeded',
-          message: 'لقد استنفدت حد الاستخدام المجاني لليوم (5/5). يرجى الاشتراك في إحدى باقات Pro للمتابعة دون انقطاع.'
+          message: `لقد استنفدت حد الاستخدام المجاني لليوم (${freeDailyLimitForMessage}/${freeDailyLimitForMessage}). يرجى الاشتراك في إحدى باقات Pro للمتابعة دون انقطاع.`
         });
       }
 
