@@ -38,14 +38,23 @@ service cloud.firestore {
 
       allow read: if true;
 
-      allow create: if isSignedIn()
+      // isAdmin() هنا يعني تحديداً: بريد المالك (brnardtsho@gmail.com) —
+      // فرع get() في isAdmin() يعتمد على exists() لمستند لم يُنشأ بعد فيعود
+      // false تلقائياً، فلا يبقى إلا فرع البريد. بدون هذا البديل، أول
+      // تسجيل دخول للمالك نفسه كان سيُرفض: إنشاء مستنده الخاص بالدور
+      // 'admin' وisVerified=true لا يحقق isSelfAssignableRole ولا شرط
+      // isVerified==false أدناه.
+      allow create: if isAdmin() || (
+        isSignedIn()
         && request.auth.uid == userId
         && isSelfAssignableRole(request.resource.data.role)
         && (!('walletBalance' in request.resource.data) || request.resource.data.walletBalance == 0)
         && (!('totalEarnings' in request.resource.data) || request.resource.data.totalEarnings == 0)
         && (!('availableBalance' in request.resource.data) || request.resource.data.availableBalance == 0)
         && (!('pendingEarnings' in request.resource.data) || request.resource.data.pendingEarnings == 0)
-        && (!('isVerified' in request.resource.data) || request.resource.data.isVerified == false);
+        && (!('lifetimeEarnings' in request.resource.data) || request.resource.data.lifetimeEarnings == 0)
+        && (!('isVerified' in request.resource.data) || request.resource.data.isVerified == false)
+      );
 
       allow update: if isAdmin() || (
         isOwner(userId)
