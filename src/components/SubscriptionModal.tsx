@@ -98,45 +98,17 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
 
   const handleConfirmPayment = (e: React.FormEvent) => {
     e.preventDefault();
-    setIsProcessing(true);
 
-    const refId = `SUB-${Math.floor(100000 + Math.random() * 900000)}`;
-    const now = new Date();
-    const expiryDate = new Date(now);
-    if (selectedPlanId === 'monthly') {
-      expiryDate.setDate(now.getDate() + 30);
-    } else {
-      expiryDate.setFullYear(now.getFullYear() + 1);
-    }
+    let methodLabel = 'محفظة ليتيريوم';
+    if (paymentMethod === 'usdt_trc20') methodLabel = 'USDT (TRC20)';
+    else if (paymentMethod === 'usdt_bep20') methodLabel = 'USDT (BEP20)';
+    else if (paymentMethod === 'card') methodLabel = 'Stripe / بطاقة ائتمانية';
+    else if (paymentMethod === 'paypal') methodLabel = 'PayPal';
 
-    setTimeout(() => {
-      setIsProcessing(false);
-
-      let methodLabel = 'محفظة ليتيريوم';
-      if (paymentMethod === 'usdt_trc20') methodLabel = 'USDT (TRC20)';
-      else if (paymentMethod === 'usdt_bep20') methodLabel = 'USDT (BEP20)';
-      else if (paymentMethod === 'card') methodLabel = 'Stripe / بطاقة ائتمانية';
-      else if (paymentMethod === 'paypal') methodLabel = 'PayPal';
-
-      onUpgradeSuccess(selectedPlanId, methodLabel as PaymentMethod);
-
-      setSuccessDetails({
-        referenceId: refId,
-        expiryDate: formatAiExpiryDate(expiryDate.toISOString()),
-        newLimit: selectedPlanId === 'annual' ? 'استخدام غير محدود VIP ♾️' : '200 استعلام شهرياً'
-      });
-
-      setStep('success');
-
-      try {
-        confetti({
-          particleCount: 120,
-          spread: 80,
-          origin: { y: 0.55 },
-          colors: ['#0d9488', '#06b6d4', '#f59e0b', '#0f766e']
-        });
-      } catch {}
-    }, 1200);
+    // لا يوجد أي اتصال حقيقي ببوابة دفع (Stripe/PayPal) في هذه المنصة —
+    // الدفع بوساطة الأدمن حصراً. لا تفعيل فوري ولا محاكاة نجاح وهمية هنا؛
+    // الطلب يُرسَل فوراً وتتولى App.tsx إنشاء طلب معلّق للمراجعة اليدوية.
+    onUpgradeSuccess(selectedPlanId, methodLabel as PaymentMethod);
   };
 
   return (

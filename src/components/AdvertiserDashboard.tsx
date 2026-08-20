@@ -92,7 +92,10 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
       durationHours: pricingModel === 'fixed' ? durationHours : undefined,
       cpcRate: pricingModel === 'cpc' ? cpcRate : undefined,
       cpmRate: pricingModel === 'cpm' ? cpmRate : undefined,
-      totalBudget: currentEstimatedCost,
+      // اسم الحقل الذي تقرأه App.tsx فعلياً للتحقق من الرصيد وعرضه على
+      // الأدمن هو requestedBudget (انظر NewCampaignModal.tsx) — لا
+      // totalBudget، الذي يبقى صفراً حتى يعتمده الأدمن.
+      requestedBudget: currentEstimatedCost,
       status: 'active',
       targetCategories: targetCategory === 'all' ? ['all'] : [targetCategory],
       fraudBlockedCount: 0

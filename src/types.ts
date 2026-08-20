@@ -126,6 +126,7 @@ export interface CommentReply {
   content: string;
   likesCount: number;
   isLiked?: boolean;
+  likedBy?: string[];
   createdAt: string;
 }
 
@@ -140,6 +141,7 @@ export interface Comment {
   content: string;
   likesCount: number;
   isLiked?: boolean;
+  likedBy?: string[];
   isPinned?: boolean;
   createdAt: string;
   replies: CommentReply[];
@@ -205,6 +207,9 @@ export interface Article {
   purchasesCount: number;
   rating: number;
   ratingsCount: number;
+  // مجموع كل تقييمات النجوم الخام (وليس المتوسط) — يُستخدم لحساب المتوسط
+  // (rating) بدقة عند إضافة أو تعديل تقييم أي مستخدم، بدل تخمين رقم ثابت.
+  ratingsSum?: number;
   revenueFromAds: number;
   revenueFromSales: number;
   totalRevenue: number;
@@ -332,12 +337,17 @@ export interface Conversation {
 export interface AppNotification {
   id: string;
   userId: string;
-  type: 'like' | 'comment' | 'follow' | 'earning' | 'withdrawal' | 'campaign' | 'system';
+  type: 'like' | 'comment' | 'follow' | 'earning' | 'withdrawal' | 'campaign' | 'system' | 'share' | 'reply';
   title: string;
   message: string;
   isRead: boolean;
   createdAt: string;
   actionUrl?: string;
+  // معرّف المقال المرتبط بالإشعار (إن وُجد)، يُستخدم لفتح المقال مباشرة
+  // عند الضغط على الإشعار بدل تركه بلا وجهة.
+  articleId?: string;
+  // معرّف صاحب الحدث (من أعجب/علّق/تابع/شارك) لعرض صورته إن رغبنا لاحقاً.
+  actorId?: string;
 }
 
 export interface PlatformStats {

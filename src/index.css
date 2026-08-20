@@ -1,5 +1,11 @@
 @import "tailwindcss";
 
+/* Tailwind v4 changed how dark mode is enabled: بدون هذا السطر، كل
+   كلاسات dark: في المشروع (المئات منها) تتجاهل زر تبديل الوضع الداكن/
+   الفاتح تماماً وتعتمد فقط على إعداد نظام تشغيل الجهاز نفسه — وهذا كان
+   سبب "الزر لا يعمل" فعلياً. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @layer base {
   html {
     -webkit-tap-highlight-color: transparent;

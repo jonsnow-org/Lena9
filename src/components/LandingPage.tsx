@@ -539,26 +539,47 @@ export const LandingPage: React.FC<LandingPageProps> = ({
       <footer className="mt-20 border-t border-slate-800 bg-slate-950 py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-6xl mx-auto rounded-3xl bg-gradient-to-r from-purple-950/60 via-indigo-950/60 to-slate-900 border border-purple-500/30 p-8 sm:p-12 text-center relative overflow-hidden shadow-2xl">
           <div className="relative z-10 max-w-3xl mx-auto space-y-4">
-            <h2 className="text-2xl sm:text-4xl font-black text-white">
-              انضم اليوم إلى أكبر مجتمع أدبي وثقافي عربي
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-              سواء كنت قارئاً شغوفاً بالمعرفة، أو كاتباً تطمح لنشر أفكارك ومشاركة الأرباح، أو معلناً تبحث عن جمهور نوعي.
-            </p>
-            <div className="pt-4 flex flex-wrap items-center justify-center gap-3">
-              <button
-                onClick={() => onOpenRegister('reader')}
-                className="px-6 py-3 rounded-2xl bg-white text-slate-950 font-black text-xs sm:text-sm shadow-lg hover:bg-slate-100 active:scale-95 transition-all flex items-center gap-2"
-              >
-                <span>أنشئ حسابك الآن</span>
-              </button>
-              <button
-                onClick={onStartReading}
-                className="px-6 py-3 rounded-2xl bg-slate-900/80 hover:bg-slate-800 text-slate-200 border border-slate-700 font-bold text-xs sm:text-sm active:scale-95 transition-all"
-              >
-                تصفح المنصة مباشرة
-              </button>
-            </div>
+            {isUserLoggedIn && currentUser ? (
+              <>
+                <h2 className="text-2xl sm:text-4xl font-black text-white">
+                  مرحباً بعودتك، {currentUser.fullName.split(' ')[0]}
+                </h2>
+                <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                  أكمل رحلتك في مجتمع ليتيريوم الأدبي والثقافي من حيث توقفت.
+                </p>
+                <div className="pt-4 flex flex-wrap items-center justify-center gap-3">
+                  <button
+                    onClick={onStartReading}
+                    className="px-6 py-3 rounded-2xl bg-white text-slate-950 font-black text-xs sm:text-sm shadow-lg hover:bg-slate-100 active:scale-95 transition-all flex items-center gap-2"
+                  >
+                    <span>الذهاب إلى لوحة التحكم</span>
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 className="text-2xl sm:text-4xl font-black text-white">
+                  انضم اليوم إلى أكبر مجتمع أدبي وثقافي عربي
+                </h2>
+                <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                  سواء كنت قارئاً شغوفاً بالمعرفة، أو كاتباً تطمح لنشر أفكارك ومشاركة الأرباح، أو معلناً تبحث عن جمهور نوعي.
+                </p>
+                <div className="pt-4 flex flex-wrap items-center justify-center gap-3">
+                  <button
+                    onClick={() => onOpenRegister('reader')}
+                    className="px-6 py-3 rounded-2xl bg-white text-slate-950 font-black text-xs sm:text-sm shadow-lg hover:bg-slate-100 active:scale-95 transition-all flex items-center gap-2"
+                  >
+                    <span>أنشئ حسابك الآن</span>
+                  </button>
+                  <button
+                    onClick={onStartReading}
+                    className="px-6 py-3 rounded-2xl bg-slate-900/80 hover:bg-slate-800 text-slate-200 border border-slate-700 font-bold text-xs sm:text-sm active:scale-95 transition-all"
+                  >
+                    تصفح المنصة مباشرة
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
 

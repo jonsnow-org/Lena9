@@ -10,10 +10,13 @@ import {
   onSnapshot,
   query,
   where,
-  orderBy
+  orderBy,
+  arrayUnion,
+  arrayRemove,
+  increment
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { Article, AdCampaign, Transaction, FraudFlag, User, UserRole, Comment, AppNotification, ArticlePromotion } from '../types';
+import { Article, AdCampaign, Transaction, FraudFlag, User, UserRole, Comment, CommentReply, AppNotification, ArticlePromotion } from '../types';
 import { DEFAULT_FREE_DAILY_LIMIT } from '../utils/aiQuota';
 
 // -------------------------------------------------------------------
@@ -119,7 +122,7 @@ export async function saveArticleToFirestore(
 
 export async function updateArticleStatsInFirestore(
   articleId: string,
-  stats: Partial<Pick<Article, 'viewsCount' | 'likesCount' | 'sharesCount' | 'revenueFromAds' | 'revenueFromSales' | 'totalRevenue' | 'purchasesCount'>>
+  stats: Partial<Pick<Article, 'viewsCount' | 'likesCount' | 'sharesCount' | 'commentsCount' | 'revenueFromAds' | 'revenueFromSales' | 'totalRevenue' | 'purchasesCount'>>
 ) {
   try {
     const cleanStats: Record<string, any> = {};
@@ -269,7 +272,9 @@ export function subscribeToEarnings(
           paymentMethod: data.paymentMethod || 'محفظة ليتيريوم الداخلية',
           referenceId: data.referenceId || docSnap.id,
           description: data.description || data.source || 'أرباح مشاهدات ونقرات',
-          createdAt: data.createdAt || 'الآن'
+          // لا يوجد نص "الآن" افتراضي بعد الآن — إن لم يوجد تاريخ حقيقي
+          // فهذا يعني بيانات ناقصة يجب أن تظهر فارغة لا مزيّفة.
+          createdAt: data.createdAt || ''
         } as Transaction);
       });
       list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
@@ -420,6 +425,26 @@ export async function logFraudFlagToFirestore(flag: Partial<FraudFlag>) {
 export async function setUserVerifiedInFirestore(userId: string, isVerified: boolean) {
   try {
     await updateDoc(doc(db, 'users', userId), { isVerified });
+  } catch (e) {
+    handleFirestoreError(e, OperationType.UPDATE, `users/${userId}`);
+    throw e;
+  }
+}
+
+/**
+ * حفظ طلب توثيق هوية (KYC) بحالة "قيد المراجعة" فعلياً في Firestore —
+ * لا يُصادَق عليه أبداً من جانب المستخدم نفسه (isVerified/isKycVerified
+ * محميان بقواعد الأمان، لا يقدر أي مستخدم عادي تغييرهما بنفسه)، وينتظر
+ * اعتماداً حقيقياً من الأدمن عبر setUserKycApprovedInFirestore.
+ */
+export async function submitKycRequestInFirestore(
+  userId: string,
+  kycDetails: { idType: string; idNumber: string; submittedAt: string }
+) {
+  try {
+    await updateDoc(doc(db, 'users', userId), {
+      kycDetails: { ...kycDetails, status: 'pending' }
+    });
   } catch (e) {
     handleFirestoreError(e, OperationType.UPDATE, `users/${userId}`);
     throw e;
@@ -1053,6 +1078,326 @@ export async function updateUserSocialLinks(
       if (typeof v === 'string' && v.trim()) clean[k] = v.trim();
     });
     await updateDoc(doc(db, 'users', userId), { socialLinks: clean });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `users/${userId}`);
+    throw error;
+  }
+}
+
+// -------------------------------------------------------------------
+// التعليقات — مخزّنة في Firestore ومتزامنة فعلياً بين كل المستخدمين
+// (كانت سابقاً تُحفظ في localStorage فقط، فلا يراها أحد غير صاحب الجهاز).
+// -------------------------------------------------------------------
+
+export function subscribeToComments(
+  onComments: (comments: Comment[]) => void,
+  onError?: (err: any) => void
+) {
+  return onSnapshot(
+    collection(db, 'comments'),
+    (snapshot) => {
+      const list: Comment[] = [];
+      snapshot.forEach((d) => list.push({ id: d.id, ...(d.data() as any) } as Comment));
+      // الأحدث أولاً
+      list.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+      onComments(list);
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'comments');
+      if (onError) onError(error);
+    }
+  );
+}
+
+export async function addCommentToFirestore(comment: Comment): Promise<void> {
+  try {
+    await setDoc(doc(db, 'comments', comment.id), comment);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'comments');
+    throw error;
+  }
+}
+
+export async function addReplyToCommentInFirestore(
+  commentId: string,
+  reply: CommentReply
+): Promise<void> {
+  try {
+    await updateDoc(doc(db, 'comments', commentId), {
+      replies: arrayUnion(reply)
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `comments/${commentId}`);
+    throw error;
+  }
+}
+
+/**
+ * إعجاب/إلغاء إعجاب حقيقي بتعليق جذري (وليس رداً)، مع تتبّع مَن أعجب
+ * فعلياً عبر مصفوفة likedBy — بدل تثبيت isLiked=true للجميع كما كان سابقاً.
+ */
+export async function toggleCommentLikeInFirestore(
+  commentId: string,
+  userId: string,
+  isLiking: boolean
+): Promise<void> {
+  try {
+    await updateDoc(doc(db, 'comments', commentId), {
+      likesCount: increment(isLiking ? 1 : -1),
+      likedBy: isLiking ? arrayUnion(userId) : arrayRemove(userId)
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `comments/${commentId}`);
+    throw error;
+  }
+}
+
+// -------------------------------------------------------------------
+// إعجابات المقالات — تُحفظ كمستند مستقل لكل (مقال + مستخدم) في مجموعة
+// "likes"، بنفس أسلوب مجموعة "follows" الموجودة، حتى نعرف بدقة هل
+// المستخدم الحالي أعجب بمقال معيّن أم لا (بدل رقم يزيد فقط بلا توقف).
+// -------------------------------------------------------------------
+
+export function subscribeToArticleLikes(
+  onLikes: (likes: { id: string; articleId: string; userId: string }[]) => void,
+  onError?: (err: any) => void
+) {
+  return onSnapshot(
+    collection(db, 'likes'),
+    (snapshot) => {
+      const list: any[] = [];
+      snapshot.forEach((d) => list.push({ id: d.id, ...d.data() }));
+      onLikes(list);
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'likes');
+      if (onError) onError(error);
+    }
+  );
+}
+
+export async function likeArticleInFirestore(articleId: string, userId: string): Promise<void> {
+  try {
+    await setDoc(doc(db, 'likes', `${articleId}_${userId}`), {
+      articleId,
+      userId,
+      createdAt: new Date().toISOString()
+    });
+    await updateDoc(doc(db, 'articles', articleId), { likesCount: increment(1) });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'likes');
+    throw error;
+  }
+}
+
+export async function unlikeArticleInFirestore(articleId: string, userId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'likes', `${articleId}_${userId}`));
+    await updateDoc(doc(db, 'articles', articleId), { likesCount: increment(-1) });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, 'likes');
+    throw error;
+  }
+}
+
+// -------------------------------------------------------------------
+// الإشعارات — تُكتب في Firestore فعلياً لصاحب الحساب المعني (وليس فقط
+// لنفس المستخدم الذي نفّذ الحدث)، حتى تصل إشعارات المتابعة/الإعجاب/
+// التعليق/الرد/المشاركة لكل مستخدم آخر بشكل حقيقي.
+// -------------------------------------------------------------------
+
+export async function createNotificationInFirestore(
+  notification: Omit<AppNotification, 'id' | 'isRead' | 'createdAt'>
+): Promise<void> {
+  try {
+    await addDoc(collection(db, 'notifications'), {
+      ...notification,
+      isRead: false,
+      createdAt: new Date().toISOString()
+    });
+  } catch (error) {
+    // إشعار فاشل لا يجب أن يمنع إتمام الفعل الأساسي (إعجاب/تعليق/متابعة)
+    console.error('تعذر إنشاء إشعار:', error);
+  }
+}
+
+export function subscribeToNotifications(
+  userId: string,
+  onNotifications: (notifications: AppNotification[]) => void,
+  onError?: (err: any) => void
+) {
+  const q = query(collection(db, 'notifications'), where('userId', '==', userId));
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const list: AppNotification[] = [];
+      snapshot.forEach((d) => list.push({ id: d.id, ...(d.data() as any) } as AppNotification));
+      list.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+      onNotifications(list);
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'notifications');
+      if (onError) onError(error);
+    }
+  );
+}
+
+export async function markNotificationReadInFirestore(notificationId: string): Promise<void> {
+  try {
+    await updateDoc(doc(db, 'notifications', notificationId), { isRead: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `notifications/${notificationId}`);
+  }
+}
+
+export async function markAllNotificationsReadInFirestore(
+  notifications: AppNotification[]
+): Promise<void> {
+  try {
+    await Promise.all(
+      notifications
+        .filter((n) => !n.isRead)
+        .map((n) => updateDoc(doc(db, 'notifications', n.id), { isRead: true }))
+    );
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, 'notifications');
+  }
+}
+
+// -------------------------------------------------------------------
+// المشاهدات — تُسجَّل مرة واحدة فعلياً لكل مقال في كل جلسة تصفح، بدل
+// عدم وجود أي تسجيل مشاهدات إطلاقاً كما كان الحال سابقاً.
+// -------------------------------------------------------------------
+
+export async function incrementArticleViewInFirestore(articleId: string): Promise<void> {
+  try {
+    // increment() الذَّرّي بدل حساب رقم مطلق على العميل: حساب newCount
+    // محلياً من قيمة قد تكون قديمة يسبب فقدان مشاهدات فعلية عند دخول
+    // قارئين لنفس المقال في نفس اللحظة تقريباً (كلاهما يكتب نفس الرقم).
+    await updateDoc(doc(db, 'articles', articleId), { viewsCount: increment(1) });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `articles/${articleId}`);
+  }
+}
+
+// -------------------------------------------------------------------
+// تقييمات المقالات — تقييم حقيقي (1-5 نجوم) بمستند مستقل لكل (مقال +
+// مستخدم)، بدل رقم "5.0" وهمي كان يُعرض بلا أي تقييم فعلي من أحد.
+// -------------------------------------------------------------------
+
+export function subscribeToArticleRatings(
+  onRatings: (ratings: { id: string; articleId: string; userId: string; stars: number }[]) => void,
+  onError?: (err: any) => void
+) {
+  return onSnapshot(
+    collection(db, 'ratings'),
+    (snapshot) => {
+      const list: any[] = [];
+      snapshot.forEach((d) => list.push({ id: d.id, ...d.data() }));
+      onRatings(list);
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'ratings');
+      if (onError) onError(error);
+    }
+  );
+}
+
+export async function rateArticleInFirestore(
+  articleId: string,
+  userId: string,
+  stars: number
+): Promise<void> {
+  try {
+    await setDoc(doc(db, 'ratings', `${articleId}_${userId}`), {
+      articleId,
+      userId,
+      stars,
+      createdAt: new Date().toISOString()
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'ratings');
+    throw error;
+  }
+}
+
+/**
+ * يحدّث متوسط تقييم المقال (rating) وعدد التقييمات ومجموعها الخام بعد
+ * أي إضافة أو تعديل تقييم — بحساب دقيق مبني على المجموع الحقيقي، لا رقم
+ * مخترع.
+ */
+export async function syncArticleRatingSummary(
+  articleId: string,
+  ratingsSum: number,
+  ratingsCount: number
+): Promise<void> {
+  try {
+    await updateDoc(doc(db, 'articles', articleId), {
+      ratingsSum,
+      ratingsCount,
+      rating: ratingsCount > 0 ? Number((ratingsSum / ratingsCount).toFixed(2)) : 0
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `articles/${articleId}`);
+    throw error;
+  }
+}
+
+// -------------------------------------------------------------------
+// الأرباح المجمَّدة — لم تكن تُقرأ إطلاقاً من قبل رغم أن نظام تجميد 30
+// يوماً كان يُحسب ويُخزَّن فعلياً عند كل ربح جديد (releasableAt)، فلا
+// توجد أي وسيلة للأدمن لرؤية أو تحرير الأرباح المستحقة بعد انقضاء المدة.
+// -------------------------------------------------------------------
+
+export interface EarningRecord {
+  id: string;
+  userId: string;
+  amount: number;
+  source: string;
+  status: string;
+  createdAt: string;
+  releasableAt: string;
+  articleId?: string;
+  campaignId?: string;
+  description?: string;
+}
+
+export function subscribeToAllEarningsAdmin(
+  onEarnings: (earnings: EarningRecord[]) => void,
+  onError?: (err: any) => void
+) {
+  return onSnapshot(
+    collection(db, 'earnings'),
+    (snapshot) => {
+      const list: EarningRecord[] = [];
+      snapshot.forEach((d) => list.push({ id: d.id, ...(d.data() as any) } as EarningRecord));
+      list.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+      onEarnings(list);
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'earnings');
+      if (onError) onError(error);
+    }
+  );
+}
+
+export async function markEarningReleasedInFirestore(earningId: string): Promise<void> {
+  try {
+    await updateDoc(doc(db, 'earnings', earningId), { status: 'released' });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `earnings/${earningId}`);
+    throw error;
+  }
+}
+
+/**
+ * تحديث حصة استخدام الذكاء الاصطناعي لمستخدم بعد اعتماد اشتراكه فعلياً
+ * من الأدمن — الحقل غير مالي فتسمح به قواعد الأمان لصاحب الحساب، لكن
+ * الاعتماد هنا يأتي من الأدمن نيابة عن المستخدم عبر صلاحياته الشاملة.
+ */
+export async function updateUserAiQuotaInFirestore(userId: string, aiQuota: any): Promise<void> {
+  try {
+    await updateDoc(doc(db, 'users', userId), { aiQuota });
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, `users/${userId}`);
     throw error;

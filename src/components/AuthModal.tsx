@@ -240,8 +240,24 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               لا تُحفظ كلمات المرور إطلاقاً — البطاقة تعبّئ البريد فقط. */}
           {mode === 'login' && savedAccounts.length > 0 && !useNewAccountForm && (
             <div className="space-y-2.5">
+              {/* زر واضح وثابت أعلى القائمة للدخول بحساب مختلف تماماً — حتى لا
+                  يشعر المستخدم أنه "عالق" مع الحسابات المعروضة فقط. */}
+              <button
+                type="button"
+                onClick={() => {
+                  setEmail('');
+                  setPassword('');
+                  setAuthError(null);
+                  setUseNewAccountForm(true);
+                }}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-xs shadow-md active:scale-95 transition-all"
+              >
+                <UserCog className="w-4 h-4" />
+                <span>تسجيل الدخول بحساب آخر أو إنشاء حساب جديد</span>
+              </button>
+
               <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                حسابات محفوظة على هذا الجهاز:
+                أو اختر من الحسابات المحفوظة على هذا الجهاز:
               </label>
 
               <div className="space-y-2">
@@ -292,20 +308,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   </div>
                 ))}
               </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setEmail('');
-                  setPassword('');
-                  setAuthError(null);
-                  setUseNewAccountForm(true);
-                }}
-                className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-purple-500 hover:text-purple-600 dark:hover:text-purple-400 font-bold text-xs transition-colors"
-              >
-                <UserCog className="w-4 h-4" />
-                <span>تسجيل الدخول بحساب آخر</span>
-              </button>
 
               <p className="text-[10px] text-slate-400 dark:text-slate-500 text-center leading-relaxed">
                 لا تُحفظ كلمات المرور على الجهاز — تُطلب في كل مرة.

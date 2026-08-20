@@ -106,7 +106,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             </span>
           </button>
 
-          {/* 3. إشعارات */}
+          {/* 3. إشعارات — الآن موحّدة داخل الشريط السفلي لكل الأدوار
+              (بدل الاعتماد على زر أعلى الشاشة فقط) بناءً على طلب صريح. */}
           <button
             id="nav-reader-notifications"
             type="button"
@@ -306,7 +307,37 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             </span>
           </button>
 
-          {/* 5. ملفي */}
+          {/* 5. إشعارات */}
+          <button
+            id="nav-adv-notifications"
+            type="button"
+            onClick={onOpenNotifications}
+            className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group relative"
+          >
+            <div
+              className={`p-1.5 rounded-xl transition-all relative ${
+                activeTab === 'notifications'
+                  ? 'bg-purple-600/30 text-purple-300 border border-purple-500/40 scale-105'
+                  : 'text-slate-400 group-hover:text-slate-200'
+              }`}
+            >
+              <Bell className="w-5 h-5" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -end-1 w-4 h-4 bg-purple-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center ring-2 ring-slate-950 animate-pulse">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </div>
+            <span
+              className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
+                activeTab === 'notifications' ? 'text-purple-300 font-extrabold' : 'text-slate-400'
+              }`}
+            >
+              إشعارات
+            </span>
+          </button>
+
+          {/* 6. ملفي */}
           <button
             id="nav-adv-profile"
             type="button"
@@ -441,7 +472,37 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             </span>
           </button>
 
-          {/* 5. ملفي */}
+          {/* 5. إشعارات */}
+          <button
+            id="nav-writer-notifications"
+            type="button"
+            onClick={onOpenNotifications}
+            className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group relative"
+          >
+            <div
+              className={`p-1.5 rounded-xl transition-all relative ${
+                activeTab === 'notifications'
+                  ? 'bg-purple-600/30 text-purple-300 border border-purple-500/40 scale-105'
+                  : 'text-slate-400 group-hover:text-slate-200'
+              }`}
+            >
+              <Bell className="w-5 h-5" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -end-1 w-4 h-4 bg-purple-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center ring-2 ring-slate-950 animate-pulse">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </div>
+            <span
+              className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
+                activeTab === 'notifications' ? 'text-purple-300 font-extrabold' : 'text-slate-400'
+              }`}
+            >
+              إشعارات
+            </span>
+          </button>
+
+          {/* 6. ملفي */}
           <button
             id="nav-writer-profile"
             type="button"
@@ -601,7 +662,37 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           </span>
         </button>
 
-        {/* 5. ملفي */}
+        {/* 5. إشعارات */}
+        <button
+          id="nav-admin-notifications"
+          type="button"
+          onClick={onOpenNotifications}
+          className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group relative"
+        >
+          <div
+            className={`p-1.5 rounded-xl transition-all relative ${
+              activeTab === 'notifications'
+                ? 'bg-purple-600/30 text-purple-300 border border-purple-500/40 scale-105'
+                : 'text-slate-400 group-hover:text-slate-200'
+            }`}
+          >
+            <Bell className="w-5 h-5" />
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -end-1 w-4 h-4 bg-purple-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center ring-2 ring-slate-950 animate-pulse">
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
+          </div>
+          <span
+            className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
+              activeTab === 'notifications' ? 'text-purple-300 font-extrabold' : 'text-slate-400'
+            }`}
+          >
+            إشعارات
+          </span>
+        </button>
+
+        {/* 6. ملفي */}
         <button
           id="nav-admin-profile"
           type="button"

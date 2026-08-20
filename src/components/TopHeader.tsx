@@ -1,7 +1,6 @@
 import React from 'react';
 import {
   Menu,
-  Bell,
   Sparkles,
   Wallet,
   Sun,
@@ -158,21 +157,9 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                 <span className="tabular-nums font-mono">${(currentUser.totalEarnings || 0).toFixed(2)}</span>
               </button>
 
-              {/* Notifications Icon with Badge */}
-              <button
-                id="header-notifications-button"
-                type="button"
-                onClick={onOpenNotifications}
-                className="relative w-9 h-9 rounded-2xl flex items-center justify-center text-slate-300 hover:bg-slate-900 active:scale-95 transition-all border border-purple-500/20"
-                title="الإشعارات"
-              >
-                <Bell className="w-4.5 h-4.5" />
-                {unreadNotifsCount > 0 && (
-                  <span className="absolute top-1.5 end-1.5 w-4 h-4 bg-purple-500 text-white rounded-full text-[9px] font-black flex items-center justify-center ring-2 ring-slate-950">
-                    {unreadNotifsCount > 9 ? '+9' : unreadNotifsCount}
-                  </span>
-                )}
-              </button>
+              {/* زر الجرس أُزيل من هنا — الإشعارات الآن موحّدة فقط داخل
+                  الشريط السفلي لكل الأدوار، تفادياً لازدواجية "زر بالأعلى
+                  وزر بالأسفل" التي كانت تربك المستخدم سابقاً. */}
 
               {/* User Profile Chip (Avatar + Name + Role Badge) */}
               <button

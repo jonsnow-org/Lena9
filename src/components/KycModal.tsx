@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ShieldCheck,
   X,
@@ -10,7 +10,6 @@ import {
   Clock,
   Lock
 } from 'lucide-react';
-import confetti from 'canvas-confetti';
 import { KycDetails } from '../types';
 
 interface KycModalProps {
@@ -30,8 +29,22 @@ export const KycModal: React.FC<KycModalProps> = ({
 }) => {
   const [idType, setIdType] = useState(currentKyc?.idType || 'بطاقة الهوية الوطنية');
   const [idNumber, setIdNumber] = useState(currentKyc?.idNumber || '');
-  const [submitted, setSubmitted] = useState(currentKyc?.status === 'verified');
+  // "submitted" هنا يعني فقط أن الطلب أُرسل وينتظر مراجعة — وليس أنه
+  // تحقّق فعلياً. كان الكود سابقاً يعتبر submitted=true تعني "تحقق"
+  // بالخطأ، ويمنح توثيقاً وهمياً فورياً بلا أي مراجعة حقيقية من الأدمن.
+  const [submitted, setSubmitted] = useState(
+    currentKyc?.status === 'verified' || currentKyc?.status === 'pending'
+  );
   const [isLoading, setIsLoading] = useState(false);
+
+  // النافذة قد تبقى مركّبة بين مرة فتح وأخرى، و"submitted" كان يُحسب مرة
+  // واحدة فقط عند أول تركيب. لو رفض الأدمن الطلب لاحقاً (status يتحوّل
+  // إلى 'rejected') بقي المستخدم عالقاً يرى شاشة "قيد المراجعة" للأبد
+  // دون أي طريق لمعرفة الرفض أو إعادة الإرسال. الآن يُعاد حساب الحالة عند
+  // كل تغيّر فعلي في currentKyc.
+  useEffect(() => {
+    setSubmitted(currentKyc?.status === 'verified' || currentKyc?.status === 'pending');
+  }, [currentKyc?.status]);
 
   if (!isOpen) return null;
 
@@ -40,20 +53,18 @@ export const KycModal: React.FC<KycModalProps> = ({
     if (!idNumber.trim()) return;
 
     setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
-      setSubmitted(true);
-      onSaveKyc({
-        idType,
-        idNumber,
-        selfieUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300',
-        status: 'verified',
-        submittedAt: new Date().toLocaleDateString('ar-EG')
-      });
-      try {
-        confetti({ particleCount: 70, spread: 60 });
-      } catch {}
-    }, 1200);
+    // لا محاكاة نجاح فورية هنا — الحالة الحقيقية "pending" تُحفظ فعلياً
+    // في Firestore عبر onSaveKyc (App.tsx)، ولا يتحقق الحساب فعلياً إلا
+    // بعد اعتماد يدوي حقيقي من الأدمن. لا يوجد رفع صورة فعلي (لا يوجد
+    // Firebase Storage بالخطة المجانية)، فلا نرسل أي رابط صورة وهمي.
+    onSaveKyc({
+      idType,
+      idNumber,
+      status: 'pending',
+      submittedAt: new Date().toISOString()
+    });
+    setIsLoading(false);
+    setSubmitted(true);
   };
 
   return (
@@ -77,26 +88,57 @@ export const KycModal: React.FC<KycModalProps> = ({
 
         <div className="p-6">
           {submitted ? (
-            <div className="text-center py-6 space-y-4">
-              <div className="w-16 h-16 rounded-3xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center mx-auto ring-8 ring-emerald-500/5">
-                <CheckCircle2 className="w-10 h-10" />
+            currentKyc?.status === 'verified' ? (
+              <div className="text-center py-6 space-y-4">
+                <div className="w-16 h-16 rounded-3xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center mx-auto ring-8 ring-emerald-500/5">
+                  <CheckCircle2 className="w-10 h-10" />
+                </div>
+                <h4 className="text-lg font-black text-slate-900 dark:text-white">
+                  حسابك موثق ومعتمد بنجاح ✓
+                </h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto leading-relaxed">
+                  تمت مراجعة الوثيقة الرسمية ({idType}: {idNumber}) واعتماد حسابك كـ{' '}
+                  {userRole === 'writer' ? 'كاتب موثوق' : 'معلن معتمد'}. يمكنك الآن سحب وإيداع الأرباح بحرية كاملة.
+                </p>
+                <button
+                  onClick={onClose}
+                  className="w-full py-3 rounded-2xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs sm:text-sm"
+                >
+                  إتمام والعودة للتطبيق
+                </button>
               </div>
-              <h4 className="text-lg font-black text-slate-900 dark:text-white">
-                حسابك موثق ومعتمد بنجاح ✓
-              </h4>
-              <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto leading-relaxed">
-                تمت مراجعة الوثيقة الرسمية ({idType}: {idNumber}) واعتماد حسابك كـ{' '}
-                {userRole === 'writer' ? 'كاتب موثوق' : 'معلن معتمد'}. يمكنك الآن سحب وإيداع الأرباح بحرية كاملة.
-              </p>
-              <button
-                onClick={onClose}
-                className="w-full py-3 rounded-2xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs sm:text-sm"
-              >
-                إتمام والعودة للتطبيق
-              </button>
-            </div>
+            ) : (
+              // الحالة الحقيقية بعد الإرسال: "قيد المراجعة" فقط — لا يوجد
+              // أي تحقق فوري تلقائي؛ هذا كان يُعرض خطأً سابقاً كـ"معتمد".
+              <div className="text-center py-6 space-y-4">
+                <div className="w-16 h-16 rounded-3xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto ring-8 ring-amber-500/5">
+                  <Clock className="w-10 h-10" />
+                </div>
+                <h4 className="text-lg font-black text-slate-900 dark:text-white">
+                  تم إرسال طلب التوثيق — قيد المراجعة
+                </h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto leading-relaxed">
+                  استلمنا بيانات وثيقتك ({idType}: {idNumber}) وسيراجعها فريق ليتيريوم يدوياً خلال 24 إلى 48 ساعة.
+                  سيصلك إشعار فور اعتماد حسابك.
+                </p>
+                <button
+                  onClick={onClose}
+                  className="w-full py-3 rounded-2xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs sm:text-sm"
+                >
+                  حسناً، فهمت
+                </button>
+              </div>
+            )
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
+              {currentKyc?.status === 'rejected' && (
+                <div className="p-3.5 rounded-2xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-xs text-red-900 dark:text-red-200 flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                  <p className="leading-relaxed">
+                    تم رفض طلب التوثيق السابق. راجع بياناتك وأرسل طلباً جديداً بمعلومات صحيحة ودقيقة.
+                  </p>
+                </div>
+              )}
               <div className="p-3.5 rounded-2xl bg-teal-50 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800 text-xs text-teal-900 dark:text-teal-200 flex items-start gap-2">
                 <Lock className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
                 <p className="leading-relaxed">

@@ -2,123 +2,289 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Global Helper Functions
+
     function isSignedIn() {
       return request.auth != null;
     }
-    
+
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
-    
+
     function isAdmin() {
       return isSignedIn() && (
-        request.auth.token.email == "brnardtsho@gmail.com" ||
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+        request.auth.token.email.lower() == "brnardtsho@gmail.com" ||
+        (
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+        )
       );
     }
 
-    // A regular user may only ever set their OWN role to one of these three.
-    // 'admin' can never be self-assigned — it is only ever set by isAdmin()
-    // writes (the bootstrap owner email, or an existing admin promoting someone).
     function isSelfAssignableRole(newRole) {
       return newRole in ['reader', 'writer', 'advertiser'];
     }
 
-    // Default deny
+    function noChangeTo(protectedFields) {
+      return !request.resource.data.diff(resource.data)
+        .affectedKeys().hasAny(protectedFields);
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // Users Collection
     match /users/{userId} {
-      allow read: if true; // Public author profiles, writer bios, reader stats
-      allow create: if isSignedIn() && request.auth.uid == userId &&
-        (isSelfAssignableRole(request.resource.data.role) || isAdmin());
-      allow update: if isAdmin() ||
-        (isOwner(userId) &&
-          (request.resource.data.role == resource.data.role || isSelfAssignableRole(request.resource.data.role)));
+
+      allow read: if true;
+
+      allow create: if isSignedIn()
+        && request.auth.uid == userId
+        && isSelfAssignableRole(request.resource.data.role)
+        && (!('walletBalance' in request.resource.data) || request.resource.data.walletBalance == 0)
+        && (!('totalEarnings' in request.resource.data) || request.resource.data.totalEarnings == 0)
+        && (!('availableBalance' in request.resource.data) || request.resource.data.availableBalance == 0)
+        && (!('pendingEarnings' in request.resource.data) || request.resource.data.pendingEarnings == 0)
+        && (!('isVerified' in request.resource.data) || request.resource.data.isVerified == false);
+
+      allow update: if isAdmin() || (
+        isOwner(userId)
+        && (request.resource.data.role == resource.data.role || isSelfAssignableRole(request.resource.data.role))
+        && noChangeTo([
+             'uid', 'email',
+             'walletBalance', 'balance', 'wallet',
+             'totalEarnings', 'earnings', 'revenue',
+             'availableBalance', 'pendingEarnings', 'lifetimeEarnings',
+             'pendingPayout', 'isVerified', 'subscriptionTier'
+           ])
+      );
+
       allow delete: if isAdmin();
     }
 
-    // Articles Collection
     match /articles/{articleId} {
-      allow read: if true; // Published articles are publicly readable
-      allow create: if isSignedIn() && request.resource.data.writerId == request.auth.uid;
-      allow update: if isSignedIn() &&
+
+      allow read: if true;
+
+      allow create: if isSignedIn()
+        && request.resource.data.writerId == request.auth.uid
+        && (!('totalRevenue' in request.resource.data) || request.resource.data.totalRevenue == 0)
+        && (!('revenueFromAds' in request.resource.data) || request.resource.data.revenueFromAds == 0)
+        && (!('revenueFromSales' in request.resource.data) || request.resource.data.revenueFromSales == 0)
+        && (!('purchasesCount' in request.resource.data) || request.resource.data.purchasesCount == 0)
+        && (!('viewsCount' in request.resource.data) || request.resource.data.viewsCount == 0);
+
+      allow update: if
         (
-          resource.data.writerId == request.auth.uid ||
-          isAdmin() ||
-          // Any signed-in reader may bump engagement counters only —
-          // they can never touch title/content/status/writerId this way.
-          request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['viewsCount', 'likesCount', 'sharesCount', 'purchasesCount', 'revenueFromAds', 'revenueFromSales', 'totalRevenue'])
+          isSignedIn()
+          && resource.data.writerId == request.auth.uid
+          && noChangeTo([
+               'writerId',
+               'revenueFromAds', 'revenueFromSales', 'totalRevenue', 'purchasesCount'
+             ])
+        )
+        || isAdmin()
+        || (
+          isSignedIn()
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['viewsCount', 'likesCount', 'sharesCount', 'commentsCount', 'rating', 'ratingsCount', 'ratingsSum'])
         );
+
       allow delete: if isSignedIn() && (resource.data.writerId == request.auth.uid || isAdmin());
     }
 
-    // Ads Collection
     match /ads/{adId} {
-      allow read: if true; // Ad units are served to readers
-      allow create, update: if isAdmin();
-      allow delete: if isAdmin();
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
     }
 
-    // Campaigns Collection
     match /campaigns/{campaignId} {
+
       allow read: if true;
-      allow create: if isSignedIn() && request.resource.data.advertiserId == request.auth.uid;
-      allow update: if isSignedIn() &&
+
+      allow create: if isSignedIn()
+        && request.resource.data.advertiserId == request.auth.uid
+        && request.resource.data.status == 'draft'
+        && (!('totalSpent' in request.resource.data) || request.resource.data.totalSpent == 0)
+        && (!('totalBudget' in request.resource.data) || request.resource.data.totalBudget == 0)
+        && (!('impressionsCount' in request.resource.data) || request.resource.data.impressionsCount == 0)
+        && (!('clicksCount' in request.resource.data) || request.resource.data.clicksCount == 0);
+
+      allow update: if
         (
-          resource.data.advertiserId == request.auth.uid ||
-          isAdmin() ||
-          // Any signed-in reader may bump ad delivery counters only.
-          request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['impressionsCount', 'validImpressionsCount', 'clicksCount', 'validClicksCount', 'conversionsCount', 'totalSpent', 'blockedFraudClicks'])
-        );
+          isSignedIn()
+          && resource.data.advertiserId == request.auth.uid
+          && noChangeTo([
+               'advertiserId',
+               'totalBudget', 'totalSpent', 'fixedRate', 'pricingModel',
+               'requestedBudget',
+               'impressionsCount', 'validImpressionsCount',
+               'clicksCount', 'validClicksCount', 'conversionsCount',
+               'blockedFraudClicks', 'fraudShieldScore', 'antiFraudLevel',
+               'status'
+             ])
+        )
+        || isAdmin();
+
       allow delete: if isSignedIn() && (resource.data.advertiserId == request.auth.uid || isAdmin());
     }
 
-    // Earnings Collection
     match /earnings/{earningId} {
       allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /transactions/{transactionId} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /payoutRequests/{requestId} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.amount > 0;
+      allow update, delete: if isAdmin();
+    }
+
+    match /depositRequests/{requestId} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.amount > 0;
+      allow update: if isAdmin();
+      allow delete: if isSignedIn() && (
+        (resource.data.userId == request.auth.uid && resource.data.status == 'pending')
+        || isAdmin()
+      );
+    }
+
+    match /purchaseRequests/{requestId} {
+      allow read: if isSignedIn() && (
+        resource.data.userId == request.auth.uid
+        || resource.data.writerId == request.auth.uid
+        || isAdmin()
+      );
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.amount > 0;
+      allow update, delete: if isAdmin();
+    }
+
+    match /adEvents/{eventId} {
+      allow read: if isAdmin();
+      allow create: if
+        request.resource.data.eventType in ['impression', 'click']
+        && request.resource.data.processed == false
+        && (!('viewerId' in request.resource.data)
+            || request.resource.data.viewerId == null
+            || (isSignedIn() && request.resource.data.viewerId == request.auth.uid));
+      allow update, delete: if isAdmin();
+    }
+
+    match /promotions/{promotionId} {
+      allow read: if isSignedIn() && (resource.data.writerId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && request.resource.data.writerId == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.impressionsCount == 0
+        && request.resource.data.clicksCount == 0;
+      allow update: if isAdmin();
+      allow delete: if isSignedIn() && (
+        (resource.data.writerId == request.auth.uid && resource.data.status == 'pending')
+        || isAdmin()
+      );
+    }
+
+    match /follows/{followId} {
+      allow read: if true;
+      allow create: if isSignedIn()
+        && request.resource.data.followerId == request.auth.uid
+        && request.resource.data.followerId != request.resource.data.followingId
+        && followId == request.resource.data.followerId + '_' + request.resource.data.followingId;
+      allow update: if false;
+      allow delete: if isSignedIn() && (resource.data.followerId == request.auth.uid || isAdmin());
+    }
+
+    // Article Likes — مستند واحد لكل (مقال + مستخدم)، بنفس أسلوب follows
+    // تماماً (معرّف مركّب articleId_userId)، يحدّد بدقة هل المستخدم أعجب
+    // بمقال معيّن أم لا. لا يمكن لأحد إنشاء إعجاب باسم شخص آخر، ولا حذف
+    // إعجاب لا يملكه.
+    match /likes/{likeId} {
+      allow read: if true;
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && likeId == request.resource.data.articleId + '_' + request.resource.data.userId;
+      allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    // تقييمات المقالات — مستند واحد لكل (مقال + مستخدم) بنفس النمط تماماً،
+    // يسمح بتقييم حقيقي (1-5 نجوم) قابل للتعديل لاحقاً من نفس المستخدم،
+    // ويمنع أي تلاعب بتقييم باسم شخص آخر.
+    match /ratings/{ratingId} {
+      allow read: if true;
+      allow create, update: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && ratingId == request.resource.data.articleId + '_' + request.resource.data.userId
+        && request.resource.data.stars is int
+        && request.resource.data.stars >= 1
+        && request.resource.data.stars <= 5;
+      allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    match /fraudFlags/{flagId} {
+      allow read: if isSignedIn();
       allow create: if isSignedIn();
       allow update, delete: if isAdmin();
     }
 
-    // Fraud Flags Collection
-    match /fraudFlags/{flagId} {
-      allow read: if isSignedIn();
-      allow create: if true; // Telemetry reports
-      allow update, delete: if isAdmin();
-    }
-
-    // Direct Messages & Conversations
     match /conversations/{conversationId} {
-      allow read, write: if isSignedIn();
-    }
-    match /messages/{messageId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn()
+        && (request.auth.uid in resource.data.participants || isAdmin());
+      allow create: if isSignedIn()
+        && request.auth.uid in request.resource.data.participants;
+      allow update: if isSignedIn()
+        && request.auth.uid in resource.data.participants;
+      allow delete: if isAdmin();
     }
 
-    // Comments & Reviews
+    match /messages/{messageId} {
+      allow read: if isSignedIn()
+        && (request.auth.uid in resource.data.participants || isAdmin());
+      allow create: if isSignedIn()
+        && request.resource.data.senderId == request.auth.uid
+        && request.auth.uid in request.resource.data.participants;
+      allow update: if isSignedIn() && resource.data.senderId == request.auth.uid;
+      allow delete: if isSignedIn() && (resource.data.senderId == request.auth.uid || isAdmin());
+    }
+
     match /comments/{commentId} {
       allow read: if true;
       allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
-      allow update: if isSignedIn() &&
-        (
-          resource.data.userId == request.auth.uid ||
-          isAdmin() ||
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likesCount', 'isLiked', 'replies'])
+      allow update: if
+        (isSignedIn() && resource.data.userId == request.auth.uid)
+        || isAdmin()
+        || (
+          // أي مستخدم مسجّل دخول يستطيع فقط: تحديث إعجابه بالتعليق
+          // (likesCount + likedBy معاً)، أو إضافة رد جديد ضمن مصفوفة
+          // الردود (replies) — دون قدرته على تعديل نص التعليق الأصلي
+          // أو صاحبه بأي شكل.
+          isSignedIn()
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['likesCount', 'likedBy', 'replies'])
         );
       allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
     }
 
-    // Notifications
     match /notifications/{notificationId} {
-      allow read, update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn()
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead', 'readAt']);
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
       allow create: if isSignedIn();
     }
   }

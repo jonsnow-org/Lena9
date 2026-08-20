@@ -49,6 +49,7 @@ import {
 } from 'lucide-react';
 import { User, Article, UserRole, AdCampaign, LanguageCode, ArticlePromotion } from '../types';
 import { SocialLinksEditor } from './SocialLinksEditor';
+import { AdSlot } from './AdSlot';
 import { REVENUE_SHARES } from '../constants/revenueShares';
 import {
   getRemainingAiUses,
@@ -85,6 +86,9 @@ interface UserProfileViewProps {
   // optional, falls back to internal state so this still works standalone.
   initialWriterTab?: 'articles' | 'stats_earnings' | 'literary_profile' | 'ai_tools';
   onWriterTabChange?: (tab: 'articles' | 'stats_earnings' | 'literary_profile' | 'ai_tools') => void;
+  // فتح لوحة تحكم المالك/الأدمن — مخصص فقط لدور admin (كان مفقوداً تماماً
+  // من قبل، فتظهر صفحة "ملفي" لصاحب المنصة فارغة إلا من زر تسجيل الخروج).
+  onNavigateToAdmin?: () => void;
 }
 
 export const UserProfileView: React.FC<UserProfileViewProps> = ({
@@ -112,7 +116,8 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   onToggleLanguage,
   onLogout,
   initialWriterTab,
-  onWriterTabChange
+  onWriterTabChange,
+  onNavigateToAdmin
 }) => {
   const safeArticles = Array.isArray(articles) ? articles : [];
   const safeBookmarkedIds = Array.isArray(bookmarkedArticleIds) ? bookmarkedArticleIds : [];
@@ -150,11 +155,15 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   const bookmarkedArticles = safeArticles.filter((a) => safeBookmarkedIds.includes(a.id));
   const totalMyViews = myPublishedArticles.reduce((sum, a) => sum + (a.viewsCount || 0), 0);
   const totalMyLikes = myAllArticles.reduce((sum, a) => sum + (a.likesCount || 0), 0);
-  const totalRatingsCount = myPublishedArticles.reduce((sum, a) => sum + (a.ratingsCount || 0), 0);
-  const weightedRatingSum = myPublishedArticles.reduce((sum, a) => sum + ((a.rating || 5.0) * (a.ratingsCount || 1)), 0);
-  const avgRating = myPublishedArticles.length > 0
-    ? (weightedRatingSum / Math.max(1, totalRatingsCount || myPublishedArticles.length)).toFixed(1)
-    : '5.0';
+  // تقييم حقيقي فقط: المقالات التي لم تُقيَّم بعد (ratingsCount = 0) لا تُحتسب
+  // إطلاقاً في المتوسط — كانت تُحتسب سابقاً كأنها "5 نجوم" افتراضياً، وهو
+  // رقم مختلق يُضخّم تقييم أي كاتب لم يحصل على أي تقييم حقيقي بعد.
+  const ratedArticles = myPublishedArticles.filter((a) => (a.ratingsCount || 0) > 0);
+  const totalRatingsCount = ratedArticles.reduce((sum, a) => sum + (a.ratingsCount || 0), 0);
+  const weightedRatingSum = ratedArticles.reduce((sum, a) => sum + (a.rating || 0) * (a.ratingsCount || 0), 0);
+  const avgRating = totalRatingsCount > 0
+    ? (weightedRatingSum / totalRatingsCount).toFixed(1)
+    : null; // null = لا يوجد أي تقييم حقيقي بعد؛ الواجهة تعرض "لا تقييمات بعد" بدل رقم وهمي
 
   // Reading history from actual user activity or empty
   const readingHistory: Array<Article & { progress: number; readAt: string }> = [];
@@ -231,10 +240,16 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                       <span>حساب معلن</span>
                     </span>
                   )}
-                  {currentUser.role === 'reader' && (
+                  {currentUser.role === 'reader' && currentUser.id !== 'guest' && (
                     <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-400 border border-purple-500/30 flex items-center gap-1">
                       <BookOpen className="w-3 h-3" />
                       <span>قارئ معتمد</span>
+                    </span>
+                  )}
+                  {currentUser.id === 'guest' && (
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-300/50 dark:border-slate-700 flex items-center gap-1">
+                      <UserIcon className="w-3 h-3" />
+                      <span>زائر</span>
                     </span>
                   )}
                 </h2>
@@ -280,7 +295,9 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   : 'bg-purple-600/10 text-purple-600 dark:text-purple-400 border border-purple-600/20'
               }`}
             >
-              {currentUser.role === 'writer'
+              {currentUser.id === 'guest'
+                ? 'زائر'
+                : currentUser.role === 'writer'
                 ? 'حساب كاتب'
                 : currentUser.role === 'advertiser'
                 ? 'حساب معلن'
@@ -308,13 +325,24 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   <span>إنشاء إعلان جديد</span>
                 </button>
               )}
-              <button
-                onClick={onOpenWallet}
-                className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-750 text-slate-800 dark:text-slate-200 text-xs font-bold border border-slate-200 dark:border-slate-700 transition-all flex items-center gap-1.5"
-              >
-                <Wallet className="w-3.5 h-3.5 text-purple-500" />
-                <span>المحفظة (${(currentUser.totalEarnings || 0).toFixed(2)})</span>
-              </button>
+              {currentUser.role === 'admin' && onNavigateToAdmin && (
+                <button
+                  onClick={onNavigateToAdmin}
+                  className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-xs shadow-md shadow-purple-500/20 active:scale-95 transition-all flex items-center gap-1.5"
+                >
+                  <Crown className="w-3.5 h-3.5" />
+                  <span>الذهاب إلى لوحة الإدارة</span>
+                </button>
+              )}
+              {currentUser.id !== 'guest' && (
+                <button
+                  onClick={onOpenWallet}
+                  className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-750 text-slate-800 dark:text-slate-200 text-xs font-bold border border-slate-200 dark:border-slate-700 transition-all flex items-center gap-1.5"
+                >
+                  <Wallet className="w-3.5 h-3.5 text-purple-500" />
+                  <span>المحفظة (${(currentUser.totalEarnings || 0).toFixed(2)})</span>
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -325,6 +353,12 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
       {/* ========================================================================= */}
       {currentUser.role === 'reader' && (
         <div className="space-y-6">
+          {/* reader_profile — 100% للمنصة، يظهر فقط لحساب قارئ حقيقي
+              مسجّل (وليس زائراً)، حسب خريطة المواضع الإعلانية المعتمدة. */}
+          {currentUser.id !== 'guest' && (
+            <AdSlot slotId="reader_profile" campaigns={safeCampaigns} viewerId={currentUser.id} adFree={false} />
+          )}
+
           {/* Reader Quick Tabs */}
           <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none border-b border-slate-200 dark:border-slate-800">
             <button
@@ -721,10 +755,10 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                 <Award className="w-4 h-4 text-rose-500" />
               </div>
               <h3 className="text-2xl font-black text-slate-900 dark:text-white">
-                {avgRating} ★
+                {avgRating ? `${avgRating} ★` : '—'}
               </h3>
               <p className="text-[11px] text-slate-400 font-medium mt-1">
-                {totalRatingsCount > 0 ? `من ${totalRatingsCount.toLocaleString()} تقييم موثق` : 'تقييم افتتاحي للمؤلف'}
+                {totalRatingsCount > 0 ? `من ${totalRatingsCount.toLocaleString()} تقييم موثق` : 'لا تقييمات حقيقية بعد'}
               </p>
             </div>
           </div>
@@ -1277,6 +1311,59 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* ADMIN / OWNER SPECIFIC VIEW — كانت مفقودة تماماً من قبل، فتظهر هذه
+          الصفحة لصاحب المنصة فارغة تماماً إلا من زر تسجيل الخروج، رغم أن
+          كل بقية الأدوار (قارئ، كاتب، معلن) لها قسم مخصص هنا. */}
+      {/* ========================================================================= */}
+      {currentUser.role === 'admin' && (
+        <div className="space-y-4">
+          <div className="rounded-3xl bg-gradient-to-br from-purple-600 via-indigo-600 to-purple-700 p-6 sm:p-8 text-white shadow-xl shadow-purple-600/20">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-11 h-11 rounded-2xl bg-white/15 flex items-center justify-center">
+                <Crown className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-black text-base sm:text-lg">حساب مالك المنصة</h3>
+                <p className="text-xs text-purple-100">صلاحيات كاملة على إدارة ليتيريوم</p>
+              </div>
+            </div>
+            <p className="text-xs sm:text-sm text-purple-100 leading-relaxed mt-3">
+              إدارة المستخدمين، مراجعة طلبات السحب والإيداع، اعتماد الحملات الإعلانية، ومتابعة
+              التقارير المالية — كل ذلك من لوحة الإدارة المخصصة.
+            </p>
+            {onNavigateToAdmin && (
+              <button
+                onClick={onNavigateToAdmin}
+                className="mt-4 w-full sm:w-auto px-6 py-3 rounded-2xl bg-white text-purple-700 font-extrabold text-xs sm:text-sm shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2"
+              >
+                <Crown className="w-4 h-4" />
+                <span>فتح لوحة الإدارة الكاملة</span>
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center">
+              <Users className="w-5 h-5 text-purple-500 mx-auto mb-1.5" />
+              <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300">المستخدمون</span>
+            </div>
+            <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center">
+              <Megaphone className="w-5 h-5 text-cyan-500 mx-auto mb-1.5" />
+              <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300">الحملات</span>
+            </div>
+            <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center">
+              <ShieldCheck className="w-5 h-5 text-emerald-500 mx-auto mb-1.5" />
+              <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300">مكافحة الاحتيال</span>
+            </div>
+            <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center">
+              <DollarSign className="w-5 h-5 text-amber-500 mx-auto mb-1.5" />
+              <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300">الماليات</span>
+            </div>
+          </div>
         </div>
       )}
 

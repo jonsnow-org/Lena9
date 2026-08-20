@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Sparkles,
   Search,
@@ -97,7 +97,27 @@ import {
   adminAdjustUserBalance,
   adminLogEarning,
   followUser,
-  unfollowUser
+  unfollowUser,
+  subscribeToComments,
+  addCommentToFirestore,
+  addReplyToCommentInFirestore,
+  toggleCommentLikeInFirestore,
+  subscribeToArticleLikes,
+  likeArticleInFirestore,
+  unlikeArticleInFirestore,
+  createNotificationInFirestore,
+  subscribeToNotifications,
+  markNotificationReadInFirestore,
+  markAllNotificationsReadInFirestore,
+  incrementArticleViewInFirestore,
+  subscribeToArticleRatings,
+  rateArticleInFirestore,
+  syncArticleRatingSummary,
+  subscribeToAllEarningsAdmin,
+  markEarningReleasedInFirestore,
+  updateUserAiQuotaInFirestore,
+  adminReleaseEarnings,
+  EarningRecord
 } from './services/firestoreService';
 import {
   auth,
@@ -108,6 +128,7 @@ import {
   getAndClearPendingRole,
   getAuthErrorMessage,
   logOut,
+  ensureGuestIdentity,
   updateUserRoleInFirestore,
   updateWalletBalanceInFirestore,
   recordEarningInFirestore
@@ -126,6 +147,7 @@ import {
   logFraudFlagToFirestore,
   setUserVerifiedInFirestore,
   setUserKycApprovedInFirestore,
+  submitKycRequestInFirestore,
   setUserBannedInFirestore,
   setCampaignStatusInFirestore,
   setArticleStatusInFirestore,
@@ -159,6 +181,11 @@ const GUEST_USER: User = {
 const LANGUAGE_CYCLE: LanguageCode[] = ['ar', 'en', 'fr', 'es', 'zh'];
 
 export function App() {
+  // علامة مرجعية (لا تُعيد الرسم) تُستخدم لمنع سباق التوقيت بين ضغط زر
+  // "تسجيل الخروج" وإشارة Firebase الداخلية المتأخرة أحياناً — بدونها كان
+  // يحصل أن يُعاد تسجيل دخول المستخدم تلقائياً للحساب الذي خرج منه للتو.
+  const isLoggingOutRef = useRef(false);
+
   // Persistence & State Initialization
   // Users state: starts EMPTY for real users. Demo/mock identities from
   // mockData are no longer loaded into live state — they were letting any
@@ -186,20 +213,37 @@ export function App() {
     return saved ? JSON.parse(saved) : [];
   });
 
-  const [comments, setComments] = useState<Comment[]>(() => {
-    const saved = localStorage.getItem('literium_comments');
-    return saved ? JSON.parse(saved) : [];
-  });
+  // التعليقات: كانت تُحفظ محلياً فقط (خطأ جوهري — لا يراها أحد غير صاحب
+  // الجهاز). الآن تأتي فعلياً من Firestore عبر الاشتراك الفوري أدناه؛
+  // القيمة الابتدائية فارغة وتُملأ بمجرد وصول أول لقطة من الخادم.
+  const [comments, setComments] = useState<Comment[]>([]);
 
   const [transactions, setTransactions] = useState<Transaction[]>(() => {
     const saved = localStorage.getItem('literium_transactions');
     return saved ? JSON.parse(saved) : [];
   });
 
-  const [notifications, setNotifications] = useState<AppNotification[]>(() => {
-    const saved = localStorage.getItem('literium_notifications');
-    return saved ? JSON.parse(saved) : [];
-  });
+  // الإشعارات: تأتي فعلياً من Firestore الآن (مقيّدة بالمستخدم الحالي)،
+  // بدل كونها محلية بحتة لا تصل لأي شخص آخر غير من نفّذ الحدث بنفسه.
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+
+  // إعجابات المقالات الحقيقية: كل عنصر = مقال أعجب به مستخدم معيّن فعلياً،
+  // تُستخدم لمعرفة ما إذا كان المستخدم الحالي قد أعجب بمقال بعينه أم لا.
+  const [articleLikes, setArticleLikes] = useState<{ id: string; articleId: string; userId: string }[]>([]);
+
+  // تقييمات المقالات الحقيقية (1-5 نجوم) لكل مستخدم على كل مقال.
+  const [articleRatings, setArticleRatings] = useState<
+    { id: string; articleId: string; userId: string; stars: number }[]
+  >([]);
+
+  // سجلات الأرباح الفردية (لكل مقال/حملة)، تحمل موعد استحقاق التحرير بعد
+  // 30 يوماً من التجميد — تُقرأ فقط لحساب الأدمن (القواعد تمنع غيره).
+  const [earningsRecords, setEarningsRecords] = useState<EarningRecord[]>([]);
+
+  // هوية "الدخول المجهول" الخاصة بالزائر الحالي (إن وُجدت) — تُستخدم فقط
+  // للسماح للزوار بالإعجاب الحقيقي دون تسجيل دخول فعلي. لا علاقة لها
+  // بـ currentUserId ولا تُعامَل كحساب مسجّل بأي شكل.
+  const [guestIdentityUid, setGuestIdentityUid] = useState<string>('');
 
   const [conversations, setConversations] = useState<Conversation[]>(() => {
     const saved = localStorage.getItem('literium_conversations');
@@ -236,7 +280,7 @@ export function App() {
   });
 
   // Navigation & View States
-  const [activeTab, setActiveTab] = useState<'feed' | 'explore' | 'action' | 'ads' | 'profile' | 'dashboard' | 'messages'>('feed');
+  const [activeTab, setActiveTab] = useState<'feed' | 'explore' | 'action' | 'ads' | 'profile' | 'dashboard' | 'messages' | 'admin'>('feed');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -245,6 +289,9 @@ export function App() {
 
   // Active Selected Entity States
   const [readingArticle, setReadingArticle] = useState<Article | null>(null);
+  // معرّفات المقالات التي سُجِّلت مشاهدتها فعلياً بهذه الجلسة، لمنع احتساب
+  // مشاهدة مكرَّرة لو أغلق القارئ المقال وأعاد فتحه مرات عدة بنفس الزيارة.
+  const viewedArticleIdsRef = useRef<Set<string>>(new Set());
   const [viewingWriterProfile, setViewingWriterProfile] = useState<User | null>(null);
   const [editingArticle, setEditingArticle] = useState<Article | null>(null);
   const [activeChatPartner, setActiveChatPartner] = useState<User | null>(null);
@@ -307,6 +354,14 @@ export function App() {
 
   const isAuthenticated = currentUser.id !== 'guest';
 
+  // مقالات أعجب بها المستخدم الحالي فعلياً (من مجموعة likes في Firestore) —
+  // سواء كان حساباً حقيقياً مسجّلاً أو زائراً معرَّفاً بهوية مجهولة.
+  const likedArticleIds = useMemo(() => {
+    const effectiveId = currentUserId || guestIdentityUid;
+    if (!effectiveId) return [];
+    return articleLikes.filter((l) => l.userId === effectiveId).map((l) => l.articleId);
+  }, [articleLikes, currentUserId, guestIdentityUid]);
+
   // Central guard for any action that must not be usable while browsing as a
   // guest (follow, bookmark, like, comment, purchase, withdraw, AI usage...).
   // Returns true and lets the caller proceed only when a real account is
@@ -339,11 +394,12 @@ export function App() {
       }
     });
 
-    // fraudFlags and earnings both require a signed-in user per Firestore
-    // rules — subscribing unconditionally on every page load (including
-    // guest browsing) throws a permission-denied error on each visit.
+    // fraudFlags و earnings الشخصية تتطلبان مستخدماً مسجّلاً دخول، بينما
+    // earnings الإدارية الكاملة (لتحرير الأرباح المجمّدة) تتطلب دور admin
+    // تحديداً — الاشتراك غير المشروط بهذه الشروط يُسبّب رفض إذن فوري.
     let unsubFraud = () => {};
     let unsubEarnings = () => {};
+    let unsubAllEarnings = () => {};
 
     if (currentUserId) {
       unsubFraud = subscribeToFraudFlags((flags) => {
@@ -362,26 +418,55 @@ export function App() {
       });
     }
 
+    if (currentUser?.role === 'admin') {
+      unsubAllEarnings = subscribeToAllEarningsAdmin(
+        setEarningsRecords,
+        (e) => console.error('Admin earnings subscription error:', e)
+      );
+    }
+
     return () => {
       unsubArticles();
       unsubCampaigns();
       unsubUsers();
       unsubFraud();
       unsubEarnings();
+      unsubAllEarnings();
     };
-  }, [currentUserId]);
+  }, [currentUserId, currentUser?.role]);
 
   // Firebase Auth Listener — SINGLE SOURCE OF TRUTH for authentication state.
+  // الاستماع لتغيّر حالة تسجيل الدخول في Firebase — المصدر الوحيد الموثوق.
   // Every sign-in path (Google popup, Google redirect, Email/Password) ends up
   // here exactly once. No other function in this app should set currentUserId,
   // showLandingPage, or activeTab in response to a login — that avoids the
   // race conditions between multiple competing handlers we had before.
+  //
+  // ⚠️ مشكلة كانت موجودة: عند تسجيل الخروج، أحياناً يصل استدعاء متأخر من
+  // Firebase لهذا المستمع بنفس المستخدم القديم (سباق توقيت بين لحظة نداء
+  // signOut() فعلياً ولحظة استقرار حالة المصادقة الداخلية)، فيُعيد هذا
+  // المستمع تسجيل الدخول للحساب الذي خرج منه المستخدم للتو دون علمه —
+  // وهذا هو سبب "الحساب العالق" الذي كان يمنع الدخول بحساب مختلف.
+  // العلامة أدناه تمنع أي استدعاء دخول من هذا النوع خلال ثانيتين بعد ضغط
+  // زر تسجيل الخروج تحديداً.
   useEffect(() => {
     // Finish a Google signInWithRedirect flow (mobile). No-op if there was none.
     completeRedirectSignIn();
 
     const unsubscribeAuth = onAuthStateChanged(auth, async (fbUser) => {
+      // حساب "الدخول المجهول" (لإعجاب الزوار الحقيقي) — لا يُعامَل كحساب
+      // مسجّل إطلاقاً: لا يُنشأ له ملف مستخدم، ولا يُغيَّر currentUserId،
+      // فيبقى الشخص زائراً بنظر واجهة التطبيق تماماً كما هو متوقّع.
+      if (fbUser && fbUser.isAnonymous) {
+        setGuestIdentityUid(fbUser.uid);
+        return;
+      }
       if (fbUser) {
+        if (isLoggingOutRef.current) {
+          // تجاهل أي إشارة "لسه مسجّل دخول" متأخرة تصل بعد ضغط زر الخروج
+          // مباشرة — المستخدم اتخذ قراره بالخروج ولن نلغيه تلقائياً.
+          return;
+        }
         try {
           let user = await fetchUserFromFirestore(fbUser.uid);
 
@@ -422,6 +507,13 @@ export function App() {
           }
         } catch (authDocError) {
           console.error('Error synchronizing authenticated user with Firestore:', authDocError);
+          // كان هذا الخطأ يُسجَّل بصمت فقط دون أي رد فعل مرئي للمستخدم،
+          // فيبقى عالقاً بلا تفسير (شاشة الدخول لا تُغلق ولا تظهر أي رسالة).
+          // الآن نعرض له رسالة واضحة قابلة لإعادة المحاولة.
+          setAuthTriggerError(
+            'تعذّر تحميل بيانات حسابك من قاعدة البيانات. تحقق من اتصالك بالإنترنت ثم حاول تسجيل الدخول مرة أخرى.'
+          );
+          setIsAuthOpen(true);
         }
       } else {
         setCurrentUserId('');
@@ -619,8 +711,48 @@ export function App() {
     const req = purchaseRequests.find((r) => r.id === requestId);
     if (!req) return;
 
+    // اشتراكات الذكاء الاصطناعي طُلبت بمعرّف يبدأ بـ "subscription_" (انظر
+    // handleUpgradeSuccess) — تحتاج معالجة مختلفة تماماً عن بيع مقال:
+    // ترقية حصة الذكاء الاصطناعي بدل تحويل رصيد لكاتب.
+    const isSubscriptionRequest =
+      typeof req.articleId === 'string' && req.articleId.startsWith('subscription_');
+
     try {
-      if (status === 'approved') {
+      if (status === 'approved' && isSubscriptionRequest) {
+        const buyer: any = users.find((u) => u.id === (req.buyerId || req.userId));
+        const price = req.amount || 0;
+        const plan: 'monthly' | 'annual' = req.articleId.includes('_annual_') ? 'annual' : 'monthly';
+
+        if (!buyer) {
+          alert('تعذر إيجاد صاحب طلب الاشتراك.');
+          return;
+        }
+
+        const isWalletPay = (req.articleTitle || '').includes('محفظة');
+        if (isWalletPay) {
+          const bal = buyer.walletBalance ?? 0;
+          if (bal < price) {
+            alert('رصيد المشترك لا يكفي حالياً. تحقق قبل الاعتماد.');
+            return;
+          }
+          await adminAdjustUserBalance(buyer.id, {
+            walletBalance: Number((bal - price).toFixed(2))
+          });
+        }
+
+        const updatedQuota = applySubscriptionUpgrade(buyer.aiQuota, plan);
+        setUsers((prev) =>
+          prev.map((u) => (u.id === buyer.id ? { ...u, aiQuota: updatedQuota } : u))
+        );
+        await updateUserAiQuotaInFirestore(buyer.id, updatedQuota);
+
+        createNotificationInFirestore({
+          userId: buyer.id,
+          type: 'system',
+          title: '👑 تم تفعيل اشتراك الذكاء الاصطناعي',
+          message: `تمت مراجعة إثبات دفعك واعتماد اشتراكك (${plan === 'monthly' ? 'الباقة الشهرية' : 'الباقة السنوية'}) فعلياً. يمكنك الآن استخدام كل أدوات الذكاء الاصطناعي.`
+        });
+      } else if (status === 'approved' && !isSubscriptionRequest) {
         const buyer: any = users.find((u) => u.id === (req.buyerId || req.userId));
         const writer: any = users.find((u) => u.id === req.writerId);
         const price = req.amount || 0;
@@ -667,6 +799,41 @@ export function App() {
     );
     return () => unsub();
   }, []);
+
+  // الاستماع للتعليقات وإعجابات المقالات (قراءة عامة، لا تشترط تسجيل الدخول)
+  useEffect(() => {
+    const unsubComments = subscribeToComments(
+      setComments,
+      (e) => console.error('Comments subscription error:', e)
+    );
+    const unsubLikes = subscribeToArticleLikes(
+      setArticleLikes,
+      (e) => console.error('Article likes subscription error:', e)
+    );
+    const unsubRatings = subscribeToArticleRatings(
+      setArticleRatings,
+      (e) => console.error('Article ratings subscription error:', e)
+    );
+    return () => {
+      unsubComments();
+      unsubLikes();
+      unsubRatings();
+    };
+  }, []);
+
+  // الاستماع لإشعارات المستخدم الحالي فقط (قواعد الأمان تمنع قراءة إشعارات الغير)
+  useEffect(() => {
+    if (!currentUserId) {
+      setNotifications([]);
+      return;
+    }
+    const unsub = subscribeToNotifications(
+      currentUserId,
+      setNotifications,
+      (e) => console.error('Notifications subscription error:', e)
+    );
+    return () => unsub();
+  }, [currentUserId]);
 
   // الاستماع للمحادثات والرسائل الخاصة بالمستخدم الحالي فقط
   useEffect(() => {
@@ -735,6 +902,41 @@ export function App() {
   ) => {
     try {
       await setMoneyRequestStatus(collectionName, requestId, status);
+
+      // تحديث الرصيد الفعلي تلقائياً عند الاعتماد النهائي — كان هذا خطوة
+      // يدوية منفصلة يجب أن يتذكرها الأدمن بنفسه من تبويب آخر (عرضة
+      // للنسيان أو الخطأ البشري)، أصبح الآن تلقائياً ومضموناً.
+      const shouldApplyBalance =
+        (collectionName === 'depositRequests' && status === 'approved') ||
+        (collectionName === 'payoutRequests' && status === 'paid');
+
+      if (shouldApplyBalance) {
+        const requestsList = collectionName === 'depositRequests' ? depositRequests : payoutRequests;
+        const req = requestsList.find((r) => r.id === requestId);
+        if (!req) {
+          console.error('تعذر إيجاد الطلب المالي لتحديث الرصيد:', requestId);
+          return;
+        }
+        const targetUser = users.find((u) => u.id === req.userId);
+        if (!targetUser) {
+          console.error('تعذر إيجاد صاحب الطلب المالي لتحديث الرصيد:', req.userId);
+          return;
+        }
+
+        if (collectionName === 'depositRequests') {
+          const newWallet = ((targetUser as any).walletBalance || 0) + (req.amount || 0);
+          setUsers((prev) =>
+            prev.map((u) => (u.id === req.userId ? ({ ...u, walletBalance: newWallet } as any) : u))
+          );
+          await adminAdjustUserBalance(req.userId, { walletBalance: newWallet });
+        } else {
+          const newAvailable = Math.max(0, ((targetUser as any).availableBalance || 0) - (req.amount || 0));
+          setUsers((prev) =>
+            prev.map((u) => (u.id === req.userId ? ({ ...u, availableBalance: newAvailable } as any) : u))
+          );
+          await adminAdjustUserBalance(req.userId, { availableBalance: newAvailable });
+        }
+      }
     } catch (err) {
       console.error('تعذر تحديث حالة الطلب المالي:', err);
       alert('تعذر تحديث حالة الطلب. تأكد من صلاحيات الأدمن ثم حاول مجدداً.');
@@ -763,15 +965,12 @@ export function App() {
   useEffect(() => {
     localStorage.setItem('literium_campaigns', JSON.stringify(campaigns));
   }, [campaigns]);
-  useEffect(() => {
-    localStorage.setItem('literium_comments', JSON.stringify(comments));
-  }, [comments]);
+  // ملاحظة: التعليقات والإشعارات لم تعد تُحفظ في localStorage — أصبحت
+  // تُقرأ وتُكتب مباشرة من/إلى Firestore (انظر الاشتراكات الفورية أدناه)
+  // حتى تتزامن فعلياً بين كل المستخدمين والأجهزة.
   useEffect(() => {
     localStorage.setItem('literium_transactions', JSON.stringify(transactions));
   }, [transactions]);
-  useEffect(() => {
-    localStorage.setItem('literium_notifications', JSON.stringify(notifications));
-  }, [notifications]);
   useEffect(() => {
     localStorage.setItem('literium_fraud_flags', JSON.stringify(fraudFlags));
   }, [fraudFlags]);
@@ -811,20 +1010,41 @@ export function App() {
   ];
 
   // Filtered Articles based on search & category
+  // البحث الحقيقي: يطابق عنوان المقال، وصفه، الوسوم، اسم الكاتب الظاهري،
+  // وأيضاً اسم المستخدم الفعلي (username) لصاحب المقال — حتى يستطيع أي
+  // شخص إيجاد مقالات كاتب معين بالبحث عن معرّفه (username) وليس فقط اسمه.
   const filteredArticles = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
     return articles.filter((art) => {
       const matchCategory = selectedCategory === 'all' || art.category === selectedCategory;
-      const q = searchQuery.toLowerCase().trim();
+      if (!q) return matchCategory;
+
+      const writerAccount = users.find((u) => u.id === art.writerId);
       const matchSearch =
-        !q ||
         art.title.toLowerCase().includes(q) ||
         art.description.toLowerCase().includes(q) ||
         art.writerName.toLowerCase().includes(q) ||
+        (writerAccount?.username || '').toLowerCase().includes(q) ||
         (art.tags && art.tags.some((tg) => tg.toLowerCase().includes(q)));
 
       return matchCategory && matchSearch;
     });
-  }, [articles, selectedCategory, searchQuery]);
+  }, [articles, users, selectedCategory, searchQuery]);
+
+  // نتائج البحث عن حسابات المستخدمين مباشرة (بالاسم أو معرّف المستخدم)،
+  // تُعرض فوق نتائج المقالات عند وجود نص بحث فعلي.
+  const matchingUsers = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return [];
+    return users
+      .filter(
+        (u) =>
+          u.id !== 'guest' &&
+          ((u.username || '').toLowerCase().includes(q) ||
+            (u.fullName || '').toLowerCase().includes(q))
+      )
+      .slice(0, 6);
+  }, [users, searchQuery]);
 
   // Pull to refresh handlers
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -885,6 +1105,14 @@ export function App() {
         await unfollowUser(currentUserId, writerId);
       } else {
         await followUser(currentUserId, writerId);
+        // إشعار حقيقي لصاحب الحساب عند متابعته
+        createNotificationInFirestore({
+          userId: writerId,
+          type: 'follow',
+          title: 'متابع جديد',
+          message: `بدأ ${currentUser.fullName} بمتابعتك`,
+          actorId: currentUserId
+        });
       }
     } catch (err) {
       console.error('تعذر تحديث المتابعة:', err);
@@ -904,20 +1132,75 @@ export function App() {
     );
   };
 
-  // Like Article & revenue calculation
-  const handleLikeArticle = (articleId: string) => {
-    if (!requireAuth()) return;
+  // Like Article — إعجاب حقيقي قابل للتبديل (إعجاب/إلغاء إعجاب)، متزامن
+  // في Firestore، مع إشعار فعلي يصل لصاحب المقال (إن لم يكن هو نفسه).
+  // مسموح للزائر أيضاً (بهوية مجهولة حقيقية)، خلافاً لبقية التفاعلات
+  // (تعليق، متابعة، شراء) التي تبقى تتطلب حساباً حقيقياً مسجّلاً.
+  const handleLikeArticle = async (articleId: string) => {
+    let effectiveUserId = currentUserId || guestIdentityUid;
+
+    if (!effectiveUserId) {
+      // أول إعجاب من هذا الزائر بالجهاز — أنشئ له هوية حقيقية الآن فقط
+      const uid = await ensureGuestIdentity();
+      if (!uid) {
+        alert('تعذر تسجيل إعجابك حالياً. تحقق من اتصالك بالإنترنت ثم حاول مجدداً.');
+        return;
+      }
+      setGuestIdentityUid(uid);
+      effectiveUserId = uid;
+    }
+
+    const article = articles.find((a) => a.id === articleId);
+    const alreadyLiked = likedArticleIds.includes(articleId);
+
+    // تحديث تفاؤلي فوري للواجهة
     setArticles((prev) =>
-      prev.map((art) => {
-        if (art.id === articleId) {
-          return {
-            ...art,
-            likesCount: art.likesCount + 1
-          };
-        }
-        return art;
-      })
+      prev.map((art) =>
+        art.id === articleId
+          ? { ...art, likesCount: Math.max(0, art.likesCount + (alreadyLiked ? -1 : 1)) }
+          : art
+      )
     );
+    setArticleLikes((prev) =>
+      alreadyLiked
+        ? prev.filter((l) => !(l.articleId === articleId && l.userId === effectiveUserId))
+        : [...prev, { id: `${articleId}_${effectiveUserId}`, articleId, userId: effectiveUserId! }]
+    );
+
+    try {
+      if (alreadyLiked) {
+        await unlikeArticleInFirestore(articleId, effectiveUserId);
+      } else {
+        await likeArticleInFirestore(articleId, effectiveUserId);
+        // إشعار حقيقي لصاحب المقال، إلا إذا كان هو من أعجب بمقاله نفسه
+        if (article && article.writerId && article.writerId !== effectiveUserId) {
+          createNotificationInFirestore({
+            userId: article.writerId,
+            type: 'like',
+            title: 'إعجاب جديد بمقالك',
+            message: `أعجب ${currentUser.fullName} بمقالك "${article.title}"`,
+            articleId: article.id,
+            actorId: effectiveUserId
+          });
+        }
+      }
+    } catch (err) {
+      console.error('تعذر تحديث الإعجاب:', err);
+      // تراجع عن التحديث التفاؤلي عند الفشل
+      setArticles((prev) =>
+        prev.map((art) =>
+          art.id === articleId
+            ? { ...art, likesCount: Math.max(0, art.likesCount + (alreadyLiked ? 1 : -1)) }
+            : art
+        )
+      );
+      setArticleLikes((prev) =>
+        alreadyLiked
+          ? [...prev, { id: `${articleId}_${effectiveUserId}`, articleId, userId: effectiveUserId! }]
+          : prev.filter((l) => !(l.articleId === articleId && l.userId === effectiveUserId))
+      );
+      alert('تعذر تحديث الإعجاب. تحقق من اتصالك ثم حاول مجدداً.');
+    }
   };
 
   // Unlock Article (One-time purchase)
@@ -997,62 +1280,237 @@ export function App() {
     }
   };
 
-  // Add Comment / Reply
-  const handleAddComment = (articleId: string, content: string, parentCommentId?: string) => {
+  // Add Comment / Reply — تعليقات حقيقية متزامنة في Firestore (بدل
+  // localStorage فقط)، بتوقيت فعلي حقيقي (بدل نص ثابت "الآن" لا يتحرك أبداً)،
+  // مع إشعار حقيقي لصاحب المقال (عند تعليق) أو لصاحب التعليق الأصلي (عند رد).
+  const handleAddComment = async (articleId: string, content: string, parentCommentId?: string) => {
     if (!requireAuth()) return;
-    if (parentCommentId) {
-      // Add nested reply
-      setComments((prev) =>
-        prev.map((c) => {
-          if (c.id === parentCommentId) {
-            const newReply = {
-              id: `rep_${Date.now()}`,
-              userId: currentUser.id,
-              userName: currentUser.fullName,
-              userAvatar: currentUser.avatarUrl,
-              userRole: currentUser.role,
-              content,
-              likesCount: 0,
-              isLiked: false,
-              createdAt: 'الآن'
-            };
-            return {
-              ...c,
-              replies: [...(c.replies || []), newReply]
-            };
-          }
-          return c;
-        })
-      );
-    } else {
-      // Add new root comment
-      const newComment: Comment = {
-        id: `comm_${Date.now()}`,
-        articleId,
-        userId: currentUser.id,
-        userName: currentUser.fullName,
-        userAvatar: currentUser.avatarUrl,
-        userRole: currentUser.role,
-        content,
-        likesCount: 0,
-        isLiked: false,
-        createdAt: 'الآن',
-        replies: []
-      };
-      setComments((prev) => [newComment, ...prev]);
-    }
+    const nowIso = new Date().toISOString();
+    const article = articles.find((a) => a.id === articleId);
 
-    // Increment article comments count
-    setArticles((prev) =>
-      prev.map((a) => (a.id === articleId ? { ...a, commentsCount: a.commentsCount + 1 } : a))
-    );
+    try {
+      if (parentCommentId) {
+        // رد على تعليق موجود
+        const parentComment = comments.find((c) => c.id === parentCommentId);
+        const newReply = {
+          id: `rep_${Date.now()}`,
+          userId: currentUser.id,
+          userName: currentUser.fullName,
+          userAvatar: currentUser.avatarUrl,
+          userRole: currentUser.role,
+          content,
+          likesCount: 0,
+          isLiked: false,
+          likedBy: [],
+          createdAt: nowIso
+        };
+
+        // تحديث تفاؤلي فوري
+        setComments((prev) =>
+          prev.map((c) =>
+            c.id === parentCommentId ? { ...c, replies: [...(c.replies || []), newReply] } : c
+          )
+        );
+
+        await addReplyToCommentInFirestore(parentCommentId, newReply);
+
+        if (parentComment && parentComment.userId !== currentUserId) {
+          createNotificationInFirestore({
+            userId: parentComment.userId,
+            type: 'reply',
+            title: 'رد جديد على تعليقك',
+            message: `ردّ ${currentUser.fullName} على تعليقك: "${content.slice(0, 60)}"`,
+            articleId,
+            actorId: currentUserId
+          });
+        }
+      } else {
+        // تعليق جذري جديد
+        const newComment: Comment = {
+          id: `comm_${Date.now()}`,
+          articleId,
+          userId: currentUser.id,
+          userName: currentUser.fullName,
+          userAvatar: currentUser.avatarUrl,
+          userRole: currentUser.role,
+          content,
+          likesCount: 0,
+          isLiked: false,
+          likedBy: [],
+          createdAt: nowIso,
+          replies: []
+        };
+
+        // تحديث تفاؤلي فوري
+        setComments((prev) => [newComment, ...prev]);
+
+        await addCommentToFirestore(newComment);
+
+        if (article && article.writerId && article.writerId !== currentUserId) {
+          createNotificationInFirestore({
+            userId: article.writerId,
+            type: 'comment',
+            title: 'تعليق جديد على مقالك',
+            message: `علّق ${currentUser.fullName} على مقالك "${article.title}": "${content.slice(0, 60)}"`,
+            articleId,
+            actorId: currentUserId
+          });
+        }
+      }
+
+      // تحديث عدد التعليقات على المقال — محلياً وفي Firestore معاً
+      const newCount = (article?.commentsCount || 0) + 1;
+      setArticles((prev) =>
+        prev.map((a) => (a.id === articleId ? { ...a, commentsCount: newCount } : a))
+      );
+      updateArticleStatsInFirestore(articleId, { commentsCount: newCount }).catch((err) =>
+        console.error('تعذر تحديث عدد التعليقات:', err)
+      );
+    } catch (err) {
+      console.error('تعذر إضافة التعليق:', err);
+      alert('تعذر نشر التعليق. تحقق من اتصالك ثم حاول مجدداً.');
+    }
   };
 
-  const handleLikeComment = (commentId: string) => {
+  // إعجاب/إلغاء إعجاب حقيقي بتعليق — يتتبّع مَن أعجب فعلياً بدل تثبيت
+  // isLiked=true للجميع وزيادة الرقم إلى ما لا نهاية كما كان سابقاً.
+  const handleLikeComment = async (commentId: string) => {
     if (!requireAuth()) return;
+    const comment = comments.find((c) => c.id === commentId);
+    if (!comment) return;
+
+    const alreadyLiked = (comment.likedBy || []).includes(currentUserId);
+
     setComments((prev) =>
-      prev.map((c) => (c.id === commentId ? { ...c, likesCount: c.likesCount + 1, isLiked: true } : c))
+      prev.map((c) =>
+        c.id === commentId
+          ? {
+              ...c,
+              likesCount: Math.max(0, c.likesCount + (alreadyLiked ? -1 : 1)),
+              likedBy: alreadyLiked
+                ? (c.likedBy || []).filter((id) => id !== currentUserId)
+                : [...(c.likedBy || []), currentUserId]
+            }
+          : c
+      )
     );
+
+    try {
+      await toggleCommentLikeInFirestore(commentId, currentUserId, !alreadyLiked);
+      if (!alreadyLiked && comment.userId !== currentUserId) {
+        createNotificationInFirestore({
+          userId: comment.userId,
+          type: 'like',
+          title: 'إعجاب بتعليقك',
+          message: `أعجب ${currentUser.fullName} بتعليقك`,
+          articleId: comment.articleId,
+          actorId: currentUserId
+        });
+      }
+    } catch (err) {
+      console.error('تعذر تحديث إعجاب التعليق:', err);
+      // تراجع عند الفشل
+      setComments((prev) =>
+        prev.map((c) =>
+          c.id === commentId
+            ? {
+                ...c,
+                likesCount: Math.max(0, c.likesCount + (alreadyLiked ? 1 : -1)),
+                likedBy: alreadyLiked
+                  ? [...(c.likedBy || []), currentUserId]
+                  : (c.likedBy || []).filter((id) => id !== currentUserId)
+              }
+            : c
+        )
+      );
+    }
+  };
+
+  // إشعار حقيقي عند مشاركة مقال — يصل لصاحب المقال عند مشاركته من قِبل
+  // شخص آخر، مع تحديث عداد المشاركات (متزامن في Firestore).
+  const handleShareArticle = (article: Article) => {
+    setArticles((prev) =>
+      prev.map((a) => (a.id === article.id ? { ...a, sharesCount: (a.sharesCount || 0) + 1 } : a))
+    );
+    updateArticleStatsInFirestore(article.id, { sharesCount: (article.sharesCount || 0) + 1 }).catch(
+      (err) => console.error('تعذر تحديث عدد المشاركات:', err)
+    );
+    if (article.writerId && article.writerId !== currentUserId && isAuthenticated) {
+      createNotificationInFirestore({
+        userId: article.writerId,
+        type: 'share',
+        title: 'تمت مشاركة مقالك',
+        message: `شارك ${currentUser.fullName} مقالك "${article.title}"`,
+        articleId: article.id,
+        actorId: currentUserId
+      });
+    }
+  };
+
+  // تسجيل مشاهدة حقيقية مرة واحدة لكل مقال بكل جلسة تصفح — لم يكن هناك
+  // أي تسجيل مشاهدات إطلاقاً من قبل رغم عرض الرقم بالواجهة.
+  useEffect(() => {
+    if (!readingArticle) return;
+    if (viewedArticleIdsRef.current.has(readingArticle.id)) return;
+    viewedArticleIdsRef.current.add(readingArticle.id);
+
+    const newCount = (readingArticle.viewsCount || 0) + 1;
+    setArticles((prev) =>
+      prev.map((a) => (a.id === readingArticle.id ? { ...a, viewsCount: newCount } : a))
+    );
+    incrementArticleViewInFirestore(readingArticle.id).catch((err) =>
+      console.error('تعذر تسجيل المشاهدة:', err)
+    );
+  }, [readingArticle?.id]);
+
+  // تقييمات المستخدم الحالي بالنجوم لكل مقال (لمعرفة تقييمه الحالي وعرضه
+  // كنجوم مضيئة بدل تركه دائماً فارغاً).
+  const myRatingsByArticleId = useMemo(() => {
+    const effectiveId = currentUserId || guestIdentityUid;
+    const map: Record<string, number> = {};
+    if (!effectiveId) return map;
+    articleRatings.forEach((r) => {
+      if (r.userId === effectiveId) map[r.articleId] = r.stars;
+    });
+    return map;
+  }, [articleRatings, currentUserId, guestIdentityUid]);
+
+  // تقييم حقيقي بالنجوم (1-5)، قابل للتعديل لاحقاً من نفس المستخدم، مع
+  // إعادة حساب متوسط دقيق مبني على المجموع الفعلي بدل رقم مخترع. يتطلب
+  // حساباً حقيقياً مسجّلاً (بخلاف الإعجاب المسموح للزائر).
+  const handleRateArticle = async (articleId: string, stars: number) => {
+    if (!requireAuth()) return;
+    const article = articles.find((a) => a.id === articleId);
+    if (!article) return;
+
+    const previousStars = myRatingsByArticleId[articleId] || 0;
+    const isNewRating = previousStars === 0;
+
+    const currentSum = article.ratingsSum ?? article.rating * (article.ratingsCount || 0);
+    const newSum = currentSum - previousStars + stars;
+    const newCount = isNewRating ? (article.ratingsCount || 0) + 1 : article.ratingsCount || 0;
+    const newAverage = newCount > 0 ? Number((newSum / newCount).toFixed(2)) : 0;
+
+    // تحديث تفاؤلي فوري
+    setArticles((prev) =>
+      prev.map((a) =>
+        a.id === articleId
+          ? { ...a, rating: newAverage, ratingsCount: newCount, ratingsSum: newSum }
+          : a
+      )
+    );
+    setArticleRatings((prev) => {
+      const others = prev.filter((r) => !(r.articleId === articleId && r.userId === currentUserId));
+      return [...others, { id: `${articleId}_${currentUserId}`, articleId, userId: currentUserId, stars }];
+    });
+
+    try {
+      await rateArticleInFirestore(articleId, currentUserId, stars);
+      await syncArticleRatingSummary(articleId, newSum, newCount);
+    } catch (err) {
+      console.error('تعذر حفظ التقييم:', err);
+      alert('تعذر حفظ تقييمك. تحقق من اتصالك ثم حاول مجدداً.');
+    }
   };
 
   // Save / Publish Article
@@ -1130,7 +1588,7 @@ export function App() {
         sharesCount: 0,
         commentsCount: 0,
         purchasesCount: 0,
-        rating: 5.0,
+        rating: 0,
         ratingsCount: 0,
         revenueFromAds: 0,
         revenueFromSales: 0,
@@ -1250,13 +1708,20 @@ export function App() {
     setUsers((prev) =>
       prev.map((u) => (u.id === currentUser.id ? { ...u, aiQuota: updatedQuota } : u))
     );
+    updateUserAiQuotaInFirestore(currentUser.id, updatedQuota).catch((err) =>
+      console.error('تعذر حفظ حصة استخدام الذكاء الاصطناعي:', err)
+    );
     return true;
   };
 
   // Upgrade AI Subscription
+  // ترقية اشتراك الذكاء الاصطناعي — يجب أن تمر دائماً عبر مراجعة الأدمن
+  // اليدوية (بلا استثناء لأي طريقة دفع)، تطبيقاً لقرار "الدفع بوساطة
+  // الأدمن" المعتمد: لا يوجد اتصال حقيقي ببوابة Stripe/PayPal فعلياً،
+  // فمنح الاشتراك فوراً عند اختيار هذه الطرق كان يعني أن أي شخص يقدر
+  // "يدفع" وهمياً ويحصل على اشتراك حقيقي مجاناً بدون أي تحقق فعلي.
   const handleUpgradeSuccess = (plan: 'monthly' | 'annual', paymentMethod: PaymentMethod) => {
     const planPrice = plan === 'monthly' ? 9.99 : 79.99;
-    const updatedQuota = applySubscriptionUpgrade(currentUser.aiQuota, plan, paymentMethod);
 
     const isWalletPay =
       paymentMethod === 'wallet' ||
@@ -1264,8 +1729,6 @@ export function App() {
       paymentMethod === 'محفظة التطبيق' ||
       (typeof paymentMethod === 'string' && paymentMethod.includes('محفظة'));
 
-    // ⚠️ لا يُخصم أي مبلغ من المتصفح — قواعد الأمان تمنع تعديل الأرصدة.
-    // يُنشأ طلب اشتراك يعتمده الأدمن فيخصم المبلغ من محفظة المستخدم.
     if (isWalletPay) {
       const bal = (currentUser as any).walletBalance ?? 0;
       if (bal < planPrice) {
@@ -1275,51 +1738,24 @@ export function App() {
         setMoneyModalMode('deposit');
         return;
       }
-      createPurchaseRequest({
-        buyerId: currentUser.id,
-        articleId: `subscription_${plan}`,
-        articleTitle: `اشتراك المساعد الذكي (${plan === 'monthly' ? 'شهري' : 'سنوي'})`,
-        writerId: '',
-        price: planPrice
-      }).catch((err) => console.error('تعذر إنشاء طلب الاشتراك:', err));
     }
 
-    // حصة الاستخدام محلية فقط ولا تمثل قيمة مالية
-    setUsers((prev) =>
-      prev.map((u) => (u.id === currentUser.id ? { ...u, aiQuota: updatedQuota } : u))
+    // طلب معلّق بانتظار مراجعة الأدمن — لا يُفعَّل الاشتراك ولا يُخصم أي
+    // رصيد إلا بعد الاعتماد الفعلي (انظر handleUpdatePurchaseRequest).
+    createPurchaseRequest({
+      buyerId: currentUser.id,
+      articleId: `subscription_${plan}_${Date.now()}`,
+      articleTitle: `اشتراك المساعد الذكي (${plan === 'monthly' ? 'شهري' : 'سنوي'}) عبر ${paymentMethod}`,
+      writerId: '',
+      price: planPrice
+    }).catch((err) => console.error('تعذر إنشاء طلب الاشتراك:', err));
+
+    setIsSubscriptionOpen(false);
+    alert(
+      isWalletPay
+        ? 'تم إرسال طلب اشتراكك. سيُخصم المبلغ من محفظتك ويُفعَّل اشتراكك خلال 24 إلى 48 ساعة بعد المراجعة اليدوية.'
+        : 'تم استلام طلب اشتراكك. تتم مراجعة إثبات الدفع يدوياً خلال 24 إلى 48 ساعة، وسيُفعَّل اشتراكك فور التحقق.'
     );
-
-    const newTx: Transaction = {
-      id: `tx_${Date.now()}`,
-      type: 'ai_subscription',
-      amount: planPrice,
-      currency: 'USD',
-      status: 'completed',
-      paymentMethod,
-      referenceId: `SUB-${Date.now().toString().slice(-6)}`,
-      description: `اشتراك في باقة الذكاء الاصطناعي (${plan === 'monthly' ? 'باقة Pro الشهرية' : 'باقة Unlimited السنوية VIP'})`,
-      createdAt: 'الآن'
-    };
-    setTransactions((prev) => [newTx, ...prev]);
-
-    const newNotif: AppNotification = {
-      id: `notif_${Date.now()}`,
-      userId: currentUser.id,
-      type: 'system',
-      title: '👑 تم تفعيل اشتراك الذكاء الاصطناعي بنجاح!',
-      message: `تهانينا! تم ترقية حسابك إلى ${plan === 'monthly' ? 'باقة Pro الشهرية (200 استعلام)' : 'باقة Unlimited السنوية VIP (غير محدود)'}. يمكنك الآن الاستفادة من جميع أدوات Gemini 3.7 Pro فوراً.`,
-      isRead: false,
-      createdAt: 'الآن'
-    };
-    setNotifications((prev) => [newNotif, ...prev]);
-
-    try {
-      confetti({
-        particleCount: 120,
-        spread: 80,
-        origin: { y: 0.55 }
-      });
-    } catch {}
   };
 
   // Advertiser Create Campaign
@@ -1424,18 +1860,33 @@ export function App() {
   };
 
   // KYC Save
-  const handleSaveKyc = (kyc: KycDetails) => {
+  // ⚠️ كان هذا يمنح "isKycVerified: true" فوراً بمجرد الضغط على إرسال،
+  // محلياً فقط وبدون أي حفظ حقيقي في Firestore أو مراجعة فعلية من الأدمن
+  // — أي مستخدم كان "يوثّق" نفسه بنفسه بصورة وهمية. الآن يُرسَل الطلب
+  // فعلياً بحالة "قيد المراجعة" فقط، ولا يتحقق الحساب إلا بعد اعتماد
+  // حقيقي من الأدمن (onApproveKyc → setUserKycApprovedInFirestore).
+  const handleSaveKyc = async (kyc: KycDetails) => {
+    if (!requireAuth()) return;
+    const submittedAt = new Date().toISOString();
+
     setUsers((prev) =>
       prev.map((u) =>
         u.id === currentUser.id
-          ? {
-              ...u,
-              isKycVerified: true,
-              kycDetails: kyc
-            }
+          ? { ...u, kycDetails: { idType: kyc.idType, idNumber: kyc.idNumber, status: 'pending', submittedAt } }
           : u
       )
     );
+
+    try {
+      await submitKycRequestInFirestore(currentUser.id, {
+        idType: kyc.idType,
+        idNumber: kyc.idNumber,
+        submittedAt
+      });
+    } catch (err) {
+      console.error('تعذر إرسال طلب توثيق الهوية:', err);
+      alert('تعذر إرسال طلب التوثيق. تحقق من اتصالك ثم حاول مجدداً.');
+    }
   };
 
   // Send Direct Message
@@ -1485,6 +1936,9 @@ export function App() {
 
   // Handle Logout
   const handleLogout = async () => {
+    // فعّل العلامة فوراً قبل أي شيء آخر، حتى نغلق الباب أمام أي إشارة
+    // دخول متأخرة من Firebase تصل خلال عملية الخروج نفسها.
+    isLoggingOutRef.current = true;
     try {
       await logOut();
     } catch (err) {
@@ -1494,6 +1948,12 @@ export function App() {
     localStorage.removeItem('literium_current_user_id');
     setShowLandingPage(true);
     setActiveTab('feed');
+
+    // بعد ثانيتين نرفع العلامة — وقت كافٍ لاستقرار حالة Firebase الداخلية
+    // بعد الخروج، مع السماح لاحقاً بتسجيل دخول طبيعي بحساب جديد أو مختلف.
+    setTimeout(() => {
+      isLoggingOutRef.current = false;
+    }, 2000);
   };
 
   // Google Sign-In trigger. This only STARTS the flow (popup on desktop,
@@ -1540,11 +2000,15 @@ export function App() {
             setActiveTab(currentUser.role === 'writer' || currentUser.role === 'admin' ? 'dashboard' : 'feed');
           }}
           onOpenRegister={(role) => {
+            // فتح شاشة الدخول/التسجيل يعني نية واضحة وصريحة من المستخدم
+            // بتسجيل الدخول الآن — يجب ألا تمنعه علامة "خرجت للتو" من ذلك.
+            isLoggingOutRef.current = false;
             setAuthModalRole(role);
             setAuthModalMode('register');
             setIsAuthOpen(true);
           }}
           onOpenLogin={() => {
+            isLoggingOutRef.current = false;
             setAuthModalRole('reader');
             setAuthModalMode('login');
             setIsAuthOpen(true);
@@ -1605,7 +2069,10 @@ export function App() {
           setAuthModalMode('login');
           setIsAuthOpen(true);
         }}
-        onOpenProfile={() => setViewingWriterProfile(currentUser)}
+        onOpenProfile={() => {
+          setViewingWriterProfile(null);
+          setActiveTab('profile');
+        }}
         onOpenLanding={() => setShowLandingPage(true)}
         unreadNotifsCount={unreadNotifsCount}
         theme={theme}
@@ -1641,6 +2108,8 @@ export function App() {
           <WriterProfileView
             writer={viewingWriterProfile}
             articles={articles}
+            campaigns={campaigns}
+            currentUserId={currentUserId || null}
             onBack={() => setViewingWriterProfile(null)}
             onSelectArticle={(art) => setReadingArticle(art)}
             onFollowWriter={handleToggleFollow}
@@ -1687,8 +2156,10 @@ export function App() {
             onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
             language={language}
             onToggleLanguage={() => setLanguage(LANGUAGE_CYCLE[(LANGUAGE_CYCLE.indexOf(language) + 1) % LANGUAGE_CYCLE.length])}
-            onLogout={() => {
-              setShowLandingPage(true);
+            onLogout={handleLogout}
+            onNavigateToAdmin={() => {
+              setActiveTab('admin');
+              setAdminActiveTab('overview');
             }}
           />
         ) : activeTab === 'explore' ? (
@@ -1737,9 +2208,7 @@ export function App() {
             onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
             language={language}
             onToggleLanguage={() => setLanguage(LANGUAGE_CYCLE[(LANGUAGE_CYCLE.indexOf(language) + 1) % LANGUAGE_CYCLE.length])}
-            onLogout={() => {
-              setShowLandingPage(true);
-            }}
+            onLogout={handleLogout}
           />
         ) : activeTab === 'dashboard' && currentUser.role === 'writer' ? (
           <WriterDashboard
@@ -1853,22 +2322,45 @@ export function App() {
               );
               await approvePayoutInFirestore(txId);
             }}
+            earningsRecords={earningsRecords}
+            onReleaseEarning={async (earning) => {
+              const targetUser = users.find((u) => u.id === earning.userId);
+              if (!targetUser) {
+                alert('تعذر إيجاد بيانات هذا المستخدم لتحرير أرباحه.');
+                return;
+              }
+              const currentPending = (targetUser as any).pendingEarnings || 0;
+              const currentAvailable = (targetUser as any).availableBalance || 0;
+              try {
+                await adminReleaseEarnings(earning.userId, currentPending, currentAvailable, earning.amount);
+                await markEarningReleasedInFirestore(earning.id);
+                setEarningsRecords((prev) =>
+                  prev.map((e) => (e.id === earning.id ? { ...e, status: 'released' } : e))
+                );
+              } catch (err) {
+                console.error('تعذر تحرير الربح:', err);
+                alert('تعذر تحرير هذا الربح. تحقق من اتصالك ثم حاول مجدداً.');
+              }
+            }}
             onSelectArticle={(art) => setReadingArticle(art)}
             onSelectUser={(u) => setViewingWriterProfile(u)}
           />
         ) : (
           /* Main Feed View: Available to all users/roles when on 'feed' */
           <div className="space-y-6 animate-android-in">
-              {/* Search Bar */}
+              {/* Search Bar — عدسة البحث عنصر منفصل تماماً عن حقل الكتابة،
+                  وليست أيقونة عائمة داخل الحقل، حتى يكون شكلها واضحاً كزر بحث حقيقي */}
               <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-                <div className="relative flex-1">
-                  <Search className="w-4 h-4 text-slate-400 absolute start-3.5 top-1/2 -translate-y-1/2" />
+                <div className="flex items-stretch flex-1 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xs focus-within:border-purple-500 focus-within:ring-2 focus-within:ring-purple-500/20 transition-all overflow-hidden">
+                  <div className="w-11 shrink-0 flex items-center justify-center text-slate-400 border-e border-slate-200 dark:border-slate-800">
+                    <Search className="w-4 h-4" />
+                  </div>
                   <input
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="ابحث في المقالات، الكُتّاب، الفلسفة، الأدب، التكنولوجيا..."
-                    className="w-full ps-10 pe-4 py-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs sm:text-sm outline-hidden focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 shadow-2xs transition-all text-slate-900 dark:text-white"
+                    placeholder="ابحث عن مقال، جملة من محتواه، أو اسم مستخدم..."
+                    className="w-full px-4 py-3 bg-transparent text-xs sm:text-sm outline-hidden text-slate-900 dark:text-white"
                   />
                 </div>
 
@@ -1884,6 +2376,35 @@ export function App() {
                   </button>
                 </div>
               </div>
+
+              {/* نتائج حسابات المستخدمين المطابقة للبحث */}
+              {searchQuery.trim() && matchingUsers.length > 0 && (
+                <div className="space-y-2">
+                  <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                    حسابات مطابقة لبحثك:
+                  </h3>
+                  <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+                    {matchingUsers.map((u) => (
+                      <button
+                        key={u.id}
+                        onClick={() => setViewingWriterProfile(u)}
+                        className="flex items-center gap-2 px-3 py-2 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-purple-400 dark:hover:border-purple-600 shrink-0 transition-all active:scale-95"
+                      >
+                        <img
+                          src={u.avatarUrl}
+                          alt={u.fullName}
+                          referrerPolicy="no-referrer"
+                          className="w-6 h-6 rounded-full object-cover"
+                        />
+                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200 whitespace-nowrap">
+                          {u.fullName}
+                        </span>
+                        <span className="text-[10px] text-slate-400 whitespace-nowrap">@{u.username}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Categories Scroll Filter */}
               <div className="relative">
@@ -1912,6 +2433,18 @@ export function App() {
                   onBookmark={handleToggleBookmark}
                   bookmarkedIds={bookmarkedArticleIds}
                 />
+              )}
+
+              {/* موضع home_hero — أسفل البانر المميز مباشرة، ملك المنصة
+                  بالكامل (100%)، حسب خريطة المواضع الإعلانية المعتمدة. */}
+              {selectedCategory === 'all' && !searchQuery && (
+                <AdSlot slotId="home_hero" campaigns={campaigns} viewerId={currentUserId || null} adFree={false} />
+              )}
+
+              {/* موضع category_banner — أعلى قسم تصنيف محدد، حصري لراعي
+                  القسم فقط (sponsorOnly)، لا يشاركه أحد. */}
+              {selectedCategory !== 'all' && (
+                <AdSlot slotId="category_banner" campaigns={campaigns} viewerId={currentUserId || null} adFree={false} />
               )}
 
               {/* 2. Trending Articles Ranking */}
@@ -2013,10 +2546,20 @@ export function App() {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
                   {filteredArticles.map((article, idx) => (
                     <React.Fragment key={article.id}>
-                    {/* موضع إعلاني بعد البطاقة السادسة والثانية عشرة */}
-                    {(idx === 6 || idx === 12) && (
+                    {/* home_feed_1/2 لوضعية "كل الأقسام" فقط، وcategory_feed
+                        عند تصفح قسم محدد — بدل عرض موضع الصفحة الرئيسية
+                        بالخطأ داخل كل تصنيف. */}
+                    {selectedCategory === 'all' && (idx === 6 || idx === 12) && (
                       <AdSlot
                         slotId={idx === 6 ? 'home_feed_1' : 'home_feed_2'}
+                        campaigns={campaigns}
+                        viewerId={currentUserId || null}
+                        adFree={false}
+                      />
+                    )}
+                    {selectedCategory !== 'all' && idx === 6 && (
+                      <AdSlot
+                        slotId="category_feed"
                         campaigns={campaigns}
                         viewerId={currentUserId || null}
                         adFree={false}
@@ -2096,7 +2639,10 @@ export function App() {
         onOpenLegal={(sec) => setLegalSection(sec)}
         onOpenAiAssistant={() => setIsAiAssistantOpen(true)}
         onOpenSubscription={() => setIsSubscriptionOpen(true)}
-        onOpenProfile={() => setViewingWriterProfile(currentUser)}
+        onOpenProfile={() => {
+          setViewingWriterProfile(null);
+          setActiveTab('profile');
+        }}
         onSwitchRole={handleSwitchRole}
         onLogout={handleLogout}
         theme={theme}
@@ -2155,7 +2701,7 @@ export function App() {
           campaigns={campaigns}
           onClose={() => setReadingArticle(null)}
           onLike={handleLikeArticle}
-          isLiked={false}
+          isLiked={likedArticleIds.includes(readingArticle.id)}
           onBookmark={handleToggleBookmark}
           isBookmarked={bookmarkedArticleIds.includes(readingArticle.id)}
           onFollowWriter={handleToggleFollow}
@@ -2164,6 +2710,9 @@ export function App() {
           comments={comments.filter((c) => c.articleId === readingArticle.id)}
           onAddComment={handleAddComment}
           onLikeComment={handleLikeComment}
+          onShare={() => handleShareArticle(readingArticle)}
+          onRate={(stars) => handleRateArticle(readingArticle.id, stars)}
+          myRating={myRatingsByArticleId[readingArticle.id] || 0}
           sponsoredCampaign={campaigns.find((c) => c.status === 'active' && c.placementType === 'writer')}
           currentUserId={currentUser.id}
           onAdClick={(camp, isValid) => {

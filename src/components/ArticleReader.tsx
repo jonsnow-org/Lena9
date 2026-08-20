@@ -26,11 +26,11 @@ import {
   Pause,
   RotateCcw,
   ArrowUp,
-  Sliders,
-  CheckCheck
+  Sliders
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Article, Comment, ReactionType, AdCampaign, FraudFlag } from '../types';
+import { formatDateAr, timeAgoAr } from '../utils/dateFormat';
 import { SmartAdBanner } from './SmartAdBanner';
 import { AdSlot } from './AdSlot';
 import { VideoEmbed } from './VideoEmbed';
@@ -52,6 +52,9 @@ interface ArticleReaderProps {
   comments: Comment[];
   onAddComment: (articleId: string, content: string, parentCommentId?: string) => void;
   onLikeComment: (commentId: string) => void;
+  onShare?: () => void;
+  onRate?: (stars: number) => void;
+  myRating?: number;
   sponsoredCampaign?: AdCampaign | null;
   onWriterProfileClick?: (writerId: string) => void;
   currentUserId?: string;
@@ -75,6 +78,9 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
   comments,
   onAddComment,
   onLikeComment,
+  onShare,
+  onRate,
+  myRating = 0,
   sponsoredCampaign,
   onWriterProfileClick,
   currentUserId,
@@ -85,8 +91,6 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
   onFraudDetected
 }) => {
   const [activeReaction, setActiveReaction] = useState<ReactionType | null>(null);
-  const [userRating, setUserRating] = useState<number>(5);
-  const [hasRated, setHasRated] = useState<boolean>(false);
   const [newCommentText, setNewCommentText] = useState('');
   const [replyingToCommentId, setReplyingToCommentId] = useState<string | null>(null);
   const [replyText, setReplyText] = useState('');
@@ -105,7 +109,6 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
   // Scroll & Progress Tracking
   const [readingProgress, setReadingProgress] = useState(0);
   const [showScrollTop, setShowScrollTop] = useState(false);
-  const [savedProgressPrompt, setSavedProgressPrompt] = useState<number | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Text to Speech (Audio Reading)
@@ -115,15 +118,26 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
 
   const isLocked = article.isLocked && !article.isUnlockedByCurrentUser;
 
-  // Restore saved reading progress on mount
+  // استئناف القراءة تلقائياً وبهدوء من آخر موضع محفوظ (بدل بانر يسأل
+  // المستخدم عن نسبة مئوية قد لا تُطابق الموضع الفعلي بدقة، لأن ارتفاع
+  // المقال يتغيّر بين الجلسات بسبب حجم الخط أو تحميل الصور والإعلانات).
+  // شريط التقدّم الحي أعلى الشاشة هو المرجع الدقيق والموثوق لموضع القراءة.
   useEffect(() => {
     const savedPos = localStorage.getItem(`literium_read_pos_${article.id}`);
-    if (savedPos) {
-      const pos = parseFloat(savedPos);
-      if (pos > 5 && pos < 95) {
-        setSavedProgressPrompt(pos);
-      }
-    }
+    if (!savedPos) return;
+    const pos = parseFloat(savedPos);
+    if (!(pos > 5 && pos < 95)) return;
+
+    // تأخير بسيط حتى تكتمل الصور والإعلانات ويستقر الارتفاع الحقيقي
+    // للمقال، فتكون نسبة التمرير المحسوبة دقيقة قدر الإمكان.
+    const timer = setTimeout(() => {
+      if (!scrollContainerRef.current) return;
+      const { scrollHeight, clientHeight } = scrollContainerRef.current;
+      const targetScroll = ((scrollHeight - clientHeight) * pos) / 100;
+      scrollContainerRef.current.scrollTo({ top: targetScroll, behavior: 'auto' });
+    }, 350);
+
+    return () => clearTimeout(timer);
   }, [article.id]);
 
   // Track scroll position
@@ -137,18 +151,14 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
       setShowScrollTop(scrollTop > 400);
 
       // Save reading progress every scroll threshold
-      if (progress > 5 && progress < 99) {
+      if (progress > 5 && progress < 95) {
         localStorage.setItem(`literium_read_pos_${article.id}`, progress.toString());
+      } else {
+        // المقال انتهت قراءته تقريباً أو بدأ للتو — لا داعٍ لموضع محفوظ
+        // يزعج المستخدم بإرجاعه لمنتصف مقال أنهاه بالفعل.
+        localStorage.removeItem(`literium_read_pos_${article.id}`);
       }
     }
-  };
-
-  const handleResumeProgress = () => {
-    if (!scrollContainerRef.current || !savedProgressPrompt) return;
-    const { scrollHeight, clientHeight } = scrollContainerRef.current;
-    const targetScroll = ((scrollHeight - clientHeight) * savedProgressPrompt) / 100;
-    scrollContainerRef.current.scrollTo({ top: targetScroll, behavior: 'smooth' });
-    setSavedProgressPrompt(null);
   };
 
   const handleScrollToTop = () => {
@@ -222,11 +232,6 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
 
   const handleReactionClick = (reaction: ReactionType) => {
     setActiveReaction(activeReaction === reaction ? null : reaction);
-  };
-
-  const handleRateSubmit = (stars: number) => {
-    setUserRating(stars);
-    setHasRated(true);
   };
 
   const handleCommentSubmit = (e: React.FormEvent) => {
@@ -441,7 +446,10 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
 
             {/* Share */}
             <button
-              onClick={() => setShowShareModal(true)}
+              onClick={() => {
+                setShowShareModal(true);
+                onShare?.();
+              }}
               className="p-2 rounded-xl border bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 hover:text-teal-600 transition-colors active:scale-95"
               title="مشاركة المقال"
             >
@@ -472,30 +480,6 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
                   {rate}x
                 </button>
               ))}
-            </div>
-          </div>
-        )}
-
-        {/* Saved Progress Toast Pill */}
-        {savedProgressPrompt !== null && (
-          <div className="p-2.5 bg-teal-500/10 border-b border-teal-500/20 flex items-center justify-between px-4 sm:px-6">
-            <div className="flex items-center gap-2 text-xs font-bold text-teal-700 dark:text-teal-300">
-              <CheckCheck className="w-4 h-4" />
-              <span>هل تود استئناف القراءة من حيث توقفت سابقاً ({savedProgressPrompt}%)؟</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleResumeProgress}
-                className="px-3 py-1 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs active:scale-95 transition-all shadow-2xs"
-              >
-                استئناف
-              </button>
-              <button
-                onClick={() => setSavedProgressPrompt(null)}
-                className="px-2 py-1 text-xs text-slate-400 hover:text-slate-600"
-              >
-                تخطي
-              </button>
             </div>
           </div>
         )}
@@ -571,7 +555,7 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
                   )}
                 </div>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  نُشر {article.publishedAt} • {article.readingTimeMinutes} دقائق قراءة
+                  نُشر {formatDateAr(article.publishedAt)} • {article.readingTimeMinutes} دقائق قراءة
                 </p>
               </div>
             </div>
@@ -598,24 +582,11 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
             />
           </div>
 
-          {/* Top In-Article Ad — only rendered when a real advertiser
-              campaign is configured for writer-content placement; this
-              writer earns their share of it (see handleWriterAdRevenue in
-              App.tsx), unlike homepage-only platform campaigns. */}
-          {sponsoredCampaign && (
-            <SmartAdBanner
-              campaign={sponsoredCampaign}
-              placementType="writer"
-              currentUserId={currentUserId}
-              articleId={article.id}
-              articleWriterId={article.writerId}
-              writerName={article.writerName}
-              variant="inline"
-              onAdClick={onAdClick}
-              onAdImpression={onAdImpression}
-              onFraudDetected={onFraudDetected}
-            />
-          )}
+          {/* موضع article_top حُذف من هنا بناءً على طلب صريح — أُفسِح
+              المجال بدله لإعلان قسم التعليقات (comments_feed) ليظهر
+              فعلياً ضمن حد الـ3 إعلانات لكل صفحة، بدل بقائه معطَّلاً
+              دائماً بسبب امتلاء المواضع الثلاثة الأخرى (top/mid/bottom)
+              قبل وصول الدور لقسم التعليقات. */}
 
           {/* Main Content Area */}
           <div className={`relative space-y-4 font-normal article-content ${getFontSizeClass()}`}>
@@ -763,35 +734,40 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
               ))}
             </div>
 
-            {/* 5-Star Rating */}
-            <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                  تقييم المقال:
-                </span>
-                <div className="flex items-center gap-1">
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <button
-                      key={star}
-                      onClick={() => handleRateSubmit(star)}
-                      className="p-1 text-amber-400 hover:scale-125 transition-transform"
-                    >
-                      <Star
-                        className={`w-5 h-5 ${
-                          star <= userRating ? 'fill-amber-400 text-amber-400' : 'text-slate-300 dark:text-slate-600'
-                        }`}
-                      />
-                    </button>
-                  ))}
+            {/* تقييم حقيقي بالنجوم — متصل فعلياً بـ Firestore عبر onRate،
+                بدل تقييم محلي وهمي كان يبدأ افتراضياً من 5 نجوم مسبقة
+                الاختيار (كأن كل مقال "مُقيَّم بالفعل" حتى قبل أي تفاعل). */}
+            {onRate && (
+              <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                    تقييم المقال:
+                  </span>
+                  <div className="flex items-center gap-1" dir="ltr">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <button
+                        key={star}
+                        onClick={() => onRate(star)}
+                        className="p-1 text-amber-400 hover:scale-125 transition-transform active:scale-90"
+                        title={`تقييم ${star} نجوم`}
+                      >
+                        <Star
+                          className={`w-5 h-5 ${
+                            star <= myRating ? 'fill-amber-400 text-amber-400' : 'text-slate-300 dark:text-slate-600'
+                          }`}
+                        />
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
 
-              {hasRated && (
-                <span className="text-xs text-emerald-600 dark:text-emerald-400 font-bold">
-                  ✓ شكراً لتقييمك للمقال ({userRating}/5)
+                <span className="text-xs text-slate-500 dark:text-slate-400 font-bold">
+                  {article.ratingsCount > 0
+                    ? `${article.rating.toFixed(1)} ★ من ${article.ratingsCount.toLocaleString()} تقييم`
+                    : 'كن أول من يقيّم هذا المقال'}
                 </span>
-              )}
-            </div>
+              </div>
+            )}
           </div>
 
           {/* Action Bar (Like, Share, Bookmark) */}
@@ -805,12 +781,15 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
               }`}
             >
               <Heart className={`w-4 h-4 ${isLiked ? 'fill-current' : ''}`} />
-              <span>{article.likesCount + (isLiked ? 1 : 0)} إعجاب</span>
+              <span>{article.likesCount} إعجاب</span>
             </button>
 
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setShowShareModal(true)}
+                onClick={() => {
+                  setShowShareModal(true);
+                  onShare?.();
+                }}
                 className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold transition-colors active:scale-95"
               >
                 <Share2 className="w-4 h-4" />
@@ -856,9 +835,22 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
 
             {/* Comments List */}
             <div className="space-y-4">
-              {comments.map((comm) => (
+              {comments.map((comm, commIdx) => (
+                <React.Fragment key={comm.id}>
+                  {/* comments_feed — بعد التعليق الثالث فقط إن كان هناك عدد
+                      كافٍ من التعليقات، حتى لا تُثقل نقاشاً قصيراً بإعلان
+                      يزاحم المحتوى الحقيقي. */}
+                  {commIdx === 3 && comments.length >= 5 && (
+                    <AdSlot
+                      slotId="comments_feed"
+                      campaigns={campaigns}
+                      articleId={article.id}
+                      writerId={article.writerId}
+                      viewerId={currentUserId}
+                      adFree={isAdFree}
+                    />
+                  )}
                 <div
-                  key={comm.id}
                   className={`p-4 rounded-2xl border ${
                     comm.isPinned
                       ? 'bg-teal-50/70 dark:bg-teal-950/30 border-teal-200 dark:border-teal-800'
@@ -884,7 +876,7 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
                             </span>
                           )}
                         </div>
-                        <span className="text-[10px] text-slate-400">{comm.createdAt}</span>
+                        <span className="text-[10px] text-slate-400">{timeAgoAr(comm.createdAt)}</span>
                       </div>
                     </div>
 
@@ -904,7 +896,7 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
                       onClick={() => onLikeComment(comm.id)}
                       className="flex items-center gap-1 hover:text-rose-500 transition-colors active:scale-95"
                     >
-                      <Heart className={`w-3.5 h-3.5 ${comm.isLiked ? 'fill-rose-500 text-rose-500' : ''}`} />
+                      <Heart className={`w-3.5 h-3.5 ${(comm.likedBy || []).includes(currentUserId || '') ? 'fill-rose-500 text-rose-500' : ''}`} />
                       <span>{comm.likesCount}</span>
                     </button>
 
@@ -960,7 +952,7 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
                                 </span>
                               )}
                             </div>
-                            <span className="text-[10px] text-slate-400">{rep.createdAt}</span>
+                            <span className="text-[10px] text-slate-400">{timeAgoAr(rep.createdAt)}</span>
                           </div>
                           <p className="opacity-90">{rep.content}</p>
                         </div>
@@ -968,6 +960,7 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
                     </div>
                   )}
                 </div>
+                </React.Fragment>
               ))}
             </div>
           </section>

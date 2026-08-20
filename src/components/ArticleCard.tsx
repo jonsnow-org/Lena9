@@ -1,6 +1,7 @@
 import React from 'react';
-import { Eye, Heart, MessageSquare, Lock, CheckCircle2, Bookmark, Clock, ArrowLeft, Sparkles } from 'lucide-react';
+import { Eye, Heart, MessageSquare, Lock, CheckCircle2, Bookmark, Calendar, ArrowLeft, Sparkles } from 'lucide-react';
 import { Article } from '../types';
+import { timeAgoAr } from '../utils/dateFormat';
 
 interface ArticleCardProps {
   article: Article;
@@ -70,10 +71,10 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
           )}
         </div>
 
-        {/* Reading Time */}
+        {/* Publish Date & Time — بدلاً من رقم دقائق القراءة الثابت الذي لا يفيد القارئ */}
         <div className="absolute bottom-2.5 start-3 flex items-center gap-1.5 rounded-xl bg-slate-950/80 backdrop-blur-md px-2.5 py-1 text-[11px] font-semibold text-slate-200 border border-white/10">
-          <Clock className="w-3 h-3 text-teal-400" />
-          <span>{article.readingTimeMinutes} دقائق قراءة</span>
+          <Calendar className="w-3 h-3 text-teal-400" />
+          <span>{timeAgoAr(article.publishedAt)}</span>
         </div>
       </div>
 
@@ -101,7 +102,7 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
                 )}
               </div>
               <span className="text-[11px] text-slate-400 dark:text-slate-500 font-medium">
-                {article.publishedAt}
+                {timeAgoAr(article.publishedAt)}
               </span>
             </div>
           </div>

@@ -19,11 +19,15 @@ import {
   Send,
   Star
 } from 'lucide-react';
-import { User, Article } from '../types';
+import { User, Article, AdCampaign } from '../types';
+import { timeAgoAr } from '../utils/dateFormat';
+import { AdSlot } from './AdSlot';
 
 interface WriterProfileViewProps {
   writer: User;
   articles: Article[];
+  campaigns?: AdCampaign[];
+  currentUserId?: string | null;
   onBack: () => void;
   onSelectArticle: (article: Article) => void;
   onFollowWriter: (writerId: string) => void;
@@ -40,6 +44,8 @@ interface WriterProfileViewProps {
 export const WriterProfileView: React.FC<WriterProfileViewProps> = ({
   writer,
   articles,
+  campaigns = [],
+  currentUserId = null,
   onBack,
   onSelectArticle,
   onFollowWriter,
@@ -245,9 +251,27 @@ export const WriterProfileView: React.FC<WriterProfileViewProps> = ({
       {/* Tab Content */}
       {activeTab === 'articles' ? (
         <div className="space-y-4">
-          {writerArticles.map((art) => (
+          {/* writer_profile_top — أسفل بطاقة تعريف الكاتب، 50% للكاتب */}
+          <AdSlot
+            slotId="writer_profile_top"
+            campaigns={campaigns}
+            writerId={writer.id}
+            viewerId={currentUserId}
+            adFree={false}
+          />
+          {writerArticles.map((art, artIdx) => (
+            <React.Fragment key={art.id}>
+              {/* writer_profile_feed — بعد البطاقة السادسة، 50% للكاتب */}
+              {artIdx === 6 && (
+                <AdSlot
+                  slotId="writer_profile_feed"
+                  campaigns={campaigns}
+                  writerId={writer.id}
+                  viewerId={currentUserId}
+                  adFree={false}
+                />
+              )}
             <div
-              key={art.id}
               onClick={() => onSelectArticle(art)}
               className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 hover:border-teal-500/40 transition-all cursor-pointer shadow-2xs hover:shadow-sm"
             >
@@ -296,7 +320,7 @@ export const WriterProfileView: React.FC<WriterProfileViewProps> = ({
                       <span>{art.commentsCount}</span>
                     </span>
                     <span>•</span>
-                    <span>{art.readingTimeMinutes} دقائق قراءة</span>
+                    <span>{timeAgoAr(art.publishedAt)}</span>
                   </div>
                 </div>
               </div>
@@ -305,6 +329,7 @@ export const WriterProfileView: React.FC<WriterProfileViewProps> = ({
                 قراءة المقال
               </button>
             </div>
+            </React.Fragment>
           ))}
         </div>
       ) : (

@@ -16,6 +16,7 @@ import {
   MessageSquare
 } from 'lucide-react';
 import { Article, User } from '../types';
+import { timeAgoAr } from '../utils/dateFormat';
 
 interface ExploreViewProps {
   articles: Article[];
@@ -72,7 +73,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
     if (!matchSearch) return false;
 
     if (activeFilter === 'trending') return art.viewsCount > 100;
-    if (activeFilter === 'top_rated') return (art.rating || 5) >= 4.8;
+    if (activeFilter === 'top_rated') return (art.ratingsCount || 0) > 0 && (art.rating || 0) >= 4.8;
     if (activeFilter === 'locked') return art.isLocked;
     return true;
   });
@@ -265,7 +266,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                         {art.writerName}
                       </span>
                       <span>•</span>
-                      <span>{art.readingTimeMinutes} دقيقة</span>
+                      <span>{timeAgoAr(art.publishedAt)}</span>
                     </div>
 
                     <h4 className="font-black text-xs sm:text-sm text-slate-900 dark:text-white line-clamp-1 mb-1">

@@ -53,7 +53,10 @@ export const NewCampaignModal: React.FC<NewCampaignModalProps> = ({
   onCreateCampaign,
   userBalance,
   onOpenDeposit,
-  activeUsersCount = 14200
+  // كان الرقم الافتراضي هنا 14200 (وهمي بالكامل) — الآن يعتمد فقط على
+  // العدد الحقيقي الممرَّر من App.tsx (users.length)، وفي حال عدم تمريره
+  // لأي سبب يبقى الافتراضي 1 بدل رقم مختلق يوهم المعلن بجمهور غير حقيقي.
+  activeUsersCount = 1
 }) => {
   const [campaignName, setCampaignName] = useState('');
   const [description, setDescription] = useState('');

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   MessageSquare,
   X,
@@ -31,6 +31,15 @@ export const DirectMessagesModal: React.FC<DirectMessagesModalProps> = ({
 }) => {
   const [selectedPartner, setSelectedPartner] = useState<User | null>(activeChatPartner || null);
   const [text, setText] = useState('');
+
+  // النافذة تبقى مركّبة دون إعادة تحميل بين مرات الفتح، لذا فتح محادثة
+  // جديدة من ملف كاتب آخر (activeChatPartner يتغيّر) يجب أن يحدّث المحادثة
+  // المعروضة فوراً، بدل بقاء آخر محادثة مفتوحة سابقاً على الشاشة.
+  useEffect(() => {
+    if (isOpen && activeChatPartner) {
+      setSelectedPartner(activeChatPartner);
+    }
+  }, [isOpen, activeChatPartner]);
 
   if (!isOpen) return null;
 
@@ -108,7 +117,6 @@ export const DirectMessagesModal: React.FC<DirectMessagesModalProps> = ({
                       avatarUrl: c.partnerAvatar,
                       role: c.partnerRole,
                       email: '',
-                      rating: 5,
                       followersCount: 0,
                       followingCount: 0,
                       articlesCount: 0,

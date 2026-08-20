@@ -8,9 +8,14 @@ import {
   getRedirectResult,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
+  signInAnonymously,
   updateProfile,
   signOut as fbSignOut,
   onAuthStateChanged,
+  setPersistence,
+  browserLocalPersistence,
+  browserSessionPersistence,
+  inMemoryPersistence,
   User as FirebaseUser
 } from 'firebase/auth';
 import {
@@ -66,6 +71,18 @@ if (typeof window !== 'undefined') {
 }
 
 export const auth = getAuth(app);
+
+// تخزين الجلسة بشكل متدرّج: يحاول أولاً browserLocalPersistence (يبقى بعد
+// إغلاق المتصفح)، فإن فشل (بعض متصفحات الجوال تُغلق IndexedDB عند تعليق
+// التبويب) يتدرّج إلى session ثم إلى الذاكرة فقط — بدل ترك الإعداد
+// الافتراضي عرضة لخطأ "Database is closing/hidden" بلا أي احتياط.
+setPersistence(auth, browserLocalPersistence).catch(() => {
+  setPersistence(auth, browserSessionPersistence).catch(() => {
+    setPersistence(auth, inMemoryPersistence).catch((err) => {
+      console.error('تعذر ضبط أي وضعية لتخزين جلسة الدخول:', err);
+    });
+  });
+});
 export const db = getFirestore(app);
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
@@ -123,13 +140,39 @@ export function getAuthErrorMessage(error: any): string {
       return 'تم رفض إذن حفظ البيانات في قاعدة البيانات Firestore. تأكد من إعدادات الصلاحيات.';
     case 'unavailable':
       return 'خدمة قاعدة البيانات غير متاحة حالياً. تحقق من اتصال الإنترنت وحاول مجدداً.';
-    default:
-      if (error?.message && typeof error.message === 'string' && error.message.length < 120) {
-        return error.message;
+    default: {
+      // خطأ تقني من نظام تخزين المتصفح الداخلي (IndexedDB) — يحدث غالباً
+      // عند فتح أكثر من تبويب لنفس الموقع بنفس الوقت (تنافس على نفس قاعدة
+      // بيانات المصادقة المحلية)، أو أثناء إعادة تحميل الصفحة. مؤقت عادةً.
+      const rawMessage = typeof error?.message === 'string' ? error.message : '';
+      if (/closing|database connection|indexeddb/i.test(rawMessage)) {
+        return 'حدث تعارض مؤقت في تخزين المتصفح — على الأغلب بسبب فتح أكثر من تبويب لنفس الموقع. أغلق التبويبات الأخرى وأعد المحاولة.';
+      }
+      if (rawMessage && rawMessage.length < 120) {
+        return rawMessage;
       }
       return code
         ? `حدث خطأ غير متوقع (${code}). حاول مرة أخرى.`
         : 'حدث خطأ غير متوقع أثناء العملية. حاول مرة أخرى.';
+    }
+  }
+}
+
+/**
+ * تعيد تنفيذ دالة async مرة واحدة إذا فشلت بخطأ IndexedDB مؤقت (تعارض
+ * تبويبات/إعادة تحميل)، بدل إظهار فشل فوري لمستخدم قد ينجح بمجرد
+ * إعادة محاولة سريعة تلقائية.
+ */
+async function withTransientRetry<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (error: any) {
+    const msg = typeof error?.message === 'string' ? error.message : '';
+    if (/closing|database connection|indexeddb/i.test(msg)) {
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      return await fn();
+    }
+    throw error;
   }
 }
 
@@ -175,50 +218,51 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
 // ----------------------------------------------------
 
 export async function fetchUserFromFirestore(uid: string): Promise<User | null> {
-  try {
-    const userDocRef = doc(db, 'users', uid);
-    const snap = await getDoc(userDocRef);
-    if (snap.exists()) {
-      const data = snap.data();
-      const isOwner = (data.email || auth.currentUser?.email || '').toLowerCase() === OWNER_ADMIN_EMAIL.toLowerCase();
-      const resolvedRole: UserRole = isOwner ? 'admin' : ((data.role as UserRole) || 'reader');
+  const userDocRef = doc(db, 'users', uid);
+  const snap = await getDoc(userDocRef);
+  if (snap.exists()) {
+    const data = snap.data();
+    const isOwner = (data.email || auth.currentUser?.email || '').toLowerCase() === OWNER_ADMIN_EMAIL.toLowerCase();
+    const resolvedRole: UserRole = isOwner ? 'admin' : ((data.role as UserRole) || 'reader');
 
-      return {
-        id: snap.id,
-        email: data.email || auth.currentUser?.email || '',
-        fullName: data.displayName || data.name || data.fullName || 'مستخدم ليتيريوم',
-        username: data.username || (data.email ? data.email.split('@')[0] : `user_${uid.slice(0, 5)}`),
-        avatarUrl: data.avatarUrl || data.photoURL || data.photoUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300',
-        coverUrl: data.coverUrl || 'https://images.unsplash.com/photo-1457369804613-52c61a468e7d?w=1200',
-        role: resolvedRole,
-        bio: data.bio || '',
-        penName: data.penName || undefined,
-        companyName: data.companyName || undefined,
-        companyIndustry: data.companyIndustry || undefined,
-        companyWebsite: data.companyWebsite || undefined,
-        specialties: Array.isArray(data.specialties) ? data.specialties : undefined,
-        isVerified: data.isVerified ?? (resolvedRole === 'admin'),
-        followersCount: data.followersCount || 0,
-        followingCount: data.followingCount || 0,
-        articlesCount: data.articlesCount || 0,
-        totalViews: data.totalViews || 0,
-        totalEarnings: Number(data.totalEarnings ?? (data.walletBalance ?? 0)),
-        monthlyEarnings: data.monthlyEarnings || 0,
-        joinedDate: data.createdAt ? new Date(data.createdAt).toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' }) : 'حديثاً',
-        aiQuota: data.aiQuota || {
-          freeDailyLimit: DEFAULT_FREE_DAILY_LIMIT,
-          usedToday: 0,
-          lastResetTime: new Date().toISOString(),
-          isSubscriber: false,
-          plan: 'none'
-        }
-      };
-    }
-    return null;
-  } catch (error) {
-    handleFirestoreError(error, OperationType.GET, `users/${uid}`);
-    return null;
+    return {
+      id: snap.id,
+      email: data.email || auth.currentUser?.email || '',
+      fullName: data.displayName || data.name || data.fullName || 'مستخدم ليتيريوم',
+      username: data.username || (data.email ? data.email.split('@')[0] : `user_${uid.slice(0, 5)}`),
+      avatarUrl: data.avatarUrl || data.photoURL || data.photoUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300',
+      coverUrl: data.coverUrl || 'https://images.unsplash.com/photo-1457369804613-52c61a468e7d?w=1200',
+      role: resolvedRole,
+      bio: data.bio || '',
+      penName: data.penName || undefined,
+      companyName: data.companyName || undefined,
+      companyIndustry: data.companyIndustry || undefined,
+      companyWebsite: data.companyWebsite || undefined,
+      specialties: Array.isArray(data.specialties) ? data.specialties : undefined,
+      isVerified: data.isVerified ?? (resolvedRole === 'admin'),
+      followersCount: data.followersCount || 0,
+      followingCount: data.followingCount || 0,
+      articlesCount: data.articlesCount || 0,
+      totalViews: data.totalViews || 0,
+      totalEarnings: Number(data.totalEarnings ?? (data.walletBalance ?? 0)),
+      monthlyEarnings: data.monthlyEarnings || 0,
+      joinedDate: data.createdAt ? new Date(data.createdAt).toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' }) : 'حديثاً',
+      aiQuota: data.aiQuota || {
+        freeDailyLimit: DEFAULT_FREE_DAILY_LIMIT,
+        usedToday: 0,
+        lastResetTime: new Date().toISOString(),
+        isSubscriber: false,
+        plan: 'none'
+      }
+    };
   }
+  // المستند غير موجود فعلاً (حساب جديد حقاً) — هذه الحالة الوحيدة التي
+  // يصح فيها إرجاع null. أي خطأ حقيقي أثناء القراءة (صلاحيات، شبكة، ...)
+  // يُرمى للأعلى بدل إخفائه، حتى لا يُفهَم خطأً على أنه "الحساب غير موجود"
+  // فيحاول الكود إنشاء حساب من الصفر فوق حساب حقيقي له رصيد وأرباح —
+  // وهو بالضبط ما كان يسبب رفض قاعدة البيانات لتسجيل دخول حسابَي المالك
+  // والكاتب سابقاً (محاولة تصفير رصيد حقيقي غير صفري).
+  return null;
 }
 
 export async function createOrUpdateUserDoc(
@@ -482,26 +526,27 @@ export async function registerWithEmail(
   // sides of the race agree on the correct role either way.
   localStorage.setItem(PENDING_ROLE_KEY, role);
   try {
-    const cred = await createUserWithEmailAndPassword(auth, email, password);
-    if (profileData.fullName) {
-      await updateProfile(cred.user, { displayName: profileData.fullName });
-    }
-    const user = await createOrUpdateUserDoc(cred.user, role, profileData);
+    return await withTransientRetry(async () => {
+      const cred = await createUserWithEmailAndPassword(auth, email, password);
+      if (profileData.fullName) {
+        await updateProfile(cred.user, { displayName: profileData.fullName });
+      }
+      return await createOrUpdateUserDoc(cred.user, role, profileData);
+    });
+  } finally {
     localStorage.removeItem(PENDING_ROLE_KEY);
-    return user;
-  } catch (error) {
-    localStorage.removeItem(PENDING_ROLE_KEY);
-    throw error;
   }
 }
 
 export async function loginWithEmail(email: string, password: string): Promise<User | null> {
-  const cred = await signInWithEmailAndPassword(auth, email, password);
-  let user = await fetchUserFromFirestore(cred.user.uid);
-  if (!user) {
-    user = await createOrUpdateUserDoc(cred.user);
-  }
-  return user;
+  return withTransientRetry(async () => {
+    const cred = await signInWithEmailAndPassword(auth, email, password);
+    let user = await fetchUserFromFirestore(cred.user.uid);
+    if (!user) {
+      user = await createOrUpdateUserDoc(cred.user);
+    }
+    return user;
+  });
 }
 
 export async function logOut(): Promise<void> {
@@ -509,6 +554,26 @@ export async function logOut(): Promise<void> {
     await fbSignOut(auth);
   } catch (error) {
     console.error('Sign Out Error:', error);
+  }
+}
+
+/**
+ * يمنح الزائر (غير المسجّل دخول) هوية حقيقية مؤقتة عبر "الدخول المجهول"
+ * في Firebase، حتى يقدر يقوم بإجراءات محدودة (كالإعجاب) بشكل حقيقي
+ * ومتزامن، دون أن يُطلب منه إنشاء حساب أو تسجيل دخول فعلي.
+ *
+ * ⚠️ هذا لا يُنشئ ملف مستخدم في مجموعة "users" ولا يُحوّل الزائر إلى
+ * حساب مسجّل — يبقى بنظر التطبيق زائراً تماماً (انظر معالجة isAnonymous
+ * في مستمع onAuthStateChanged بملف App.tsx).
+ */
+export async function ensureGuestIdentity(): Promise<string | null> {
+  if (auth.currentUser) return auth.currentUser.uid;
+  try {
+    const cred = await signInAnonymously(auth);
+    return cred.user.uid;
+  } catch (error) {
+    console.error('تعذر إنشاء هوية زائر مؤقتة:', error);
+    return null;
   }
 }
 

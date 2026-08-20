@@ -19,7 +19,8 @@ export type AdSlotId =
   | 'article_bottom'
   | 'writer_profile_top'
   | 'writer_profile_feed'
-  | 'reader_profile';
+  | 'reader_profile'
+  | 'comments_feed';
 
 interface SlotConfig {
   /** من يستفيد من عائد هذا الموضع */
@@ -41,7 +42,11 @@ export const SLOT_CONFIG: Record<AdSlotId, SlotConfig> = {
   article_bottom: { beneficiary: 'writer', writerShare: 0.55 },
   writer_profile_top: { beneficiary: 'writer', writerShare: 0.5 },
   writer_profile_feed: { beneficiary: 'writer', writerShare: 0.5 },
-  reader_profile: { beneficiary: 'platform', writerShare: 0 }
+  reader_profile: { beneficiary: 'platform', writerShare: 0 },
+  // قسم التعليقات مرتبط مباشرة بمقال الكاتب ونقاشه، فحصته من العائد
+  // تطابق بقية مواضع داخل المقال (55% كاتب / 45% منصة) بدل تركه بلا أي
+  // استفادة كما كان الحال (لم تكن مساحة التعليقات مستثمرة إعلانياً إطلاقاً).
+  comments_feed: { beneficiary: 'writer', writerShare: 0.55 }
 };
 
 /**

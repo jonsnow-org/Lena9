@@ -1,6 +1,7 @@
 import React from 'react';
-import { Sparkles, Clock, Eye, Lock, ArrowLeft, Star, Bookmark } from 'lucide-react';
+import { Sparkles, Calendar, Eye, Lock, ArrowLeft, Star, Bookmark } from 'lucide-react';
 import { Article } from '../types';
+import { timeAgoAr } from '../utils/dateFormat';
 
 interface FeaturedArticlesSectionProps {
   articles?: Article[];
@@ -97,15 +98,15 @@ export const FeaturedArticlesSection: React.FC<FeaturedArticlesSectionProps> = (
                   )}
                 </div>
 
-                {/* Category & Reading Time over image */}
+                {/* Category & Publish Date over image */}
                 <div className="absolute bottom-3 inset-x-3 flex items-center justify-between text-xs text-white/90">
                   <span className="px-2.5 py-0.5 rounded-lg bg-teal-950/80 backdrop-blur-sm text-[11px] font-bold text-teal-300 border border-teal-500/20">
                     {getCategoryLabel(article.category)}
                   </span>
 
                   <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-200">
-                    <Clock className="w-3 h-3 text-teal-400" />
-                    <span>{article.readingTimeMinutes} دقائق</span>
+                    <Calendar className="w-3 h-3 text-teal-400" />
+                    <span>{timeAgoAr(article.publishedAt)}</span>
                   </div>
                 </div>
               </div>

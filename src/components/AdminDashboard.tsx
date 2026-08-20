@@ -67,6 +67,21 @@ interface AdminDashboardProps {
     requestId: string,
     status: 'approved' | 'rejected' | 'paid'
   ) => void;
+  // الأرباح الفردية المجمّدة (لكل مقال/حملة)، تحمل موعد استحقاق تحريرها
+  // بعد 30 يوماً من التسجيل — كانت هذه البيانات تُحسب وتُخزَّن فعلياً من
+  // قبل لكن لا توجد أي واجهة لرؤيتها أو تحريرها، فتبقى الأرباح مجمّدة
+  // للأبد فعلياً رغم انقضاء المدة.
+  earningsRecords?: {
+    id: string;
+    userId: string;
+    amount: number;
+    source: string;
+    status: string;
+    createdAt: string;
+    releasableAt: string;
+    description?: string;
+  }[];
+  onReleaseEarning?: (earning: { id: string; userId: string; amount: number }) => void;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -96,6 +111,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onAdjustBalance,
   onUpdatePurchaseRequest,
   onUpdateMoneyRequest,
+  earningsRecords = [],
+  onReleaseEarning,
   activeTab: externalActiveTab,
   onActiveTabChange
 }) => {
@@ -1274,6 +1291,68 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <li className="list-disc">راجع سجل أرباح الكاتب قبل اعتماد أي سحب، خصوصاً إن كانت مرتفعة بشكل غير متناسب.</li>
                 <li className="list-disc">بعد الاعتماد، عدّل رصيد المستخدم يدوياً من تبويب المستخدمين.</li>
               </ul>
+            </div>
+
+            {/* الأرباح المجمّدة القابلة للتحرير بعد انقضاء 30 يوماً —
+                محسوبة فعلياً من تاريخ التسجيل الحقيقي (releasableAt)،
+                وليست قائمة وهمية. لا تظهر إلا الأرباح التي حان أوان
+                تحريرها فعلاً؛ الباقي لا يزال ضمن فترة التجميد. */}
+            <div>
+              {(() => {
+                const now = Date.now();
+                const releasable = earningsRecords.filter(
+                  (e) =>
+                    (e.status === 'pending_hold' || e.status === 'pending') &&
+                    new Date(e.releasableAt).getTime() <= now
+                );
+                return (
+                  <>
+                    <h3 className="font-black text-white text-base mb-3">
+                      أرباح جاهزة للتحرير ({releasable.length})
+                    </h3>
+                    {releasable.length === 0 ? (
+                      <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 text-center text-sm text-slate-400">
+                        لا توجد أرباح تجاوزت فترة التجميد (30 يوماً) بعد.
+                      </div>
+                    ) : (
+                      <div className="space-y-2.5">
+                        {releasable.map((earning) => {
+                          const u = users.find((x) => x.id === earning.userId);
+                          return (
+                            <div
+                              key={earning.id}
+                              className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col sm:flex-row sm:items-center gap-3 justify-between"
+                            >
+                              <div className="min-w-0">
+                                <div className="font-bold text-sm text-white truncate">
+                                  {u ? u.fullName : earning.userId}
+                                </div>
+                                <div className="text-[11px] text-slate-400 mt-0.5">
+                                  {earning.description || earning.source} • جاهز منذ{' '}
+                                  {new Date(earning.releasableAt).toLocaleDateString('ar-EG')}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-3 shrink-0">
+                                <div className="font-black text-emerald-400 font-mono text-sm">
+                                  ${earning.amount.toFixed(2)}
+                                </div>
+                                {onReleaseEarning && (
+                                  <button
+                                    onClick={() => onReleaseEarning(earning)}
+                                    className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold"
+                                  >
+                                    تحرير المبلغ
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
 
             {/* طلبات الإيداع */}
