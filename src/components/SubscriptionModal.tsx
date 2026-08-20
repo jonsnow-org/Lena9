@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Sparkles,
   X,
@@ -36,7 +36,10 @@ interface SubscriptionModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentUser: User | null;
-  onUpgradeSuccess: (planId: 'monthly' | 'annual', paymentMethod: PaymentMethod) => void;
+  onUpgradeSuccess: (
+    planId: 'monthly' | 'annual',
+    paymentMethod: PaymentMethod
+  ) => { ok: boolean; error?: string };
   onOpenAuth?: () => void;
   onOpenAiAssistant?: () => void;
   initialSelectedPlan?: 'monthly' | 'annual';
@@ -57,6 +60,7 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
   const [copiedAddress, setCopiedAddress] = useState(false);
   const [txHash, setTxHash] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [paymentError, setPaymentError] = useState('');
   const [step, setStep] = useState<'plans' | 'checkout' | 'success'>('plans');
   const [successDetails, setSuccessDetails] = useState<{
     referenceId: string;
@@ -70,10 +74,23 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
   const [cardExpiry, setCardExpiry] = useState('');
   const [cardCvc, setCardCvc] = useState('');
 
+  // النافذة تبقى مركّبة دون إعادة تحميل بين مرات الفتح (return null فقط
+  // أدناه)، فبدون هذا، فتحها مجدداً بعد نجاح طلب سابق كان سيُظهر شاشة
+  // "تم استلام الطلب" القديمة مباشرة بدل شاشة اختيار الباقة من جديد.
+  useEffect(() => {
+    if (isOpen) {
+      setStep('plans');
+      setPaymentError('');
+      setSuccessDetails(null);
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const currentPlan = SUBSCRIPTION_PLANS.find((p) => p.id === selectedPlanId) || SUBSCRIPTION_PLANS[1];
-  const walletBalance = currentUser?.totalEarnings || 0;
+  // كان يقرأ totalEarnings (إحصائية أرباح، لا رصيداً قابلاً للإنفاق) —
+  // نفس خطأ حقل الرصيد المُصلَح في App.tsx (WalletModal/NewCampaignModal).
+  const walletBalance = currentUser?.walletBalance || 0;
   const hasEnoughWalletBalance = walletBalance >= currentPlan.price;
   const quotaStats = currentUser ? getRemainingAiUses(currentUser.aiQuota) : null;
 
@@ -98,6 +115,8 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
 
   const handleConfirmPayment = (e: React.FormEvent) => {
     e.preventDefault();
+    setPaymentError('');
+    setIsProcessing(true);
 
     let methodLabel = 'محفظة ليتيريوم';
     if (paymentMethod === 'usdt_trc20') methodLabel = 'USDT (TRC20)';
@@ -107,8 +126,23 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
 
     // لا يوجد أي اتصال حقيقي ببوابة دفع (Stripe/PayPal) في هذه المنصة —
     // الدفع بوساطة الأدمن حصراً. لا تفعيل فوري ولا محاكاة نجاح وهمية هنا؛
-    // الطلب يُرسَل فوراً وتتولى App.tsx إنشاء طلب معلّق للمراجعة اليدوية.
-    onUpgradeSuccess(selectedPlanId, methodLabel as PaymentMethod);
+    // الطلب يُرسَل فوراً وتتولى App.tsx إنشاء طلب معلّق للمراجعة اليدوية،
+    // والشاشة التالية تعرض "تم الاستلام — قيد المراجعة" بصدق، لا "مفعّل الآن".
+    const result = onUpgradeSuccess(selectedPlanId, methodLabel as PaymentMethod);
+
+    if (!result?.ok) {
+      setIsProcessing(false);
+      setPaymentError(result?.error || 'تعذر إرسال طلب الاشتراك. يرجى المحاولة مرة أخرى.');
+      return;
+    }
+
+    setSuccessDetails({
+      referenceId: `SUB-${Date.now().toString().slice(-6)}`,
+      expiryDate: '',
+      newLimit: currentPlan.aiLimitLabel
+    });
+    setIsProcessing(false);
+    setStep('success');
   };
 
   return (
@@ -691,8 +725,15 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
                     الدفع الآمن عبر PayPal
                   </h5>
                   <p className="text-xs text-slate-500">
-                    سيتم تأكيد الدفع لـ <strong>{currentPlan.price}$</strong> وتفعيل الاشتراك بحسابك فوراً.
+                    سيتم إرسال طلب اشتراكك بقيمة <strong>{currentPlan.price}$</strong> لمراجعة إدارة المنصة وتفعيله يدوياً خلال 24 إلى 48 ساعة.
                   </p>
+                </div>
+              )}
+
+              {paymentError && (
+                <div className="p-3.5 rounded-2xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-xs text-red-900 dark:text-red-200 flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                  <p className="leading-relaxed">{paymentError}</p>
                 </div>
               )}
 
@@ -715,29 +756,35 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
                   {isProcessing ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>جاري معالجة الدفع وتحديث الحساب...</span>
+                      <span>جاري إرسال طلب الاشتراك...</span>
                     </>
                   ) : (
                     <>
                       <Sparkles className="w-4 h-4" />
-                      <span>تأكيد الدفع ({currentPlan.price}$) وتفعيل الاشتراك فوراً</span>
+                      <span>إرسال طلب الاشتراك ({currentPlan.price}$)</span>
                     </>
                   )}
                 </button>
               </div>
             </form>
           ) : (
-            /* Success Step / Detailed Receipt */
+            /* Success Step: Pending-Review Receipt.
+               ⚠️ لا يوجد تفعيل فوري حقيقي في هذه المنصة — الدفع يمر عبر
+               مراجعة يدوية من المالك (انظر التعليق في handleConfirmPayment
+               وفي App.tsx/handleUpgradeSuccess). هذه الشاشة تعرض تأكيد
+               "استلام الطلب" الصادق، لا "تفعيل ناجح" وهمياً. */
             <div className="py-4 space-y-5 animate-android-in">
               <div className="text-center space-y-2">
-                <div className="w-16 h-16 rounded-3xl bg-emerald-100 dark:bg-emerald-950/80 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto shadow-xl shadow-emerald-500/20 border-2 border-emerald-500/30">
-                  <CheckCircle className="w-9 h-9 stroke-[2.5]" />
+                <div className="w-16 h-16 rounded-3xl bg-amber-100 dark:bg-amber-950/80 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto shadow-xl shadow-amber-500/20 border-2 border-amber-500/30">
+                  <Clock className="w-9 h-9 stroke-[2.5]" />
                 </div>
                 <h3 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">
-                  تم تأكيد الدفع وتفعيل الباقة بنجاح! 🎉
+                  تم استلام طلب اشتراكك ✅
                 </h3>
                 <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 max-w-md mx-auto">
-                  تهانينا! حسابك الآن مشترك رسمي في <strong>{currentPlan.name}</strong>، وتم رفع حد استخدام الذكاء الاصطناعي على المنصة فورياً.
+                  {paymentMethod === 'wallet'
+                    ? <>سيُخصم المبلغ من محفظتك ويُفعَّل اشتراكك في <strong>{currentPlan.name}</strong> خلال 24 إلى 48 ساعة بعد المراجعة اليدوية.</>
+                    : <>تتم مراجعة إثبات الدفع يدوياً خلال 24 إلى 48 ساعة، وسيُفعَّل اشتراكك في <strong>{currentPlan.name}</strong> فور التحقق.</>}
                 </p>
               </div>
 
@@ -747,60 +794,45 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
                   <div className="flex items-center gap-2">
                     <Crown className="w-4 h-4 text-amber-500" />
                     <span className="text-xs font-black text-slate-900 dark:text-white">
-                      إيصال تفعيل الاشتراك
+                      إيصال طلب الاشتراك
                     </span>
                   </div>
                   <span className="text-[11px] font-mono font-black text-teal-600 dark:text-teal-400">
-                    {successDetails?.referenceId || 'SUB-294810'}
+                    {successDetails?.referenceId}
                   </span>
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
                   <div>
-                    <span className="text-slate-400 block text-[11px]">الباقة المفعلة:</span>
+                    <span className="text-slate-400 block text-[11px]">الباقة المطلوبة:</span>
                     <span className="font-black text-slate-900 dark:text-white">
                       {currentPlan.name}
                     </span>
                   </div>
 
                   <div>
-                    <span className="text-slate-400 block text-[11px]">حد الاستخدام الجديد:</span>
+                    <span className="text-slate-400 block text-[11px]">حد الاستخدام بعد التفعيل:</span>
                     <span className="font-black text-emerald-600 dark:text-emerald-400">
                       {successDetails?.newLimit || currentPlan.aiLimitLabel}
                     </span>
                   </div>
 
                   <div>
-                    <span className="text-slate-400 block text-[11px]">تاريخ الانتهاء والتجديد:</span>
-                    <span className="font-black text-slate-900 dark:text-white">
-                      {successDetails?.expiryDate || 'بعد سنة من الآن'}
+                    <span className="text-slate-400 block text-[11px]">حالة الطلب:</span>
+                    <span className="font-black text-amber-600 dark:text-amber-400">
+                      قيد المراجعة اليدوية
                     </span>
                   </div>
                 </div>
               </div>
 
-              {/* Fast Action Buttons */}
-              <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
-                {onOpenAiAssistant && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onClose();
-                      onOpenAiAssistant();
-                    }}
-                    className="w-full sm:flex-1 py-3.5 rounded-2xl bg-teal-600 hover:bg-teal-700 text-white font-black text-xs sm:text-sm shadow-md active:scale-95 transition-all flex items-center justify-center gap-2"
-                  >
-                    <Sparkles className="w-4 h-4" />
-                    <span>فتح المساعد الذكي الآن</span>
-                  </button>
-                )}
-
+              <div className="flex items-center justify-center pt-2">
                 <button
                   type="button"
                   onClick={onClose}
-                  className="w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-black text-xs sm:text-sm hover:bg-slate-200 active:scale-95 transition-all"
+                  className="w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-teal-600 hover:bg-teal-700 text-white font-black text-xs sm:text-sm shadow-md active:scale-95 transition-all"
                 >
-                  العودة إلى المنصة
+                  حسناً، فهمت
                 </button>
               </div>
             </div>

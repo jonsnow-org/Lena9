@@ -84,6 +84,14 @@ export interface User {
   totalViews?: number;
   totalEarnings?: number;
   monthlyEarnings?: number;
+  /** رصيد المحفظة القابل للإنفاق فعلياً (شراء مقالات، حملات، اشتراكات) — يُودَع عبر مراجعة الأدمن اليدوية */
+  walletBalance?: number;
+  /** أرباح تجاوزت فترة التجميد (30 يوماً) وأصبحت قابلة لطلب السحب */
+  availableBalance?: number;
+  /** أرباح لا تزال ضمن فترة التجميد، لم تصبح قابلة للسحب بعد */
+  pendingEarnings?: number;
+  /** إجمالي كل الأرباح منذ إنشاء الحساب (إحصائية تراكمية، ليست رصيداً قابلاً للإنفاق) */
+  lifetimeEarnings?: number;
   joinedDate?: string;
   twoFactorEnabled?: boolean;
   notificationsEnabled?: boolean;

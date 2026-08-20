@@ -246,6 +246,14 @@ export async function fetchUserFromFirestore(uid: string): Promise<User | null> 
       totalViews: data.totalViews || 0,
       totalEarnings: Number(data.totalEarnings ?? (data.walletBalance ?? 0)),
       monthlyEarnings: data.monthlyEarnings || 0,
+      // ⚠️ كانت هذه الحقول المالية الأربعة غائبة تماماً عن الكائن المُعاد
+      // هنا رغم وجودها فعلياً في مستند Firestore — فيبدو للمستخدم أن رصيده
+      // "اختفى" (يعود 0 عبر ?? 0 في كل مكان يقرأها) بمجرد أي إعادة تحميل
+      // أو إعادة مزامنة، رغم أن المبلغ الحقيقي محفوظ بأمان في القاعدة.
+      walletBalance: Number(data.walletBalance ?? 0),
+      availableBalance: Number(data.availableBalance ?? 0),
+      pendingEarnings: Number(data.pendingEarnings ?? 0),
+      lifetimeEarnings: Number(data.lifetimeEarnings ?? (data.totalEarnings ?? 0)),
       joinedDate: data.createdAt ? new Date(data.createdAt).toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' }) : 'حديثاً',
       aiQuota: data.aiQuota || {
         freeDailyLimit: DEFAULT_FREE_DAILY_LIMIT,
@@ -313,6 +321,9 @@ export async function createOrUpdateUserDoc(
         photoURL: avatarUrl,
         coverUrl: 'https://images.unsplash.com/photo-1457369804613-52c61a468e7d?w=1200',
         walletBalance: 0,
+        availableBalance: 0,
+        pendingEarnings: 0,
+        lifetimeEarnings: 0,
         totalEarnings: 0,
         isVerified: safeRole === 'admin',
         createdAt: new Date().toISOString(),
@@ -362,6 +373,10 @@ export async function createOrUpdateUserDoc(
         totalViews: 0,
         totalEarnings: 0,
         monthlyEarnings: 0,
+        walletBalance: 0,
+        availableBalance: 0,
+        pendingEarnings: 0,
+        lifetimeEarnings: 0,
         joinedDate: 'اليوم',
         aiQuota: {
           freeDailyLimit: DEFAULT_FREE_DAILY_LIMIT,
@@ -412,6 +427,10 @@ export async function createOrUpdateUserDoc(
         totalViews: currentData.totalViews || 0,
         totalEarnings: balance,
         monthlyEarnings: currentData.monthlyEarnings || 0,
+        walletBalance: Number(currentData.walletBalance ?? 0),
+        availableBalance: Number(currentData.availableBalance ?? 0),
+        pendingEarnings: Number(currentData.pendingEarnings ?? 0),
+        lifetimeEarnings: Number(currentData.lifetimeEarnings ?? balance),
         joinedDate: currentData.createdAt ? new Date(currentData.createdAt).toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' }) : 'سابقاً',
         aiQuota: currentData.aiQuota || {
           freeDailyLimit: DEFAULT_FREE_DAILY_LIMIT,
@@ -526,13 +545,43 @@ export async function registerWithEmail(
   // sides of the race agree on the correct role either way.
   localStorage.setItem(PENDING_ROLE_KEY, role);
   try {
-    return await withTransientRetry(async () => {
+    const createAccount = async (): Promise<FirebaseUser> => {
       const cred = await createUserWithEmailAndPassword(auth, email, password);
       if (profileData.fullName) {
         await updateProfile(cred.user, { displayName: profileData.fullName });
       }
-      return await createOrUpdateUserDoc(cred.user, role, profileData);
-    });
+      return cred.user;
+    };
+
+    let fbUser: FirebaseUser;
+    try {
+      fbUser = await createAccount();
+    } catch (error: any) {
+      const msg = typeof error?.message === 'string' ? error.message : '';
+      const isTransient = /closing|database connection|indexeddb/i.test(msg);
+      if (!isTransient) throw error;
+
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      try {
+        fbUser = await createAccount();
+      } catch (retryError: any) {
+        // ⚠️ الخطأ المؤقت الأصلي (IndexedDB) قد يصل بعد أن يكون الحساب
+        // أُنشئ فعلياً على خوادم Firebase — فتفشل محاولة إعادة الإنشاء
+        // بـ auth/email-already-in-use رغم أن التسجيل الأول نجح حقيقةً.
+        // بما أننا نحن من زوّدنا كلمة المرور هذه للتو ضمن نفس محاولة
+        // التسجيل، الاحتمال الأقرب بكثير أنه حسابنا نفسه لا حساب آخر
+        // مصادف لنفس البريد — فنكمل بتسجيل الدخول به بدل عرض رسالة
+        // "البريد مستخدم من قبل" المضلّلة لمستخدم يسجّل لأول مرة.
+        if (retryError?.code === 'auth/email-already-in-use') {
+          const cred = await signInWithEmailAndPassword(auth, email, password);
+          fbUser = cred.user;
+        } else {
+          throw retryError;
+        }
+      }
+    }
+
+    return await createOrUpdateUserDoc(fbUser, role, profileData);
   } finally {
     localStorage.removeItem(PENDING_ROLE_KEY);
   }

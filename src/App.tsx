@@ -1458,9 +1458,22 @@ export function App() {
     setArticles((prev) =>
       prev.map((a) => (a.id === readingArticle.id ? { ...a, viewsCount: newCount } : a))
     );
-    incrementArticleViewInFirestore(readingArticle.id).catch((err) =>
-      console.error('تعذر تسجيل المشاهدة:', err)
-    );
+
+    const articleId = readingArticle.id;
+    (async () => {
+      // الكتابة تتطلب جلسة موقّعة (ولو مجهولة) حسب قواعد الأمان. الزائر
+      // الذي فتح مقالاً دون أن يُعجب أو يُقيّم من قبل ليس لديه أي جلسة
+      // بعد، فكانت الكتابة تُرفض بصمت (permission-denied مُلتقط بـ catch)
+      // ولا تُحتسب مشاهدته أبداً. نُنشئ له هوية مجهولة هنا أيضاً، بنفس
+      // أسلوب handleLikeArticle، بدل ترك زوار الموقع بلا أي مشاهدات محسوبة.
+      let uid = currentUserId || guestIdentityUid;
+      if (!uid) {
+        uid = (await ensureGuestIdentity()) || '';
+        if (uid) setGuestIdentityUid(uid);
+      }
+      if (!uid) return;
+      await incrementArticleViewInFirestore(articleId);
+    })().catch((err) => console.error('تعذر تسجيل المشاهدة:', err));
   }, [readingArticle?.id]);
 
   // تقييمات المستخدم الحالي بالنجوم لكل مقال (لمعرفة تقييمه الحالي وعرضه
@@ -1720,7 +1733,17 @@ export function App() {
   // الأدمن" المعتمد: لا يوجد اتصال حقيقي ببوابة Stripe/PayPal فعلياً،
   // فمنح الاشتراك فوراً عند اختيار هذه الطرق كان يعني أن أي شخص يقدر
   // "يدفع" وهمياً ويحصل على اشتراك حقيقي مجاناً بدون أي تحقق فعلي.
-  const handleUpgradeSuccess = (plan: 'monthly' | 'annual', paymentMethod: PaymentMethod) => {
+  /**
+   * لا تُغلق النافذة هنا ولا تعرض alert() — كانت النافذة تُغلق فوراً هنا
+   * بينما تملك SubscriptionModal شاشة "نجاح" جاهزة بالكامل لم تكن تُعرض
+   * أبداً بسببه. الآن تُعاد النتيجة للنافذة لتقرر بنفسها: تعرض شاشة
+   * "تم استلام الطلب — قيد المراجعة" عند النجاح، أو رسالة خطأ داخلية عند
+   * عدم كفاية الرصيد، دون إغلاق مفاجئ ودون رسالة متصفح افتراضية.
+   */
+  const handleUpgradeSuccess = (
+    plan: 'monthly' | 'annual',
+    paymentMethod: PaymentMethod
+  ): { ok: boolean; error?: string } => {
     const planPrice = plan === 'monthly' ? 9.99 : 79.99;
 
     const isWalletPay =
@@ -1732,11 +1755,11 @@ export function App() {
     if (isWalletPay) {
       const bal = (currentUser as any).walletBalance ?? 0;
       if (bal < planPrice) {
-        alert(
-          `رصيد محفظتك ($${bal.toFixed(2)}) لا يكفي لهذا الاشتراك ($${planPrice.toFixed(2)}). اشحن محفظتك أولاً.`
-        );
         setMoneyModalMode('deposit');
-        return;
+        return {
+          ok: false,
+          error: `رصيد محفظتك ($${bal.toFixed(2)}) لا يكفي لهذا الاشتراك ($${planPrice.toFixed(2)}). اشحن محفظتك أولاً.`
+        };
       }
     }
 
@@ -1750,12 +1773,7 @@ export function App() {
       price: planPrice
     }).catch((err) => console.error('تعذر إنشاء طلب الاشتراك:', err));
 
-    setIsSubscriptionOpen(false);
-    alert(
-      isWalletPay
-        ? 'تم إرسال طلب اشتراكك. سيُخصم المبلغ من محفظتك ويُفعَّل اشتراكك خلال 24 إلى 48 ساعة بعد المراجعة اليدوية.'
-        : 'تم استلام طلب اشتراكك. تتم مراجعة إثبات الدفع يدوياً خلال 24 إلى 48 ساعة، وسيُفعَّل اشتراكك فور التحقق.'
-    );
+    return { ok: true };
   };
 
   // Advertiser Create Campaign
@@ -2230,7 +2248,7 @@ export function App() {
             campaigns={campaigns.filter((c) => c.advertiserId === currentUser.id)}
             onCreateCampaign={handleCreateCampaign}
             onToggleCampaignStatus={handleToggleCampaignStatus}
-            advertiserBalance={currentUser.totalEarnings || 0}
+            advertiserBalance={currentUser.walletBalance || 0}
             onOpenDeposit={() => setIsWalletOpen(true)}
             activeUsersCount={Math.max(users.length, 1)}
           />
@@ -2321,6 +2339,25 @@ export function App() {
                 prev.map((tx) => (tx.id === txId ? { ...tx, status: 'completed' } : tx))
               );
               await approvePayoutInFirestore(txId);
+            }}
+            /* تعديل رصيد مستخدم يدوياً من الأدمن — كانت هذه الأداة موعودة في
+               نصوص عدة تبويبات ("عدّل رصيد المستخدم يدوياً من تبويب
+               المستخدمين") دون أن تُبنى فعلياً. amount هنا فرق يُضاف لقيمة
+               الحقل الحالية (موجب = إضافة، سالب = خصم)، وليس رقماً مطلقاً. */
+            onAdjustBalance={async (userId, field, amount) => {
+              const target = users.find((u) => u.id === userId);
+              if (!target) return;
+              const current = Number((target as any)[field] ?? 0);
+              const next = Number((current + amount).toFixed(2));
+              setUsers((prev) =>
+                prev.map((u) => (u.id === userId ? ({ ...u, [field]: next } as any) : u))
+              );
+              try {
+                await adminAdjustUserBalance(userId, { [field]: next } as any);
+              } catch (err) {
+                console.error('تعذر حفظ تعديل الرصيد:', err);
+                alert('تعذر حفظ تعديل الرصيد. حاول مجدداً.');
+              }
             }}
             earningsRecords={earningsRecords}
             onReleaseEarning={async (earning) => {
@@ -2478,6 +2515,17 @@ export function App() {
                             : c
                         )
                       );
+                      // ⚠️ كان هذا التحديث محلياً فقط (يُفقد عند إعادة التحميل)
+                      // بلا أي تسجيل فعلي في adEvents — على عكس إعلانات صفحة
+                      // الكاتب المجاورة التي تستدعي logAdEvent بشكل صحيح. هذا
+                      // يعني أن أداء حملات "المنصة" (الصفحة الرئيسية) لم يكن
+                      // يُحتسب أو يُحتسب له عائد إطلاقاً.
+                      logAdEvent({
+                        campaignId: camp.id,
+                        slotId: 'platform_banner',
+                        viewerId: currentUserId || null,
+                        eventType: 'click'
+                      }).catch(() => {});
                     }
                   }}
                   onAdImpression={(camp, isValid) => {
@@ -2493,6 +2541,12 @@ export function App() {
                             : c
                         )
                       );
+                      logAdEvent({
+                        campaignId: camp.id,
+                        slotId: 'platform_banner',
+                        viewerId: currentUserId || null,
+                        eventType: 'impression'
+                      }).catch(() => {});
                     }
                   }}
                   onFraudDetected={(flag) => {
@@ -2780,8 +2834,8 @@ export function App() {
       <WalletModal
         isOpen={isWalletOpen}
         onClose={() => setIsWalletOpen(false)}
-        balance={currentUser.totalEarnings || 0}
-        pendingBalance={currentUser.monthlyEarnings || 0}
+        balance={currentUser.availableBalance || 0}
+        pendingBalance={currentUser.pendingEarnings || 0}
         transactions={transactions}
         onDeposit={handleDeposit}
         onWithdraw={handleWithdraw}
@@ -2874,7 +2928,7 @@ export function App() {
         isOpen={isNewCampaignOpen}
         onClose={() => setIsNewCampaignOpen(false)}
         onCreateCampaign={handleCreateCampaign}
-        userBalance={currentUser.totalEarnings || 0}
+        userBalance={currentUser.walletBalance || 0}
         onOpenDeposit={() => {
           setIsNewCampaignOpen(false);
           setIsWalletOpen(true);

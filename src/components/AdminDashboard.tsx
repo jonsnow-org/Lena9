@@ -60,7 +60,11 @@ interface AdminDashboardProps {
   purchaseRequests?: any[];
   adEvents?: any[];
   onProcessAdEvents?: () => void;
-  onAdjustBalance?: (userId: string, field: string, amount: number) => void;
+  onAdjustBalance?: (
+    userId: string,
+    field: 'walletBalance' | 'availableBalance' | 'pendingEarnings' | 'lifetimeEarnings',
+    amount: number
+  ) => void;
   onUpdatePurchaseRequest?: (requestId: string, status: 'approved' | 'rejected') => void;
   onUpdateMoneyRequest?: (
     collectionName: 'depositRequests' | 'payoutRequests',
@@ -83,6 +87,76 @@ interface AdminDashboardProps {
   }[];
   onReleaseEarning?: (earning: { id: string; userId: string; amount: number }) => void;
 }
+
+type AdjustableBalanceField = 'walletBalance' | 'availableBalance' | 'pendingEarnings' | 'lifetimeEarnings';
+
+const BALANCE_FIELD_LABELS: Record<AdjustableBalanceField, string> = {
+  walletBalance: 'رصيد المحفظة',
+  availableBalance: 'متاح للسحب',
+  pendingEarnings: 'أرباح مجمّدة',
+  lifetimeEarnings: 'إجمالي تراكمي'
+};
+
+/**
+ * أداة تعديل رصيد مستخدم يدوياً من الأدمن — البديل المتعمَّد لأي بوابة
+ * دفع آلية (Stripe/PayPal فعلي) التي تتطلب خطة Firebase مدفوعة (Blaze)
+ * لتشغيل Cloud Functions بأمان. كل الإيداع والسحب في هذه المنصة يمر عبر
+ * طلب يراجعه المالك يدوياً ثم يُطبَّق هنا بضغطة واحدة — يحافظ هذا تماماً
+ * على نفس الأسلوب (لا اشتراك مدفوع، لا معالجة تلقائية) الذي بُنيت عليه
+ * كل شاشات الإيداع والسحب الأخرى في التطبيق.
+ */
+const BalanceAdjustCell: React.FC<{
+  user: User;
+  onAdjustBalance?: (userId: string, field: AdjustableBalanceField, amount: number) => void;
+}> = ({ user, onAdjustBalance }) => {
+  const [field, setField] = useState<AdjustableBalanceField>('walletBalance');
+  const [amountInput, setAmountInput] = useState('');
+
+  const currentValue = Number((user as any)[field] ?? 0);
+  const parsedAmount = Number(amountInput);
+  const canApply = amountInput.trim() !== '' && !Number.isNaN(parsedAmount) && parsedAmount !== 0;
+
+  const handleApply = () => {
+    if (!canApply) return;
+    onAdjustBalance?.(user.id, field, parsedAmount);
+    setAmountInput('');
+  };
+
+  return (
+    <div className="flex flex-col gap-1.5 min-w-[190px]">
+      <div className="text-[10px] text-slate-500">
+        {BALANCE_FIELD_LABELS[field]}: <span className="font-mono font-bold text-slate-300">${currentValue.toFixed(2)}</span>
+      </div>
+      <div className="flex items-center gap-1">
+        <select
+          value={field}
+          onChange={(e) => setField(e.target.value as AdjustableBalanceField)}
+          className="bg-slate-950 border border-slate-800 text-slate-300 rounded-lg px-1.5 py-1 text-[10px] focus:outline-none focus:border-purple-500"
+        >
+          {(Object.keys(BALANCE_FIELD_LABELS) as AdjustableBalanceField[]).map((f) => (
+            <option key={f} value={f}>{BALANCE_FIELD_LABELS[f]}</option>
+          ))}
+        </select>
+        <input
+          type="number"
+          step="0.01"
+          value={amountInput}
+          onChange={(e) => setAmountInput(e.target.value)}
+          placeholder="± المبلغ"
+          title="أدخل رقماً موجباً للإضافة أو سالباً للخصم"
+          className="w-20 bg-slate-950 border border-slate-800 text-white rounded-lg px-1.5 py-1 text-[10px] font-mono focus:outline-none focus:border-purple-500"
+        />
+        <button
+          onClick={handleApply}
+          disabled={!canApply}
+          className="px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-700 disabled:opacity-30 disabled:cursor-not-allowed text-white text-[10px] font-bold transition-all"
+        >
+          تطبيق
+        </button>
+      </div>
+    </div>
+  );
+};
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   currentUser,
@@ -182,6 +256,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     if (fraudFilter === 'cpm') return f.pricingModel === 'cpm';
     return true;
   });
+
+  // دفاع محلي إضافي — بجانب قواعد أمان Firestore التي تبقى خط الدفاع
+  // الحقيقي الذي يرفض أي كتابة فعلية من غير الأدمن — لا تُعرض أدوات
+  // الإدارة إطلاقاً لغير الأدمن حتى لو وصل هذا المكوّن للعرض بطريق غير
+  // متوقع (حالة عالقة، رابط مباشر، ...)، بدل الاعتماد على القواعد وحدها
+  // وترك المستخدم يرى كل الأزرار ثم يفاجَأ برفض كل نقرة.
+  if (currentUser.role !== 'admin') {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-6">
+        <div className="text-center space-y-3 max-w-sm">
+          <ShieldAlert className="w-12 h-12 text-red-500 mx-auto" />
+          <h2 className="text-lg font-bold text-white">غير مصرّح بالدخول</h2>
+          <p className="text-sm text-slate-400">
+            هذه اللوحة مخصصة لحسابات الإدارة فقط.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 pb-24">
@@ -980,6 +1073,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <th className="p-3.5">حالة التوثيق (KYC)</th>
                       <th className="p-3.5">المتابعين/المقالات</th>
                       <th className="p-3.5">الأرباح التراكمية</th>
+                      <th className="p-3.5">تعديل الرصيد يدوياً</th>
                       <th className="p-3.5 text-center">إجراءات الحوكمة</th>
                     </tr>
                   </thead>
@@ -1040,6 +1134,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                         <td className="p-3.5 font-mono font-bold text-emerald-400">
                           ${u.totalEarnings?.toFixed(2) || '0.00'}
+                        </td>
+
+                        <td className="p-3.5">
+                          <BalanceAdjustCell user={u} onAdjustBalance={onAdjustBalance} />
                         </td>
 
                         <td className="p-3.5 text-center">

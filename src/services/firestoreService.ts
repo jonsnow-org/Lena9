@@ -328,6 +328,14 @@ export function subscribeToUsers(
           totalViews: data.totalViews || 0,
           totalEarnings: Number(data.totalEarnings ?? (data.walletBalance ?? 0)),
           monthlyEarnings: data.monthlyEarnings || 0,
+          // ⚠️ هذا المستمع يُعيد بناء مصفوفة المستخدمين بالكامل (setUsers
+          // استبدال، لا دمج) عند أي تغيّر في مجموعة users كاملة — لأي مستخدم
+          // كان. إسقاط هذه الحقول هنا كان يعني تصفير رصيد كل المستخدمين
+          // ظاهرياً بمجرد أي تحديث عابر (متابعة، تعديل سيرة ذاتية، ...).
+          walletBalance: Number(data.walletBalance ?? 0),
+          availableBalance: Number(data.availableBalance ?? 0),
+          pendingEarnings: Number(data.pendingEarnings ?? 0),
+          lifetimeEarnings: Number(data.lifetimeEarnings ?? (data.totalEarnings ?? 0)),
           joinedDate: data.createdAt ? new Date(data.createdAt).toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' }) : 'حديثاً',
           aiQuota: data.aiQuota || {
             freeDailyLimit: DEFAULT_FREE_DAILY_LIMIT,
