@@ -51,6 +51,7 @@ import { User, Article, UserRole, AdCampaign, LanguageCode, ArticlePromotion } f
 import { SocialLinksEditor } from './SocialLinksEditor';
 import { AdSlot } from './AdSlot';
 import { REVENUE_SHARES } from '../constants/revenueShares';
+import { MIN_PAYOUT_USD, EARNINGS_HOLD_DAYS } from '../constants/payoutRules';
 import {
   getRemainingAiUses,
   formatAiExpiryDate,
@@ -88,7 +89,11 @@ interface UserProfileViewProps {
   onWriterTabChange?: (tab: 'articles' | 'stats_earnings' | 'literary_profile' | 'ai_tools') => void;
   // فتح لوحة تحكم المالك/الأدمن — مخصص فقط لدور admin (كان مفقوداً تماماً
   // من قبل، فتظهر صفحة "ملفي" لصاحب المنصة فارغة إلا من زر تسجيل الخروج).
-  onNavigateToAdmin?: () => void;
+  // tab اختياري: يفتح اللوحة مباشرة على تبويب محدد بدل النظرة العامة دائماً.
+  onNavigateToAdmin?: (tab?: 'overview' | 'fraud' | 'campaigns' | 'moderation' | 'users' | 'promotions' | 'money' | 'accounting' | 'settings') => void;
+  /** عدد الكتّاب الذين يتابعهم هذا المستخدم فعلياً (followedWriterIds.length)
+   *  — بخلاف currentUser.followingCount المخزَّن الذي لا يُحدَّث أبداً. */
+  followingCount?: number;
 }
 
 export const UserProfileView: React.FC<UserProfileViewProps> = ({
@@ -117,7 +122,8 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   onLogout,
   initialWriterTab,
   onWriterTabChange,
-  onNavigateToAdmin
+  onNavigateToAdmin,
+  followingCount
 }) => {
   const safeArticles = Array.isArray(articles) ? articles : [];
   const safeBookmarkedIds = Array.isArray(bookmarkedArticleIds) ? bookmarkedArticleIds : [];
@@ -406,7 +412,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
               }`}
             >
               <Users className="w-4 h-4" />
-              <span>الكُتّاب المتابعون ({currentUser.followingCount || 4})</span>
+              <span>الكُتّاب المتابعون ({followingCount ?? currentUser.followingCount ?? 0})</span>
             </button>
 
             <button
@@ -1017,9 +1023,11 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
             <div className="space-y-5">
               <div className="p-6 rounded-3xl bg-gradient-to-br from-teal-950/40 via-slate-900 to-slate-900 border border-teal-500/30 flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div>
-                  <span className="text-xs font-bold text-teal-400">الرصيد المتاح للسحب الفوري</span>
-                  <h3 className="text-3xl font-black text-white mt-1">${(currentUser.totalEarnings || 0).toFixed(2)}</h3>
-                  <p className="text-xs text-slate-400 mt-1">الحد الأدنى للسحب: 10$ • السحب عبر: USDT، PayPal، Stripe، الحساب البنكي</p>
+                  <span className="text-xs font-bold text-teal-400">الرصيد المتاح للسحب</span>
+                  <h3 className="text-3xl font-black text-white mt-1">${(currentUser.availableBalance ?? 0).toFixed(2)}</h3>
+                  <p className="text-xs text-slate-400 mt-1">
+                    الحد الأدنى للسحب: ${MIN_PAYOUT_USD} • تُراجَع الطلبات يدوياً وتُصرف عبر USDT أو تحويل بنكي بعد فترة تجميد {EARNINGS_HOLD_DAYS} يوماً من تسجيل الأرباح
+                  </p>
                 </div>
                 <button
                   onClick={onOpenWallet}
@@ -1183,56 +1191,45 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
           {/* Advertiser Tab 1: Current Campaigns */}
           {advertiserTab === 'campaigns' && (
             <div className="space-y-3">
-              {(myCampaigns.length > 0 ? myCampaigns : [
-                {
-                  id: 'camp_1',
-                  title: 'إعلان منصة مدار للكتب الرقمية',
-                  advertiserName: currentUser.companyName || 'شركة أفق للحلول الرقمية',
-                  bannerUrl: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=1200&auto=format&fit=crop&q=80',
-                  targetUrl: 'https://example.com/books',
-                  targetCategory: 'literature',
-                  status: 'active' as const,
-                  budget: 150,
-                  impressionsCount: 84200,
-                  clicksCount: 2610,
-                  durationHours: 72,
-                  createdAt: '2026-03-10'
-                },
-                {
-                  id: 'camp_2',
-                  title: 'خدمات الاستضافة السحابية للمؤلفين',
-                  advertiserName: currentUser.companyName || 'شركة أفق للحلول الرقمية',
-                  bannerUrl: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=1200&auto=format&fit=crop&q=80',
-                  targetUrl: 'https://example.com/cloud',
-                  targetCategory: 'technology',
-                  status: 'active' as const,
-                  budget: 90,
-                  impressionsCount: 40300,
-                  clicksCount: 1210,
-                  durationHours: 48,
-                  createdAt: '2026-03-12'
-                }
-              ]).map((camp) => (
+              {myCampaigns.length === 0 && (
+                <div className="p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center space-y-3">
+                  <Megaphone className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto" />
+                  <p className="text-sm font-bold text-slate-600 dark:text-slate-300">لا توجد حملات إعلانية بعد</p>
+                  <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                    أنشئ حملتك الأولى ليظهر إعلانك للقرّاء وتظهر إحصائياتها الحقيقية هنا فور اعتمادها.
+                  </p>
+                  {(onOpenNewCampaign || onOpenWallet) && (
+                    <button
+                      onClick={onOpenNewCampaign || onOpenWallet}
+                      className="px-5 py-2.5 rounded-2xl bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs shadow-md"
+                    >
+                      إنشاء حملة إعلانية جديدة
+                    </button>
+                  )}
+                </div>
+              )}
+              {myCampaigns.map((camp) => (
                 <div
                   key={camp.id}
                   className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-col md:flex-row items-center justify-between gap-4"
                 >
                   <div className="flex items-center gap-4 w-full md:w-auto">
                     <img
-                      src={camp.bannerUrl}
-                      alt={camp.title}
+                      src={camp.imageUrl}
+                      alt={camp.campaignName}
                       referrerPolicy="no-referrer"
                       className="w-24 h-16 rounded-2xl object-cover shrink-0"
                     />
                     <div>
                       <div className="flex items-center gap-2 mb-1">
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                          نشطة • {camp.durationHours} ساعة
+                          {camp.status === 'active' ? 'نشطة' : camp.status === 'pending' ? 'قيد المراجعة' : camp.status === 'paused' ? 'موقوفة مؤقتاً' : camp.status === 'rejected' ? 'مرفوضة' : 'منتهية'}
+                          {camp.durationHours ? ` • ${camp.durationHours} ساعة` : ''}
                         </span>
-                        <span className="text-xs text-slate-400 font-mono">الميزانية: ${camp.budget}</span>
+                        <span className="text-xs text-slate-400 font-mono">الميزانية: ${camp.totalBudget?.toFixed(2) ?? '0.00'}</span>
                       </div>
-                      <h4 className="font-bold text-sm text-slate-900 dark:text-white">{camp.title}</h4>
-                      <p className="text-xs text-cyan-600 dark:text-cyan-400">{camp.targetUrl}</p>
+                      <h4 className="font-bold text-sm text-slate-900 dark:text-white">{camp.campaignName}</h4>
+                      <p className="text-xs text-cyan-600 dark:text-cyan-400 truncate max-w-[220px]">{camp.destinationUrl}</p>
                     </div>
                   </div>
 
@@ -1261,35 +1258,24 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
             </div>
           )}
 
-          {/* Advertiser Tab 2: Create Ad */}
+          {/* Advertiser Tab 2: Create Ad — يفتح نموذج إنشاء الحملة الحقيقي
+              (NewCampaignModal) بدل حقول غير مربوطة بأي حالة كانت لا تُنشئ
+              شيئاً فعلياً، وزر يفتح المحفظة متجاهلاً كل ما كُتب فيها. */}
           {advertiserTab === 'create_ad' && (
-            <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4">
+            <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4 text-center">
+              <Megaphone className="w-10 h-10 text-cyan-500 mx-auto" />
               <h4 className="font-black text-base text-slate-900 dark:text-white">إطلاق حملة إعلانية مخصصة</h4>
-              <p className="text-xs text-slate-500">اختر نوع الحملة والجمهور المستهدف لظهور إعلانك فوراً في المنصة.</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">عنوان الإعلان</label>
-                  <input
-                    type="text"
-                    placeholder="مثال: خصم 50% على أحدث الروايات والكتب"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">رابط الوجهة (URL)</label>
-                  <input
-                    type="url"
-                    placeholder="https://yourbrand.com/landing"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs"
-                  />
-                </div>
-              </div>
-              <button
-                onClick={onOpenWallet}
-                className="w-full py-3 rounded-2xl bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs shadow-md transition-all mt-2"
-              >
-                تأكيد وتمويل الحملة من الرصيد
-              </button>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                اختر نوع الحملة والجمهور المستهدف وميزانيتك من نافذة إنشاء الحملة، وستظهر هنا فور اعتمادها.
+              </p>
+              {(onOpenNewCampaign || onOpenWallet) && (
+                <button
+                  onClick={onOpenNewCampaign || onOpenWallet}
+                  className="px-6 py-3 rounded-2xl bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs shadow-md transition-all"
+                >
+                  فتح نموذج إنشاء الحملة
+                </button>
+              )}
             </div>
           )}
 
@@ -1300,7 +1286,9 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
               <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-center justify-between">
                 <div>
                   <span className="text-xs text-slate-500">الرصيد المالي المتاح للحملات</span>
-                  <h3 className="text-xl font-black text-slate-900 dark:text-white">$180.00</h3>
+                  <h3 className="text-xl font-black text-slate-900 dark:text-white">
+                    ${(currentUser.walletBalance ?? 0).toFixed(2)}
+                  </h3>
                 </div>
                 <button
                   onClick={onOpenWallet}
@@ -1347,22 +1335,38 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center">
+            <button
+              type="button"
+              onClick={() => onNavigateToAdmin?.('users')}
+              className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center hover:border-brand-400 active:scale-95 transition-all"
+            >
               <Users className="w-5 h-5 text-brand-500 mx-auto mb-1.5" />
               <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300">المستخدمون</span>
-            </div>
-            <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center">
+            </button>
+            <button
+              type="button"
+              onClick={() => onNavigateToAdmin?.('campaigns')}
+              className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center hover:border-cyan-400 active:scale-95 transition-all"
+            >
               <Megaphone className="w-5 h-5 text-cyan-500 mx-auto mb-1.5" />
               <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300">الحملات</span>
-            </div>
-            <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center">
+            </button>
+            <button
+              type="button"
+              onClick={() => onNavigateToAdmin?.('fraud')}
+              className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center hover:border-emerald-400 active:scale-95 transition-all"
+            >
               <ShieldCheck className="w-5 h-5 text-emerald-500 mx-auto mb-1.5" />
               <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300">مكافحة الاحتيال</span>
-            </div>
-            <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center">
+            </button>
+            <button
+              type="button"
+              onClick={() => onNavigateToAdmin?.('money')}
+              className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center hover:border-amber-400 active:scale-95 transition-all"
+            >
               <DollarSign className="w-5 h-5 text-amber-500 mx-auto mb-1.5" />
               <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300">الماليات</span>
-            </div>
+            </button>
           </div>
         </div>
       )}

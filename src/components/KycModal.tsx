@@ -176,20 +176,16 @@ export const KycModal: React.FC<KycModalProps> = ({
                 />
               </div>
 
-              {/* Photo Upload Area */}
-              <div>
-                <label className="block text-xs font-bold text-slate-900 dark:text-slate-200 mb-1">
-                  صورة الوثيقة وصورة شخصية (Selfie)
-                </label>
-                <div className="p-5 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-2xl text-center bg-slate-50 dark:bg-slate-800/50 cursor-pointer hover:border-teal-500 transition-colors">
-                  <Camera className="w-8 h-8 text-teal-600 mx-auto mb-1" />
-                  <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
-                    انقر لرفع صورة الوثيقة أو التقاط سيلفي
-                  </span>
-                  <span className="text-[10px] text-slate-400">
-                    JPG, PNG, PDF بحد أقصى 10 ميغابايت
-                  </span>
-                </div>
+              {/* رفع صور الوثائق مباشرة من هذه النافذة غير متاح حالياً (يتطلب
+                  خدمة تخزين ملفات لا تتوفر في خطة المشروع المجانية) — بدل
+                  عرض منطقة "انقر للرفع" لا تستجيب فعلياً لأي نقرة، نوضح
+                  بصراحة المسار الحقيقي البديل. */}
+              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 flex items-start gap-2">
+                <Camera className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />
+                <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+                  لا حاجة لرفع صورة الوثيقة هنا. إن احتاج فريق المراجعة لصورة الوثيقة أو صورة شخصية
+                  للتأكد من مطابقتها، سيتواصل معك عبر البريد الإلكتروني المسجَّل بحسابك لإرسالها بأمان.
+                </p>
               </div>
 
               <button

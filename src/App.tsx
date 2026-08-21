@@ -2376,6 +2376,7 @@ export function App() {
             currentUser={currentUser}
             articles={articles}
             bookmarkedArticleIds={bookmarkedArticleIds}
+            followingCount={followedWriterIds.length}
             campaigns={campaigns}
             initialWriterTab={writerActiveTab}
             onWriterTabChange={setWriterActiveTab}
@@ -2404,9 +2405,9 @@ export function App() {
             language={language}
             onToggleLanguage={() => setLanguage(LANGUAGE_CYCLE[(LANGUAGE_CYCLE.indexOf(language) + 1) % LANGUAGE_CYCLE.length])}
             onLogout={handleLogout}
-            onNavigateToAdmin={() => {
+            onNavigateToAdmin={(tab) => {
               setActiveTab('admin');
-              setAdminActiveTab('overview');
+              setAdminActiveTab(tab || 'overview');
             }}
           />
         ) : activeTab === 'explore' ? (
@@ -2425,6 +2426,7 @@ export function App() {
             currentUser={currentUser}
             articles={articles}
             bookmarkedArticleIds={bookmarkedArticleIds}
+            followingCount={followedWriterIds.length}
             campaigns={campaigns}
             initialWriterTab="articles"
             onWriterTabChange={setWriterActiveTab}
