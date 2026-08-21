@@ -184,8 +184,15 @@ export async function saveCampaignToFirestore(campaign: Partial<AdCampaign>): Pr
       return campaign.id;
     } else {
       const colRef = collection(db, 'campaigns');
+      // Firestore يرفض أي حقل بقيمة undefined صراحة (مثل cpmRate/durationHours
+      // حين لا ينطبق نموذج التسعير المختار) — نحذفها قبل الإرسال بدل تركها
+      // تُفشل addDoc بأكمله.
+      const cleanCampaign: Record<string, any> = {};
+      Object.entries(campaign).forEach(([k, v]) => {
+        if (v !== undefined) cleanCampaign[k] = v;
+      });
       const docRef = await addDoc(colRef, {
-        ...campaign,
+        ...cleanCampaign,
         impressionsCount: campaign.impressionsCount || 0,
         validImpressionsCount: campaign.validImpressionsCount || 0,
         clicksCount: campaign.clicksCount || 0,

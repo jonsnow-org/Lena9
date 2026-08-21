@@ -16,8 +16,17 @@ import {
   Image as ImageIcon
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { AdCampaign, PricingModel, AdPlacementType } from '../types';
+import { AdCampaign, PricingModel, AdPlacementType, PromotionKind } from '../types';
 import { VideoUrlInput } from './VideoEmbed';
+import { MediaUploadInput } from './MediaUploadInput';
+
+const PROMOTION_PLATFORMS: { id: Exclude<PromotionKind, 'website'>; label: string; urlHint: string }[] = [
+  { id: 'telegram', label: 'قناة تيليجرام', urlHint: 'https://t.me/channel_username' },
+  { id: 'youtube', label: 'قناة يوتيوب', urlHint: 'https://youtube.com/@channel_handle' },
+  { id: 'instagram', label: 'حساب انستغرام', urlHint: 'https://instagram.com/username' },
+  { id: 'twitter', label: 'حساب X (تويتر)', urlHint: 'https://x.com/username' },
+  { id: 'facebook', label: 'صفحة فيسبوك', urlHint: 'https://facebook.com/pagename' }
+];
 
 interface NewCampaignModalProps {
   isOpen: boolean;
@@ -64,6 +73,9 @@ export const NewCampaignModal: React.FC<NewCampaignModalProps> = ({
   const [imageUrl, setImageUrl] = useState(PRESET_BANNERS[0].url);
   const [customImageInput, setCustomImageInput] = useState('');
   const [videoUrl, setVideoUrl] = useState('');
+  const [uploadedVideoUrl, setUploadedVideoUrl] = useState('');
+  const [mediaMode, setMediaMode] = useState<'image' | 'video'>('image');
+  const [promotionKind, setPromotionKind] = useState<PromotionKind>('website');
   const [destinationUrl, setDestinationUrl] = useState('https://literium.app');
   const [pricingModel, setPricingModel] = useState<PricingModel>('cpc');
   const [placementType, setPlacementType] = useState<AdPlacementType>('writer');
@@ -103,7 +115,11 @@ export const NewCampaignModal: React.FC<NewCampaignModalProps> = ({
     }
 
     if (!destinationUrl.trim()) {
-      setErrorMsg('يرجى إدخال الرابط المستهدف للحملة.');
+      setErrorMsg(
+        promotionKind === 'website'
+          ? 'يرجى إدخال الرابط المستهدف للحملة.'
+          : 'يرجى إدخال رابط القناة/الحساب المراد الترويج له.'
+      );
       return;
     }
 
@@ -118,8 +134,10 @@ export const NewCampaignModal: React.FC<NewCampaignModalProps> = ({
         campaignName: campaignName.trim(),
         description: description.trim() || adText.trim(),
         adText: adText.trim(),
-        imageUrl: customImageInput.trim() || imageUrl,
+        imageUrl: mediaMode === 'image' ? (customImageInput.trim() || imageUrl) : '',
         videoUrl: videoUrl.trim() || undefined,
+        uploadedVideoUrl: mediaMode === 'video' ? (uploadedVideoUrl.trim() || undefined) : undefined,
+        promotionKind,
         destinationUrl: destinationUrl.trim(),
         type: pricingModel === 'fixed' ? 'fixed' : pricingModel === 'cpc' ? 'cpc' : 'cpm',
         pricingModel,
@@ -226,6 +244,63 @@ export const NewCampaignModal: React.FC<NewCampaignModalProps> = ({
             </button>
           </div>
 
+          {/* نوع الحملة: إعلان عادي أو ترويج قناة/حساب اجتماعي */}
+          <div className="space-y-2">
+            <label className="block text-xs font-bold text-slate-800 dark:text-slate-200">
+              نوع الحملة
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setPromotionKind('website')}
+                className={`p-3 rounded-2xl border text-center transition-all ${
+                  promotionKind === 'website'
+                    ? 'border-cyan-500 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 font-extrabold ring-2 ring-cyan-500/20'
+                    : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                <span className="block text-xs font-bold">حملة إعلانية عادية</span>
+                <span className="text-[10px] opacity-75">ترويج موقع أو منتج</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (promotionKind === 'website') {
+                    setPromotionKind('telegram');
+                    if (destinationUrl === 'https://literium.app') setDestinationUrl('');
+                  }
+                }}
+                className={`p-3 rounded-2xl border text-center transition-all ${
+                  promotionKind !== 'website'
+                    ? 'border-cyan-500 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 font-extrabold ring-2 ring-cyan-500/20'
+                    : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                <span className="block text-xs font-bold">ترويج قناة/حساب اجتماعي</span>
+                <span className="text-[10px] opacity-75">يوتيوب، تيليجرام، إنستغرام...</span>
+              </button>
+            </div>
+
+            {promotionKind !== 'website' && (
+              <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5 pt-1">
+                {PROMOTION_PLATFORMS.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setPromotionKind(p.id)}
+                    className={`p-2 rounded-xl text-center border text-[11px] font-bold transition-all ${
+                      promotionKind === p.id
+                        ? 'bg-cyan-600 text-white border-cyan-600'
+                        : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* 1. Campaign Basic Info */}
           <div className="space-y-3">
             <label className="block text-xs font-bold text-slate-800 dark:text-slate-200">
@@ -256,64 +331,102 @@ export const NewCampaignModal: React.FC<NewCampaignModalProps> = ({
                 type="url"
                 value={destinationUrl}
                 onChange={(e) => setDestinationUrl(e.target.value)}
-                placeholder="الرابط الخارجي المستهدف (https://...)"
+                placeholder={
+                  promotionKind === 'website'
+                    ? 'الرابط الخارجي المستهدف (https://...)'
+                    : PROMOTION_PLATFORMS.find((p) => p.id === promotionKind)?.urlHint
+                }
                 className="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs outline-hidden focus:border-cyan-500"
+                dir="ltr"
                 required
               />
             </div>
           </div>
 
-          {/* 2. Banner Selection */}
+          {/* 2. الوسائط الإعلانية: صورة أو فيديو قصير مرفوع مباشرة */}
           <div className="space-y-2">
             <label className="block text-xs font-bold text-slate-800 dark:text-slate-200">
-              2. صورة البانر الإعلاني
+              2. الوسائط الإعلانية
             </label>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {PRESET_BANNERS.map((preset) => (
-                <button
-                  key={preset.label}
-                  type="button"
-                  onClick={() => {
-                    setImageUrl(preset.url);
-                    setCustomImageInput('');
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setMediaMode('image')}
+                className={`py-2 rounded-xl text-xs font-bold border transition-all ${
+                  mediaMode === 'image'
+                    ? 'bg-cyan-600 text-white border-cyan-600'
+                    : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                }`}
+              >
+                صورة
+              </button>
+              <button
+                type="button"
+                onClick={() => setMediaMode('video')}
+                className={`py-2 rounded-xl text-xs font-bold border transition-all ${
+                  mediaMode === 'video'
+                    ? 'bg-cyan-600 text-white border-cyan-600'
+                    : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                }`}
+              >
+                فيديو قصير (حتى دقيقة)
+              </button>
+            </div>
+
+            {mediaMode === 'image' ? (
+              <div className="space-y-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {PRESET_BANNERS.map((preset) => (
+                    <button
+                      key={preset.label}
+                      type="button"
+                      onClick={() => {
+                        setImageUrl(preset.url);
+                        setCustomImageInput('');
+                      }}
+                      className={`p-1.5 rounded-xl border text-start transition-all overflow-hidden ${
+                        imageUrl === preset.url && !customImageInput
+                          ? 'border-cyan-500 ring-2 ring-cyan-500/30'
+                          : 'border-slate-200 dark:border-slate-700 opacity-70 hover:opacity-100'
+                      }`}
+                    >
+                      <img
+                        src={preset.url}
+                        alt={preset.label}
+                        className="w-full h-14 object-cover rounded-lg mb-1"
+                      />
+                      <span className="block text-[10px] font-bold text-slate-700 dark:text-slate-300 truncate">
+                        {preset.label}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <MediaUploadInput
+                  kind="image"
+                  value={customImageInput}
+                  onChange={(url) => {
+                    setCustomImageInput(url);
+                    if (url.trim()) setImageUrl(url.trim());
                   }}
-                  className={`p-1.5 rounded-xl border text-start transition-all overflow-hidden ${
-                    imageUrl === preset.url && !customImageInput
-                      ? 'border-cyan-500 ring-2 ring-cyan-500/30'
-                      : 'border-slate-200 dark:border-slate-700 opacity-70 hover:opacity-100'
-                  }`}
-                >
-                  <img
-                    src={preset.url}
-                    alt={preset.label}
-                    className="w-full h-14 object-cover rounded-lg mb-1"
-                  />
-                  <span className="block text-[10px] font-bold text-slate-700 dark:text-slate-300 truncate">
-                    {preset.label}
-                  </span>
-                </button>
-              ))}
-            </div>
-            <div>
-              <input
-                type="url"
-                value={customImageInput}
-                onChange={(e) => {
-                  setCustomImageInput(e.target.value);
-                  if (e.target.value.trim()) setImageUrl(e.target.value.trim());
-                }}
-                placeholder="أو ضع رابط صورة مخصصة (URL)..."
-                className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs outline-hidden focus:border-cyan-500"
+                  label="أو ارفع صورة خاصة بك"
+                />
+              </div>
+            ) : (
+              <MediaUploadInput
+                kind="video"
+                value={uploadedVideoUrl}
+                onChange={setUploadedVideoUrl}
+                label="ارفع مقطع فيديو قصير (حتى دقيقة واحدة)"
               />
-            </div>
+            )}
           </div>
 
-          {/* فيديو إعلاني مضمّن */}
+          {/* فيديو تعريفي مضمّن (اختياري) — يوتيوب/Vimeo */}
           <VideoUrlInput
             value={videoUrl}
             onChange={setVideoUrl}
-            label="فيديو إعلاني (اختياري)"
-            maxDurationHint="يُفضّل ألا تتجاوز مدة الفيديو الإعلاني دقيقة واحدة. تراجع الإدارة المدة عند الاعتماد."
+            label={promotionKind === 'website' ? 'فيديو إعلاني مضمّن إضافي (اختياري)' : 'مقطع تعريفي عن القناة من يوتيوب/Vimeo (اختياري)'}
+            maxDurationHint="يُفضّل ألا تتجاوز مدة الفيديو دقيقة واحدة."
           />
 
           {/* نوع المساحة الإعلانية */}

@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import multer from 'multer';
 import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
@@ -11,6 +12,18 @@ import {
   verifyRequestAuth,
   FieldValue
 } from './server/firebaseAdmin';
+import {
+  isMediaUploadConfigured,
+  uploadMediaBuffer,
+  MAX_IMAGE_BYTES,
+  MAX_VIDEO_BYTES
+} from './server/mediaUpload';
+import {
+  isTelegramVerificationConfigured,
+  isYoutubeVerificationConfigured,
+  verifyTelegramMembership,
+  verifyYoutubeSubscription
+} from './server/socialVerify';
 
 dotenv.config();
 
@@ -560,6 +573,158 @@ async function startServer() {
       const status = err?.message === 'missing_auth_token' ? 401 : 500;
       console.error('payout/create error:', err?.message || err);
       res.status(status).json({ error: 'payout_create_failed', message: err?.message || 'تعذر تنفيذ عملية السحب.' });
+    }
+  });
+
+  // ------------------------------------------------------------------
+  // رفع الوسائط الإعلانية (صورة/فيديو قصير) — Cloudinary
+  // ------------------------------------------------------------------
+  const mediaUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: MAX_VIDEO_BYTES }
+  });
+
+  app.get('/api/media/status', (req, res) => {
+    res.json({ configured: isMediaUploadConfigured() });
+  });
+
+  app.post('/api/media/upload', mediaUpload.single('file'), async (req, res) => {
+    if (!isMediaUploadConfigured()) {
+      return res.status(503).json({
+        error: 'media_upload_not_configured',
+        message: 'رفع الوسائط غير مفعّل على هذا الخادم بعد. استخدم رابطاً خارجياً بدلاً من ذلك.'
+      });
+    }
+    try {
+      const { uid } = await verifyRequestAuth(req.headers.authorization);
+      const file = req.file;
+      if (!file) {
+        return res.status(400).json({ error: 'no_file', message: 'لم يتم إرفاق أي ملف.' });
+      }
+
+      const isImage = file.mimetype.startsWith('image/');
+      const isVideo = file.mimetype.startsWith('video/');
+      if (!isImage && !isVideo) {
+        return res.status(400).json({ error: 'unsupported_type', message: 'نوع الملف غير مدعوم. استخدم صورة أو فيديو.' });
+      }
+      if (isImage && file.size > MAX_IMAGE_BYTES) {
+        return res.status(400).json({ error: 'file_too_large', message: 'حجم الصورة يتجاوز 8 ميغابايت.' });
+      }
+      if (isVideo && file.size > MAX_VIDEO_BYTES) {
+        return res.status(400).json({ error: 'file_too_large', message: 'حجم الفيديو يتجاوز 50 ميغابايت.' });
+      }
+
+      const result = await uploadMediaBuffer(file.buffer, {
+        folder: `literium/ads/${uid}`,
+        resourceType: isVideo ? 'video' : 'image'
+      });
+
+      res.json(result);
+    } catch (err: any) {
+      const status = err?.message === 'missing_auth_token' ? 401 : err?.message === 'video_too_long' ? 400 : 500;
+      const message =
+        err?.message === 'video_too_long'
+          ? 'مدة الفيديو تتجاوز الدقيقة المسموحة.'
+          : err?.message || 'تعذر رفع الملف.';
+      console.error('media/upload error:', err?.message || err);
+      res.status(status).json({ error: 'upload_failed', message });
+    }
+  });
+
+  // ------------------------------------------------------------------
+  // تحقق حقيقي من الانضمام/الاشتراك (تيليجرام ويوتيوب فقط — انظر شرح
+  // القيود التقنية والسياسية للمنصات الأخرى في server/socialVerify.ts)
+  // ------------------------------------------------------------------
+  app.get('/api/social/status', (req, res) => {
+    res.json({
+      telegram: isTelegramVerificationConfigured(),
+      youtube: isYoutubeVerificationConfigured()
+    });
+  });
+
+  app.post('/api/social/verify-telegram', async (req, res) => {
+    if (!isTelegramVerificationConfigured()) {
+      return res.status(503).json({
+        error: 'telegram_not_configured',
+        message: 'التحقق من تيليجرام غير مفعّل على هذا الخادم بعد.'
+      });
+    }
+    try {
+      const { uid } = await verifyRequestAuth(req.headers.authorization);
+      const { campaignId, widgetData } = req.body || {};
+      if (!campaignId || !widgetData) {
+        return res.status(400).json({ error: 'missing_params' });
+      }
+
+      const db = getAdminDb();
+      const campaignSnap = await db.collection('campaigns').doc(campaignId).get();
+      if (!campaignSnap.exists) {
+        return res.status(404).json({ error: 'campaign_not_found' });
+      }
+      const campaign = campaignSnap.data() || {};
+      if (campaign.promotionKind !== 'telegram' || !campaign.destinationUrl) {
+        return res.status(400).json({ error: 'not_a_telegram_campaign' });
+      }
+
+      const result = await verifyTelegramMembership(widgetData, campaign.destinationUrl);
+
+      if (result.verified) {
+        await db
+          .collection('socialVerifications')
+          .doc(`${campaignId}_${uid}`)
+          .set({
+            campaignId,
+            viewerId: uid,
+            platform: 'telegram',
+            telegramUserId: result.telegramUserId,
+            telegramUsername: result.telegramUsername || null,
+            verifiedAt: new Date().toISOString()
+          });
+      }
+
+      res.json({ verified: result.verified });
+    } catch (err: any) {
+      const status = err?.message === 'missing_auth_token' ? 401 : 400;
+      res.status(status).json({ error: 'telegram_verify_failed', message: err?.message || 'تعذر التحقق من الانضمام.' });
+    }
+  });
+
+  app.post('/api/social/verify-youtube', async (req, res) => {
+    try {
+      const { uid } = await verifyRequestAuth(req.headers.authorization);
+      const { campaignId, accessToken } = req.body || {};
+      if (!campaignId || !accessToken) {
+        return res.status(400).json({ error: 'missing_params' });
+      }
+
+      const db = getAdminDb();
+      const campaignSnap = await db.collection('campaigns').doc(campaignId).get();
+      if (!campaignSnap.exists) {
+        return res.status(404).json({ error: 'campaign_not_found' });
+      }
+      const campaign = campaignSnap.data() || {};
+      if (campaign.promotionKind !== 'youtube' || !campaign.destinationUrl) {
+        return res.status(400).json({ error: 'not_a_youtube_campaign' });
+      }
+
+      const result = await verifyYoutubeSubscription(accessToken, campaign.destinationUrl);
+
+      if (result.verified) {
+        await db
+          .collection('socialVerifications')
+          .doc(`${campaignId}_${uid}`)
+          .set({
+            campaignId,
+            viewerId: uid,
+            platform: 'youtube',
+            verifiedAt: new Date().toISOString()
+          });
+      }
+
+      res.json({ verified: result.verified });
+    } catch (err: any) {
+      const status = err?.message === 'missing_auth_token' ? 401 : 400;
+      res.status(status).json({ error: 'youtube_verify_failed', message: err?.message || 'تعذر التحقق من الاشتراك.' });
     }
   });
 

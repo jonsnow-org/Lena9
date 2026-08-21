@@ -4,6 +4,7 @@ import { logAdEvent } from '../services/firestoreService';
 import { VideoEmbed } from './VideoEmbed';
 import { parseVideoUrl } from '../utils/videoEmbed';
 import { subscribePlatformAdsEnabled, getPlatformAdsEnabled } from '../utils/platformAdsStore';
+import { SocialPromoCta } from './SocialPromoCta';
 
 /**
  * رموز المواضع الإعلانية المعتمدة في المنصة.
@@ -206,8 +207,22 @@ export const AdSlot: React.FC<AdSlotProps> = ({
   const adText = (selectedCampaign as any).adText || (selectedCampaign as any).description || '';
   const imageUrl = (selectedCampaign as any).imageUrl;
   const videoUrl = (selectedCampaign as any).videoUrl;
-  const hasVideo = Boolean(videoUrl && parseVideoUrl(videoUrl));
+  const uploadedVideoUrl = (selectedCampaign as any).uploadedVideoUrl;
+  const hasEmbedVideo = Boolean(videoUrl && parseVideoUrl(videoUrl));
+  const hasUploadedVideo = Boolean(uploadedVideoUrl);
   const advertiserName = (selectedCampaign as any).advertiserName || 'معلن';
+  const isPromo = Boolean((selectedCampaign as any).promotionKind && (selectedCampaign as any).promotionKind !== 'website');
+
+  const mediaBlock = (extraClass: string) =>
+    hasUploadedVideo ? (
+      <video src={uploadedVideoUrl} controls playsInline className={extraClass} />
+    ) : hasEmbedVideo ? (
+      <div onClick={(e) => e.stopPropagation()}>
+        <VideoEmbed url={videoUrl} />
+      </div>
+    ) : (
+      imageUrl && <img src={imageUrl} alt="" loading="lazy" className={extraClass} />
+    );
 
   /**
    * تنسيق الإعلان المدمج في النص.
@@ -228,31 +243,29 @@ export const AdSlot: React.FC<AdSlotProps> = ({
           إعلان
         </div>
 
-        <button
-          onClick={handleClick}
-          className="w-full text-start rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/50 p-4 hover:border-slate-300 dark:hover:border-slate-600 transition-colors"
-        >
-          {hasVideo ? (
-            <div className="mb-3" onClick={(e) => e.stopPropagation()}>
-              <VideoEmbed url={videoUrl} />
+        {isPromo ? (
+          <div className="w-full text-start rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/50 p-4">
+            {mediaBlock('w-full max-h-[40vh] object-cover rounded-xl mb-3')}
+            <div className="text-sm text-slate-700 dark:text-slate-200 leading-relaxed font-medium mb-3">
+              {adText}
             </div>
-          ) : (
-            imageUrl && (
-              <img
-                src={imageUrl}
-                alt=""
-                loading="lazy"
-                className="w-full max-h-[40vh] object-cover rounded-xl mb-3"
-              />
-            )
-          )}
-          <div className="text-sm text-slate-700 dark:text-slate-200 leading-relaxed font-medium">
-            {adText}
+            <SocialPromoCta campaign={selectedCampaign as AdCampaign} onClickThrough={handleClick} />
+            <div className="mt-2 text-[11px] text-slate-400 dark:text-slate-500">{advertiserName}</div>
           </div>
-          <div className="mt-2 text-[11px] text-slate-400 dark:text-slate-500">
-            محتوى مموّل — {advertiserName}
-          </div>
-        </button>
+        ) : (
+          <button
+            onClick={handleClick}
+            className="w-full text-start rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/50 p-4 hover:border-slate-300 dark:hover:border-slate-600 transition-colors"
+          >
+            {mediaBlock('w-full max-h-[40vh] object-cover rounded-xl mb-3')}
+            <div className="text-sm text-slate-700 dark:text-slate-200 leading-relaxed font-medium">
+              {adText}
+            </div>
+            <div className="mt-2 text-[11px] text-slate-400 dark:text-slate-500">
+              محتوى مموّل — {advertiserName}
+            </div>
+          </button>
+        )}
 
         {/* فاصل سفلي رفيع */}
         <div className="h-px bg-slate-200 dark:bg-slate-800 mt-3" />
@@ -266,19 +279,23 @@ export const AdSlot: React.FC<AdSlotProps> = ({
       <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 mb-1.5">
         {config.sponsorOnly ? 'برعاية' : 'إعلان'}
       </div>
+      {isPromo ? (
+        <div className="w-full text-start rounded-2xl overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+          {mediaBlock('w-full max-h-52 object-cover')}
+          <div className="p-3.5">
+            <div className="text-sm font-bold text-slate-800 dark:text-slate-100 leading-snug mb-3">
+              {adText}
+            </div>
+            <SocialPromoCta campaign={selectedCampaign as AdCampaign} onClickThrough={handleClick} />
+            <div className="mt-2 text-[11px] text-slate-400">{advertiserName}</div>
+          </div>
+        </div>
+      ) : (
       <button
         onClick={handleClick}
         className="w-full text-start rounded-2xl overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-brand-300 dark:hover:border-brand-700 transition-colors"
       >
-        {hasVideo ? (
-          <div onClick={(e) => e.stopPropagation()}>
-            <VideoEmbed url={videoUrl} />
-          </div>
-        ) : (
-          imageUrl && (
-            <img src={imageUrl} alt="" loading="lazy" className="w-full max-h-52 object-cover" />
-          )
-        )}
+        {mediaBlock('w-full max-h-52 object-cover')}
         <div className="p-3.5">
           <div className="text-sm font-bold text-slate-800 dark:text-slate-100 leading-snug">
             {adText}
@@ -286,6 +303,7 @@ export const AdSlot: React.FC<AdSlotProps> = ({
           <div className="mt-1 text-[11px] text-slate-400">{advertiserName}</div>
         </div>
       </button>
+      )}
     </div>
   );
 };

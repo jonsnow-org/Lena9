@@ -255,6 +255,13 @@ export interface FraudFlag {
 
 export type CampaignType = 'fixed' | 'cpm' | 'cpc' | 'impression';
 
+/**
+ * 'website' = حملة إعلانية عادية (الافتراضي). أي قيمة أخرى = حملة ترويج
+ * لقناة/حساب اجتماعي، حيث destinationUrl يصبح رابط القناة/الحساب نفسه
+ * بدل رابط موقع عام.
+ */
+export type PromotionKind = 'website' | 'youtube' | 'telegram' | 'instagram' | 'twitter' | 'facebook';
+
 export interface AdCampaign {
   id: string;
   advertiserId: string;
@@ -286,8 +293,12 @@ export interface AdCampaign {
   targetCategories: string[];
   targetCountries: string[];
   antiFraudLevel?: 'basic' | 'enhanced_viewability' | 'maximum_cpc_shield';
-  /** رابط فيديو إعلاني مضمّن — يُنصح ألا يتجاوز دقيقة */
+  /** رابط فيديو إعلاني مضمّن (يوتيوب/Vimeo) — يُنصح ألا يتجاوز دقيقة */
   videoUrl?: string;
+  /** مقطع فيديو مرفوع مباشرة (مستضاف على Cloudinary)، بديل عن videoUrl */
+  uploadedVideoUrl?: string;
+  /** نوع الحملة: عادية، أو ترويج قناة/حساب اجتماعي. الافتراضي 'website' */
+  promotionKind?: PromotionKind;
 }
 
 export interface Wallet {

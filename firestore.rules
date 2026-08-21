@@ -333,5 +333,16 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isAdmin();
     }
+
+    // سجلات التحقق الحقيقي من انضمام/اشتراك القارئ (تيليجرام ويوتيوب) —
+    // تُكتب حصراً من الخادم عبر Firebase Admin SDK بعد تحقق فعلي عبر واجهة
+    // برمجية خارجية (Telegram Bot API / YouTube Data API)، وليس من العميل
+    // مباشرة، حتى لا يستطيع أي مستخدم كتابة "تحقق" وهمي لنفسه. لذا الكتابة
+    // من العميل ممنوعة تماماً هنا (Admin SDK يتجاوز هذه القواعد أصلاً)،
+    // والقراءة مقصورة على صاحب السجل نفسه أو الأدمن.
+    match /socialVerifications/{verificationId} {
+      allow read: if isSignedIn() && (resource.data.viewerId == request.auth.uid || isAdmin());
+      allow write: if false;
+    }
   }
 }
