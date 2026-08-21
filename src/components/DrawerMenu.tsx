@@ -15,12 +15,6 @@ import {
   BookOpen,
   CheckCircle2,
   ChevronLeft,
-  AlertCircle,
-  Crown,
-  Zap,
-  TrendingUp,
-  FileText,
-  BarChart3,
   Bookmark
 } from 'lucide-react';
 import { User, LanguageCode, UserRole } from '../types';
@@ -206,81 +200,14 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
                 الشريط السفلي أصبح المدخل الوحيد، ومن داخله يصل الأدمن لكل
                 تبويب عبر شريط AdminDashboard الخاص — مدخل واحد فقط لكل وجهة. */}
 
-            {/* Role-Specific Direct Navigation Links */}
+            {/* Role-Specific Direct Navigation Links — أُزيلت كتلتا writer
+                وadvertiser بالكامل: "استوديو الكاتب" و"مقالاتي" كانتا تكرران
+                تماماً زري "لوحة الكاتب"/"مقالاتي" في الشريط السفلي (نفس
+                activeTab النهائي)، و"لوحة الحملات الإعلانية" كانت تكرر زر
+                "حملاتي" في الشريط السفلي، و"شحن الرصيد والفوترة" كانت تكرر
+                زر "المحفظة والأرباح" العام أدناه بالضبط (كلاهما onOpenWallet).
+                لم يبق شيء غير مكرر يستحق قسماً خاصاً هنا لأي دور. */}
             <div className="space-y-1">
-              {persona !== 'admin' && (
-                <span className="block text-[11px] font-bold text-slate-400 mb-1 px-1">
-                  القوائم المخصصة لدورك:
-                </span>
-              )}
-
-              {persona === 'writer' && (
-                <>
-                  <button
-                    onClick={() => {
-                      onNavigateTab?.('writer_hub');
-                      onClose();
-                    }}
-                    className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <TrendingUp className="w-4 h-4 text-brand-400" />
-                      <span>استوديو الكاتب وإحصائيات القراءة</span>
-                    </div>
-                    <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      onNavigateTab?.('my_articles');
-                      onClose();
-                    }}
-                    className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <FileText className="w-4 h-4 text-blue-400" />
-                      <span>مقالاتي ومسوداتي المنشورة</span>
-                    </div>
-                    <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
-                  </button>
-
-                  {/* أُزيل زر المحفظة المكرر من هنا.
-                      المحفظة متاحة من الشريط العلوي ومن صفحة "ملفي" فقط،
-                      بدلاً من أربعة مداخل تؤدي لنفس النافذة. */}
-                </>
-              )}
-
-              {persona === 'advertiser' && (
-                <>
-                  <button
-                    onClick={() => {
-                      onNavigateTab?.('campaigns');
-                      onClose();
-                    }}
-                    className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Megaphone className="w-4 h-4 text-brand-400" />
-                      <span>لوحة الحملات الإعلانية ومؤشرات CPC/CPM</span>
-                    </div>
-                    <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      onNavigateTab?.('billing');
-                      onClose();
-                    }}
-                    className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Wallet className="w-4 h-4 text-emerald-400" />
-                      <span>شحن الرصيد والفوترة</span>
-                    </div>
-                    <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
-                  </button>
-                </>
-              )}
 
               {/* الكتابة متاحة لأي حساب مسجَّل من البداية (دون احتساب أرباح
                   حتى تحقيق شروط منشئ المحتوى) — من له أدوات الكاتب أعلاه
@@ -301,62 +228,65 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
                 </button>
               )}
 
-              {/* استكشاف والمحفوظات: روابط عامة لأي مستخدم (بما فيهم من ترقّى
-                  فعلياً لدور كاتب/معلن) — وليست حكراً على من لم يمارس أي
-                  نشاط بعد، حتى لا تختفي من قوائم الكتّاب والمعلنين. */}
-              {/* استكشاف/إنشاء إعلان/المحفوظات/توثيق الهوية: مخفية عمداً عن
-                  حساب الأدمن — لا تنطبق عليه كمالك للمنصة (لا يحتاج توثيق
-                  هويته الخاصة)، أو أصبحت مجمَّعة كخانات مخصصة في صفحة
-                  "ملفي" بدل تكرارها هنا أيضاً. يبقى للأدمن في هذه المنطقة
-                  المحفظة فقط، كما طُلِب صراحة. */}
-              {persona !== 'admin' && (
-                <>
-                  <button
-                    onClick={() => {
-                      onNavigateTab?.('explore');
-                      onClose();
-                    }}
-                    className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <BookOpen className="w-4 h-4 text-brand-400" />
-                      <span>استكشاف المقالات والكتب</span>
-                    </div>
-                    <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
-                  </button>
+              {/* استكشاف: مخفي عن الأدمن (له مركز قيادة كامل) وعن القارئ
+                  تحديداً (له زر "استكشاف" مباشر في الشريط السفلي أصلاً —
+                  نفس الوجهة بالضبط، فتكراره هنا لا معنى له). يبقى ظاهراً
+                  للكاتب والمعلن لأن شريطهما السفلي لا يضم زر استكشاف. */}
+              {persona !== 'admin' && persona !== 'reader' && (
+                <button
+                  onClick={() => {
+                    onNavigateTab?.('explore');
+                    onClose();
+                  }}
+                  className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <BookOpen className="w-4 h-4 text-brand-400" />
+                    <span>استكشاف المقالات والكتب</span>
+                  </div>
+                  <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
+                </button>
+              )}
 
-                  {/* إنشاء إعلان: متاح لأي حساب مسجَّل غير الزائر، ما عدا من لديه
-                      أصلاً زر حملات مخصص أعلاه (شخصية "معلن") تفادياً للتكرار. */}
-                  {currentUser.id !== 'guest' && persona !== 'advertiser' && (
-                    <button
-                      onClick={() => {
-                        onNavigateTab?.('campaigns');
-                        onClose();
-                      }}
-                      className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
-                    >
-                      <div className="flex items-center gap-3">
-                        <Megaphone className="w-4 h-4 text-cyan-400" />
-                        <span>إنشاء إعلان وترويج (قارئ ومُعلن)</span>
-                      </div>
-                      <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
-                    </button>
-                  )}
+              {/* إنشاء إعلان: متاح لأي حساب مسجَّل غير الزائر وغير الأدمن، ما
+                  عدا من لديه أصلاً زر حملات مخصص في الشريط السفلي (شخصية
+                  "معلن") تفادياً للتكرار. */}
+              {currentUser.id !== 'guest' && persona !== 'advertiser' && persona !== 'admin' && (
+                <button
+                  onClick={() => {
+                    onNavigateTab?.('campaigns');
+                    onClose();
+                  }}
+                  className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <Megaphone className="w-4 h-4 text-cyan-400" />
+                    <span>إنشاء إعلان وترويج (قارئ ومُعلن)</span>
+                  </div>
+                  <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
+                </button>
+              )}
 
-                  <button
-                    onClick={() => {
-                      onNavigateTab?.('saved');
-                      onClose();
-                    }}
-                    className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Bookmark className="w-4 h-4 text-amber-400" />
-                      <span>المحفوظات وسجل القراءة</span>
-                    </div>
-                    <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
-                  </button>
-                </>
+              {/* المحفوظات: مخفية عن الأدمن وعن القارئ تحديداً — صفحة "ملفي"
+                  للقارئ تعرض تبويب "المقالات المحفوظة" افتراضياً من أول
+                  فتحة أصلاً (نفس الوجهة تماماً التي يصل إليها زر "ملفي" في
+                  الشريط السفلي)، فتكرار مدخل مستقل لها هنا زائد عن الحاجة.
+                  تبقى ظاهرة للكاتب والمعلن لأن ملفهما الشخصي لا يضم تبويب
+                  محفوظات مكافئاً. */}
+              {persona !== 'admin' && persona !== 'reader' && (
+                <button
+                  onClick={() => {
+                    onNavigateTab?.('saved');
+                    onClose();
+                  }}
+                  className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <Bookmark className="w-4 h-4 text-amber-400" />
+                    <span>المحفوظات وسجل القراءة</span>
+                  </div>
+                  <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
+                </button>
               )}
 
               {/* General Links */}

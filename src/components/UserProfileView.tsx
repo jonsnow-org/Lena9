@@ -342,16 +342,14 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
             </div>
 
             <div className="flex items-center gap-2 justify-center sm:justify-end flex-wrap">
-              {currentUser.role === 'writer' && (
-                <button
-                  onClick={onOpenArticleEditor}
-                  className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-xs shadow-md shadow-teal-500/20 active:scale-95 transition-all flex items-center gap-1.5"
-                >
-                  <PenTool className="w-3.5 h-3.5" />
-                  <span>كتابة مقال جديد</span>
-                </button>
-              )}
-              {currentUser.id !== 'guest' && (currentUser.role === 'advertiser' || currentUser.role === 'reader') && (
+              {/* زر "كتابة مقال جديد" أُزيل من هنا — الكاتب لديه أصلاً زر FAB
+                  مركزي "كتابة" في الشريط السفلي يفتح نفس محرر المقال بالضبط
+                  (onOpenArticleEditor نفسها عبر onOpenWriteAction). */}
+              {/* هذا الزر يُخفى عن المعلن تحديداً — لديه أصلاً زر FAB مركزي
+                  "إنشاء حملة" في الشريط السفلي يفتح نفس النافذة بالضبط
+                  (onOpenNewCampaign نفسها). يبقى ظاهراً للقارئ فقط، الذي
+                  لا يملك أي طريق آخر لإنشاء إعلان بضغطة واحدة. */}
+              {currentUser.id !== 'guest' && currentUser.role === 'reader' && (
                 <button
                   onClick={onOpenNewCampaign || onOpenWallet}
                   className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white font-extrabold text-xs shadow-md shadow-cyan-500/20 active:scale-95 transition-all flex items-center gap-1.5"
