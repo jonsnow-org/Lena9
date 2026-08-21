@@ -11,11 +11,14 @@ import {
   AlertCircle,
   Loader2,
   Trash2,
-  UserCog
+  UserCog,
+  Info,
+  CheckCircle2
 } from 'lucide-react';
 import { UserRole } from '../types';
 import { registerWithEmail, loginWithEmail, getAuthErrorMessage } from '../firebase';
 import { REVENUE_SHARES } from '../constants/revenueShares';
+import { CREATOR_ELIGIBILITY_THRESHOLDS } from '../utils/creatorEligibility';
 import { getSavedAccounts, forgetAccount, SavedAccount } from '../utils/savedAccounts';
 
 interface AuthModalProps {
@@ -38,7 +41,17 @@ const WRITER_SPECIALTY_PRESETS = [
   'النقد والدراسات',
   'التاريخ والحضارات',
   'التكنولوجيا والذكاء الاصطناعي',
-  'علم الاجتماع'
+  'علم الاجتماع',
+  'طب وصحة',
+  'سياسي',
+  'تعليمي',
+  'مكياج وموضة',
+  'جمال',
+  'رياضة',
+  'طبخ وأكلات',
+  'سفر وسياحة',
+  'اقتصاد وأعمال',
+  'تربية وأسرة'
 ];
 
 const WRITER_AVATAR_PRESETS = [
@@ -389,11 +402,46 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <div className="space-y-3.5 p-4 rounded-2xl bg-teal-50/40 dark:bg-teal-950/20 border border-teal-200/60 dark:border-teal-900/40">
                 <div className="flex items-center gap-1.5 text-xs font-bold text-teal-800 dark:text-teal-300">
                   <PenTool className="w-4 h-4 text-teal-600" />
-                  <span>بيانات الكاتب والملف الأدبي:</span>
+                  <span>ملء البيانات الشخصية:</span>
                 </div>
+
+                {/* شروط تحقيق الربح والانضمام لبرنامج شركاء المحتوى — تُعرض هنا
+                    مباشرة في نفس صفحة التسجيل حتى يعرف الكاتب المحتمل مسبقاً
+                    ما المطلوب قبل احتساب أي أرباح فعلية له. */}
+                <div className="p-3 rounded-xl bg-white/70 dark:bg-slate-900/40 border border-teal-200/50 dark:border-teal-900/30 space-y-2">
+                  <div className="flex items-center gap-1.5 text-[11px] font-extrabold text-teal-700 dark:text-teal-400">
+                    <Info className="w-3.5 h-3.5" />
+                    <span>شروط الانضمام لبرنامج شركاء المحتوى (احتساب الأرباح)</span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                    الكتابة والنشر متاحة فوراً لأي حساب دون قيد. لكن احتساب أرباح الإعلانات ومبيعات
+                    المقالات المقفلة يبدأ فقط بعد تحقيق كل الشروط التالية معاً:
+                  </p>
+                  <ul className="space-y-1">
+                    {[
+                      `${CREATOR_ELIGIBILITY_THRESHOLDS.MIN_FOLLOWERS} متابع على الأقل`,
+                      `${CREATOR_ELIGIBILITY_THRESHOLDS.MIN_VALID_VIEWS.toLocaleString('ar-EG')} مشاهدة موثوقة على الأقل لمقالاتك المنشورة`,
+                      `${CREATOR_ELIGIBILITY_THRESHOLDS.MIN_ACCOUNT_AGE_DAYS} يوماً على الأقل على عمر الحساب`,
+                      `${CREATOR_ELIGIBILITY_THRESHOLDS.MIN_PUBLISHED_ARTICLES} مقالات منشورة على الأقل`,
+                      'توثيق الهوية (KYC) — شرط أخير إلزامي مهما تحققت بقية الشروط'
+                    ].map((cond) => (
+                      <li key={cond} className="flex items-start gap-1.5 text-[10px] text-slate-600 dark:text-slate-300">
+                        <CheckCircle2 className="w-3 h-3 text-teal-600 shrink-0 mt-0.5" />
+                        <span>{cond}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="pt-1.5 border-t border-teal-200/50 dark:border-teal-900/30 space-y-1">
+                    <p className="text-[10px] font-bold text-slate-700 dark:text-slate-300">حصة الكاتب من الأرباح بعد تحقيق الأهلية:</p>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400">• إعلانات داخل المقالات: {REVENUE_SHARES.IN_ARTICLE_ADS.LABEL}</p>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400">• إعلانات الملف الشخصي: {REVENUE_SHARES.WRITER_PROFILE_ADS.LABEL}</p>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400">• مبيعات المقالات المقفلة: {REVENUE_SHARES.LOCKED_ARTICLES.LABEL}</p>
+                  </div>
+                </div>
+
                 <div>
                   <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    الاسم الأدبي / اسم القلم *
+                    الاسم *
                   </label>
                   <input
                     type="text"
@@ -449,6 +497,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       </button>
                     ))}
                   </div>
+                  <p className="mt-1.5 text-[10px] text-slate-400 dark:text-slate-500">
+                    يمكن تغييرها لاحقاً من إعدادات الملف الشخصي.
+                  </p>
                 </div>
               </div>
             )}

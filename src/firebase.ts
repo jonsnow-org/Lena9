@@ -10,6 +10,7 @@ import {
   signInWithEmailAndPassword,
   signInAnonymously,
   updateProfile,
+  sendEmailVerification,
   signOut as fbSignOut,
   onAuthStateChanged,
   setPersistence,
@@ -553,6 +554,12 @@ export async function registerWithEmail(
       if (profileData.fullName) {
         await updateProfile(cred.user, { displayName: profileData.fullName });
       }
+      // إرسال رابط تحقق للبريد فور إنشاء الحساب — تجنّباً للحسابات الوهمية
+      // ببريد غير حقيقي. لا يمنع هذا استخدام الحساب فوراً (لا يوجد بعد أي
+      // قيد يعتمد على emailVerified)، ولا يُفشل التسجيل إن تعذّر الإرسال.
+      sendEmailVerification(cred.user).catch((err) => {
+        console.warn('تعذّر إرسال رابط تحقق البريد الإلكتروني:', err);
+      });
       return cred.user;
     };
 
@@ -599,6 +606,19 @@ export async function loginWithEmail(email: string, password: string): Promise<U
     }
     return user;
   });
+}
+
+/** يعيد إرسال رابط تحقق البريد للمستخدم الحالي — تُستخدم من واجهة تذكير
+ *  "تحقق من بريدك" حين يضغط المستخدم "إعادة الإرسال". */
+export async function resendVerificationEmail(): Promise<boolean> {
+  if (!auth.currentUser) return false;
+  try {
+    await sendEmailVerification(auth.currentUser);
+    return true;
+  } catch (error) {
+    console.error('تعذّر إعادة إرسال رابط تحقق البريد:', error);
+    return false;
+  }
 }
 
 export async function logOut(): Promise<void> {

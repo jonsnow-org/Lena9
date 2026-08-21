@@ -51,6 +51,8 @@ import { User, Article, UserRole, AdCampaign, LanguageCode, ArticlePromotion } f
 import { SocialLinksEditor } from './SocialLinksEditor';
 import { EditProfileModal } from './EditProfileModal';
 import { AdSlot } from './AdSlot';
+import { auth, resendVerificationEmail } from '../firebase';
+import { MailWarning } from 'lucide-react';
 import { REVENUE_SHARES } from '../constants/revenueShares';
 import { MIN_PAYOUT_USD, EARNINGS_HOLD_DAYS } from '../constants/payoutRules';
 import {
@@ -155,6 +157,19 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   const [writerArticleSubTab, setWriterArticleSubTab] = useState<'published' | 'drafts'>('published');
   const [advertiserTab, setAdvertiserTab] = useState<'campaigns' | 'performance' | 'create_ad' | 'billing'>('campaigns');
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
+  const [verifyEmailStatus, setVerifyEmailStatus] = useState<'idle' | 'sending' | 'sent'>('idle');
+
+  // auth.currentUser.emailVerified حقل من Firebase Auth نفسه، وليس من مستند
+  // Firestore — لذا لا يظهر في كائن currentUser (من نوع User) ويُقرأ مباشرة
+  // من هنا. غير ذي معنى لحساب الزائر (لا بريد له أصلاً).
+  const needsEmailVerification =
+    currentUser.id !== 'guest' && !!auth.currentUser?.email && auth.currentUser?.emailVerified === false;
+
+  const handleResendVerification = async () => {
+    setVerifyEmailStatus('sending');
+    const ok = await resendVerificationEmail();
+    setVerifyEmailStatus(ok ? 'sent' : 'idle');
+  };
 
   // Drafts stored locally
   const savedDraft = JSON.parse(localStorage.getItem('literium_article_editor_draft') || '{}');
@@ -293,6 +308,25 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
               <p className="text-xs text-slate-400 font-mono">
                 @{currentUser.username} {currentUser.email && `• ${currentUser.email}`}
               </p>
+
+              {needsEmailVerification && (
+                <div className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-700 dark:text-amber-400">
+                  <MailWarning className="w-3.5 h-3.5 shrink-0" />
+                  <span className="text-[11px] font-bold">
+                    {verifyEmailStatus === 'sent' ? 'تم إرسال رابط تحقق جديد إلى بريدك.' : 'لم يتم تأكيد بريدك الإلكتروني بعد.'}
+                  </span>
+                  {verifyEmailStatus !== 'sent' && (
+                    <button
+                      type="button"
+                      onClick={handleResendVerification}
+                      disabled={verifyEmailStatus === 'sending'}
+                      className="text-[11px] font-extrabold underline disabled:opacity-60"
+                    >
+                      {verifyEmailStatus === 'sending' ? 'جارٍ الإرسال...' : 'إعادة إرسال رابط التحقق'}
+                    </button>
+                  )}
+                </div>
+              )}
 
               <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 max-w-xl leading-relaxed">
                 {currentUser.bio || 'مرحباً بك في ليتيريوم! استمتع بأفضل تجربة أدبية وثقافية متكاملة.'}

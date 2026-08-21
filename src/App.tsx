@@ -3060,6 +3060,7 @@ export function App() {
         }}
         onSwitchRole={handleSwitchRole}
         navPersona={navPersona}
+        isMonetizationEligible={isEligibleForMonetization(currentUser, articles)}
         onStartWriting={() => {
           setEditingArticle(null);
           setIsArticleEditorOpen(true);

@@ -20,6 +20,7 @@ import {
 import { User, LanguageCode, UserRole } from '../types';
 import { getRemainingAiUses } from '../utils/aiQuota';
 import { getTranslator } from '../data/translations';
+import { isEligibleForMonetization } from '../utils/creatorEligibility';
 
 interface DrawerMenuProps {
   isOpen: boolean;
@@ -43,6 +44,11 @@ interface DrawerMenuProps {
   onSelectFollowedWriter: (writer: User) => void;
   onNavigateTab?: (tab: string) => void;
   onOpenLogin?: () => void;
+  /** هل يستوفي المستخدم شروط احتساب أرباح المحتوى؟ يحدّد أي وسم يظهر —
+   *  "قارئ مسجل" افتراضياً حتى لو اختار دور الكتابة، أو "كاتب شريك ومعتمد"
+   *  تلقائياً بمجرد تحقق كل الشروط — بدل وسم ثابت يعتمد فقط على الدور
+   *  المُختار عند التسجيل. */
+  isMonetizationEligible?: boolean;
   /** شخصية التنقل المُشتقة من النشاط الفعلي (وليس الدور المُسجَّل فقط) —
    *  نفس القيمة المستخدمة في شريط التنقل السفلي، لضمان اتساق القوائم
    *  المعروضة هنا مع الواجهة الفعلية بدل تناقضهما. */
@@ -75,7 +81,8 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
   onNavigateTab,
   onOpenLogin,
   navPersona,
-  onStartWriting
+  onStartWriting,
+  isMonetizationEligible = false
 }) => {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const quotaStats = getRemainingAiUses(currentUser.aiQuota);
@@ -86,16 +93,19 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
 
   if (!isOpen) return null;
 
+  // وسم واحد فقط يُحسب من حالة الأهلية الفعلية للربح، لا من الدور
+  // المُختار عند التسجيل وحده — كاتب/قارئ جديد يبقى "قارئ مسجل" حتى يحقق
+  // كل شروط الأهلية، فيتحول تلقائياً إلى "كاتب شريك ومعتمد".
   const getRoleLabel = (role: UserRole) => {
     switch (role) {
       case 'admin':
         return '👑 مالك المنصة (Admin)';
-      case 'writer':
-        return '✍️ كاتب ومؤلف معتمد';
       case 'advertiser':
         return '📢 معلن وشريك أعمال';
+      case 'writer':
       case 'reader':
-        return '📖 قارئ ومثقف';
+      default:
+        return isMonetizationEligible ? '✍️ كاتب شريك ومعتمد' : '📖 قارئ مسجل';
     }
   };
 
@@ -153,17 +163,20 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
 
           {/* Body Links */}
           <div className="flex-1 overflow-y-auto p-4 space-y-6">
-            {/* Current Role (fixed at registration — no longer switchable
-                from here; that was letting any signed-in user instantly
-                become 'admin' with a single tap). */}
-            <div className="p-3.5 rounded-2xl bg-brand-950/40 border border-brand-500/25">
-              <span className="block text-[11px] font-bold text-brand-200 mb-1">
-                {currentUser.id === 'guest' ? 'أنت تتصفح حالياً:' : 'حسابك الحالي:'}
-              </span>
-              <div className="text-sm font-extrabold text-white">
-                {currentUser.id === 'guest' ? 'زائر (بدون تسجيل دخول)' : getRoleLabel(currentUser.role)}
+            {/* بطاقة "أنت تتصفح حالياً" للزائر فقط — لغير المسجَّل دخوله لا
+                يوجد أي وسم آخر معروض له في أي مكان بالقائمة. للمستخدم
+                المسجَّل، وسم حالته معروض مرة واحدة فقط أعلى القائمة بجانب
+                اسمه؛ تكراره هنا كان هو الخلل الذي طُلب إصلاحه. */}
+            {currentUser.id === 'guest' && (
+              <div className="p-3.5 rounded-2xl bg-brand-950/40 border border-brand-500/25">
+                <span className="block text-[11px] font-bold text-brand-200 mb-1">
+                  أنت تتصفح حالياً:
+                </span>
+                <div className="text-sm font-extrabold text-white">
+                  زائر (بدون تسجيل دخول)
+                </div>
               </div>
-            </div>
+            )}
 
             {/* AI Assistant Quota Widget */}
             <div className="p-3.5 rounded-2xl bg-gradient-to-r from-brand-950/60 to-brand-950/60 border border-brand-500/30">

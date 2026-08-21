@@ -140,12 +140,13 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             </span>
           </button>
 
-          {/* 4. رسائل */}
+          {/* 4. رسائل — معطّل للزائر (لا حساب له لتلقي أو إرسال رسائل) */}
           <button
             id="nav-reader-messages"
             type="button"
-            onClick={onOpenMessages}
-            className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group relative"
+            onClick={currentUser?.id === 'guest' ? undefined : onOpenMessages}
+            disabled={currentUser?.id === 'guest'}
+            className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group relative disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <div
               className={`p-1.5 rounded-xl transition-all relative ${
@@ -155,7 +156,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
               }`}
             >
               <MessageSquare className="w-5 h-5" />
-              {unreadMessagesCount > 0 && (
+              {unreadMessagesCount > 0 && currentUser?.id !== 'guest' && (
                 <span className="absolute -top-1 -end-1 w-4 h-4 bg-teal-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center ring-2 ring-white dark:ring-slate-950">
                   {unreadMessagesCount}
                 </span>
@@ -166,7 +167,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
                 activeTab === 'messages' ? 'text-brand-700 dark:text-brand-300 font-extrabold' : 'text-slate-500 dark:text-slate-400'
               }`}
             >
-              {t('messages')}
+              {currentUser?.id === 'guest' ? 'يلزم التسجيل' : t('messages')}
             </span>
           </button>
 
