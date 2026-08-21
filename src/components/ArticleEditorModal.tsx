@@ -214,10 +214,18 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
     setIsAiLoading(true);
     setAiOutput(null);
 
+    // مهلة زمنية صريحة للطلب: بدونها كان أي تعثر شبكي أو تأخر من جهة
+    // الخدمة الذكية يترك المستخدم أمام مؤشر تحميل عالق للأبد دون أي رسالة
+    // تفسّر له ما يجري — وهذا ما كان يُقرأ كـ"بطء شديد" في الأدوات حتى لو
+    // كان السبب الفعلي طلباً واحداً معلّقاً لا أكثر.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
     try {
       const res = await fetch('/api/ai/writing-assistant', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           action: actionType,
           title,
@@ -235,9 +243,14 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
       } else {
         setAiErrorMessage(data.message || data.error || 'تعذر الاتصال بالخدمة الذكية.');
       }
-    } catch (err) {
-      setAiErrorMessage('حدث خطأ أثناء معالجة الطلب الذكي.');
+    } catch (err: any) {
+      if (err?.name === 'AbortError') {
+        setAiErrorMessage('استغرقت الخدمة الذكية وقتاً أطول من المعتاد ولم تستجب. حاول مرة أخرى، أو اختصر النص إن كان طويلاً.');
+      } else {
+        setAiErrorMessage('حدث خطأ أثناء معالجة الطلب الذكي.');
+      }
     } finally {
+      clearTimeout(timeoutId);
       setIsAiLoading(false);
     }
   };

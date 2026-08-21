@@ -472,9 +472,29 @@ async function startServer() {
           promptText = `قم بإنشاء هيكل مقال متكامل (مقدمة، 3 محاور رئيسية، خاتمة) لعنوان المقال التالي:\n${title || text}`;
         }
 
+        // سقف لعدد رموز الاستجابة لكل نوع أداة — دون سقف كان النموذج قد
+        // يتوسّع في التوليد لأبعد مما تحتاجه الأداة فعلياً (مثلاً 5 عناوين
+        // قصيرة لا تحتاج مئات الأسطر)، فيبطئ وصول الرد دون أي فائدة إضافية
+        // للمستخدم. القيم الأعلى (تحسين الأسلوب/التدقيق) تبقى سخية لتفادي
+        // اقتطاع نص المقال نفسه.
+        const maxOutputTokensByAction: Record<string, number> = {
+          suggest_titles: 400,
+          summarize_article: 350,
+          summarize: 350,
+          suggest_categories: 250,
+          summarize_tags: 250,
+          generate_paragraph: 600,
+          generate_outline: 700,
+          improve_style: 3000,
+          fix_grammar: 3000
+        };
+
         const response = await client.models.generateContent({
           model: 'gemini-3.7-flash',
-          contents: promptText
+          contents: promptText,
+          config: {
+            maxOutputTokens: maxOutputTokensByAction[action] || 800
+          }
         });
 
         res.json({
