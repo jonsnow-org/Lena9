@@ -122,7 +122,7 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    onDeleteOne(notif.id);
+                    if (window.confirm('حذف هذا الإشعار نهائياً؟')) onDeleteOne(notif.id);
                   }}
                   title="حذف الإشعار"
                   className="p-1.5 rounded-lg text-slate-300 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 opacity-0 group-hover:opacity-100 transition-all shrink-0"
@@ -145,7 +145,11 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
             </button>
             {notifications.length > 0 && (
               <button
-                onClick={onClearAll}
+                onClick={() => {
+                  if (window.confirm(`مسح كل الإشعارات (${notifications.length}) نهائياً؟ لا يمكن التراجع عن هذا.`)) {
+                    onClearAll();
+                  }
+                }}
                 className="text-xs text-rose-500 dark:text-rose-400 font-bold hover:underline flex items-center gap-1"
               >
                 <Trash2 className="w-3.5 h-3.5" />

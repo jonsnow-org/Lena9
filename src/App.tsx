@@ -1952,8 +1952,11 @@ export function App() {
         method: String(method),
         reference: ref
       });
-      setIsWalletOpen(false);
-      alert('تم إرسال طلب الإيداع. سيُضاف الرصيد بعد تأكيد وصول المبلغ من إدارة المنصة.');
+      // ⚠️ لا تُغلق WalletModal ولا تعرض alert() هنا — WalletModal يعرض
+      // شاشة نجاح مدمجة خاصة به (depositSuccess) فور استدعاء onDeposit،
+      // ويعود تلقائياً لتبويب النظرة العامة بعد ثوانٍ قليلة. إغلاق
+      // النافذة فوراً من هنا كان يُخفي تلك الشاشة قبل أن يراها المستخدم
+      // إطلاقاً، ويستبدلها بنافذة alert() جافة تابعة للمتصفح.
     } catch (err) {
       console.error('تعذر إنشاء طلب الإيداع:', err);
       alert('تعذر إرسال طلب الإيداع. تحقق من اتصالك ثم حاول مجدداً.');
@@ -1988,8 +1991,8 @@ export function App() {
         method: String(method),
         destination: accountDetail
       });
-      setIsWalletOpen(false);
-      alert('تم إرسال طلب السحب. تتم المراجعة يدوياً خلال 24 إلى 48 ساعة.');
+      // ⚠️ نفس السبب تماماً كحالة الإيداع أعلاه — اترك WalletModal يعرض
+      // شاشة نجاحه المدمجة (withdrawSuccess) ويعود للنظرة العامة بنفسه.
     } catch (err) {
       console.error('تعذر إنشاء طلب السحب:', err);
       alert('تعذر إرسال طلب السحب. تحقق من اتصالك ثم حاول مجدداً.');
