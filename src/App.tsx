@@ -103,6 +103,7 @@ import {
   createPayoutRequest,
   ensureConversation,
   sendMessageToFirestore,
+  broadcastMessageToAllUsers,
   subscribeToConversations,
   subscribeToMessages,
   markConversationMessagesRead,
@@ -272,7 +273,14 @@ export function App() {
   // بـ currentUserId ولا تُعامَل كحساب مسجّل بأي شكل.
   const [guestIdentityUid, setGuestIdentityUid] = useState<string>('');
 
-  const [conversations, setConversations] = useState<Conversation[]>(() => {
+  // بيانات المحادثة الخام من Firestore (معرّف المشارك الآخر فقط، بلا اسمه
+  // أو صورته) — يُشتق منها `conversations` أدناه بضم بيانات كل مشارك من
+  // قائمة `users` الحية، بدل تخزين partnerName/partnerAvatar بصيغة ثابتة
+  // كانت تصل بالفعل undefined لكل محادثة (طابق conversations/{id} الفعلي
+  // في Firestore لا يخزّن سوى participants/lastMessage/lastMessageAt).
+  const [rawConversations, setRawConversations] = useState<
+    { id: string; participantIds: string[]; lastMessage: string; lastMessageAt: string }[]
+  >(() => {
     const saved = localStorage.getItem('literium_conversations');
     return saved ? JSON.parse(saved) : [];
   });
@@ -281,6 +289,31 @@ export function App() {
     const saved = localStorage.getItem('literium_messages');
     return saved ? JSON.parse(saved) : [];
   });
+
+  // المحادثات الفعلية المعروضة في نافذة الرسائل: تُشتق من rawConversations
+  // بضم اسم/صورة/دور الطرف الآخر من users الحيّة — بدلاً من محاولة قراءة
+  // partnerName/partnerAvatar من مستند Firestore الذي لا يخزّنها أصلاً
+  // (وهو ما كان يجعل قائمة المحادثات تظهر فارغة/بلا اسم لكل من يفتحها).
+  const conversations: Conversation[] = useMemo(
+    () =>
+      rawConversations.map((c) => {
+        const partnerId = c.participantIds.find((id) => id !== currentUserId) || '';
+        const partner = users.find((u) => u.id === partnerId);
+        return {
+          id: c.id,
+          partnerId,
+          partnerName: partner?.penName || partner?.companyName || partner?.fullName || 'مستخدم ليتيريوم',
+          partnerAvatar:
+            partner?.avatarUrl ||
+            'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80',
+          partnerRole: partner?.role || 'reader',
+          lastMessage: c.lastMessage,
+          lastMessageTime: c.lastMessageAt,
+          unreadCount: 0
+        };
+      }),
+    [rawConversations, users, currentUserId]
+  );
 
   const [fraudFlags, setFraudFlags] = useState<FraudFlag[]>(() => {
     const saved = localStorage.getItem('literium_fraud_flags');
@@ -979,21 +1012,20 @@ export function App() {
   // الاستماع للمحادثات والرسائل الخاصة بالمستخدم الحالي فقط
   useEffect(() => {
     if (!currentUserId) {
-      setConversations([]);
+      setRawConversations([]);
       setMessages([]);
       return;
     }
     const unsubConvs = subscribeToConversations(
       currentUserId,
       (list) => {
-        setConversations(
+        setRawConversations(
           list.map((c: any) => ({
             id: c.id,
             participantIds: c.participants || [],
             lastMessage: c.lastMessage || '',
-            lastMessageAt: c.lastMessageAt || '',
-            unreadCount: 0
-          })) as any
+            lastMessageAt: c.lastMessageAt || ''
+          }))
         );
       },
       (e) => console.error('Conversations error:', e)
@@ -2608,6 +2640,13 @@ export function App() {
             onUpdatePurchaseRequest={handleUpdatePurchaseRequest}
             activeTab={adminActiveTab}
             onActiveTabChange={setAdminActiveTab}
+            onBroadcastMessage={(text) =>
+              broadcastMessageToAllUsers(
+                currentUser.id,
+                users.map((u) => u.id),
+                text
+              )
+            }
             onUpdateUserRole={async (userId, newRole) => {
               setUsers((prev) =>
                 prev.map((u) => (u.id === userId ? { ...u, role: newRole } : u))

@@ -13,7 +13,8 @@ import {
   orderBy,
   arrayUnion,
   arrayRemove,
-  increment
+  increment,
+  writeBatch
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { Article, AdCampaign, Transaction, FraudFlag, User, UserRole, Comment, CommentReply, AppNotification, ArticlePromotion } from '../types';
@@ -914,6 +915,60 @@ export async function sendMessageToFirestore(msg: {
     handleFirestoreError(error, OperationType.WRITE, 'messages');
     throw error;
   }
+}
+
+/**
+ * رسالة جماعية من الأدمن لكل المستخدمين دفعة واحدة — تظهر لكل مستلم في
+ * نفس صندوق الرسائل المعتاد (زر "رسائل")، بشارة غير مقروء واسم الأدمن
+ * كمُرسل، عبر نفس مسار conversations/messages المستخدم للرسائل الفردية.
+ *
+ * مقسّمة لدفعات (writeBatch) بحد 200 مستلم لكل دفعة (400 عملية كتابة،
+ * هامش أمان تحت حد الـ500 عملية لكل دفعة في Firestore).
+ */
+export async function broadcastMessageToAllUsers(
+  adminId: string,
+  recipientIds: string[],
+  text: string
+): Promise<{ sent: number; failed: number }> {
+  const targets = recipientIds.filter((id) => id && id !== adminId);
+  let sent = 0;
+  let failed = 0;
+  const nowIso = new Date().toISOString();
+  const CHUNK_SIZE = 200;
+
+  for (let i = 0; i < targets.length; i += CHUNK_SIZE) {
+    const chunk = targets.slice(i, i + CHUNK_SIZE);
+    const batch = writeBatch(db);
+    for (const recipientId of chunk) {
+      const convId = conversationIdFor(adminId, recipientId);
+      batch.set(
+        doc(db, 'conversations', convId),
+        {
+          participants: [adminId, recipientId],
+          lastMessage: text.slice(0, 120),
+          lastMessageAt: nowIso
+        },
+        { merge: true }
+      );
+      batch.set(doc(collection(db, 'messages')), {
+        conversationId: convId,
+        senderId: adminId,
+        participants: [adminId, recipientId],
+        text,
+        isRead: false,
+        createdAt: nowIso
+      });
+    }
+    try {
+      await batch.commit();
+      sent += chunk.length;
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'messages/broadcast');
+      failed += chunk.length;
+    }
+  }
+
+  return { sent, failed };
 }
 
 export function subscribeToConversations(

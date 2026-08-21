@@ -107,6 +107,9 @@ interface AdminDashboardProps {
    *  بخلاف user.followersCount المخزَّن الذي لا يُحدَّث من أي مسار ويبقى
    *  صفراً دائماً. */
   followersCountByUserId?: Record<string, number>;
+  /** يرسل رسالة واحدة لكل المستخدمين دفعة واحدة (تظهر في صندوق رسائل كل
+   *  مستخدم باسم الأدمن كمُرسل). تعيد عدد من وصلتهم الرسالة بنجاح ومن فشل. */
+  onBroadcastMessage?: (text: string) => Promise<{ sent: number; failed: number }>;
 }
 
 type AdjustableBalanceField = 'walletBalance' | 'availableBalance' | 'pendingEarnings' | 'lifetimeEarnings';
@@ -254,7 +257,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onTogglePlatformAds,
   externalAdsConfig,
   onSaveExternalAdsConfig,
-  followersCountByUserId = {}
+  followersCountByUserId = {},
+  onBroadcastMessage
 }) => {
   const [internalActiveTab, setInternalActiveTab] = useState<
     'overview' | 'fraud' | 'campaigns' | 'moderation' | 'users' | 'settings'
@@ -268,6 +272,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [fraudFilter, setFraudFilter] = useState<string>('all');
   const [userRoleFilter, setUserRoleFilter] = useState<string>('all');
   const [userSearch, setUserSearch] = useState<string>('');
+  const [isBroadcastOpen, setIsBroadcastOpen] = useState(false);
+  const [broadcastText, setBroadcastText] = useState('');
+  const [broadcastStatus, setBroadcastStatus] = useState<'idle' | 'sending' | 'done' | 'error'>('idle');
+  const [broadcastResult, setBroadcastResult] = useState<{ sent: number; failed: number } | null>(null);
   const [articleFilter, setArticleFilter] = useState<string>('all');
 
   // مسوّدة تحرير محلية لإعدادات الشبكات الإعلانية الخارجية الاحتياطية —
@@ -1271,7 +1279,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 />
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 {['all', 'admin', 'writer', 'advertiser', 'reader'].map((r) => (
                   <button
                     key={r}
@@ -1289,6 +1297,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     {r === 'reader' && 'القرّاء 📖'}
                   </button>
                 ))}
+                {onBroadcastMessage && (
+                  <button
+                    onClick={() => {
+                      setBroadcastStatus('idle');
+                      setBroadcastResult(null);
+                      setBroadcastText('');
+                      setIsBroadcastOpen(true);
+                    }}
+                    className="px-3 py-1.5 rounded-xl text-xs font-bold bg-teal-600 hover:bg-teal-700 text-white flex items-center gap-1.5"
+                  >
+                    <Megaphone className="w-3.5 h-3.5" />
+                    <span>رسالة جماعية لجميع المستخدمين</span>
+                  </button>
+                )}
               </div>
             </div>
 
@@ -2047,6 +2069,87 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         )}
       </div>
+
+      {/* رسالة جماعية لجميع المستخدمين */}
+      {isBroadcastOpen && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4">
+          <div className="relative w-full max-w-lg rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl p-6 space-y-4">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-2xl bg-teal-600/15 text-teal-400 flex items-center justify-center">
+                <Megaphone className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-base text-white">رسالة جماعية لجميع المستخدمين</h3>
+                <p className="text-[11px] text-slate-400">
+                  تصل كرسالة جديدة في صندوق رسائل كل مستخدم ({users.filter((u) => u.id !== currentUser.id).length} مستلم)، باسمك كمُرسل.
+                </p>
+              </div>
+            </div>
+
+            {broadcastStatus === 'done' && broadcastResult ? (
+              <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-300 text-xs font-bold space-y-1">
+                <div>تم الإرسال إلى {broadcastResult.sent} مستخدم بنجاح.</div>
+                {broadcastResult.failed > 0 && (
+                  <div className="text-rose-300">تعذر الإرسال إلى {broadcastResult.failed} مستخدم — حاول مجدداً لاحقاً.</div>
+                )}
+              </div>
+            ) : (
+              <textarea
+                value={broadcastText}
+                onChange={(e) => setBroadcastText(e.target.value)}
+                rows={4}
+                placeholder="اكتب رسالة الإعلان الجماعي هنا..."
+                disabled={broadcastStatus === 'sending'}
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white outline-hidden focus:border-teal-500 resize-none disabled:opacity-60"
+              />
+            )}
+
+            {broadcastStatus === 'error' && (
+              <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/25 text-rose-300 text-[11px] font-bold">
+                تعذر إرسال الرسالة الجماعية. تحقق من اتصالك ثم حاول مجدداً.
+              </div>
+            )}
+
+            <div className="flex items-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => setIsBroadcastOpen(false)}
+                className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs"
+              >
+                {broadcastStatus === 'done' ? 'إغلاق' : 'إلغاء'}
+              </button>
+              {broadcastStatus !== 'done' && (
+                <button
+                  type="button"
+                  disabled={!broadcastText.trim() || broadcastStatus === 'sending' || !onBroadcastMessage}
+                  onClick={async () => {
+                    if (!onBroadcastMessage) return;
+                    setBroadcastStatus('sending');
+                    try {
+                      const result = await onBroadcastMessage(broadcastText.trim());
+                      setBroadcastResult(result);
+                      setBroadcastStatus('done');
+                    } catch (err) {
+                      console.error('تعذر إرسال الرسالة الجماعية:', err);
+                      setBroadcastStatus('error');
+                    }
+                  }}
+                  className="flex-1 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white font-extrabold text-xs flex items-center justify-center gap-1.5"
+                >
+                  {broadcastStatus === 'sending' ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>جارٍ الإرسال...</span>
+                    </>
+                  ) : (
+                    <span>إرسال للجميع</span>
+                  )}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
