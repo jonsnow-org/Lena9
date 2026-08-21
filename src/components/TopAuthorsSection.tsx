@@ -7,19 +7,27 @@ interface TopAuthorsSectionProps {
   onSelectAuthor: (author: User) => void;
   onFollowAuthor: (authorId: string) => void;
   followedAuthorIds?: string[];
+  /** عدد المتابعين الحقيقي لكل كاتب، محسوب من مجموعة follows الفعلية —
+   *  بخلاف user.followersCount المخزَّن الذي لا يُحدَّث أبداً ويبقى صفراً. */
+  followersCountByUserId?: Record<string, number>;
 }
 
 export const TopAuthorsSection: React.FC<TopAuthorsSectionProps> = ({
   authors = [],
   onSelectAuthor,
   onFollowAuthor,
-  followedAuthorIds = []
+  followedAuthorIds = [],
+  followersCountByUserId = {}
 }) => {
   const safeAuthors = Array.isArray(authors) ? authors : [];
-  // Sort authors by views or followers count
+  // Sort authors by views or real followers count
   const sortedAuthors = [...safeAuthors]
     .filter((u) => u.role === 'writer' || (u.articlesCount && u.articlesCount > 0))
-    .sort((a, b) => (b.totalViews || b.followersCount || 0) - (a.totalViews || a.followersCount || 0))
+    .sort(
+      (a, b) =>
+        (b.totalViews || followersCountByUserId[b.id] || 0) -
+        (a.totalViews || followersCountByUserId[a.id] || 0)
+    )
     .slice(0, 6);
 
   const getRankBadge = (index: number) => {
@@ -122,10 +130,10 @@ export const TopAuthorsSection: React.FC<TopAuthorsSectionProps> = ({
                 {/* Stats */}
                 <div className="flex items-center justify-center gap-2 text-[10px] text-slate-400 mt-2 py-1 px-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 w-full">
                   <span className="font-bold text-slate-700 dark:text-slate-300">
-                    {author.followersCount?.toLocaleString('ar-EG') || 120} متابع
+                    {(followersCountByUserId[author.id] ?? 0).toLocaleString('ar-EG')} متابع
                   </span>
                   <span>•</span>
-                  <span>{author.articlesCount || 10} مقال</span>
+                  <span>{author.articlesCount || 0} مقال</span>
                 </div>
               </div>
 

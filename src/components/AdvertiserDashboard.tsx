@@ -343,7 +343,7 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
                 <ShieldCheck className="w-6 h-6 text-emerald-400" />
                 <div>
                   <h3 className="text-base font-bold text-white">درع الحماية ومكافحة الاحتيال الإعلاني</h3>
-                  <p className="text-xs text-slate-400">تقنيات الذكاء الاصطناعي لفحص النقرات والمشاهدات بدقة 99.8%</p>
+                  <p className="text-xs text-slate-400">قواعد آلية للتحقق من صحة النقرات والمشاهدات قبل احتسابها</p>
                 </div>
               </div>
               <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 font-bold text-xs border border-emerald-500/30">
