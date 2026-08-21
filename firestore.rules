@@ -54,6 +54,7 @@ service cloud.firestore {
         && (!('pendingEarnings' in request.resource.data) || request.resource.data.pendingEarnings == 0)
         && (!('lifetimeEarnings' in request.resource.data) || request.resource.data.lifetimeEarnings == 0)
         && (!('isVerified' in request.resource.data) || request.resource.data.isVerified == false)
+        && !('stripeConnectedAccountId' in request.resource.data)
       );
 
       allow update: if isAdmin() || (
@@ -64,7 +65,13 @@ service cloud.firestore {
              'walletBalance', 'balance', 'wallet',
              'totalEarnings', 'earnings', 'revenue',
              'availableBalance', 'pendingEarnings', 'lifetimeEarnings',
-             'pendingPayout', 'isVerified', 'subscriptionTier'
+             'pendingPayout', 'isVerified', 'subscriptionTier',
+             // معرّف حساب Stripe Connect المرتبط لاستلام السحوبات الآلية —
+             // يُكتب حصراً من الخادم عبر Firebase Admin SDK (يتجاوز هذه
+             // القواعد أصلاً) بعد التحقق الفعلي من Stripe. لو سُمح للمستخدم
+             // بتعديله مباشرة من المتصفح، لأمكنه توجيه سحب أمواله الخاصة
+             // (أو محاولة توجيهها) إلى حساب Stripe مختلف لا يملكه.
+             'stripeConnectedAccountId'
            ])
       );
 

@@ -95,6 +95,7 @@ import {
   subscribeToAdEvents,
   markAdEventProcessed,
   adminAdjustUserBalance,
+  logManualBalanceAdjustment,
   adminLogEarning,
   followUser,
   unfollowUser,
@@ -185,6 +186,12 @@ export function App() {
   // "تسجيل الخروج" وإشارة Firebase الداخلية المتأخرة أحياناً — بدونها كان
   // يحصل أن يُعاد تسجيل دخول المستخدم تلقائياً للحساب الذي خرج منه للتو.
   const isLoggingOutRef = useRef(false);
+
+  // حماية من الاعتماد المزدوج (نقر مزدوج سريع على "اعتماد" قبل أن تُخفي
+  // الواجهة الزر): معرّفات الطلبات المالية قيد المعالجة فعلياً الآن —
+  // أي محاولة ثانية لنفس المعرّف تُرفض فوراً بدل تكرار خصم/إضافة الرصيد
+  // أو تكرار تسجيل الأرباح في earnings.
+  const processingRequestIdsRef = useRef<Set<string>>(new Set());
 
   // Persistence & State Initialization
   // Users state: starts EMPTY for real users. Demo/mock identities from
@@ -524,6 +531,32 @@ export function App() {
     return () => unsubscribeAuth();
   }, []);
 
+  // العودة من بوابة الدفع الآلية (Stripe Checkout / ربط حساب السحب) —
+  // تُعيد الصفحة المستخدم بمعامل استعلام في الرابط. الرصيد نفسه يصل عبر
+  // Firestore (مستمع subscribeToUsers الحي) بعد أن يعالج الخادم حدث
+  // Webhook فعلياً، فهذا فقط تنبيه فوري + تنظيف الرابط.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const payment = params.get('payment');
+    const payoutConnect = params.get('payoutConnect');
+    if (!payment && !payoutConnect) return;
+
+    if (payment === 'success') {
+      alert('تم الدفع بنجاح! سيظهر الرصيد في محفظتك خلال لحظات.');
+    } else if (payment === 'cancelled') {
+      alert('تم إلغاء عملية الدفع.');
+    } else if (payoutConnect === 'done') {
+      alert('تم إتمام ربط حساب استلام الأموال. افتح المحفظة لمتابعة السحب.');
+    } else if (payoutConnect === 'refresh') {
+      alert('انتهت صلاحية رابط الربط. افتح المحفظة وحاول ربط الحساب مرة أخرى.');
+    }
+
+    params.delete('payment');
+    params.delete('payoutConnect');
+    const newSearch = params.toString();
+    window.history.replaceState({}, '', window.location.pathname + (newSearch ? `?${newSearch}` : ''));
+  }, []);
+
   // الاستماع لطلبات الترويج.
   // قواعد الأمان تسمح للكاتب بقراءة طلباته فقط، وللأدمن بقراءة الكل،
   // لذا يُقيَّد الاستعلام حسب الدور — الاستماع للمجموعة كاملة سيُرفض.
@@ -598,14 +631,64 @@ export function App() {
     };
   }, [currentUserId, currentUser.role]);
 
+  // تنبيه فوري للأدمن عند وصول طلب مالي جديد — كان الأدمن يعتمد كلياً على
+  // فتح اللوحة يدوياً ورؤية شارة العدد على التبويبات، بلا أي تنبيه استباقي.
+  // لا يطلب إذن الإشعارات تلقائياً (تجربة سيئة)؛ يستخدمه فقط إن كان
+  // ممنوحاً مسبقاً للموقع، ويعتمد أساساً على وميض عنوان التبويب (لا يحتاج
+  // أي إذن) لجذب الانتباه إن كان الأدمن في تبويب آخر.
+  const prevPendingCountRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (currentUser.role !== 'admin') {
+      prevPendingCountRef.current = null;
+      return;
+    }
+    const pendingCount =
+      depositRequests.filter((r: any) => r.status === 'pending').length +
+      payoutRequests.filter((r: any) => r.status === 'pending').length +
+      purchaseRequests.filter((r: any) => r.status === 'pending').length;
+
+    const prev = prevPendingCountRef.current;
+    prevPendingCountRef.current = pendingCount;
+
+    // أول قراءة فقط تهيّئ المرجع — لا تنبيه عند فتح اللوحة لأول مرة على
+    // طلبات موجودة أصلاً، فقط عند وصول طلب جديد فعلياً بعدها.
+    if (prev === null || pendingCount <= prev) return;
+
+    const originalTitle = document.title;
+    document.title = '🔔 طلب مالي جديد — ليتيريوم';
+    setTimeout(() => {
+      if (document.title.startsWith('🔔')) document.title = originalTitle;
+    }, 5000);
+
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      try {
+        new Notification('طلب مالي جديد بانتظار المراجعة', {
+          body: 'وصل طلب إيداع/سحب/شراء جديد في لوحة الإدارة.'
+        });
+      } catch {}
+    }
+  }, [depositRequests, payoutRequests, purchaseRequests, currentUser.role]);
+
   /**
    * احتساب أحداث الإعلانات: يخصم من المعلن ويضيف حصة الكاتب إلى أرباحه
    * المجمّدة، ثم يعلّم كل الأحداث كمعالَجة.
    * الأحداث المشبوهة تُعلَّم كغير صالحة ولا تُحتسب لأي طرف.
    */
+  // حد أقصى للدفعة الواحدة — معالجة آلاف الأحداث دفعة واحدة من المتصفح
+  // (كتابات Firestore متسلسلة عبر for...await) تُبطئ العملية وتزيد خطر
+  // انقطاعها في المنتصف (فقدان اتصال) قبل اكتمالها. تقسيمها لدفعات أصغر
+  // يقلّل هذا الخطر؛ الأحداث المتبقية تبقى بانتظار ضغطة تالية للزر.
+  const AD_EVENTS_BATCH_SIZE = 100;
+
   const handleProcessAdEvents = async () => {
-    const unprocessed = adEvents.filter((e) => !e.processed);
-    if (unprocessed.length === 0) return;
+    const allUnprocessed = adEvents.filter((e) => !e.processed);
+    if (allUnprocessed.length === 0) return;
+
+    const sorted = [...allUnprocessed].sort((a: any, b: any) =>
+      String(a.createdAt || '').localeCompare(String(b.createdAt || ''))
+    );
+    const unprocessed = sorted.slice(0, AD_EVENTS_BATCH_SIZE);
+    const remainingAfterBatch = sorted.length - unprocessed.length;
 
     const advertiserByCampaign: Record<string, string> = {};
     campaigns.forEach((c: any) => {
@@ -680,7 +763,10 @@ export function App() {
       }
 
       alert(
-        `تم الاحتساب: ${valid.length} حدث صالح، و${suspicious.length} حدث مشبوه لم يُحتسب لأي طرف.`
+        `تم الاحتساب: ${valid.length} حدث صالح، و${suspicious.length} حدث مشبوه لم يُحتسب لأي طرف.` +
+          (remainingAfterBatch > 0
+            ? ` تبقّى ${remainingAfterBatch} حدث آخر — اضغط الزر مجدداً لمعالجة الدفعة التالية.`
+            : '')
       );
     } catch (err) {
       console.error('تعذر احتساب أحداث الإعلانات:', err);
@@ -710,6 +796,14 @@ export function App() {
   ) => {
     const req = purchaseRequests.find((r) => r.id === requestId);
     if (!req) return;
+
+    // ⚠️ حماية من الاعتماد المزدوج: نقرتان سريعتان على نفس الطلب (قبل أن
+    // تُخفي الواجهة الزر) كانتا تُكرّران خصم/إضافة الرصيد وتسجيل الربح في
+    // earnings مرتين لنفس البيع فعلياً.
+    if (req.status !== 'pending' || processingRequestIdsRef.current.has(requestId)) {
+      return;
+    }
+    processingRequestIdsRef.current.add(requestId);
 
     // اشتراكات الذكاء الاصطناعي طُلبت بمعرّف يبدأ بـ "subscription_" (انظر
     // handleUpgradeSuccess) — تحتاج معالجة مختلفة تماماً عن بيع مقال:
@@ -788,6 +882,8 @@ export function App() {
     } catch (err) {
       console.error('تعذر اعتماد طلب الشراء:', err);
       alert('تعذر اعتماد الطلب. تأكد من صلاحيات الأدمن ثم حاول مجدداً.');
+    } finally {
+      processingRequestIdsRef.current.delete(requestId);
     }
   };
 
@@ -900,6 +996,13 @@ export function App() {
     requestId: string,
     status: 'approved' | 'rejected' | 'paid'
   ) => {
+    const requestsList = collectionName === 'depositRequests' ? depositRequests : payoutRequests;
+    const currentReq = requestsList.find((r) => r.id === requestId);
+    // ⚠️ حماية من الاعتماد المزدوج: نقرتان سريعتان على نفس الطلب.
+    if (!currentReq || currentReq.status !== 'pending' || processingRequestIdsRef.current.has(requestId)) {
+      return;
+    }
+    processingRequestIdsRef.current.add(requestId);
     try {
       await setMoneyRequestStatus(collectionName, requestId, status);
 
@@ -911,12 +1014,7 @@ export function App() {
         (collectionName === 'payoutRequests' && status === 'paid');
 
       if (shouldApplyBalance) {
-        const requestsList = collectionName === 'depositRequests' ? depositRequests : payoutRequests;
-        const req = requestsList.find((r) => r.id === requestId);
-        if (!req) {
-          console.error('تعذر إيجاد الطلب المالي لتحديث الرصيد:', requestId);
-          return;
-        }
+        const req = currentReq;
         const targetUser = users.find((u) => u.id === req.userId);
         if (!targetUser) {
           console.error('تعذر إيجاد صاحب الطلب المالي لتحديث الرصيد:', req.userId);
@@ -940,6 +1038,8 @@ export function App() {
     } catch (err) {
       console.error('تعذر تحديث حالة الطلب المالي:', err);
       alert('تعذر تحديث حالة الطلب. تأكد من صلاحيات الأدمن ثم حاول مجدداً.');
+    } finally {
+      processingRequestIdsRef.current.delete(requestId);
     }
   };
 
@@ -1686,6 +1786,14 @@ export function App() {
   // المبلغ لا يُخصم من المتصفح — يعتمده المالك بعد التحويل الفعلي.
   const handleWithdraw = async (amount: number, method: PaymentMethod, accountDetail: string) => {
     if (!requireAuth()) return;
+    // ⚠️ دفاع إضافي هنا أيضاً (بجانب بوابة WalletModal نفسها) — لم يكن أي
+    // مكان يتحقق فعلياً من التوثيق قبل قبول طلب سحب، رغم أن شاشة KYC
+    // تشرح أنها "لضمان أمان المعاملات المالية".
+    const isKycVerified = currentUser.isKycVerified || currentUser.kycDetails?.status === 'verified';
+    if (!isKycVerified) {
+      alert('يجب إتمام التحقق من الهوية (KYC) قبل تقديم طلب سحب.');
+      return;
+    }
     const available = (currentUser as any).availableBalance ?? 0;
     if (amount > available) {
       alert('المبلغ المطلوب يتجاوز رصيدك المتاح للسحب.');
@@ -2344,7 +2452,7 @@ export function App() {
                نصوص عدة تبويبات ("عدّل رصيد المستخدم يدوياً من تبويب
                المستخدمين") دون أن تُبنى فعلياً. amount هنا فرق يُضاف لقيمة
                الحقل الحالية (موجب = إضافة، سالب = خصم)، وليس رقماً مطلقاً. */
-            onAdjustBalance={async (userId, field, amount) => {
+            onAdjustBalance={async (userId, field, amount, reason) => {
               const target = users.find((u) => u.id === userId);
               if (!target) return;
               const current = Number((target as any)[field] ?? 0);
@@ -2354,6 +2462,15 @@ export function App() {
               );
               try {
                 await adminAdjustUserBalance(userId, { [field]: next } as any);
+                // سجلّ تدقيق دائم — من عدّل، لمَن، أي حقل، بأي مبلغ، ولماذا.
+                await logManualBalanceAdjustment({
+                  userId,
+                  field,
+                  amount,
+                  newValue: next,
+                  reason,
+                  adjustedBy: currentUser.id
+                });
               } catch (err) {
                 console.error('تعذر حفظ تعديل الرصيد:', err);
                 alert('تعذر حفظ تعديل الرصيد. حاول مجدداً.');
@@ -2840,6 +2957,11 @@ export function App() {
         onDeposit={handleDeposit}
         onWithdraw={handleWithdraw}
         userRole={currentUser.role}
+        isKycVerified={currentUser.isKycVerified || currentUser.kycDetails?.status === 'verified'}
+        onOpenKyc={() => {
+          setIsWalletOpen(false);
+          setIsKycOpen(true);
+        }}
       />
 
       {/* نافذة الإيداع والسحب */}

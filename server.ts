@@ -3,8 +3,33 @@ import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
+import { activeProvider } from './server/paymentProvider';
+import {
+  isAdminConfigured,
+  getAdminInitError,
+  getAdminDb,
+  verifyRequestAuth,
+  FieldValue
+} from './server/firebaseAdmin';
 
 dotenv.config();
+
+// هل التشغيل الآلي الكامل للإيداع/السحب متاح؟ يتطلب الاثنين معاً: مزوّد
+// دفع مضبوط (مثل Stripe) + Firebase Admin مضبوط (لاحتساب الرصيد فعلياً
+// دون المرور بمتصفح المستخدم). بدون أي منهما تبقى الميزات معطّلة بأمان
+// ويستمر المسار اليدوي الحالي (طلب ← موافقة الأدمن) يعمل كما هو تماماً.
+function isPaymentAutomationReady(): boolean {
+  return activeProvider.isConfigured() && isAdminConfigured();
+}
+
+function requireAutomation(res: express.Response): boolean {
+  if (isPaymentAutomationReady()) return true;
+  res.status(503).json({
+    error: 'automation_not_configured',
+    message: 'التفعيل الآلي للدفع غير مُفعَّل على هذا الخادم بعد. استخدم مسار الطلب اليدوي الحالي.'
+  });
+  return false;
+}
 
 let aiClient: GoogleGenAI | null = null;
 function getGeminiClient(): GoogleGenAI | null {
@@ -102,6 +127,62 @@ function verifyAndConsumeServerQuota(
 async function startServer() {
   const app = express();
   const PORT = 3000;
+
+  // ⚠️ يجب تسجيل مسار Webhook قبل express.json() العام أدناه — التحقق من
+  // توقيع Stripe يحتاج الجسم الخام (raw) غير المُحلَّل، وexpress.json()
+  // كان سيستهلك التدفّق (stream) ويحوّله JSON قبل وصوله هنا فيفشل التحقق.
+  app.post(
+    '/api/payments/webhook/stripe',
+    express.raw({ type: 'application/json' }),
+    async (req, res) => {
+      if (!isPaymentAutomationReady()) {
+        return res.status(503).json({ error: 'automation_not_configured' });
+      }
+      try {
+        const signature = req.headers['stripe-signature'] as string | undefined;
+        const event = activeProvider.parseWebhookEvent(req.body as Buffer, signature);
+        if (!event) return res.status(400).json({ error: 'invalid_event' });
+
+        if (event.kind === 'deposit_completed') {
+          const db = getAdminDb();
+          const eventRef = db.collection('paymentWebhookEvents').doc(event.eventId);
+          const userRef = db.collection('users').doc(event.uid);
+          const depositRef = db.collection('depositRequests').doc();
+
+          // معاملة Firestore ذرّية: إن وصل نفس الحدث من Stripe أكثر من مرة
+          // (سلوك "at-least-once" الموثّق لديهم)، لن يُحتسب المبلغ إلا مرة
+          // واحدة — نتحقق من عدم معالجته سابقاً ضمن المعاملة نفسها.
+          await db.runTransaction(async (tx) => {
+            const eventSnap = await tx.get(eventRef);
+            if (eventSnap.exists) return; // مُعالَج مسبقاً — تجاهل بأمان
+
+            tx.set(eventRef, {
+              kind: 'deposit_completed',
+              uid: event.uid,
+              amount: event.amount,
+              processedAt: new Date().toISOString()
+            });
+            tx.update(userRef, { walletBalance: FieldValue.increment(event.amount) });
+            tx.set(depositRef, {
+              userId: event.uid,
+              amount: event.amount,
+              method: `stripe (${event.currency})`,
+              status: 'completed',
+              providerRef: event.providerRef,
+              createdAt: new Date().toISOString()
+            });
+          });
+        }
+        // account.updated (payout_account_updated) لا يحتاج فعلاً هنا —
+        // حالة الحساب تُقرأ حيّة من Stripe مباشرة عند كل طلب سحب آلي.
+
+        res.json({ received: true });
+      } catch (err: any) {
+        console.error('Stripe webhook error:', err?.message || err);
+        res.status(400).json({ error: 'webhook_error', message: err?.message || 'خطأ في معالجة الحدث.' });
+      }
+    }
+  );
 
   app.use(express.json());
 
@@ -317,6 +398,168 @@ async function startServer() {
     } catch (error: any) {
       console.error('Writing assistant error:', error);
       res.status(500).json({ error: 'Failed to process AI writing assistant request' });
+    }
+  });
+
+  // -------------------------------------------------------------------
+  // بوابة الدفع الآلية — إيداع عبر Stripe Checkout، وسحب عبر Stripe
+  // Connect (Express accounts). كل نقطة هنا تتحقق من رمز هوية Firebase
+  // الحقيقي (لا تثق بأي userId يُرسله العميل)، وتقرأ الرصيد من Firestore
+  // مباشرة (لا تثق بأي رقم يرسله العميل) قبل أي عملية مالية.
+  //
+  // إن لم تُضبط مفاتيح Stripe و/أو Firebase Admin، كل هذه النقاط تعيد
+  // 503 برسالة واضحة، ويستمر مسار الطلب اليدوي الحالي في الواجهة يعمل
+  // بلا أي تغيير.
+  // -------------------------------------------------------------------
+
+  app.get('/api/payments/status', (req, res) => {
+    res.json({
+      automated: isPaymentAutomationReady(),
+      provider: activeProvider.isConfigured() ? activeProvider.name : null,
+      adminConfigured: isAdminConfigured(),
+      reason: isPaymentAutomationReady() ? undefined : (getAdminInitError() || 'payment_provider_not_configured')
+    });
+  });
+
+  app.post('/api/payments/deposit/create-checkout', async (req, res) => {
+    if (!requireAutomation(res)) return;
+    try {
+      const { uid } = await verifyRequestAuth(req.headers.authorization);
+      const amount = Number(req.body?.amount);
+      if (!Number.isFinite(amount) || amount < 1 || amount > 50000) {
+        return res.status(400).json({ error: 'invalid_amount', message: 'المبلغ يجب أن يكون بين 1 و50,000$.' });
+      }
+
+      const baseUrl = (process.env.APP_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
+      const result = await activeProvider.createDepositCheckout({
+        uid,
+        amount,
+        currency: 'usd',
+        successUrl: `${baseUrl}/?payment=success`,
+        cancelUrl: `${baseUrl}/?payment=cancelled`
+      });
+      res.json(result);
+    } catch (err: any) {
+      const status = err?.message === 'missing_auth_token' ? 401 : 500;
+      console.error('deposit/create-checkout error:', err?.message || err);
+      res.status(status).json({ error: 'deposit_checkout_failed', message: err?.message || 'تعذر بدء عملية الإيداع.' });
+    }
+  });
+
+  // فحص حالة حساب الاستلام دون إنشائه — كي لا يُنشأ حساب Stripe Connect
+  // لكل مستخدم فتح تبويب السحب فقط دون نية الربط الفعلي.
+  app.get('/api/payments/payout/status', async (req, res) => {
+    if (!requireAutomation(res)) return;
+    try {
+      const { uid } = await verifyRequestAuth(req.headers.authorization);
+      const db = getAdminDb();
+      const snap = await db.collection('users').doc(uid).get();
+      const accountId = snap.data()?.stripeConnectedAccountId as string | undefined;
+      if (!accountId) {
+        return res.json({ connected: false, payoutsEnabled: false });
+      }
+      const status = await activeProvider.getPayoutAccountStatus(accountId);
+      res.json(status);
+    } catch (err: any) {
+      const status = err?.message === 'missing_auth_token' ? 401 : 500;
+      res.status(status).json({ error: 'status_check_failed', message: err?.message || 'تعذر فحص حالة حساب السحب.' });
+    }
+  });
+
+  app.post('/api/payments/payout/connect-link', async (req, res) => {
+    if (!requireAutomation(res)) return;
+    try {
+      const { uid, email } = await verifyRequestAuth(req.headers.authorization);
+      const db = getAdminDb();
+      const userRef = db.collection('users').doc(uid);
+      const userSnap = await userRef.get();
+      if (!userSnap.exists) {
+        return res.status(404).json({ error: 'user_not_found' });
+      }
+      const existingAccountId = userSnap.data()?.stripeConnectedAccountId as string | undefined;
+
+      const baseUrl = (process.env.APP_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
+      const result = await activeProvider.ensurePayoutAccount({
+        uid,
+        email,
+        existingAccountId,
+        refreshUrl: `${baseUrl}/?payoutConnect=refresh`,
+        returnUrl: `${baseUrl}/?payoutConnect=done`
+      });
+
+      if (result.accountId !== existingAccountId) {
+        await userRef.update({ stripeConnectedAccountId: result.accountId });
+      }
+
+      res.json(result);
+    } catch (err: any) {
+      const status = err?.message === 'missing_auth_token' ? 401 : 500;
+      console.error('payout/connect-link error:', err?.message || err);
+      res.status(status).json({ error: 'connect_link_failed', message: err?.message || 'تعذر إنشاء رابط ربط حساب السحب.' });
+    }
+  });
+
+  app.post('/api/payments/payout/create', async (req, res) => {
+    if (!requireAutomation(res)) return;
+    try {
+      const { uid } = await verifyRequestAuth(req.headers.authorization);
+      const amount = Number(req.body?.amount);
+      if (!Number.isFinite(amount) || amount < 50) {
+        return res.status(400).json({ error: 'invalid_amount', message: 'الحد الأدنى للسحب 50$.' });
+      }
+
+      const db = getAdminDb();
+      const userRef = db.collection('users').doc(uid);
+      const userSnap = await userRef.get();
+      if (!userSnap.exists) return res.status(404).json({ error: 'user_not_found' });
+      const userData = userSnap.data() || {};
+
+      // ⚠️ نفس شرط التوثيق (KYC) المطبَّق على مسار السحب اليدوي — لا نسمح
+      // بمسار آلي "أسهل" يتجاوز التحقق من الهوية.
+      if (userData.kycDetails?.status !== 'verified' && !userData.isKycVerified) {
+        return res.status(403).json({ error: 'kyc_required', message: 'يجب إتمام التحقق من الهوية (KYC) قبل السحب.' });
+      }
+
+      // الرصيد يُقرأ من Firestore مباشرة — لا نثق بأي رقم يرسله العميل.
+      const available = Number(userData.availableBalance || 0);
+      if (amount > available) {
+        return res.status(400).json({ error: 'insufficient_balance', message: 'المبلغ يتجاوز رصيدك المتاح للسحب.' });
+      }
+
+      const accountId = userData.stripeConnectedAccountId as string | undefined;
+      if (!accountId) {
+        return res.status(409).json({ error: 'payout_account_not_connected', message: 'يجب ربط حساب استلام الأموال أولاً.' });
+      }
+      const accountStatus = await activeProvider.getPayoutAccountStatus(accountId);
+      if (!accountStatus.payoutsEnabled) {
+        return res.status(409).json({ error: 'payout_account_not_ready', message: 'حساب استلام الأموال لم يكتمل تفعيله بعد.' });
+      }
+
+      const payout = await activeProvider.createPayout({ accountId, amount, currency: 'usd', uid });
+      if (!payout.ok) {
+        return res.status(502).json({ error: 'payout_failed', message: payout.reason || 'فشل تنفيذ التحويل.' });
+      }
+
+      // خصم الرصيد وتسجيل الحركة ذرّياً معاً بعد نجاح التحويل الفعلي فقط.
+      await db.runTransaction(async (tx) => {
+        const freshSnap = await tx.get(userRef);
+        const freshAvailable = Number(freshSnap.data()?.availableBalance || 0);
+        tx.update(userRef, { availableBalance: Number(Math.max(0, freshAvailable - amount).toFixed(2)) });
+        tx.set(db.collection('payoutRequests').doc(), {
+          userId: uid,
+          amount,
+          method: 'stripe',
+          status: 'completed',
+          providerRef: payout.providerRef,
+          createdAt: new Date().toISOString()
+        });
+      });
+
+      res.json({ ok: true, providerRef: payout.providerRef });
+    } catch (err: any) {
+      const status = err?.message === 'missing_auth_token' ? 401 : 500;
+      console.error('payout/create error:', err?.message || err);
+      res.status(status).json({ error: 'payout_create_failed', message: err?.message || 'تعذر تنفيذ عملية السحب.' });
     }
   });
 

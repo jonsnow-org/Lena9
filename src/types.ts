@@ -304,7 +304,8 @@ export type TransactionType =
   | 'earning_campaign'
   | 'campaign_spent'
   | 'ai_subscription'
-  | 'platform_fee';
+  | 'platform_fee'
+  | 'manual_adjustment';
 
 export interface Transaction {
   id: string;

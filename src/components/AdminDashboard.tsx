@@ -63,7 +63,8 @@ interface AdminDashboardProps {
   onAdjustBalance?: (
     userId: string,
     field: 'walletBalance' | 'availableBalance' | 'pendingEarnings' | 'lifetimeEarnings',
-    amount: number
+    amount: number,
+    reason: string
   ) => void;
   onUpdatePurchaseRequest?: (requestId: string, status: 'approved' | 'rejected') => void;
   onUpdateMoneyRequest?: (
@@ -105,32 +106,52 @@ const BALANCE_FIELD_LABELS: Record<AdjustableBalanceField, string> = {
  * على نفس الأسلوب (لا اشتراك مدفوع، لا معالجة تلقائية) الذي بُنيت عليه
  * كل شاشات الإيداع والسحب الأخرى في التطبيق.
  */
+// أي تعديل يدوي فوق هذا المبلغ يتطلب تأكيداً ثانياً — حماية من رقم زائد
+// يُطبَّق مباشرة على رصيد حقيقي بلا أي فرصة للمراجعة.
+const LARGE_ADJUSTMENT_CONFIRM_THRESHOLD = 500;
+
 const BalanceAdjustCell: React.FC<{
   user: User;
-  onAdjustBalance?: (userId: string, field: AdjustableBalanceField, amount: number) => void;
+  onAdjustBalance?: (userId: string, field: AdjustableBalanceField, amount: number, reason: string) => void;
 }> = ({ user, onAdjustBalance }) => {
   const [field, setField] = useState<AdjustableBalanceField>('walletBalance');
   const [amountInput, setAmountInput] = useState('');
+  const [reason, setReason] = useState('');
+  const [confirming, setConfirming] = useState(false);
 
   const currentValue = Number((user as any)[field] ?? 0);
   const parsedAmount = Number(amountInput);
-  const canApply = amountInput.trim() !== '' && !Number.isNaN(parsedAmount) && parsedAmount !== 0;
+  const canApply =
+    amountInput.trim() !== '' && !Number.isNaN(parsedAmount) && parsedAmount !== 0 && reason.trim() !== '';
+
+  const commit = () => {
+    onAdjustBalance?.(user.id, field, parsedAmount, reason.trim());
+    setAmountInput('');
+    setReason('');
+    setConfirming(false);
+  };
 
   const handleApply = () => {
     if (!canApply) return;
-    onAdjustBalance?.(user.id, field, parsedAmount);
-    setAmountInput('');
+    if (Math.abs(parsedAmount) >= LARGE_ADJUSTMENT_CONFIRM_THRESHOLD && !confirming) {
+      setConfirming(true);
+      return;
+    }
+    commit();
   };
 
   return (
-    <div className="flex flex-col gap-1.5 min-w-[190px]">
+    <div className="flex flex-col gap-1.5 min-w-[210px]">
       <div className="text-[10px] text-slate-500">
         {BALANCE_FIELD_LABELS[field]}: <span className="font-mono font-bold text-slate-300">${currentValue.toFixed(2)}</span>
       </div>
       <div className="flex items-center gap-1">
         <select
           value={field}
-          onChange={(e) => setField(e.target.value as AdjustableBalanceField)}
+          onChange={(e) => {
+            setField(e.target.value as AdjustableBalanceField);
+            setConfirming(false);
+          }}
           className="bg-slate-950 border border-slate-800 text-slate-300 rounded-lg px-1.5 py-1 text-[10px] focus:outline-none focus:border-purple-500"
         >
           {(Object.keys(BALANCE_FIELD_LABELS) as AdjustableBalanceField[]).map((f) => (
@@ -141,19 +162,37 @@ const BalanceAdjustCell: React.FC<{
           type="number"
           step="0.01"
           value={amountInput}
-          onChange={(e) => setAmountInput(e.target.value)}
+          onChange={(e) => {
+            setAmountInput(e.target.value);
+            setConfirming(false);
+          }}
           placeholder="± المبلغ"
           title="أدخل رقماً موجباً للإضافة أو سالباً للخصم"
           className="w-20 bg-slate-950 border border-slate-800 text-white rounded-lg px-1.5 py-1 text-[10px] font-mono focus:outline-none focus:border-purple-500"
         />
-        <button
-          onClick={handleApply}
-          disabled={!canApply}
-          className="px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-700 disabled:opacity-30 disabled:cursor-not-allowed text-white text-[10px] font-bold transition-all"
-        >
-          تطبيق
-        </button>
       </div>
+      <input
+        type="text"
+        value={reason}
+        onChange={(e) => {
+          setReason(e.target.value);
+          setConfirming(false);
+        }}
+        placeholder="سبب التعديل (إلزامي — يُسجَّل في سجل التدقيق)"
+        className="w-full bg-slate-950 border border-slate-800 text-slate-300 rounded-lg px-1.5 py-1 text-[10px] focus:outline-none focus:border-purple-500"
+      />
+      {confirming && (
+        <p className="text-[10px] text-amber-400 font-bold">
+          مبلغ كبير — اضغط "تطبيق" مرة أخرى للتأكيد النهائي.
+        </p>
+      )}
+      <button
+        onClick={handleApply}
+        disabled={!canApply}
+        className="px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-700 disabled:opacity-30 disabled:cursor-not-allowed text-white text-[10px] font-bold transition-all"
+      >
+        {confirming ? 'تأكيد نهائي' : 'تطبيق'}
+      </button>
     </div>
   );
 };

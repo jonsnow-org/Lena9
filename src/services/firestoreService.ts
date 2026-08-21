@@ -1024,6 +1024,44 @@ export async function adminAdjustUserBalance(
 }
 
 /**
+ * سجلّ تدقيق دائم لكل تعديل رصيد يدوي من الأدمن — من عدّل، لمَن، أي حقل،
+ * بأي مبلغ، ولماذا. كانت أداة "تعديل الرصيد يدوياً" تكتب الرقم الجديد
+ * مباشرة دون أي أثر يوثّق العملية، فلا وسيلة لمراجعتها لاحقاً عند الحاجة.
+ * تُكتب في مجموعة transactions الموجودة أصلاً (إنشاء للأدمن حصراً حسب
+ * قواعد الأمان)، فيراها صاحب الحساب المتأثر أيضاً عند قراءة سجله.
+ */
+export async function logManualBalanceAdjustment(entry: {
+  userId: string;
+  field: 'walletBalance' | 'availableBalance' | 'pendingEarnings' | 'lifetimeEarnings';
+  amount: number;
+  newValue: number;
+  reason: string;
+  adjustedBy: string;
+}): Promise<void> {
+  try {
+    await addDoc(collection(db, 'transactions'), {
+      userId: entry.userId,
+      type: 'manual_adjustment',
+      amount: entry.amount,
+      currency: 'USD',
+      status: 'completed',
+      paymentMethod: 'تعديل يدوي من الإدارة',
+      referenceId: `ADJ-${Date.now().toString().slice(-8)}`,
+      description: `تعديل يدوي (${entry.field}): ${entry.amount >= 0 ? '+' : ''}${entry.amount.toFixed(2)}$ ← الرصيد الجديد ${entry.newValue.toFixed(2)}$. السبب: ${entry.reason || 'غير مُحدَّد'}`,
+      field: entry.field,
+      newValue: entry.newValue,
+      reason: entry.reason || '',
+      adjustedBy: entry.adjustedBy,
+      createdAt: new Date().toISOString()
+    });
+  } catch (error) {
+    // فشل تسجيل التدقيق لا يجب أن يُفشل العملية المالية نفسها (التي
+    // نجحت فعلاً) — فقط نُسجّله محلياً حتى لا يضيع بصمت.
+    console.error('تعذر تسجيل سجل تدقيق تعديل الرصيد:', error);
+  }
+}
+
+/**
  * تحرير الأرباح المجمّدة بعد انقضاء 30 يوماً:
  * نقل المبلغ من pendingEarnings إلى availableBalance.
  */

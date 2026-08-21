@@ -6,3 +6,8 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# ملف مفتاح خدمة Firebase Admin (لو استُخدم عبر FIREBASE_SERVICE_ACCOUNT_PATH
+# محلياً) — لا يجب أبداً أن يصل إلى git، يحتوي مفتاحاً خاصاً كاملاً.
+*firebase-adminsdk*.json
+service-account*.json

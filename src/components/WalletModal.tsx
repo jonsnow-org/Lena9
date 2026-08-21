@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Wallet,
   X,
@@ -13,11 +13,22 @@ import {
   History,
   ShieldCheck,
   Zap,
-  Lock
+  Lock,
+  Loader2,
+  ExternalLink
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Transaction, PaymentMethod } from '../types';
 import { REVENUE_SHARES } from '../constants/revenueShares';
+import {
+  fetchPaymentStatus,
+  createDepositCheckout,
+  fetchPayoutAccountStatus,
+  createPayoutConnectLink,
+  createAutomatedPayout,
+  PaymentStatus,
+  PayoutAccountStatus
+} from '../services/paymentsApi';
 
 interface WalletModalProps {
   isOpen: boolean;
@@ -28,7 +39,13 @@ interface WalletModalProps {
   onDeposit: (amount: number, method: PaymentMethod, ref: string) => void;
   onWithdraw: (amount: number, method: PaymentMethod, accountDetail: string) => void;
   userRole: 'reader' | 'writer' | 'advertiser' | 'admin';
+  isKycVerified?: boolean;
+  onOpenKyc?: () => void;
 }
+
+// أي طلب سحب فوق هذا المبلغ يُطلب تأكيده مرتين — حماية من خطأ كتابي
+// (رقم زائد) يُنفَّذ مباشرة بلا أي فرصة للتراجع.
+const LARGE_WITHDRAW_CONFIRM_THRESHOLD = 500;
 
 export const WalletModal: React.FC<WalletModalProps> = ({
   isOpen,
@@ -38,10 +55,19 @@ export const WalletModal: React.FC<WalletModalProps> = ({
   transactions,
   onDeposit,
   onWithdraw,
-  userRole
+  userRole,
+  isKycVerified = false,
+  onOpenKyc
 }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'deposit' | 'withdraw' | 'history'>('overview');
-  
+
+  // حالة بوابة الدفع الآلية — تُفحص فقط عند فتح النافذة، وتبقى معطّلة
+  // بأمان (automated: false) إن لم يضبط المالك المفاتيح على الخادم.
+  const [paymentStatus, setPaymentStatus] = useState<PaymentStatus | null>(null);
+  const [payoutAccountStatus, setPayoutAccountStatus] = useState<PayoutAccountStatus | null>(null);
+  const [isAutomatedBusy, setIsAutomatedBusy] = useState(false);
+  const [automatedError, setAutomatedError] = useState('');
+
   // Deposit state
   const [depositAmount, setDepositAmount] = useState<number>(50);
   const [depositMethod, setDepositMethod] = useState<PaymentMethod>('stripe_card');
@@ -53,8 +79,83 @@ export const WalletModal: React.FC<WalletModalProps> = ({
   const [withdrawAccount, setWithdrawAccount] = useState('');
   const [withdrawSuccess, setWithdrawSuccess] = useState(false);
   const [withdrawError, setWithdrawError] = useState('');
+  const [pendingLargeWithdraw, setPendingLargeWithdraw] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    fetchPaymentStatus().then(setPaymentStatus);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || activeTab !== 'withdraw' || !paymentStatus?.automated) return;
+    fetchPayoutAccountStatus().then(setPayoutAccountStatus).catch(() => setPayoutAccountStatus(null));
+  }, [isOpen, activeTab, paymentStatus?.automated]);
 
   if (!isOpen) return null;
+
+  const handleAutomatedDeposit = async () => {
+    setAutomatedError('');
+    if (!depositAmount || depositAmount < 1) {
+      setAutomatedError('أدخل مبلغاً صحيحاً.');
+      return;
+    }
+    setIsAutomatedBusy(true);
+    try {
+      const { checkoutUrl } = await createDepositCheckout(Number(depositAmount));
+      window.location.href = checkoutUrl;
+    } catch (err: any) {
+      setAutomatedError(err?.message || 'تعذر بدء عملية الدفع.');
+      setIsAutomatedBusy(false);
+    }
+  };
+
+  const handleConnectPayoutAccount = async () => {
+    setAutomatedError('');
+    setIsAutomatedBusy(true);
+    try {
+      const result = await createPayoutConnectLink();
+      setPayoutAccountStatus(result.status);
+      if (result.status.onboardingUrl) {
+        window.open(result.status.onboardingUrl, '_blank', 'noopener,noreferrer');
+      }
+    } catch (err: any) {
+      setAutomatedError(err?.message || 'تعذر بدء ربط حساب الاستلام.');
+    } finally {
+      setIsAutomatedBusy(false);
+    }
+  };
+
+  const handleAutomatedWithdraw = async () => {
+    setAutomatedError('');
+    if (!isKycVerified) {
+      setAutomatedError('يجب إتمام التحقق من الهوية (KYC) أولاً.');
+      return;
+    }
+    if (withdrawAmount < 50) {
+      setAutomatedError('الحد الأدنى للسحب هو 50 دولاراً.');
+      return;
+    }
+    if (withdrawAmount > balance) {
+      setAutomatedError('المبلغ يتجاوز رصيدك المتاح للسحب.');
+      return;
+    }
+    setIsAutomatedBusy(true);
+    try {
+      await createAutomatedPayout(Number(withdrawAmount));
+      setWithdrawSuccess(true);
+      try {
+        confetti({ particleCount: 80, spread: 70 });
+      } catch {}
+      setTimeout(() => {
+        setWithdrawSuccess(false);
+        setActiveTab('overview');
+      }, 2200);
+    } catch (err: any) {
+      setAutomatedError(err?.message || 'تعذر تنفيذ عملية السحب.');
+    } finally {
+      setIsAutomatedBusy(false);
+    }
+  };
 
   const handleDepositSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,21 +164,21 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     const fakeRef = `DEP-${Math.floor(100000 + Math.random() * 900000)}`;
     onDeposit(Number(depositAmount), depositMethod, fakeRef);
     setDepositSuccess(true);
-    try {
-      confetti({ particleCount: 60, spread: 60 });
-    } catch {}
     setTimeout(() => {
       setDepositSuccess(false);
       setActiveTab('overview');
-    }, 1800);
+    }, 2200);
   };
 
   const handleWithdrawSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setWithdrawError('');
 
-    if (withdrawAmount < 10) {
-      setWithdrawError('الحد الأدنى لطلب السحب هو 10 دولارات.');
+    // مطابق تماماً لحد handleWithdraw الفعلي في App.tsx — كان هذا النموذج
+    // يعرض حداً أدنى مختلفاً (10$) يخالف الحد الحقيقي المطبَّق (50$)،
+    // فيسمح للمستخدم بملء النموذج وإرساله ليُرفض لاحقاً بلا تفسير هنا.
+    if (withdrawAmount < 50) {
+      setWithdrawError('الحد الأدنى لطلب السحب هو 50 دولاراً.');
       return;
     }
 
@@ -91,16 +192,26 @@ export const WalletModal: React.FC<WalletModalProps> = ({
       return;
     }
 
+    if (!isKycVerified) {
+      setWithdrawError('يجب إتمام التحقق من الهوية (KYC) قبل طلب السحب.');
+      return;
+    }
+
+    // مبلغ كبير: نطلب تأكيداً إضافياً قبل التنفيذ الفعلي، حماية من رقم
+    // خاطئ يُرسَل مباشرة بلا أي فرصة للمراجعة.
+    if (withdrawAmount >= LARGE_WITHDRAW_CONFIRM_THRESHOLD && !pendingLargeWithdraw) {
+      setPendingLargeWithdraw(true);
+      return;
+    }
+    setPendingLargeWithdraw(false);
+
     onWithdraw(Number(withdrawAmount), withdrawMethod, withdrawAccount);
     setWithdrawSuccess(true);
-    try {
-      confetti({ particleCount: 60, spread: 60 });
-    } catch {}
     setTimeout(() => {
       setWithdrawSuccess(false);
       setActiveTab('overview');
       setWithdrawAccount('');
-    }, 1800);
+    }, 2200);
   };
 
   return (
@@ -224,42 +335,14 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                 <div className="p-8 text-center rounded-3xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800">
                   <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto mb-2" />
                   <h4 className="font-black text-lg text-emerald-900 dark:text-emerald-200">
-                    تم إيداع الرصيد بنجاح!
+                    تم إرسال طلب الإيداع
                   </h4>
                   <p className="text-xs text-emerald-700 dark:text-emerald-300">
-                    تمت إضافة {depositAmount}$ إلى رصيدك المتاح فوراً.
+                    سيُضاف {depositAmount}$ إلى رصيدك بعد تأكيد إدارة المنصة لوصول المبلغ (خلال 24-48 ساعة).
                   </p>
                 </div>
               ) : (
                 <>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-900 dark:text-slate-200 mb-2">
-                      اختر وسيلة الإيداع:
-                    </label>
-                    <div className="grid grid-cols-2 gap-2">
-                      {[
-                        { id: 'stripe_card' as PaymentMethod, label: 'بطاقة ائتمان / مدى', desc: 'Stripe أو Visa/Mastercard' },
-                        { id: 'paypal' as PaymentMethod, label: 'باي بال PayPal', desc: 'دفع فوري وآمن' },
-                        { id: 'usdt_crypto' as PaymentMethod, label: 'USDT Tether', desc: 'شبكة TRC20 / BEP20' },
-                        { id: 'bank_wire' as PaymentMethod, label: 'تحويل بنكي IBAN', desc: 'خلال 24-48 ساعة' }
-                      ].map((m) => (
-                        <button
-                          key={m.id}
-                          type="button"
-                          onClick={() => setDepositMethod(m.id)}
-                          className={`p-3 rounded-2xl border text-start transition-all ${
-                            depositMethod === m.id
-                              ? 'bg-teal-50 dark:bg-teal-950/60 border-teal-600 text-teal-900 dark:text-teal-200 ring-2 ring-teal-500/20'
-                              : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
-                          }`}
-                        >
-                          <span className="block text-xs font-bold">{m.label}</span>
-                          <span className="block text-[10px] text-slate-400">{m.desc}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
                   <div>
                     <label className="block text-xs font-bold text-slate-900 dark:text-slate-200 mb-2">
                       حدد المبلغ المراد إيداعه ($):
@@ -291,11 +374,65 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                     />
                   </div>
 
+                  {/* الدفع الآلي الفوري — يظهر فقط إن ضبط المالك مفاتيح بوابة
+                      دفع حقيقية على الخادم (انظر /api/payments/status). */}
+                  {paymentStatus?.automated && (
+                    <div className="p-4 rounded-2xl bg-teal-50 dark:bg-teal-950/30 border border-teal-200 dark:border-teal-800 space-y-2.5">
+                      <div className="flex items-center gap-2 text-teal-800 dark:text-teal-300 text-xs font-bold">
+                        <Zap className="w-4 h-4" />
+                        <span>دفع فوري بالبطاقة — يُضاف الرصيد تلقائياً خلال ثوانٍ</span>
+                      </div>
+                      {automatedError && (
+                        <p className="text-[11px] text-rose-600 dark:text-rose-400">{automatedError}</p>
+                      )}
+                      <button
+                        type="button"
+                        onClick={handleAutomatedDeposit}
+                        disabled={isAutomatedBusy}
+                        className="w-full py-3 rounded-xl bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white font-extrabold text-sm shadow-md transition-all flex items-center justify-center gap-2"
+                      >
+                        {isAutomatedBusy ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <CreditCard className="w-4 h-4" />
+                        )}
+                        <span>ادفع {depositAmount}$ الآن ببطاقتك</span>
+                      </button>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-900 dark:text-slate-200 mb-2">
+                      {paymentStatus?.automated ? 'أو أرسل طلب إيداع يدوي بطريقة أخرى:' : 'اختر وسيلة الإيداع:'}
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { id: 'paypal' as PaymentMethod, label: 'باي بال PayPal', desc: 'دفع فوري وآمن' },
+                        { id: 'usdt_crypto' as PaymentMethod, label: 'USDT Tether', desc: 'شبكة TRC20 / BEP20' },
+                        { id: 'bank_wire' as PaymentMethod, label: 'تحويل بنكي IBAN', desc: 'خلال 24-48 ساعة' }
+                      ].map((m) => (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => setDepositMethod(m.id)}
+                          className={`p-3 rounded-2xl border text-start transition-all ${
+                            depositMethod === m.id
+                              ? 'bg-teal-50 dark:bg-teal-950/60 border-teal-600 text-teal-900 dark:text-teal-200 ring-2 ring-teal-500/20'
+                              : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                          }`}
+                        >
+                          <span className="block text-xs font-bold">{m.label}</span>
+                          <span className="block text-[10px] text-slate-400">{m.desc}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
                   <button
                     type="submit"
-                    className="w-full py-3.5 rounded-2xl bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-sm shadow-md transition-all hover:scale-[1.01]"
+                    className="w-full py-3.5 rounded-2xl bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 text-white font-extrabold text-sm shadow-md transition-all hover:scale-[1.01]"
                   >
-                    تأكيد إيداع {depositAmount}$
+                    إرسال طلب إيداع يدوي بـ {depositAmount}$
                   </button>
                 </>
               )}
@@ -304,29 +441,95 @@ export const WalletModal: React.FC<WalletModalProps> = ({
 
           {/* Withdraw Tab */}
           {activeTab === 'withdraw' && (
-            <form onSubmit={handleWithdrawSubmit} className="space-y-5">
+            <>
+              {!isKycVerified ? (
+                // ⚠️ التحقق من الهوية (KYC) لم يكن شرطاً فعلياً لأي طلب سحب —
+                // أي حساب غير موثّق كان يستطيع طلب سحب مبالغ كبيرة رغم أن
+                // شاشة KYC نفسها تشرح أنها "لضمان أمان المعاملات المالية".
+                <div className="p-6 text-center rounded-3xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 space-y-3">
+                  <Lock className="w-10 h-10 text-amber-600 mx-auto" />
+                  <h4 className="font-black text-sm text-amber-900 dark:text-amber-200">
+                    التحقق من الهوية مطلوب قبل السحب
+                  </h4>
+                  <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
+                    لحماية أرباحك ومنع الاحتيال، يجب إتمام التحقق من الهوية (KYC) قبل تقديم أي طلب سحب.
+                  </p>
+                  {onOpenKyc && (
+                    <button
+                      type="button"
+                      onClick={onOpenKyc}
+                      className="px-6 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs"
+                    >
+                      إتمام التحقق من الهوية الآن
+                    </button>
+                  )}
+                </div>
+              ) : (
+              <form onSubmit={handleWithdrawSubmit} className="space-y-5">
               {withdrawSuccess ? (
                 <div className="p-8 text-center rounded-3xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800">
                   <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto mb-2" />
                   <h4 className="font-black text-lg text-emerald-900 dark:text-emerald-200">
-                    تم إرسال طلب السحب بنجاح!
+                    {paymentStatus?.automated && payoutAccountStatus?.payoutsEnabled
+                      ? 'تم تنفيذ عملية السحب!'
+                      : 'تم إرسال طلب السحب بنجاح!'}
                   </h4>
                   <p className="text-xs text-emerald-700 dark:text-emerald-300">
-                    سيتم تحويل مبلغ {withdrawAmount}$ إلى حسابك في غضون دقائق إلى 24 ساعة.
+                    {paymentStatus?.automated && payoutAccountStatus?.payoutsEnabled
+                      ? `تم تحويل ${withdrawAmount}$ إلى حسابك المرتبط، وسيصلك خلال جدول السحب المعتاد لحسابك.`
+                      : `سيراجع فريق المنصة طلبك وتحويل ${withdrawAmount}$ خلال 24 إلى 48 ساعة.`}
                   </p>
                 </div>
               ) : (
                 <>
-                  {withdrawError && (
+                  {(withdrawError || automatedError) && (
                     <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 text-rose-700 dark:text-rose-300 text-xs font-bold flex items-center gap-2">
                       <AlertCircle className="w-4 h-4 shrink-0" />
-                      <span>{withdrawError}</span>
+                      <span>{withdrawError || automatedError}</span>
+                    </div>
+                  )}
+
+                  {/* السحب الآلي الفوري — يظهر فقط إن ضبط المالك مفاتيح بوابة
+                      دفع حقيقية على الخادم. يتطلب ربط حساب استلام أموال مرة
+                      واحدة (يتولى Stripe نفسه جمع بيانات الحساب البنكي). */}
+                  {paymentStatus?.automated && (
+                    <div className="p-4 rounded-2xl bg-teal-50 dark:bg-teal-950/30 border border-teal-200 dark:border-teal-800 space-y-2.5">
+                      <div className="flex items-center gap-2 text-teal-800 dark:text-teal-300 text-xs font-bold">
+                        <Zap className="w-4 h-4" />
+                        <span>سحب فوري تلقائي</span>
+                      </div>
+                      {payoutAccountStatus?.payoutsEnabled ? (
+                        <button
+                          type="button"
+                          onClick={handleAutomatedWithdraw}
+                          disabled={isAutomatedBusy || withdrawAmount < 50 || withdrawAmount > balance}
+                          className="w-full py-3 rounded-xl bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white font-extrabold text-sm shadow-md transition-all flex items-center justify-center gap-2"
+                        >
+                          {isAutomatedBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+                          <span>اسحب {withdrawAmount}$ الآن تلقائياً</span>
+                        </button>
+                      ) : (
+                        <>
+                          <p className="text-[11px] text-teal-700 dark:text-teal-300">
+                            اربط حساب استلام الأموال مرة واحدة (يستغرق دقائق عبر صفحة آمنة) لتفعيل السحب الفوري لاحقاً.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={handleConnectPayoutAccount}
+                            disabled={isAutomatedBusy}
+                            className="w-full py-2.5 rounded-xl bg-white dark:bg-slate-800 border border-teal-300 dark:border-teal-700 text-teal-800 dark:text-teal-300 font-bold text-xs flex items-center justify-center gap-2"
+                          >
+                            {isAutomatedBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <ExternalLink className="w-4 h-4" />}
+                            <span>ربط حساب استلام الأموال</span>
+                          </button>
+                        </>
+                      )}
                     </div>
                   )}
 
                   <div>
                     <label className="block text-xs font-bold text-slate-900 dark:text-slate-200 mb-2">
-                      طريقة استلام الأرباح:
+                      {paymentStatus?.automated ? 'أو أرسل طلب سحب يدوي بطريقة أخرى — الحد الأدنى 50$:' : 'طريقة استلام الأرباح:'}
                     </label>
                     <div className="grid grid-cols-2 gap-2">
                       {[
@@ -354,15 +557,18 @@ export const WalletModal: React.FC<WalletModalProps> = ({
 
                   <div>
                     <label className="block text-xs font-bold text-slate-900 dark:text-slate-200 mb-2">
-                      مبلغ السحب (المتاح: {balance.toFixed(2)}$):
+                      مبلغ السحب (المتاح: {balance.toFixed(2)}$، الحد الأدنى 50$):
                     </label>
                     <input
                       type="number"
-                      min="10"
+                      min="50"
                       max={balance}
                       step="1"
                       value={withdrawAmount}
-                      onChange={(e) => setWithdrawAmount(Number(e.target.value))}
+                      onChange={(e) => {
+                        setWithdrawAmount(Number(e.target.value));
+                        setPendingLargeWithdraw(false);
+                      }}
                       className="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-bold outline-hidden focus:border-teal-500"
                     />
                   </div>
@@ -391,16 +597,33 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                     />
                   </div>
 
+                  {pendingLargeWithdraw && (
+                    <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 text-xs text-amber-900 dark:text-amber-200 space-y-2">
+                      <p className="font-bold">
+                        هذا مبلغ كبير (≥ {LARGE_WITHDRAW_CONFIRM_THRESHOLD}$). تأكد من صحة بيانات الاستلام قبل المتابعة.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setPendingLargeWithdraw(false)}
+                        className="text-amber-700 dark:text-amber-300 underline font-bold"
+                      >
+                        إلغاء والتعديل
+                      </button>
+                    </div>
+                  )}
+
                   <button
                     type="submit"
-                    disabled={balance < 10}
+                    disabled={balance < 50}
                     className="w-full py-3.5 rounded-2xl bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 text-white font-extrabold text-sm shadow-md transition-all disabled:opacity-50"
                   >
-                    تأكيد طلب سحب {withdrawAmount}$
+                    {pendingLargeWithdraw ? `تأكيد نهائي: سحب ${withdrawAmount}$` : `تأكيد طلب سحب ${withdrawAmount}$`}
                   </button>
                 </>
               )}
-            </form>
+              </form>
+              )}
+            </>
           )}
 
           {/* History Tab */}
