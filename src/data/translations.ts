@@ -77,7 +77,14 @@ export const translations: Record<LanguageCode, Record<string, string>> = {
     suggestTitles: 'اقتراح عناوين جذابة',
     improveText: 'تحسين الأسلوب والصياغة',
     fixGrammar: 'تدقيق نحوي وإملائي',
-    generateOutline: 'توليد هيكل المقال'
+    generateOutline: 'توليد هيكل المقال',
+    explore: 'استكشاف',
+    myArticles: 'مقالاتي',
+    write: 'كتابة',
+    writerPanel: 'لوحة الكاتب',
+    myCampaigns: 'حملاتي',
+    adminPanel: 'لوحة الإدارة',
+    users: 'المستخدمون'
   },
   en: {
     appName: 'LITERIUM',
@@ -155,7 +162,14 @@ export const translations: Record<LanguageCode, Record<string, string>> = {
     suggestTitles: 'Suggest Catchy Titles',
     improveText: 'Improve & Polish Style',
     fixGrammar: 'Grammar & Spell Check',
-    generateOutline: 'Generate Article Outline'
+    generateOutline: 'Generate Article Outline',
+    explore: 'Explore',
+    myArticles: 'My Articles',
+    write: 'Write',
+    writerPanel: 'Writer Studio',
+    myCampaigns: 'My Campaigns',
+    adminPanel: 'Admin Panel',
+    users: 'Users'
   },
   fr: {
     appName: 'LITERIUM',
@@ -233,7 +247,14 @@ export const translations: Record<LanguageCode, Record<string, string>> = {
     suggestTitles: 'Suggérer des titres',
     improveText: 'Améliorer le style',
     fixGrammar: 'Corriger l\'orthographe',
-    generateOutline: 'Générer le plan'
+    generateOutline: 'Générer le plan',
+    explore: 'Explorer',
+    myArticles: 'Mes articles',
+    write: 'Écrire',
+    writerPanel: 'Studio Auteur',
+    myCampaigns: 'Mes campagnes',
+    adminPanel: 'Panneau Admin',
+    users: 'Utilisateurs'
   },
   es: {
     appName: 'LITERIUM',
@@ -311,7 +332,14 @@ export const translations: Record<LanguageCode, Record<string, string>> = {
     suggestTitles: 'Sugerir títulos',
     improveText: 'Mejorar redacción',
     fixGrammar: 'Corrección gramatical',
-    generateOutline: 'Crear esquema'
+    generateOutline: 'Crear esquema',
+    explore: 'Explorar',
+    myArticles: 'Mis artículos',
+    write: 'Escribir',
+    writerPanel: 'Estudio del Autor',
+    myCampaigns: 'Mis campañas',
+    adminPanel: 'Panel de Admin',
+    users: 'Usuarios'
   },
   zh: {
     appName: 'LITERIUM',
@@ -389,6 +417,20 @@ export const translations: Record<LanguageCode, Record<string, string>> = {
     suggestTitles: '推荐爆款标题',
     improveText: '润色润饰语句',
     fixGrammar: '语法病句纠正',
-    generateOutline: '生成文章大纲'
+    generateOutline: '生成文章大纲',
+    explore: '探索',
+    myArticles: '我的文章',
+    write: '写作',
+    writerPanel: '作者工作室',
+    myCampaigns: '我的广告活动',
+    adminPanel: '管理面板',
+    users: '用户'
   }
 };
+
+/** يبني دالة ترجمة t(key) للغة معيّنة، مع رجوع للعربية ثم للمفتاح نفسه إن
+ *  لم يوجد المفتاح — بدل شاشة فارغة أو استثناء لمفتاح غير موجود بعد. */
+export function getTranslator(lang: LanguageCode): (key: string) => string {
+  const dict = translations[lang] || translations.ar;
+  return (key: string) => dict[key] ?? translations.ar[key] ?? key;
+}

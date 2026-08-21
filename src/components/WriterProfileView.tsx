@@ -22,6 +22,7 @@ import {
 import { User, Article, AdCampaign } from '../types';
 import { timeAgoAr } from '../utils/dateFormat';
 import { AdSlot } from './AdSlot';
+import { getCreatorEligibility } from '../utils/creatorEligibility';
 
 interface WriterProfileViewProps {
   writer: User;
@@ -59,6 +60,7 @@ export const WriterProfileView: React.FC<WriterProfileViewProps> = ({
   const [activeTab, setActiveTab] = useState<'articles' | 'about'>('articles');
   const writerArticles = articles.filter((a) => a.writerId === writer.id);
   const totalViews = writerArticles.reduce((acc, a) => acc + a.viewsCount, 0);
+  const creatorEligibility = getCreatorEligibility(writer, articles, followersCount ?? writer.followersCount);
 
   return (
     <div className="space-y-6 animate-fade-in pb-16">
@@ -121,6 +123,15 @@ export const WriterProfileView: React.FC<WriterProfileViewProps> = ({
                       <span>KYC موثق</span>
                     </span>
                   )}
+                  {creatorEligibility.isEligible && (
+                    <span
+                      className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 border border-amber-500/20"
+                      title="منشئ محتوى موثّق — استوفى شروط الأهلية الكاملة لاحتساب الأرباح"
+                    >
+                      <Award className="w-3.5 h-3.5" />
+                      <span>منشئ محتوى موثّق</span>
+                    </span>
+                  )}
                 </div>
                 <p className="text-xs sm:text-sm text-slate-400 font-medium dir-ltr text-end sm:text-start">
                   @{writer.username}
@@ -161,7 +172,7 @@ export const WriterProfileView: React.FC<WriterProfileViewProps> = ({
             {/* عدد المتابِعين — محسوب من بيانات المتابعة الفعلية */}
             <button
               onClick={onShowFollowers}
-              className="hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
+              className="hover:text-brand-600 dark:hover:text-brand-400 transition-colors"
             >
               <strong className="text-slate-900 dark:text-white font-black text-sm me-1">
                 {(followersCount ?? writer.followersCount ?? 0).toLocaleString('ar-EG')}
@@ -171,7 +182,7 @@ export const WriterProfileView: React.FC<WriterProfileViewProps> = ({
 
             <button
               onClick={onShowFollowing}
-              className="hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
+              className="hover:text-brand-600 dark:hover:text-brand-400 transition-colors"
             >
               <strong className="text-slate-900 dark:text-white font-black text-sm me-1">
                 {(followingCount ?? 0).toLocaleString('ar-EG')}

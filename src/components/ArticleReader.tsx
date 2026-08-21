@@ -421,7 +421,7 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
                               : 'border-slate-800 bg-slate-900 text-slate-400'
                           }`}
                         >
-                          <Moon className="w-4 h-4 text-indigo-400" />
+                          <Moon className="w-4 h-4 text-brand-400" />
                           <span>فحمي ليلي</span>
                         </button>
                       </div>

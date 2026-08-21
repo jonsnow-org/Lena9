@@ -195,7 +195,7 @@ export const PromoteArticleModal: React.FC<PromoteArticleModalProps> = ({
                         onClick={() => setDurationHours(opt.hours)}
                         className={`p-3 rounded-2xl border text-center transition-all ${
                           durationHours === opt.hours
-                            ? 'border-purple-500 bg-purple-500/10 text-purple-600 dark:text-purple-400 ring-2 ring-purple-500/20'
+                            ? 'border-brand-500 bg-brand-500/10 text-brand-600 dark:text-brand-400 ring-2 ring-brand-500/20'
                             : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
                         }`}
                       >
@@ -216,7 +216,7 @@ export const PromoteArticleModal: React.FC<PromoteArticleModalProps> = ({
                     step={1}
                     value={cpcBudget}
                     onChange={(e) => setCpcBudget(Math.max(CPC_MIN_BUDGET, Number(e.target.value) || 0))}
-                    className="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm outline-hidden focus:border-purple-500"
+                    className="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm outline-hidden focus:border-brand-500"
                   />
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">
                     تكفي لحوالي {Math.floor(cpcBudget / CPC_RATE)} نقرة صالحة.

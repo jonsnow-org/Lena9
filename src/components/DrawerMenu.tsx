@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { User, LanguageCode, UserRole } from '../types';
 import { getRemainingAiUses } from '../utils/aiQuota';
+import { getTranslator } from '../data/translations';
 
 interface DrawerMenuProps {
   isOpen: boolean;
@@ -50,6 +51,13 @@ interface DrawerMenuProps {
   onSelectFollowedWriter: (writer: User) => void;
   onNavigateTab?: (tab: string) => void;
   onOpenLogin?: () => void;
+  /** شخصية التنقل المُشتقة من النشاط الفعلي (وليس الدور المُسجَّل فقط) —
+   *  نفس القيمة المستخدمة في شريط التنقل السفلي، لضمان اتساق القوائم
+   *  المعروضة هنا مع الواجهة الفعلية بدل تناقضهما. */
+  navPersona?: UserRole;
+  /** يفتح محرر مقال جديد مباشرة — نقطة دخول موحّدة للكتابة لأي حساب
+   *  مسجَّل، بغضّ النظر عن الدور المسجَّل أو شخصية التنقل الحالية. */
+  onStartWriting?: () => void;
 }
 
 export const DrawerMenu: React.FC<DrawerMenuProps> = ({
@@ -73,10 +81,16 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
   followedWriters = [],
   onSelectFollowedWriter,
   onNavigateTab,
-  onOpenLogin
+  onOpenLogin,
+  navPersona,
+  onStartWriting
 }) => {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const quotaStats = getRemainingAiUses(currentUser.aiQuota);
+  // احتياط: إن لم يُمرَّر navPersona من الأعلى، اعتمد على الدور المُسجَّل
+  // مباشرة بدل تعطّل القائمة بأكملها.
+  const persona: UserRole = navPersona || currentUser.role;
+  const t = getTranslator(currentLang);
 
   if (!isOpen) return null;
 
@@ -103,15 +117,15 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
 
       {/* Drawer Panel */}
       <div className="absolute inset-y-0 end-0 max-w-full flex">
-        <div className="w-screen max-w-sm bg-slate-900 border-s border-purple-500/20 text-white shadow-2xl flex flex-col justify-between overflow-hidden animate-slide-in-right">
+        <div className="w-screen max-w-sm bg-slate-900 border-s border-brand-500/20 text-white shadow-2xl flex flex-col justify-between overflow-hidden animate-slide-in-right">
           {/* Header */}
-          <div className="p-5 border-b border-purple-500/20 bg-slate-950/80 flex items-center justify-between">
+          <div className="p-5 border-b border-brand-500/20 bg-slate-950/80 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <img
                 src={currentUser.avatarUrl}
                 alt={currentUser.fullName}
                 referrerPolicy="no-referrer"
-                className="w-12 h-12 rounded-2xl object-cover ring-2 ring-purple-500/40"
+                className="w-12 h-12 rounded-2xl object-cover ring-2 ring-brand-500/40"
               />
               <div>
                 <div className="flex items-center gap-1">
@@ -122,7 +136,7 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
                     <CheckCircle2 className="w-3.5 h-3.5 text-blue-400" />
                   )}
                 </div>
-                <span className="text-[11px] text-purple-400 font-bold">
+                <span className="text-[11px] text-brand-400 font-bold">
                   {getRoleLabel(currentUser.role)}
                 </span>
               </div>
@@ -141,8 +155,8 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
             {/* Current Role (fixed at registration — no longer switchable
                 from here; that was letting any signed-in user instantly
                 become 'admin' with a single tap). */}
-            <div className="p-3.5 rounded-2xl bg-purple-950/40 border border-purple-500/25">
-              <span className="block text-[11px] font-bold text-purple-200 mb-1">
+            <div className="p-3.5 rounded-2xl bg-brand-950/40 border border-brand-500/25">
+              <span className="block text-[11px] font-bold text-brand-200 mb-1">
                 {currentUser.id === 'guest' ? 'أنت تتصفح حالياً:' : 'حسابك الحالي:'}
               </span>
               <div className="text-sm font-extrabold text-white">
@@ -151,18 +165,18 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
             </div>
 
             {/* AI Assistant Quota Widget */}
-            <div className="p-3.5 rounded-2xl bg-gradient-to-r from-purple-950/60 to-indigo-950/60 border border-purple-500/30">
+            <div className="p-3.5 rounded-2xl bg-gradient-to-r from-brand-950/60 to-brand-950/60 border border-brand-500/30">
               <div className="flex items-center justify-between mb-1.5">
                 <div className="flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-purple-400" />
+                  <Sparkles className="w-4 h-4 text-brand-400" />
                   <span className="text-xs font-bold text-white">المساعد الذكي (Gemini AI)</span>
                 </div>
                 {quotaStats.isUnlimited ? (
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-500/30 text-purple-300 border border-purple-500/40">
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-brand-500/30 text-brand-300 border border-brand-500/40">
                     باقة غير محدودة ⭐
                   </span>
                 ) : (
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300">
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-brand-500/20 text-brand-300">
                     {quotaStats.remaining} استخدام متبقي
                   </span>
                 )}
@@ -172,7 +186,7 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
                   onOpenAiAssistant();
                   onClose();
                 }}
-                className="w-full mt-2 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition-all shadow-sm flex items-center justify-center gap-1.5"
+                className="w-full mt-2 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs transition-all shadow-sm flex items-center justify-center gap-1.5"
               >
                 <span>محادثة المساعد الذكي</span>
               </button>
@@ -184,17 +198,17 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
                 القوائم المخصصة لدورك:
               </span>
 
-              {currentUser.role === 'admin' && (
+              {persona === 'admin' && (
                 <>
                   <button
                     onClick={() => {
                       onNavigateTab?.('admin_overview');
                       onClose();
                     }}
-                    className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-purple-900/30 hover:text-purple-300 transition-colors"
+                    className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
                   >
                     <div className="flex items-center gap-3">
-                      <TrendingUp className="w-4 h-4 text-purple-400" />
+                      <TrendingUp className="w-4 h-4 text-brand-400" />
                       <span>اللوحة الإدارية والمالية المركزية</span>
                     </div>
                     <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
@@ -205,7 +219,7 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
                       onNavigateTab?.('admin_fraud');
                       onClose();
                     }}
-                    className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-purple-900/30 hover:text-purple-300 transition-colors"
+                    className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
                   >
                     <div className="flex items-center gap-3">
                       <ShieldAlert className="w-4 h-4 text-red-400" />
@@ -216,17 +230,17 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
                 </>
               )}
 
-              {currentUser.role === 'writer' && (
+              {persona === 'writer' && (
                 <>
                   <button
                     onClick={() => {
                       onNavigateTab?.('writer_hub');
                       onClose();
                     }}
-                    className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-purple-900/30 hover:text-purple-300 transition-colors"
+                    className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
                   >
                     <div className="flex items-center gap-3">
-                      <TrendingUp className="w-4 h-4 text-purple-400" />
+                      <TrendingUp className="w-4 h-4 text-brand-400" />
                       <span>استوديو الكاتب وإحصائيات القراءة</span>
                     </div>
                     <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
@@ -237,7 +251,7 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
                       onNavigateTab?.('my_articles');
                       onClose();
                     }}
-                    className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-purple-900/30 hover:text-purple-300 transition-colors"
+                    className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
                   >
                     <div className="flex items-center gap-3">
                       <FileText className="w-4 h-4 text-blue-400" />
@@ -252,17 +266,17 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
                 </>
               )}
 
-              {currentUser.role === 'advertiser' && (
+              {persona === 'advertiser' && (
                 <>
                   <button
                     onClick={() => {
                       onNavigateTab?.('campaigns');
                       onClose();
                     }}
-                    className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-purple-900/30 hover:text-purple-300 transition-colors"
+                    className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
                   >
                     <div className="flex items-center gap-3">
-                      <Megaphone className="w-4 h-4 text-purple-400" />
+                      <Megaphone className="w-4 h-4 text-brand-400" />
                       <span>لوحة الحملات الإعلانية ومؤشرات CPC/CPM</span>
                     </div>
                     <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
@@ -273,7 +287,7 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
                       onNavigateTab?.('billing');
                       onClose();
                     }}
-                    className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-purple-900/30 hover:text-purple-300 transition-colors"
+                    className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
                   >
                     <div className="flex items-center gap-3">
                       <Wallet className="w-4 h-4 text-emerald-400" />
@@ -284,53 +298,73 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
                 </>
               )}
 
-              {currentUser.role === 'reader' && (
-                <>
-                  <button
-                    onClick={() => {
-                      onNavigateTab?.('explore');
-                      onClose();
-                    }}
-                    className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-purple-900/30 hover:text-purple-300 transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <BookOpen className="w-4 h-4 text-purple-400" />
-                      <span>استكشاف المقالات والكتب</span>
-                    </div>
-                    <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
-                  </button>
-
-                  {currentUser.id !== 'guest' && (
-                    <button
-                      onClick={() => {
-                        onNavigateTab?.('campaigns');
-                        onClose();
-                      }}
-                      className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-purple-900/30 hover:text-purple-300 transition-colors"
-                    >
-                      <div className="flex items-center gap-3">
-                        <Megaphone className="w-4 h-4 text-cyan-400" />
-                        <span>إنشاء إعلان وترويج (قارئ ومُعلن)</span>
-                      </div>
-                      <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
-                    </button>
-                  )}
-
-                  <button
-                    onClick={() => {
-                      onNavigateTab?.('saved');
-                      onClose();
-                    }}
-                    className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-purple-900/30 hover:text-purple-300 transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Bookmark className="w-4 h-4 text-amber-400" />
-                      <span>المحفوظات وسجل القراءة</span>
-                    </div>
-                    <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
-                  </button>
-                </>
+              {/* الكتابة متاحة لأي حساب مسجَّل من البداية (دون احتساب أرباح
+                  حتى تحقيق شروط منشئ المحتوى) — من له أدوات الكاتب أعلاه
+                  أصلاً يصل للكتابة من هناك، فلا داعي لتكرار الزر هنا. */}
+              {currentUser.id !== 'guest' && persona !== 'writer' && onStartWriting && (
+                <button
+                  onClick={() => {
+                    onStartWriting();
+                    onClose();
+                  }}
+                  className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <PenTool className="w-4 h-4 text-teal-400" />
+                    <span>ابدأ كتابة مقال جديد</span>
+                  </div>
+                  <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
+                </button>
               )}
+
+              {/* استكشاف والمحفوظات: روابط عامة لأي مستخدم (بما فيهم من ترقّى
+                  فعلياً لدور كاتب/معلن) — وليست حكراً على من لم يمارس أي
+                  نشاط بعد، حتى لا تختفي من قوائم الكتّاب والمعلنين. */}
+              <button
+                onClick={() => {
+                  onNavigateTab?.('explore');
+                  onClose();
+                }}
+                className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <BookOpen className="w-4 h-4 text-brand-400" />
+                  <span>استكشاف المقالات والكتب</span>
+                </div>
+                <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
+              </button>
+
+              {/* إنشاء إعلان: متاح لأي حساب مسجَّل غير الزائر، ما عدا من لديه
+                  أصلاً زر حملات مخصص أعلاه (شخصية "معلن") تفادياً للتكرار. */}
+              {currentUser.id !== 'guest' && persona !== 'advertiser' && (
+                <button
+                  onClick={() => {
+                    onNavigateTab?.('campaigns');
+                    onClose();
+                  }}
+                  className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <Megaphone className="w-4 h-4 text-cyan-400" />
+                    <span>إنشاء إعلان وترويج (قارئ ومُعلن)</span>
+                  </div>
+                  <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
+                </button>
+              )}
+
+              <button
+                onClick={() => {
+                  onNavigateTab?.('saved');
+                  onClose();
+                }}
+                className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <Bookmark className="w-4 h-4 text-amber-400" />
+                  <span>المحفوظات وسجل القراءة</span>
+                </div>
+                <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
+              </button>
 
               {/* General Links */}
               <button
@@ -338,7 +372,7 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
                   onOpenKyc();
                   onClose();
                 }}
-                className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-purple-900/30 hover:text-purple-300 transition-colors"
+                className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
               >
                 <div className="flex items-center gap-3">
                   <ShieldCheck className="w-4 h-4 text-blue-400" />
@@ -358,7 +392,7 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
                   onOpenPolicies();
                   onClose();
                 }}
-                className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-purple-900/30 hover:text-purple-300 transition-colors"
+                className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
               >
                 <div className="flex items-center gap-3">
                   <Scale className="w-4 h-4 text-slate-400" />
@@ -382,7 +416,7 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
                         onOpenLegal(l.id);
                         onClose();
                       }}
-                      className="p-2.5 rounded-xl text-[11px] font-bold text-slate-300 hover:bg-purple-900/30 hover:text-purple-300 transition-colors text-start"
+                      className="p-2.5 rounded-xl text-[11px] font-bold text-slate-300 hover:bg-brand-900/30 hover:text-brand-300 transition-colors text-start"
                     >
                       {l.label}
                     </button>
@@ -396,19 +430,19 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
           <div className="px-4 pb-2 space-y-2">
             <button
               onClick={onToggleTheme}
-              className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 bg-slate-900/60 border border-slate-800 hover:border-purple-500/40 transition-colors"
+              className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 bg-slate-900/60 border border-slate-800 hover:border-brand-500/40 transition-colors"
             >
               <div className="flex items-center gap-3">
-                {theme === 'dark' ? <Moon className="w-4 h-4 text-purple-400" /> : <Sun className="w-4 h-4 text-amber-400" />}
-                <span>المظهر: {theme === 'dark' ? 'داكن' : 'فاتح'}</span>
+                {theme === 'dark' ? <Moon className="w-4 h-4 text-brand-400" /> : <Sun className="w-4 h-4 text-amber-400" />}
+                <span>{t('theme')}: {theme === 'dark' ? t('dark') : t('light')}</span>
               </div>
-              <span className="text-[10px] text-slate-400">تبديل</span>
+              <span className="text-[10px] text-slate-400">{currentLang === 'ar' ? 'تبديل' : 'Switch'}</span>
             </button>
 
             <div className="p-3 rounded-2xl bg-slate-900/60 border border-slate-800">
               <div className="flex items-center gap-2 mb-2 text-xs font-bold text-slate-200">
                 <Globe className="w-4 h-4 text-cyan-400" />
-                <span>اللغة</span>
+                <span>{t('language')}</span>
               </div>
               <div className="grid grid-cols-5 gap-1.5">
                 {(
@@ -437,35 +471,35 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
           </div>
 
           {/* Footer with Logout (or Login, for guests) */}
-          <div className="p-4 border-t border-purple-500/20 bg-slate-950/80">
+          <div className="p-4 border-t border-brand-500/20 bg-slate-950/80">
             {currentUser.id === 'guest' ? (
               <button
                 onClick={() => {
                   onClose();
                   onOpenLogin?.();
                 }}
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition-colors"
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs transition-colors"
               >
                 <UserIcon className="w-4 h-4" />
-                <span>تسجيل الدخول / إنشاء حساب</span>
+                <span>{t('login')} / {t('register')}</span>
               </button>
             ) : showLogoutConfirm ? (
               <div className="space-y-2 animate-fadeIn">
                 <p className="text-xs font-bold text-amber-300 text-center">
-                  هل أنت متأكد من تسجيل الخروج؟
+                  {t('confirmLogout')}
                 </p>
                 <div className="flex gap-2">
                   <button
                     onClick={onLogout}
                     className="flex-1 py-2 rounded-xl bg-red-600 text-white font-bold text-xs hover:bg-red-500 transition-all"
                   >
-                    نعم، تسجيل الخروج
+                    {t('logout')}
                   </button>
                   <button
                     onClick={() => setShowLogoutConfirm(false)}
                     className="flex-1 py-2 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs hover:bg-slate-700 transition-all"
                   >
-                    إلغاء
+                    {t('cancel')}
                   </button>
                 </div>
               </div>
@@ -475,7 +509,7 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
                 className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 font-bold text-xs transition-colors"
               >
                 <LogOut className="w-4 h-4" />
-                <span>تسجيل الخروج</span>
+                <span>{t('logout')}</span>
               </button>
             )}
             <p className="text-center text-[10px] text-slate-600 font-mono mt-3 select-none">

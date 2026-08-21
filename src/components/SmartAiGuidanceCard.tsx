@@ -94,16 +94,16 @@ export const SmartAiGuidanceCard: React.FC<SmartAiGuidanceCardProps> = ({
   const content = getGuidanceContent();
 
   return (
-    <div className="rounded-2xl bg-gradient-to-br from-purple-950/40 via-slate-900 to-indigo-950/40 border border-purple-500/25 p-4 shadow-lg mb-6">
+    <div className="rounded-2xl bg-gradient-to-br from-brand-950/40 via-slate-900 to-brand-950/40 border border-brand-500/25 p-4 shadow-lg mb-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-purple-300 shadow-sm">
+          <div className="w-8 h-8 rounded-xl bg-brand-500/20 border border-brand-500/30 flex items-center justify-center text-brand-300 shadow-sm">
             <Sparkles className="w-4 h-4" />
           </div>
           <div>
             <div className="flex items-center gap-2">
               <h4 className="text-xs sm:text-sm font-bold text-white">{content.title}</h4>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-600/30 text-purple-300 border border-purple-500/30">
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-brand-600/30 text-brand-300 border border-brand-500/30">
                 {content.badge}
               </span>
             </div>
@@ -113,17 +113,17 @@ export const SmartAiGuidanceCard: React.FC<SmartAiGuidanceCardProps> = ({
         <button
           type="button"
           onClick={() => setIsExpanded(!isExpanded)}
-          className="p-1.5 rounded-lg text-slate-400 hover:text-purple-300 hover:bg-purple-900/30 transition-all"
+          className="p-1.5 rounded-lg text-slate-400 hover:text-brand-300 hover:bg-brand-900/30 transition-all"
         >
           {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
         </button>
       </div>
 
       {isExpanded && (
-        <div className="mt-3.5 pt-3 border-t border-purple-500/15 space-y-2.5 animate-fadeIn">
+        <div className="mt-3.5 pt-3 border-t border-brand-500/15 space-y-2.5 animate-fadeIn">
           {content.tips.map((tip, idx) => (
-            <div key={idx} className="p-3 rounded-xl bg-slate-950/70 border border-purple-500/15 text-xs">
-              <div className="font-bold text-purple-300 flex items-center gap-1.5 mb-1">
+            <div key={idx} className="p-3 rounded-xl bg-slate-950/70 border border-brand-500/15 text-xs">
+              <div className="font-bold text-brand-300 flex items-center gap-1.5 mb-1">
                 <Lightbulb className="w-3.5 h-3.5 text-amber-400" />
                 {tip.heading}
               </div>

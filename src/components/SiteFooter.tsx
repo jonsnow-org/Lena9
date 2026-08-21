@@ -43,7 +43,7 @@ export const SiteFooter: React.FC<SiteFooterProps> = ({ onOpenLegal }) => {
               <button
                 key={link.id}
                 onClick={() => onOpenLegal(link.id)}
-                className="text-[11px] font-bold text-slate-500 dark:text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
+                className="text-[11px] font-bold text-slate-500 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 transition-colors"
               >
                 {link.label}
               </button>

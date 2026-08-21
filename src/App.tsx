@@ -40,7 +40,6 @@ import {
 } from './types';
 
 import { REVENUE_SHARES } from './constants/revenueShares';
-import { translations } from './data/translations';
 import { LandingPage } from './components/LandingPage';
 import { TopHeader } from './components/TopHeader';
 import { BottomNav } from './components/BottomNav';
@@ -64,13 +63,17 @@ import { AiAssistantModal } from './components/AiAssistantModal';
 import { DirectMessagesModal } from './components/DirectMessagesModal';
 import { NotificationsModal } from './components/NotificationsModal';
 import { BetaTesting20Modal } from './components/BetaTesting20Modal';
-import { PoliciesModal } from './components/PoliciesModal';
 import { AuthModal } from './components/AuthModal';
 import { DrawerMenu } from './components/DrawerMenu';
 import { SubscriptionModal } from './components/SubscriptionModal';
 import { NewCampaignModal } from './components/NewCampaignModal';
 import { consumeAiUsage, applySubscriptionUpgrade } from './utils/aiQuota';
 import { rememberAccount } from './utils/savedAccounts';
+import { isEligibleForMonetization } from './utils/creatorEligibility';
+import { getTranslator } from './data/translations';
+import { applyThemePreset } from './utils/themeEngine';
+import { isValidThemePreset, DEFAULT_THEME_PRESET, ThemePresetKey } from './constants/themePresets';
+import { subscribeToThemePreset, setThemePresetInFirestore } from './services/firestoreService';
 import { PromoteArticleModal } from './components/PromoteArticleModal';
 import { LegalPages, LegalSection } from './components/LegalPages';
 import { SiteFooter } from './components/SiteFooter';
@@ -89,6 +92,7 @@ import {
   sendMessageToFirestore,
   subscribeToConversations,
   subscribeToMessages,
+  markConversationMessagesRead,
   logAdEvent,
   createPurchaseRequest,
   updateUserSocialLinks,
@@ -337,8 +341,6 @@ export function App() {
   const [isDirectMessagesOpen, setIsDirectMessagesOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isBeta20Open, setIsBeta20Open] = useState(false);
-  const [isPoliciesOpen, setIsPoliciesOpen] = useState(false);
-  const [policiesInitialTab, setPoliciesInitialTab] = useState<'privacy' | 'terms' | 'restricted'>('privacy');
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isNewCampaignOpen, setIsNewCampaignOpen] = useState(false);
   // Which internal tab the AdminDashboard shows — lifted here so the
@@ -711,11 +713,19 @@ export function App() {
         if (camp.advertiserId) {
           advertiserSpend[camp.advertiserId] = (advertiserSpend[camp.advertiserId] || 0) + cost;
         }
+        // ⚠️ لا تُحتسب حصة الكاتب إلا إذا استوفى شروط منشئ المحتوى (متابعون
+        // + مشاهدات صالحة + عمر حساب + عدد مقالات) وتحقق هويته (KYC) معاً.
+        // الإعلان نفسه يستمر بالعرض بشكل طبيعي — القيد هنا على "احتساب"
+        // الأرباح فقط، تماماً كما لا نمنع الكتابة والنشر بأي حال.
         if (ev.writerId) {
-          const share = String(ev.slotId || '').startsWith('writer_profile')
-            ? REVENUE_SHARES.WRITER_PROFILE_ADS.WRITER
-            : REVENUE_SHARES.IN_ARTICLE_ADS.WRITER;
-          writerEarnings[ev.writerId] = (writerEarnings[ev.writerId] || 0) + cost * share;
+          const writerUser = users.find((u) => u.id === ev.writerId);
+          const writerFollowersCount = followsData.filter((f) => f.followingId === ev.writerId).length;
+          if (isEligibleForMonetization(writerUser, articles, writerFollowersCount)) {
+            const share = String(ev.slotId || '').startsWith('writer_profile')
+              ? REVENUE_SHARES.WRITER_PROFILE_ADS.WRITER
+              : REVENUE_SHARES.IN_ARTICLE_ADS.WRITER;
+            writerEarnings[ev.writerId] = (writerEarnings[ev.writerId] || 0) + cost * share;
+          }
         }
       });
 
@@ -862,7 +872,11 @@ export function App() {
           });
         }
 
-        if (writer) {
+        // ⚠️ نفس شرط الأهلية المطبَّق على أرباح الإعلانات: البيع نفسه يُعتمد
+        // بشكل طبيعي (المشتري دفع فعلاً)، لكن حصة الكاتب لا تُحتسب لرصيده
+        // إلا إذا استوفى شروط منشئ المحتوى + تحقق الهوية (KYC).
+        const writerFollowersCount = writer ? followsData.filter((f) => f.followingId === writer.id).length : 0;
+        if (writer && isEligibleForMonetization(writer, articles, writerFollowersCount)) {
           const share = Number((price * REVENUE_SHARES.LOCKED_ARTICLES.WRITER).toFixed(2));
           await adminAdjustUserBalance(writer.id, {
             pendingEarnings: Number(((writer.pendingEarnings ?? 0) + share).toFixed(2)),
@@ -1094,8 +1108,35 @@ export function App() {
     document.documentElement.lang = language;
   }, [language]);
 
-  // Translations helper
-  const t = translations[language] || translations.ar;
+  // القالب اللوني العام: يستمع للتغيير الحي من Firestore ويطبّقه فوراً —
+  // يعمل لأي مستخدم متصل (بمن فيهم الزوار)، لأن اللون جزء من هوية التطبيق
+  // نفسه وليس تفضيلاً شخصياً لكل حساب.
+  const [themePreset, setThemePresetState] = useState<ThemePresetKey>(DEFAULT_THEME_PRESET);
+  useEffect(() => {
+    const unsub = subscribeToThemePreset(
+      (preset) => {
+        const resolved = isValidThemePreset(preset) ? preset : DEFAULT_THEME_PRESET;
+        applyThemePreset(resolved);
+        setThemePresetState(resolved);
+      },
+      (err) => console.error('تعذر تحميل القالب اللوني:', err)
+    );
+    return () => unsub();
+  }, []);
+
+  const handleChangeThemePreset = async (preset: ThemePresetKey) => {
+    if (currentUser.role !== 'admin') return;
+    // تحديث فوري محلياً (تفاؤلي) قبل انتظار تأكيد الخادم، ثم Firestore
+    // نفسه يبثّ التغيير لكل المستخدمين الآخرين المتصلين حالياً.
+    applyThemePreset(preset);
+    setThemePresetState(preset);
+    try {
+      await setThemePresetInFirestore(preset, currentUser.id);
+    } catch (err) {
+      console.error('تعذر حفظ القالب اللوني:', err);
+      alert('تعذر حفظ اللون الجديد. تحقق من اتصالك ثم حاول مجدداً.');
+    }
+  };
 
   // Categories list
   const categoryFilters = [
@@ -2104,7 +2145,29 @@ export function App() {
     return users.filter((u) => followedWriterIds.includes(u.id));
   }, [users, followedWriterIds]);
 
+  // دالة الترجمة الحالية — تُعاد بناؤها فقط عند تغيّر اللغة المختارة.
+  const t = useMemo(() => getTranslator(language), [language]);
+
   const unreadNotifsCount = notifications.filter((n) => !n.isRead).length;
+  // عدد الرسائل الخاصة غير المقروءة الواردة للمستخدم الحالي فعلياً — كان
+  // هذا الرقم يُمرَّر دائماً كصفر ثابت لعدم اشتقاقه من بيانات الرسائل
+  // الحقيقية، فتبقى شارة "الرسائل" في شريط التنقل معطَّلة رغم وجود رسائل
+  // فعلية لم تُقرأ بعد.
+  const unreadMessagesCount = messages.filter((m) => m.recipientId === currentUser.id && !m.isRead).length;
+
+  // شخصية شريط التنقل السفلي: تُشتق من النشاط الفعلي للحساب وليس من الدور
+  // المُسجَّل وحده — بما يتوافق مع نموذج الحساب الموحَّد (أي مستخدم مسجَّل
+  // غير الزائر يمكنه الكتابة أو إنشاء إعلان). الدور المُصرَّح به عند
+  // التسجيل يبقى أولوية أولى (تجربة متسقة لمن اختار "كاتب" صراحةً)، ثم
+  // النشاط الفعلي (مقالات منشورة أو حملات) لمن بدأ من حساب "قارئ" عام.
+  const navPersona: UserRole = useMemo(() => {
+    if (currentUser.role === 'admin') return 'admin';
+    if (currentUser.role === 'writer') return 'writer';
+    if (currentUser.role === 'advertiser') return 'advertiser';
+    if ((currentUser.articlesCount || 0) > 0) return 'writer';
+    if (campaigns.some((c) => c.advertiserId === currentUser.id)) return 'advertiser';
+    return 'reader';
+  }, [currentUser.role, currentUser.articlesCount, currentUser.id, campaigns]);
 
   // Show Landing Page for new visitors or when explicitly opened
   if (showLandingPage) {
@@ -2203,6 +2266,8 @@ export function App() {
         unreadNotifsCount={unreadNotifsCount}
         theme={theme}
         onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+        language={language}
+        onToggleLanguage={() => setLanguage(LANGUAGE_CYCLE[(LANGUAGE_CYCLE.indexOf(language) + 1) % LANGUAGE_CYCLE.length])}
       />
 
       {/* Main Container with Pull-to-Refresh Gestures */}
@@ -2260,10 +2325,7 @@ export function App() {
             onOpenWallet={() => setIsWalletOpen(true)}
             onOpenKyc={() => setIsKycOpen(true)}
             onOpenBeta20={() => setIsBeta20Open(true)}
-            onOpenPolicies={() => {
-              setPoliciesInitialTab('privacy');
-              setIsPoliciesOpen(true);
-            }}
+            onOpenPolicies={() => setLegalSection('privacy')}
             onOpenArticleEditor={(art) => {
               setEditingArticle(art || null);
               setIsArticleEditorOpen(true);
@@ -2299,7 +2361,7 @@ export function App() {
             onToggleBookmark={handleToggleBookmark}
             bookmarkedArticleIds={bookmarkedArticleIds}
           />
-        ) : (activeTab === 'articles' || activeTab === 'saved') && currentUser.role === 'writer' ? (
+        ) : (activeTab === 'articles' || activeTab === 'saved') && currentUser.id !== 'guest' ? (
           <UserProfileView
             currentUser={currentUser}
             articles={articles}
@@ -2312,10 +2374,7 @@ export function App() {
             onOpenWallet={() => setIsWalletOpen(true)}
             onOpenKyc={() => setIsKycOpen(true)}
             onOpenBeta20={() => setIsBeta20Open(true)}
-            onOpenPolicies={() => {
-              setPoliciesInitialTab('privacy');
-              setIsPoliciesOpen(true);
-            }}
+            onOpenPolicies={() => setLegalSection('privacy')}
             onOpenArticleEditor={(art) => {
               setEditingArticle(art || null);
               setIsArticleEditorOpen(true);
@@ -2336,7 +2395,7 @@ export function App() {
             onToggleLanguage={() => setLanguage(LANGUAGE_CYCLE[(LANGUAGE_CYCLE.indexOf(language) + 1) % LANGUAGE_CYCLE.length])}
             onLogout={handleLogout}
           />
-        ) : activeTab === 'dashboard' && currentUser.role === 'writer' ? (
+        ) : activeTab === 'dashboard' && currentUser.id !== 'guest' ? (
           <WriterDashboard
             writer={currentUser}
             articles={articles}
@@ -2345,13 +2404,15 @@ export function App() {
               setIsArticleEditorOpen(true);
             }}
             onOpenWallet={() => setIsWalletOpen(true)}
+            onOpenKyc={() => setIsKycOpen(true)}
             onSelectArticle={(art) => setReadingArticle(art)}
             onDeleteArticle={handleDeleteArticle}
             onPromoteArticle={(art) => setPromotingArticle(art)}
             promotions={promotions}
             onSaveSocialLinks={handleSaveSocialLinks}
+            followersCount={followsData.filter((f) => f.followingId === currentUser.id).length}
           />
-        ) : activeTab === 'campaigns' && currentUser.role === 'advertiser' ? (
+        ) : activeTab === 'campaigns' && currentUser.id !== 'guest' ? (
           <AdvertiserDashboard
             campaigns={campaigns.filter((c) => c.advertiserId === currentUser.id)}
             onCreateCampaign={handleCreateCampaign}
@@ -2498,6 +2559,8 @@ export function App() {
             }}
             onSelectArticle={(art) => setReadingArticle(art)}
             onSelectUser={(u) => setViewingWriterProfile(u)}
+            currentThemePreset={themePreset}
+            onChangeThemePreset={handleChangeThemePreset}
           />
         ) : (
           /* Main Feed View: Available to all users/roles when on 'feed' */
@@ -2505,7 +2568,7 @@ export function App() {
               {/* Search Bar — عدسة البحث عنصر منفصل تماماً عن حقل الكتابة،
                   وليست أيقونة عائمة داخل الحقل، حتى يكون شكلها واضحاً كزر بحث حقيقي */}
               <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-                <div className="flex items-stretch flex-1 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xs focus-within:border-purple-500 focus-within:ring-2 focus-within:ring-purple-500/20 transition-all overflow-hidden">
+                <div className="flex items-stretch flex-1 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xs focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/20 transition-all overflow-hidden">
                   <div className="w-11 shrink-0 flex items-center justify-center text-slate-400 border-e border-slate-200 dark:border-slate-800">
                     <Search className="w-4 h-4" />
                   </div>
@@ -2525,7 +2588,7 @@ export function App() {
                     className="min-h-[44px] px-3.5 py-2 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-1.5 shadow-2xs transition-all touch-manipulation active:scale-95"
                     title="تحديث قائمة المقالات"
                   >
-                    <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-purple-500' : ''}`} />
+                    <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-brand-500' : ''}`} />
                     <span>تحديث</span>
                   </button>
                 </div>
@@ -2542,7 +2605,7 @@ export function App() {
                       <button
                         key={u.id}
                         onClick={() => setViewingWriterProfile(u)}
-                        className="flex items-center gap-2 px-3 py-2 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-purple-400 dark:hover:border-purple-600 shrink-0 transition-all active:scale-95"
+                        className="flex items-center gap-2 px-3 py-2 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-brand-400 dark:hover:border-brand-600 shrink-0 transition-all active:scale-95"
                       >
                         <img
                           src={u.avatarUrl}
@@ -2569,8 +2632,8 @@ export function App() {
                       onClick={() => setSelectedCategory(cat.id)}
                       className={`min-h-[42px] px-4.5 py-2 rounded-2xl text-xs sm:text-sm font-extrabold whitespace-nowrap transition-all touch-manipulation active:scale-95 shrink-0 ${
                         selectedCategory === cat.id
-                          ? 'bg-purple-600 text-white shadow-md shadow-purple-500/25 ring-2 ring-purple-500/20'
-                          : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200/80 dark:border-slate-800 hover:border-purple-400 dark:hover:border-purple-600'
+                          ? 'bg-brand-600 text-white shadow-md shadow-brand-500/25 ring-2 ring-brand-500/20'
+                          : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200/80 dark:border-slate-800 hover:border-brand-400 dark:hover:border-brand-600'
                       }`}
                     >
                       {cat.label}
@@ -2708,7 +2771,7 @@ export function App() {
                       setSelectedCategory('all');
                       setSearchQuery('');
                     }}
-                    className="px-4 py-2 rounded-xl bg-purple-600 text-white text-xs font-bold active:scale-95 shadow-sm"
+                    className="px-4 py-2 rounded-xl bg-brand-600 text-white text-xs font-bold active:scale-95 shadow-sm"
                   >
                     عرض جميع المقالات
                   </button>
@@ -2771,10 +2834,10 @@ export function App() {
             setIsDirectMessagesOpen(true);
           }
         }}
-        userRole={currentUser.role}
+        userRole={navPersona}
         currentUser={currentUser}
         onOpenWriteAction={() => {
-          if (currentUser.role === 'writer') {
+          if (navPersona === 'writer') {
             setEditingArticle(null);
             setIsArticleEditorOpen(true);
           } else {
@@ -2793,6 +2856,8 @@ export function App() {
           setActiveTab('profile');
         }}
         unreadCount={unreadNotifsCount}
+        unreadMessagesCount={unreadMessagesCount}
+        t={t}
       />
 
       {/* Slide-over Drawer Menu */}
@@ -2803,10 +2868,7 @@ export function App() {
         onOpenWallet={() => setIsWalletOpen(true)}
         onOpenKyc={() => setIsKycOpen(true)}
         onOpenBeta20={() => setIsBeta20Open(true)}
-        onOpenPolicies={(tab) => {
-          setPoliciesInitialTab(tab || 'privacy');
-          setIsPoliciesOpen(true);
-        }}
+        onOpenPolicies={(tab) => setLegalSection(tab === 'restricted' ? 'terms' : (tab || 'privacy'))}
         onOpenLegal={(sec) => setLegalSection(sec)}
         onOpenAiAssistant={() => setIsAiAssistantOpen(true)}
         onOpenSubscription={() => setIsSubscriptionOpen(true)}
@@ -2815,6 +2877,11 @@ export function App() {
           setActiveTab('profile');
         }}
         onSwitchRole={handleSwitchRole}
+        navPersona={navPersona}
+        onStartWriting={() => {
+          setEditingArticle(null);
+          setIsArticleEditorOpen(true);
+        }}
         onLogout={handleLogout}
         theme={theme}
         onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
@@ -3020,6 +3087,11 @@ export function App() {
         messages={messages}
         onSendMessage={handleSendMessage}
         activeChatPartner={activeChatPartner}
+        onOpenConversation={(partnerId) => {
+          markConversationMessagesRead(currentUser.id, partnerId).catch((err) =>
+            console.error('تعذر تعليم الرسائل كمقروءة:', err)
+          );
+        }}
       />
 
       {/* Notifications Modal */}
@@ -3036,13 +3108,6 @@ export function App() {
       <BetaTesting20Modal
         isOpen={isBeta20Open}
         onClose={() => setIsBeta20Open(false)}
-      />
-
-      {/* Policies & Terms Modal */}
-      <PoliciesModal
-        isOpen={isPoliciesOpen}
-        onClose={() => setIsPoliciesOpen(false)}
-        initialTab={policiesInitialTab}
       />
 
       {/* Reader & Advertiser Campaign Creation Modal */}

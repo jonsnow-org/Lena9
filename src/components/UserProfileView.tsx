@@ -192,7 +192,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
               ? 'bg-teal-500'
               : currentUser.role === 'advertiser'
               ? 'bg-cyan-500'
-              : 'bg-purple-500'
+              : 'bg-brand-500'
           }`}
         />
 
@@ -209,7 +209,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                     ? 'ring-teal-500/20'
                     : currentUser.role === 'advertiser'
                     ? 'ring-cyan-500/20'
-                    : 'ring-purple-500/20'
+                    : 'ring-brand-500/20'
                 }`}
               />
               {currentUser.isVerified && (
@@ -241,7 +241,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                     </span>
                   )}
                   {currentUser.role === 'reader' && currentUser.id !== 'guest' && (
-                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-400 border border-purple-500/30 flex items-center gap-1">
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-brand-50 dark:bg-brand-950/60 text-brand-700 dark:text-brand-400 border border-brand-500/30 flex items-center gap-1">
                       <BookOpen className="w-3 h-3" />
                       <span>قارئ معتمد</span>
                     </span>
@@ -292,7 +292,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   ? 'bg-cyan-600/10 text-cyan-600 dark:text-cyan-400 border border-cyan-600/20'
                   : currentUser.role === 'admin'
                   ? 'bg-amber-600/10 text-amber-600 dark:text-amber-400 border border-amber-600/20'
-                  : 'bg-purple-600/10 text-purple-600 dark:text-purple-400 border border-purple-600/20'
+                  : 'bg-brand-600/10 text-brand-600 dark:text-brand-400 border border-brand-600/20'
               }`}
             >
               {currentUser.id === 'guest'
@@ -328,7 +328,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
               {currentUser.role === 'admin' && onNavigateToAdmin && (
                 <button
                   onClick={onNavigateToAdmin}
-                  className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-xs shadow-md shadow-purple-500/20 active:scale-95 transition-all flex items-center gap-1.5"
+                  className="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-md shadow-brand-500/20 active:scale-95 transition-all flex items-center gap-1.5"
                 >
                   <Crown className="w-3.5 h-3.5" />
                   <span>الذهاب إلى لوحة الإدارة</span>
@@ -339,7 +339,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   onClick={onOpenWallet}
                   className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-750 text-slate-800 dark:text-slate-200 text-xs font-bold border border-slate-200 dark:border-slate-700 transition-all flex items-center gap-1.5"
                 >
-                  <Wallet className="w-3.5 h-3.5 text-purple-500" />
+                  <Wallet className="w-3.5 h-3.5 text-brand-500" />
                   <span>المحفظة (${(currentUser.totalEarnings || 0).toFixed(2)})</span>
                 </button>
               )}
@@ -365,7 +365,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
               onClick={() => setReaderTab('bookmarks')}
               className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
                 readerTab === 'bookmarks'
-                  ? 'border-purple-600 text-purple-600 dark:text-purple-400'
+                  ? 'border-brand-600 text-brand-600 dark:text-brand-400'
                   : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
@@ -377,7 +377,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
               onClick={() => setReaderTab('history')}
               className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
                 readerTab === 'history'
-                  ? 'border-purple-600 text-purple-600 dark:text-purple-400'
+                  ? 'border-brand-600 text-brand-600 dark:text-brand-400'
                   : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
@@ -401,7 +401,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
               onClick={() => setReaderTab('following')}
               className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
                 readerTab === 'following'
-                  ? 'border-purple-600 text-purple-600 dark:text-purple-400'
+                  ? 'border-brand-600 text-brand-600 dark:text-brand-400'
                   : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
@@ -413,11 +413,11 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
               onClick={() => setReaderTab('quota_wallet')}
               className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
                 readerTab === 'quota_wallet'
-                  ? 'border-purple-600 text-purple-600 dark:text-purple-400'
+                  ? 'border-brand-600 text-brand-600 dark:text-brand-400'
                   : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
-              <Sparkles className="w-4 h-4 text-purple-500" />
+              <Sparkles className="w-4 h-4 text-brand-500" />
               <span>الرصيد واستخدامات الذكاء الاصطناعي</span>
             </button>
 
@@ -425,7 +425,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
               onClick={() => setReaderTab('settings')}
               className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
                 readerTab === 'settings'
-                  ? 'border-purple-600 text-purple-600 dark:text-purple-400'
+                  ? 'border-brand-600 text-brand-600 dark:text-brand-400'
                   : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
@@ -445,7 +445,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                     <div
                       key={art.id}
                       onClick={() => onSelectArticle(art)}
-                      className="p-4 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs hover:border-purple-500/50 cursor-pointer transition-all flex flex-col justify-between group"
+                      className="p-4 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs hover:border-brand-500/50 cursor-pointer transition-all flex flex-col justify-between group"
                     >
                       <div className="space-y-3">
                         <div className="aspect-16/9 rounded-2xl overflow-hidden bg-slate-950 relative">
@@ -455,11 +455,11 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                             referrerPolicy="no-referrer"
                             className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                           />
-                          <div className="absolute top-2 end-2 bg-purple-900/90 text-purple-200 px-2 py-0.5 rounded-lg text-[10px] font-bold">
+                          <div className="absolute top-2 end-2 bg-brand-900/90 text-brand-200 px-2 py-0.5 rounded-lg text-[10px] font-bold">
                             محفوظ
                           </div>
                         </div>
-                        <h4 className="font-extrabold text-sm text-slate-900 dark:text-white group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors line-clamp-2">
+                        <h4 className="font-extrabold text-sm text-slate-900 dark:text-white group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors line-clamp-2">
                           {art.title}
                         </h4>
                         <p className="text-xs text-slate-500 line-clamp-2">{art.description}</p>
@@ -467,7 +467,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
 
                       <div className="pt-3 mt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-400">
                         <span className="font-bold text-slate-600 dark:text-slate-300">{art.writerName}</span>
-                        <span className="text-purple-600 dark:text-purple-400 font-bold flex items-center gap-1">
+                        <span className="text-brand-600 dark:text-brand-400 font-bold flex items-center gap-1">
                           <span>متابعة القراءة</span>
                           <span>←</span>
                         </span>
@@ -493,7 +493,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   <div
                     key={art.id}
                     onClick={() => onSelectArticle(art)}
-                    className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-purple-500/40 cursor-pointer transition-all flex flex-col sm:flex-row items-center justify-between gap-4"
+                    className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-brand-500/40 cursor-pointer transition-all flex flex-col sm:flex-row items-center justify-between gap-4"
                   >
                     <div className="flex items-center gap-3 w-full sm:w-auto">
                       <img
@@ -503,7 +503,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                         className="w-16 h-16 rounded-xl object-cover shrink-0"
                       />
                       <div className="space-y-1">
-                        <span className="text-[10px] font-bold text-purple-600 dark:text-purple-400 px-2 py-0.5 rounded-full bg-purple-50 dark:bg-purple-950/60 border border-purple-500/20">
+                        <span className="text-[10px] font-bold text-brand-600 dark:text-brand-400 px-2 py-0.5 rounded-full bg-brand-50 dark:bg-brand-950/60 border border-brand-500/20">
                           {art.readAt}
                         </span>
                         <h4 className="font-bold text-sm text-slate-900 dark:text-white line-clamp-1">
@@ -516,11 +516,11 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                     <div className="w-full sm:w-48 space-y-1.5">
                       <div className="flex justify-between text-[11px] font-bold text-slate-500">
                         <span>نسبة الإنجاز</span>
-                        <span className="text-purple-600 dark:text-purple-400">{art.progress}%</span>
+                        <span className="text-brand-600 dark:text-brand-400">{art.progress}%</span>
                       </div>
                       <div className="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
                         <div
-                          className="h-full bg-gradient-to-r from-purple-500 to-teal-400 rounded-full transition-all"
+                          className="h-full bg-gradient-to-r from-brand-500 to-teal-400 rounded-full transition-all"
                           style={{ width: `${art.progress}%` }}
                         />
                       </div>
@@ -610,10 +610,10 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
           {readerTab === 'quota_wallet' && (
             <div className="space-y-6">
               {/* AI Quota Card */}
-              <div className="p-6 rounded-3xl bg-gradient-to-br from-purple-900/30 via-slate-900 to-slate-900 border border-purple-500/30 space-y-4">
+              <div className="p-6 rounded-3xl bg-gradient-to-br from-brand-900/30 via-slate-900 to-slate-900 border border-brand-500/30 space-y-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
-                    <div className="w-10 h-10 rounded-2xl bg-purple-600/20 text-purple-400 flex items-center justify-center">
+                    <div className="w-10 h-10 rounded-2xl bg-brand-600/20 text-brand-400 flex items-center justify-center">
                       <Sparkles className="w-5 h-5" />
                     </div>
                     <div>
@@ -634,11 +634,11 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                 <div className="space-y-2 pt-2">
                   <div className="flex justify-between text-xs font-bold text-slate-300">
                     <span>الاستخدام اليومي: {quotaStats.usedToday} من {quotaStats.limit || 5}</span>
-                    <span className="text-purple-400">{quotaStats.remaining} متبقية اليوم</span>
+                    <span className="text-brand-400">{quotaStats.remaining} متبقية اليوم</span>
                   </div>
                   <div className="w-full h-3 rounded-full bg-slate-800 overflow-hidden p-0.5 border border-slate-700">
                     <div
-                      className="h-full bg-gradient-to-r from-purple-500 via-indigo-500 to-teal-400 rounded-full transition-all"
+                      className="h-full bg-gradient-to-r from-brand-500 via-brand-500 to-teal-400 rounded-full transition-all"
                       style={{ width: `${Math.min(100, (quotaStats.usedToday / (quotaStats.limit || 5)) * 100)}%` }}
                     />
                   </div>
@@ -661,7 +661,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                 <div className="flex items-center gap-2 w-full sm:w-auto">
                   <button
                     onClick={onOpenWallet}
-                    className="flex-1 sm:flex-none px-6 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-md active:scale-95 transition-all"
+                    className="flex-1 sm:flex-none px-6 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs shadow-md active:scale-95 transition-all"
                   >
                     شحن الرصيد / إدارة المحفظة
                   </button>
@@ -677,7 +677,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
               <div className="space-y-3">
                 <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
                   <div className="flex items-center gap-2.5">
-                    {theme === 'dark' ? <Moon className="w-4 h-4 text-purple-400" /> : <Sun className="w-4 h-4 text-amber-500" />}
+                    {theme === 'dark' ? <Moon className="w-4 h-4 text-brand-400" /> : <Sun className="w-4 h-4 text-amber-500" />}
                     <span className="text-xs font-bold text-slate-700 dark:text-slate-300">المظهر العام (داكن / فاتح)</span>
                   </div>
                   <button
@@ -739,12 +739,12 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
             <div className="p-4 sm:p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
               <div className="flex items-center justify-between text-slate-400 mb-2">
                 <span className="text-xs font-bold">المقالات المنشورة</span>
-                <FileText className="w-4 h-4 text-purple-500" />
+                <FileText className="w-4 h-4 text-brand-500" />
               </div>
               <h3 className="text-2xl font-black text-slate-900 dark:text-white">
                 {myPublishedArticles.length}
               </h3>
-              <p className="text-[11px] text-purple-600 font-bold mt-1">
+              <p className="text-[11px] text-brand-600 font-bold mt-1">
                 {myDraftArticles.length + (hasDraft ? 1 : 0) > 0 ? `${myDraftArticles.length + (hasDraft ? 1 : 0)} مسودة جاهزة للنشر` : 'جاهزة للجمهور'}
               </p>
             </div>
@@ -1110,12 +1110,12 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
             <div className="p-4 sm:p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
               <div className="flex items-center justify-between text-slate-400 mb-2">
                 <span className="text-xs font-bold">مرات الظهور (Impressions)</span>
-                <Eye className="w-4 h-4 text-purple-500" />
+                <Eye className="w-4 h-4 text-brand-500" />
               </div>
               <h3 className="text-2xl font-black text-slate-900 dark:text-white">
                 {totalImpressions.toLocaleString()}
               </h3>
-              <p className="text-[11px] text-purple-600 font-bold mt-1">ظهور مؤكد في المقالات</p>
+              <p className="text-[11px] text-brand-600 font-bold mt-1">ظهور مؤكد في المقالات</p>
             </div>
 
             <div className="p-4 sm:p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
@@ -1321,24 +1321,24 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
       {/* ========================================================================= */}
       {currentUser.role === 'admin' && (
         <div className="space-y-4">
-          <div className="rounded-3xl bg-gradient-to-br from-purple-600 via-indigo-600 to-purple-700 p-6 sm:p-8 text-white shadow-xl shadow-purple-600/20">
+          <div className="rounded-3xl bg-gradient-to-br from-brand-600 via-brand-600 to-brand-700 p-6 sm:p-8 text-white shadow-xl shadow-brand-600/20">
             <div className="flex items-center gap-3 mb-2">
               <div className="w-11 h-11 rounded-2xl bg-white/15 flex items-center justify-center">
                 <Crown className="w-5 h-5" />
               </div>
               <div>
                 <h3 className="font-black text-base sm:text-lg">حساب مالك المنصة</h3>
-                <p className="text-xs text-purple-100">صلاحيات كاملة على إدارة ليتيريوم</p>
+                <p className="text-xs text-brand-100">صلاحيات كاملة على إدارة ليتيريوم</p>
               </div>
             </div>
-            <p className="text-xs sm:text-sm text-purple-100 leading-relaxed mt-3">
+            <p className="text-xs sm:text-sm text-brand-100 leading-relaxed mt-3">
               إدارة المستخدمين، مراجعة طلبات السحب والإيداع، اعتماد الحملات الإعلانية، ومتابعة
               التقارير المالية — كل ذلك من لوحة الإدارة المخصصة.
             </p>
             {onNavigateToAdmin && (
               <button
                 onClick={onNavigateToAdmin}
-                className="mt-4 w-full sm:w-auto px-6 py-3 rounded-2xl bg-white text-purple-700 font-extrabold text-xs sm:text-sm shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2"
+                className="mt-4 w-full sm:w-auto px-6 py-3 rounded-2xl bg-white text-brand-700 font-extrabold text-xs sm:text-sm shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2"
               >
                 <Crown className="w-4 h-4" />
                 <span>فتح لوحة الإدارة الكاملة</span>
@@ -1348,7 +1348,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center">
-              <Users className="w-5 h-5 text-purple-500 mx-auto mb-1.5" />
+              <Users className="w-5 h-5 text-brand-500 mx-auto mb-1.5" />
               <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300">المستخدمون</span>
             </div>
             <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center">

@@ -241,7 +241,7 @@ export const AdSlot: React.FC<AdSlotProps> = ({
       </div>
       <button
         onClick={handleClick}
-        className="w-full text-start rounded-2xl overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-purple-300 dark:hover:border-purple-700 transition-colors"
+        className="w-full text-start rounded-2xl overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-brand-300 dark:hover:border-brand-700 transition-colors"
       >
         {hasVideo ? (
           <div onClick={(e) => e.stopPropagation()}>

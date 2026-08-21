@@ -369,7 +369,7 @@ export function getPlanMeta(plan?: AiPlanType): {
     return {
       title: 'باقة Unlimited السنوية VIP',
       badge: 'مشترك VIP ذهبي 👑',
-      color: 'from-amber-500 to-purple-600',
+      color: 'from-amber-500 to-brand-600',
       isUnlimited: true,
       description: 'وصول غير محدود لطاقة Gemini 3.7 Pro طوال العام مع أولوية قصوى.'
     };
@@ -378,7 +378,7 @@ export function getPlanMeta(plan?: AiPlanType): {
     return {
       title: 'باقة Pro الشهرية',
       badge: 'مشترك Pro ⚡',
-      color: 'from-purple-600 to-indigo-600',
+      color: 'from-brand-600 to-brand-600',
       isUnlimited: false,
       description: '200 استعلام وتوليد متقدم شهرياً لكتابة المقالات والتدقيق.'
     };

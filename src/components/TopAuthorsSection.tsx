@@ -39,7 +39,7 @@ export const TopAuthorsSection: React.FC<TopAuthorsSectionProps> = ({
     }
     if (index === 2) {
       return (
-        <span className="absolute -top-1.5 -start-1.5 w-6 h-6 rounded-full bg-gradient-to-tr from-indigo-400 to-purple-600 text-white font-black text-[11px] flex items-center justify-center shadow-md ring-2 ring-white dark:ring-slate-900 z-10" title="المرتبة الثالثة">
+        <span className="absolute -top-1.5 -start-1.5 w-6 h-6 rounded-full bg-gradient-to-tr from-brand-400 to-brand-600 text-white font-black text-[11px] flex items-center justify-center shadow-md ring-2 ring-white dark:ring-slate-900 z-10" title="المرتبة الثالثة">
           3
         </span>
       );
@@ -56,7 +56,7 @@ export const TopAuthorsSection: React.FC<TopAuthorsSectionProps> = ({
       {/* Section Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-2xl bg-gradient-to-tr from-blue-500/20 via-indigo-500/20 to-teal-500/20 dark:from-blue-500/30 dark:to-teal-500/30 text-blue-600 dark:text-blue-400 flex items-center justify-center border border-blue-500/20">
+          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-2xl bg-gradient-to-tr from-blue-500/20 via-brand-500/20 to-teal-500/20 dark:from-blue-500/30 dark:to-teal-500/30 text-blue-600 dark:text-blue-400 flex items-center justify-center border border-blue-500/20">
             <Users className="w-4 h-4 sm:w-4.5 sm:h-4.5 stroke-[2.2]" />
           </div>
           <div>

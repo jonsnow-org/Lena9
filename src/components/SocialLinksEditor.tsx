@@ -161,7 +161,7 @@ export const SocialLinksEditor: React.FC<SocialLinksEditorProps> = ({ currentUse
               value={links[field.key]}
               onChange={(e) => setLinks((prev) => ({ ...prev, [field.key]: e.target.value }))}
               placeholder={field.placeholder}
-              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs outline-hidden focus:border-purple-500 text-start"
+              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs outline-hidden focus:border-brand-500 text-start"
             />
             {field.hint && (
               <p className="text-[10px] text-slate-400 dark:text-slate-500">{field.hint}</p>
@@ -173,7 +173,7 @@ export const SocialLinksEditor: React.FC<SocialLinksEditorProps> = ({ currentUse
       <button
         onClick={handleSave}
         disabled={isSaving}
-        className="w-full flex items-center justify-center gap-2 px-6 py-3 rounded-2xl bg-purple-600 hover:bg-purple-700 disabled:opacity-60 text-white font-extrabold text-xs active:scale-95 transition-all"
+        className="w-full flex items-center justify-center gap-2 px-6 py-3 rounded-2xl bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white font-extrabold text-xs active:scale-95 transition-all"
       >
         {isSaving ? (
           <>

@@ -61,11 +61,17 @@ service cloud.firestore {
         isOwner(userId)
         && (request.resource.data.role == resource.data.role || isSelfAssignableRole(request.resource.data.role))
         && noChangeTo([
-             'uid', 'email',
+             'uid', 'email', 'createdAt',
              'walletBalance', 'balance', 'wallet',
              'totalEarnings', 'earnings', 'revenue',
              'availableBalance', 'pendingEarnings', 'lifetimeEarnings',
              'pendingPayout', 'isVerified', 'subscriptionTier',
+             // followersCount يُحسب من مجموعة follows الحقيقية عبر
+             // إضافة/حذف مستندات follow، وليس بتعديل الرقم مباشرة —
+             // بخلاف ذلك يمكن لأي مستخدم كتابة رقم متابعين وهمي والمرور
+             // بشرط عدد المتابعين لأهلية منشئي المحتوى (100 متابع).
+             'followersCount',
+             'isKycVerified',
              // معرّف حساب Stripe Connect المرتبط لاستلام السحوبات الآلية —
              // يُكتب حصراً من الخادم عبر Firebase Admin SDK (يتجاوز هذه
              // القواعد أصلاً) بعد التحقق الفعلي من Stripe. لو سُمح للمستخدم
@@ -273,7 +279,16 @@ service cloud.firestore {
       allow create: if isSignedIn()
         && request.resource.data.senderId == request.auth.uid
         && request.auth.uid in request.resource.data.participants;
-      allow update: if isSignedIn() && resource.data.senderId == request.auth.uid;
+      // المُرسِل يمكنه تعديل رسالته (لأي حاجة مستقبلية)، والمُستقبِل (أي
+      // طرف آخر ضمن participants) يمكنه فقط تعليم الرسالة كمقروءة —
+      // isRead حصراً، دون أي قدرة على تعديل نص الرسالة أو أي حقل آخر.
+      allow update: if isSignedIn() && (
+        resource.data.senderId == request.auth.uid
+        || (
+          request.auth.uid in resource.data.participants
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead'])
+        )
+      );
       allow delete: if isSignedIn() && (resource.data.senderId == request.auth.uid || isAdmin());
     }
 
@@ -302,6 +317,14 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead', 'readAt']);
       allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
       allow create: if isSignedIn();
+    }
+
+    // القالب اللوني العام للتطبيق — قراءة متاحة للجميع (حتى الزوار غير
+    // المسجَّلين، لتظهر صفحة الهبوط باللون الصحيح)، وكتابته مقصورة على
+    // الأدمن فقط. مستند واحد ثابت المعرّف settings/theme.
+    match /settings/theme {
+      allow read: if true;
+      allow write: if isAdmin();
     }
   }
 }

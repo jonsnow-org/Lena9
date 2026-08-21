@@ -93,6 +93,9 @@ export interface User {
   /** إجمالي كل الأرباح منذ إنشاء الحساب (إحصائية تراكمية، ليست رصيداً قابلاً للإنفاق) */
   lifetimeEarnings?: number;
   joinedDate?: string;
+  /** تاريخ إنشاء الحساب الخام (ISO)، للحساب الدقيق لعمر الحساب — بخلاف
+   *  joinedDate المُنسَّق للعرض فقط ("مارس 2024") وغير الصالح للحساب. */
+  createdAt?: string;
   twoFactorEnabled?: boolean;
   notificationsEnabled?: boolean;
   penName?: string;

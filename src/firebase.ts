@@ -255,6 +255,7 @@ export async function fetchUserFromFirestore(uid: string): Promise<User | null> 
       pendingEarnings: Number(data.pendingEarnings ?? 0),
       lifetimeEarnings: Number(data.lifetimeEarnings ?? (data.totalEarnings ?? 0)),
       joinedDate: data.createdAt ? new Date(data.createdAt).toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' }) : 'حديثاً',
+      createdAt: data.createdAt || undefined,
       aiQuota: data.aiQuota || {
         freeDailyLimit: DEFAULT_FREE_DAILY_LIMIT,
         usedToday: 0,
@@ -378,6 +379,7 @@ export async function createOrUpdateUserDoc(
         pendingEarnings: 0,
         lifetimeEarnings: 0,
         joinedDate: 'اليوم',
+        createdAt: newUserDocData.createdAt,
         aiQuota: {
           freeDailyLimit: DEFAULT_FREE_DAILY_LIMIT,
           usedToday: 0,
@@ -432,6 +434,7 @@ export async function createOrUpdateUserDoc(
         pendingEarnings: Number(currentData.pendingEarnings ?? 0),
         lifetimeEarnings: Number(currentData.lifetimeEarnings ?? balance),
         joinedDate: currentData.createdAt ? new Date(currentData.createdAt).toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' }) : 'سابقاً',
+        createdAt: currentData.createdAt || undefined,
         aiQuota: currentData.aiQuota || {
           freeDailyLimit: DEFAULT_FREE_DAILY_LIMIT,
           usedToday: 0,

@@ -185,7 +185,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   };
 
   const accentClasses: Record<string, { border: string; bg: string; text: string; ring: string }> = {
-    purple: { border: 'border-purple-500', bg: 'bg-purple-500/10', text: 'text-purple-600 dark:text-purple-400', ring: 'ring-purple-500/20' },
+    purple: { border: 'border-brand-500', bg: 'bg-brand-500/10', text: 'text-brand-600 dark:text-brand-400', ring: 'ring-brand-500/20' },
     teal: { border: 'border-teal-500', bg: 'bg-teal-500/10', text: 'text-teal-600 dark:text-teal-400', ring: 'ring-teal-500/20' },
     cyan: { border: 'border-cyan-500', bg: 'bg-cyan-500/10', text: 'text-cyan-600 dark:text-cyan-400', ring: 'ring-cyan-500/20' }
   };
@@ -193,7 +193,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const submitButtonColor =
     role === 'writer' ? 'bg-teal-600 hover:bg-teal-700 shadow-teal-500/20' :
     role === 'advertiser' ? 'bg-cyan-600 hover:bg-cyan-700 shadow-cyan-500/20' :
-    'bg-purple-600 hover:bg-purple-700 shadow-purple-500/20';
+    'bg-brand-600 hover:bg-brand-700 shadow-brand-500/20';
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 md:p-6 animate-fade-in">
@@ -201,7 +201,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         {/* Header with Mode Switcher */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/90">
           <div className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-2xl bg-purple-600/10 text-purple-600 dark:text-purple-400 flex items-center justify-center font-bold">
+            <div className="w-9 h-9 rounded-2xl bg-brand-600/10 text-brand-600 dark:text-brand-400 flex items-center justify-center font-bold">
               {mode === 'login' ? <LogIn className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}
             </div>
             <div>
@@ -250,7 +250,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   setAuthError(null);
                   setUseNewAccountForm(true);
                 }}
-                className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-xs shadow-md active:scale-95 transition-all"
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-md active:scale-95 transition-all"
               >
                 <UserCog className="w-4 h-4" />
                 <span>تسجيل الدخول بحساب آخر أو إنشاء حساب جديد</span>
@@ -264,7 +264,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 {savedAccounts.map((acc) => (
                   <div
                     key={acc.uid}
-                    className="flex items-center gap-3 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-purple-400 dark:hover:border-purple-600 bg-slate-50/60 dark:bg-slate-800/40 transition-colors"
+                    className="flex items-center gap-3 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-brand-400 dark:hover:border-brand-600 bg-slate-50/60 dark:bg-slate-800/40 transition-colors"
                   >
                     <button
                       type="button"
@@ -283,7 +283,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           className="w-9 h-9 rounded-full object-cover shrink-0"
                         />
                       ) : (
-                        <div className="w-9 h-9 rounded-full bg-purple-600/15 text-purple-600 dark:text-purple-400 flex items-center justify-center font-black text-sm shrink-0">
+                        <div className="w-9 h-9 rounded-full bg-brand-600/15 text-brand-600 dark:text-brand-400 flex items-center justify-center font-black text-sm shrink-0">
                           {(acc.fullName || acc.email)[0]?.toUpperCase()}
                         </div>
                       )}
@@ -325,7 +325,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 setAuthError(null);
                 setUseNewAccountForm(false);
               }}
-              className="text-[11px] font-bold text-purple-600 dark:text-purple-400 hover:underline"
+              className="text-[11px] font-bold text-brand-600 dark:text-brand-400 hover:underline"
             >
               → العودة إلى الحسابات المحفوظة
             </button>
@@ -379,7 +379,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   placeholder="مثال: سارة العتيبي"
-                  className="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs sm:text-sm outline-hidden focus:border-purple-500"
+                  className="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs sm:text-sm outline-hidden focus:border-brand-500"
                   required
                 />
               </div>
@@ -502,7 +502,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="name@example.com"
-                className="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs sm:text-sm outline-hidden focus:border-purple-500"
+                className="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs sm:text-sm outline-hidden focus:border-brand-500"
                 required
               />
             </div>
@@ -515,7 +515,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
                 minLength={6}
-                className="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs sm:text-sm outline-hidden focus:border-purple-500"
+                className="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs sm:text-sm outline-hidden focus:border-brand-500"
                 required
               />
               {mode === 'register' && (
@@ -549,14 +549,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             {mode === 'login' ? (
               <span>
                 ليس لديك حساب بعد؟{' '}
-                <button type="button" onClick={() => setMode('register')} className="font-bold text-purple-600 dark:text-purple-400 hover:underline">
+                <button type="button" onClick={() => setMode('register')} className="font-bold text-brand-600 dark:text-brand-400 hover:underline">
                   إنشاء حساب جديد
                 </button>
               </span>
             ) : (
               <span>
                 لديك حساب بالفعل؟{' '}
-                <button type="button" onClick={() => setMode('login')} className="font-bold text-purple-600 dark:text-purple-400 hover:underline">
+                <button type="button" onClick={() => setMode('login')} className="font-bold text-brand-600 dark:text-brand-400 hover:underline">
                   تسجيل الدخول
                 </button>
               </span>

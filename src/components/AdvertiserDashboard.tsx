@@ -110,10 +110,10 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
   return (
     <div className="space-y-6 animate-fade-in pb-16">
       {/* Top Banner & Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-6 rounded-3xl bg-gradient-to-r from-purple-950 via-slate-900 to-indigo-950 text-white shadow-2xl border border-purple-500/30">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-6 rounded-3xl bg-gradient-to-r from-brand-950 via-slate-900 to-brand-950 text-white shadow-2xl border border-brand-500/30">
         <div>
           <div className="flex items-center gap-2.5 mb-1.5">
-            <div className="w-9 h-9 rounded-2xl bg-purple-600/30 border border-purple-500/40 flex items-center justify-center text-purple-300">
+            <div className="w-9 h-9 rounded-2xl bg-brand-600/30 border border-brand-500/40 flex items-center justify-center text-brand-300">
               <Megaphone className="w-5 h-5" />
             </div>
             <h2 className="text-xl sm:text-2xl font-black">لوحة تحكم المعلن والحملات الإعلانية</h2>
@@ -126,7 +126,7 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
         <div className="flex items-center gap-3">
           <button
             onClick={onOpenDeposit}
-            className="px-4 py-2.5 rounded-2xl bg-purple-900/40 hover:bg-purple-900/70 border border-purple-500/40 text-purple-200 font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm"
+            className="px-4 py-2.5 rounded-2xl bg-brand-900/40 hover:bg-brand-900/70 border border-brand-500/40 text-brand-200 font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm"
           >
             <DollarSign className="w-4 h-4 text-emerald-400" />
             <span>الرصيد: ${advertiserBalance.toFixed(2)}</span>
@@ -134,7 +134,7 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
 
           <button
             onClick={() => setShowCreateModal(true)}
-            className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs sm:text-sm shadow-lg shadow-purple-600/30 flex items-center gap-2 transition-transform hover:scale-105 active:scale-95"
+            className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-brand-600 to-brand-600 hover:from-brand-500 hover:to-brand-500 text-white font-bold text-xs sm:text-sm shadow-lg shadow-brand-600/30 flex items-center gap-2 transition-transform hover:scale-105 active:scale-95"
           >
             <PlusCircle className="w-4 h-4" />
             <span>إنشاء حملة جديدة</span>
@@ -143,7 +143,7 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
       </div>
 
       {/* Sub Tabs Bar */}
-      <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-slate-900 border border-purple-500/20 overflow-x-auto scrollbar-none">
+      <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-slate-900 border border-brand-500/20 overflow-x-auto scrollbar-none">
         {[
           { id: 'campaigns', label: `الحملات النشطة (${campaigns.length})`, icon: Megaphone },
           { id: 'analytics', label: 'تقارير الأداء ومكافحة الاحتيال', icon: BarChart3 },
@@ -157,7 +157,7 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
               onClick={() => setActiveSubTab(tab.id as any)}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
                 isActive
-                  ? 'bg-purple-600 text-white shadow-md'
+                  ? 'bg-brand-600 text-white shadow-md'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
               }`}
             >
@@ -173,10 +173,10 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
 
       {/* Metric Cards Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
-        <div className="p-5 rounded-2xl bg-slate-900 border border-purple-500/20 shadow-sm">
+        <div className="p-5 rounded-2xl bg-slate-900 border border-brand-500/20 shadow-sm">
           <div className="flex items-center justify-between text-slate-400 mb-2">
             <span className="text-xs font-bold">إجمالي الظهور الصالح</span>
-            <Eye className="w-4 h-4 text-purple-400" />
+            <Eye className="w-4 h-4 text-brand-400" />
           </div>
           <p className="text-xl sm:text-2xl font-black text-white">
             {totalImpressions.toLocaleString('ar-EG')}
@@ -184,7 +184,7 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
           <span className="text-[10px] text-emerald-400 font-bold">فحص بقاء 50% لأكثر من 1ث</span>
         </div>
 
-        <div className="p-5 rounded-2xl bg-slate-900 border border-purple-500/20 shadow-sm">
+        <div className="p-5 rounded-2xl bg-slate-900 border border-brand-500/20 shadow-sm">
           <div className="flex items-center justify-between text-slate-400 mb-2">
             <span className="text-xs font-bold">النقرات المؤكدة</span>
             <MousePointerClick className="w-4 h-4 text-cyan-400" />
@@ -192,10 +192,10 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
           <p className="text-xl sm:text-2xl font-black text-white">
             {totalClicks.toLocaleString('ar-EG')}
           </p>
-          <span className="text-[10px] text-purple-300 font-bold">معدل النقر {avgCtr}%</span>
+          <span className="text-[10px] text-brand-300 font-bold">معدل النقر {avgCtr}%</span>
         </div>
 
-        <div className="p-5 rounded-2xl bg-slate-900 border border-purple-500/20 shadow-sm">
+        <div className="p-5 rounded-2xl bg-slate-900 border border-brand-500/20 shadow-sm">
           <div className="flex items-center justify-between text-slate-400 mb-2">
             <span className="text-xs font-bold">النقرات المشبوهة المحجوبة</span>
             <ShieldAlert className="w-4 h-4 text-rose-400" />
@@ -206,7 +206,7 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
           <span className="text-[10px] text-emerald-400 font-bold">تم توفير ميزانيتك 100%</span>
         </div>
 
-        <div className="p-5 rounded-2xl bg-slate-900 border border-purple-500/20 shadow-sm">
+        <div className="p-5 rounded-2xl bg-slate-900 border border-brand-500/20 shadow-sm">
           <div className="flex items-center justify-between text-slate-400 mb-2">
             <span className="text-xs font-bold">إجمالي الإنفاق الفعلي</span>
             <DollarSign className="w-4 h-4 text-emerald-400" />
@@ -214,22 +214,22 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
           <p className="text-xl sm:text-2xl font-black text-emerald-400 font-mono">
             ${totalSpent.toFixed(2)}
           </p>
-          <span className="text-[10px] text-purple-300 font-bold">من أصل ${campaigns.reduce((a, c) => a + c.totalBudget, 0).toFixed(2)}</span>
+          <span className="text-[10px] text-brand-300 font-bold">من أصل ${campaigns.reduce((a, c) => a + c.totalBudget, 0).toFixed(2)}</span>
         </div>
       </div>
 
       {/* Main Tab 1: Campaigns List */}
       {activeSubTab === 'campaigns' && (
-        <div className="rounded-3xl bg-slate-900 border border-purple-500/20 p-5 sm:p-6 shadow-sm space-y-4">
+        <div className="rounded-3xl bg-slate-900 border border-brand-500/20 p-5 sm:p-6 shadow-sm space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-base font-bold text-white flex items-center gap-2">
-              <Megaphone className="w-5 h-5 text-purple-400" />
+              <Megaphone className="w-5 h-5 text-brand-400" />
               <span>إدارة الحملات الإعلانية ومعدلات الأمان</span>
             </h3>
 
             <button
               onClick={() => setShowCreateModal(true)}
-              className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md"
+              className="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md"
             >
               <PlusCircle className="w-4 h-4" />
               <span>إنشاء حملة جديدة</span>
@@ -238,12 +238,12 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
 
           <div className="space-y-3">
             {campaigns.length === 0 ? (
-              <div className="p-8 text-center rounded-2xl bg-slate-950/60 border border-purple-500/10">
+              <div className="p-8 text-center rounded-2xl bg-slate-950/60 border border-brand-500/10">
                 <Megaphone className="w-10 h-10 text-slate-500 mx-auto mb-2" />
                 <p className="text-slate-300 font-bold text-sm">لا توجد حملات إعلانية منشأة بعد</p>
                 <button
                   onClick={() => setShowCreateModal(true)}
-                  className="mt-3 px-4 py-2 rounded-xl bg-purple-600 text-white text-xs font-bold"
+                  className="mt-3 px-4 py-2 rounded-xl bg-brand-600 text-white text-xs font-bold"
                 >
                   إنشاء أول إعلان الآن
                 </button>
@@ -252,7 +252,7 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
               campaigns.map((camp) => (
                 <div
                   key={camp.id}
-                  className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 p-4 rounded-2xl border border-purple-500/15 bg-slate-950/60 hover:border-purple-500/40 transition-all"
+                  className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 p-4 rounded-2xl border border-brand-500/15 bg-slate-950/60 hover:border-brand-500/40 transition-all"
                 >
                   <div className="flex items-center gap-3">
                     <img
@@ -274,10 +274,10 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
                         >
                           {camp.status === 'active' ? 'نشطة 🟢' : camp.status === 'paused' ? 'متوقفة مؤقتاً ⏸️' : 'مكتملة'}
                         </span>
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30 font-bold">
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-brand-500/20 text-brand-300 border border-brand-500/30 font-bold">
                           {camp.pricingModel === 'fixed' ? 'ثابت (مدة)' : camp.pricingModel === 'cpm' ? 'CPM (ظهور)' : 'CPC (نقرات)'}
                         </span>
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-bold">
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-brand-500/20 text-brand-300 border border-brand-500/30 font-bold">
                           {camp.placementType === 'platform' ? 'إعلان المنصة (100%)' : `إعلان مقالات الكُتّاب (${REVENUE_SHARES.IN_ARTICLE_ADS.WRITER_PERCENT}/${REVENUE_SHARES.IN_ARTICLE_ADS.PLATFORM_PERCENT})`}
                         </span>
                       </div>
@@ -285,7 +285,7 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
                       <p className="text-xs text-slate-300 mt-1 line-clamp-1">{camp.adText}</p>
 
                       <div className="flex items-center gap-4 text-xs text-slate-400 mt-2 font-mono">
-                        <span className="text-purple-300">الظهور: {camp.impressionsCount}</span>
+                        <span className="text-brand-300">الظهور: {camp.impressionsCount}</span>
                         <span className="text-cyan-300">النقرات: {camp.clicksCount}</span>
                         <span className="text-emerald-400">الإنفاق: ${camp.totalSpent.toFixed(2)} / ${camp.totalBudget.toFixed(2)}</span>
                         {camp.fraudBlockedCount !== undefined && camp.fraudBlockedCount > 0 && (
@@ -337,7 +337,7 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
       {/* Main Tab 2: Analytics & Anti-Fraud */}
       {activeSubTab === 'analytics' && (
         <div className="space-y-6">
-          <div className="p-6 rounded-3xl bg-slate-900 border border-purple-500/20 shadow-sm space-y-4">
+          <div className="p-6 rounded-3xl bg-slate-900 border border-brand-500/20 shadow-sm space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <ShieldCheck className="w-6 h-6 text-emerald-400" />
@@ -352,21 +352,21 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
-              <div className="p-4 rounded-2xl bg-slate-950 border border-purple-500/15">
-                <span className="text-xs font-bold text-purple-300 block mb-1">فحص الرؤية (Viewability)</span>
+              <div className="p-4 rounded-2xl bg-slate-950 border border-brand-500/15">
+                <span className="text-xs font-bold text-brand-300 block mb-1">فحص الرؤية (Viewability)</span>
                 <p className="text-xs text-slate-300 leading-relaxed">
                   لا تُخصم أي ميزانية لنموذج CPM إلا بعد ثبات 50% من مساحة الإعلان في شاشة القارئ لثانية متصلة.
                 </p>
               </div>
 
-              <div className="p-4 rounded-2xl bg-slate-950 border border-purple-500/15">
+              <div className="p-4 rounded-2xl bg-slate-950 border border-brand-500/15">
                 <span className="text-xs font-bold text-cyan-300 block mb-1">منع النقر الذاتي (Anti Self-Click)</span>
                 <p className="text-xs text-slate-300 leading-relaxed">
                   حظر فوري لأي نقرات يقوم بها صاحب المقال على إعلاناتك، وحماية ميزانيتك من الهدر.
                 </p>
               </div>
 
-              <div className="p-4 rounded-2xl bg-slate-950 border border-purple-500/15">
+              <div className="p-4 rounded-2xl bg-slate-950 border border-brand-500/15">
                 <span className="text-xs font-bold text-rose-300 block mb-1">كشف البوتات والنقرات المتسارعة</span>
                 <p className="text-xs text-slate-300 leading-relaxed">
                   استبعاد النقرات التي تحدث في أقل من 1.5 ثانية من فتح الصفحة وفلترة الزيارات الآلية.
@@ -379,7 +379,7 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
 
       {/* Main Tab 3: Billing */}
       {activeSubTab === 'billing' && (
-        <div className="p-6 rounded-3xl bg-slate-900 border border-purple-500/20 shadow-sm space-y-6">
+        <div className="p-6 rounded-3xl bg-slate-900 border border-brand-500/20 shadow-sm space-y-6">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div>
               <h3 className="text-base font-bold text-white">رصيد الإعلانات والفوترة</h3>
@@ -388,13 +388,13 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
 
             <button
               onClick={onOpenDeposit}
-              className="px-6 py-2.5 rounded-2xl bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold text-xs shadow-lg shadow-purple-600/30"
+              className="px-6 py-2.5 rounded-2xl bg-gradient-to-r from-brand-600 to-brand-600 text-white font-bold text-xs shadow-lg shadow-brand-600/30"
             >
               شحن الرصيد الآن
             </button>
           </div>
 
-          <div className="p-6 rounded-2xl bg-slate-950 border border-purple-500/15 text-center">
+          <div className="p-6 rounded-2xl bg-slate-950 border border-brand-500/15 text-center">
             <span className="text-xs text-slate-400 block mb-1">الرصيد المتاح حالياً</span>
             <div className="text-3xl font-black text-emerald-400 font-mono mb-2">
               ${advertiserBalance.toFixed(2)}
@@ -407,10 +407,10 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
       {/* Campaign Creation Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-2xl bg-slate-900 border border-purple-500/30 rounded-3xl text-white shadow-2xl p-6 relative animate-scaleIn max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between pb-4 border-b border-purple-500/20">
+          <div className="w-full max-w-2xl bg-slate-900 border border-brand-500/30 rounded-3xl text-white shadow-2xl p-6 relative animate-scaleIn max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-4 border-b border-brand-500/20">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-purple-600/30 border border-purple-500/40 flex items-center justify-center text-purple-300">
+                <div className="w-8 h-8 rounded-xl bg-brand-600/30 border border-brand-500/40 flex items-center justify-center text-brand-300">
                   <PlusCircle className="w-4 h-4" />
                 </div>
                 <h3 className="text-base font-black text-white">إنشاء وتصميم حملة إعلانية جديدة</h3>
@@ -433,7 +433,7 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
                   value={campaignName}
                   onChange={(e) => setCampaignName(e.target.value)}
                   placeholder="مثال: إطلاق كورس الذكاء الاصطناعي للمطورين"
-                  className="w-full p-3 rounded-xl bg-slate-950 border border-purple-500/20 text-white text-xs focus:border-purple-500 outline-none"
+                  className="w-full p-3 rounded-xl bg-slate-950 border border-brand-500/20 text-white text-xs focus:border-brand-500 outline-none"
                 />
               </div>
 
@@ -446,7 +446,7 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
                   value={adText}
                   onChange={(e) => setAdText(e.target.value)}
                   placeholder="سجل الآن واحصل على خصم 40% على جميع المسارات المتقدمة..."
-                  className="w-full p-3 rounded-xl bg-slate-950 border border-purple-500/20 text-white text-xs focus:border-purple-500 outline-none"
+                  className="w-full p-3 rounded-xl bg-slate-950 border border-brand-500/20 text-white text-xs focus:border-brand-500 outline-none"
                 />
               </div>
 
@@ -459,7 +459,7 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
                   value={destinationUrl}
                   onChange={(e) => setDestinationUrl(e.target.value)}
                   placeholder="https://example.com/special-offer"
-                  className="w-full p-3 rounded-xl bg-slate-950 border border-purple-500/20 text-white text-xs focus:border-purple-500 outline-none"
+                  className="w-full p-3 rounded-xl bg-slate-950 border border-brand-500/20 text-white text-xs focus:border-brand-500 outline-none"
                 />
               </div>
 
@@ -471,13 +471,13 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
                   required
                   value={imageUrl}
                   onChange={(e) => setImageUrl(e.target.value)}
-                  className="w-full p-3 rounded-xl bg-slate-950 border border-purple-500/20 text-white text-xs focus:border-purple-500 outline-none"
+                  className="w-full p-3 rounded-xl bg-slate-950 border border-brand-500/20 text-white text-xs focus:border-brand-500 outline-none"
                 />
               </div>
 
               {/* Pricing Model Selector */}
-              <div className="p-4 rounded-2xl bg-slate-950 border border-purple-500/20 space-y-3">
-                <label className="block text-xs font-black text-purple-300">
+              <div className="p-4 rounded-2xl bg-slate-950 border border-brand-500/20 space-y-3">
+                <label className="block text-xs font-black text-brand-300">
                   اختر نموذج التسعير والمحاسبة:
                 </label>
                 <div className="grid grid-cols-3 gap-2">
@@ -492,12 +492,12 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
                       onClick={() => setPricingModel(pm.id)}
                       className={`p-3 rounded-xl text-right transition-all border ${
                         pricingModel === pm.id
-                          ? 'bg-purple-600/30 text-white border-purple-500 shadow-sm'
+                          ? 'bg-brand-600/30 text-white border-brand-500 shadow-sm'
                           : 'bg-slate-900 text-slate-400 border-slate-800 hover:border-slate-700'
                       }`}
                     >
                       <div className="text-xs font-bold">{pm.label}</div>
-                      <div className="text-[10px] text-purple-300 mt-0.5">{pm.desc}</div>
+                      <div className="text-[10px] text-brand-300 mt-0.5">{pm.desc}</div>
                     </button>
                   ))}
                 </div>
@@ -513,24 +513,24 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
                       onClick={() => setPlacementType('writer')}
                       className={`p-2.5 rounded-xl text-right text-xs transition-all border ${
                         placementType === 'writer'
-                          ? 'bg-indigo-600/30 text-white border-indigo-500'
+                          ? 'bg-brand-600/30 text-white border-brand-500'
                           : 'bg-slate-900 text-slate-400 border-slate-800'
                       }`}
                     >
                       <div className="font-bold">إعلانات مقالات الكُتّاب (Writer Ads)</div>
-                      <div className="text-[10px] text-indigo-300">مشاركة {REVENUE_SHARES.IN_ARTICLE_ADS.WRITER_PERCENT}% للكاتب / {REVENUE_SHARES.IN_ARTICLE_ADS.PLATFORM_PERCENT}% للمنصة</div>
+                      <div className="text-[10px] text-brand-300">مشاركة {REVENUE_SHARES.IN_ARTICLE_ADS.WRITER_PERCENT}% للكاتب / {REVENUE_SHARES.IN_ARTICLE_ADS.PLATFORM_PERCENT}% للمنصة</div>
                     </button>
                     <button
                       type="button"
                       onClick={() => setPlacementType('platform')}
                       className={`p-2.5 rounded-xl text-right text-xs transition-all border ${
                         placementType === 'platform'
-                          ? 'bg-indigo-600/30 text-white border-indigo-500'
+                          ? 'bg-brand-600/30 text-white border-brand-500'
                           : 'bg-slate-900 text-slate-400 border-slate-800'
                       }`}
                     >
                       <div className="font-bold">إعلانات الواجهة والمنصة (Platform Ads)</div>
-                      <div className="text-[10px] text-indigo-300">100% عوائد لصالح المنصة</div>
+                      <div className="text-[10px] text-brand-300">100% عوائد لصالح المنصة</div>
                     </button>
                   </div>
                 </div>
@@ -552,12 +552,12 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
                           onClick={() => setDurationHours(item.hours)}
                           className={`p-2 rounded-xl text-center text-xs font-bold transition-all ${
                             durationHours === item.hours
-                              ? 'bg-purple-600 text-white'
+                              ? 'bg-brand-600 text-white'
                               : 'bg-slate-900 text-slate-400 hover:bg-slate-800'
                           }`}
                         >
                           <div>{item.label}</div>
-                          <div className="text-[10px] text-purple-300 font-mono">${fixedDurationPrices[item.hours]}</div>
+                          <div className="text-[10px] text-brand-300 font-mono">${fixedDurationPrices[item.hours]}</div>
                         </button>
                       ))}
                     </div>
@@ -618,7 +618,7 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
               </div>
 
               {/* Total Summary */}
-              <div className="p-3 rounded-2xl bg-purple-950/40 border border-purple-500/30 flex items-center justify-between">
+              <div className="p-3 rounded-2xl bg-brand-950/40 border border-brand-500/30 flex items-center justify-between">
                 <div>
                   <span className="text-xs text-slate-400">التكلفة التقديرية للحملة:</span>
                   <div className="text-lg font-black text-emerald-400 font-mono">${currentEstimatedCost}</div>
@@ -633,7 +633,7 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
                   </button>
                   <button
                     type="submit"
-                    className="px-6 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-xs font-bold shadow-md shadow-purple-600/30 hover:scale-105 transition-all"
+                    className="px-6 py-2 rounded-xl bg-gradient-to-r from-brand-600 to-brand-600 text-white text-xs font-bold shadow-md shadow-brand-600/30 hover:scale-105 transition-all"
                   >
                     تأكيد وإطلاق الحملة
                   </button>

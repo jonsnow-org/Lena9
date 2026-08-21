@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { User } from '../types';
 import { createDepositRequest, createPayoutRequest } from '../services/firestoreService';
+import { MIN_PAYOUT_USD, MIN_DEPOSIT_USD } from '../constants/payoutRules';
 
 interface MoneyRequestModalProps {
   isOpen: boolean;
@@ -21,8 +22,8 @@ interface MoneyRequestModalProps {
   requests?: any[];
 }
 
-const MIN_PAYOUT = 50;
-const MIN_DEPOSIT = 10;
+const MIN_PAYOUT = MIN_PAYOUT_USD;
+const MIN_DEPOSIT = MIN_DEPOSIT_USD;
 
 const DEPOSIT_METHODS = [
   { id: 'bank_transfer', label: 'تحويل بنكي' },
@@ -113,7 +114,7 @@ export const MoneyRequestModal: React.FC<MoneyRequestModalProps> = ({
               className={`w-9 h-9 rounded-2xl flex items-center justify-center ${
                 isDeposit
                   ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
-                  : 'bg-purple-500/15 text-purple-600 dark:text-purple-400'
+                  : 'bg-brand-500/15 text-brand-600 dark:text-brand-400'
               }`}
             >
               {isDeposit ? (
@@ -210,7 +211,7 @@ export const MoneyRequestModal: React.FC<MoneyRequestModalProps> = ({
                   step={1}
                   value={amount}
                   onChange={(e) => setAmount(Number(e.target.value) || 0)}
-                  className="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm outline-hidden focus:border-purple-500"
+                  className="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm outline-hidden focus:border-brand-500"
                 />
                 {!isDeposit && amount > availableBalance && (
                   <p className="text-[11px] text-rose-500 font-bold">
@@ -232,7 +233,7 @@ export const MoneyRequestModal: React.FC<MoneyRequestModalProps> = ({
                       onClick={() => setMethod(m.id)}
                       className={`p-2.5 rounded-2xl border text-xs font-bold transition-all ${
                         method === m.id
-                          ? 'border-purple-500 bg-purple-500/10 text-purple-600 dark:text-purple-400'
+                          ? 'border-brand-500 bg-brand-500/10 text-brand-600 dark:text-brand-400'
                           : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
                       }`}
                     >
@@ -253,7 +254,7 @@ export const MoneyRequestModal: React.FC<MoneyRequestModalProps> = ({
                     value={reference}
                     onChange={(e) => setReference(e.target.value)}
                     placeholder="أدخل رقم العملية بعد إتمام التحويل"
-                    className="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm outline-hidden focus:border-purple-500"
+                    className="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm outline-hidden focus:border-brand-500"
                   />
                 </div>
               ) : (
@@ -266,7 +267,7 @@ export const MoneyRequestModal: React.FC<MoneyRequestModalProps> = ({
                     value={destination}
                     onChange={(e) => setDestination(e.target.value)}
                     placeholder="رقم الحساب أو عنوان المحفظة"
-                    className="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm outline-hidden focus:border-purple-500"
+                    className="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm outline-hidden focus:border-brand-500"
                   />
                 </div>
               )}
@@ -287,7 +288,7 @@ export const MoneyRequestModal: React.FC<MoneyRequestModalProps> = ({
                 className={`w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-2xl text-white font-extrabold text-sm shadow-lg active:scale-95 transition-all disabled:opacity-50 ${
                   isDeposit
                     ? 'bg-emerald-600 hover:bg-emerald-700'
-                    : 'bg-purple-600 hover:bg-purple-700'
+                    : 'bg-brand-600 hover:bg-brand-700'
                 }`}
               >
                 {isSubmitting ? (

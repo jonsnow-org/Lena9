@@ -1,6 +1,7 @@
 import React from 'react';
 import { Shield, FileText, Info, Mail, ArrowRight } from 'lucide-react';
 import { REVENUE_SHARES } from '../constants/revenueShares';
+import { MIN_PAYOUT_USD, EARNINGS_HOLD_DAYS } from '../constants/payoutRules';
 
 export type LegalSection = 'privacy' | 'terms' | 'about' | 'contact';
 
@@ -11,9 +12,9 @@ interface LegalPagesProps {
 }
 
 const CONTACT_EMAIL = 'brnardtsho@gmail.com';
-const LAST_UPDATED = '19 أغسطس 2026';
-const MIN_PAYOUT = 50;
-const HOLD_DAYS = 30;
+const LAST_UPDATED = '21 أغسطس 2026';
+const MIN_PAYOUT = MIN_PAYOUT_USD;
+const HOLD_DAYS = EARNINGS_HOLD_DAYS;
 
 const SECTIONS: { id: LegalSection; label: string; icon: React.ReactNode }[] = [
   { id: 'privacy', label: 'سياسة الخصوصية', icon: <Shield className="w-4 h-4" /> },
@@ -48,7 +49,7 @@ export const LegalPages: React.FC<LegalPagesProps> = ({ section, onChangeSection
       <div className="max-w-3xl mx-auto px-4 sm:px-6 pt-6">
         <button
           onClick={onBack}
-          className="flex items-center gap-1.5 text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-purple-600 mb-5"
+          className="flex items-center gap-1.5 text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-brand-600 mb-5"
         >
           <ArrowRight className="w-4 h-4" />
           <span>العودة إلى المنصة</span>
@@ -62,7 +63,7 @@ export const LegalPages: React.FC<LegalPagesProps> = ({ section, onChangeSection
               onClick={() => onChangeSection(s.id)}
               className={`flex items-center gap-1.5 px-4 py-2 rounded-2xl text-xs font-bold whitespace-nowrap transition-all ${
                 section === s.id
-                  ? 'bg-purple-600 text-white shadow-md'
+                  ? 'bg-brand-600 text-white shadow-md'
                   : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800'
               }`}
             >
@@ -166,7 +167,7 @@ export const LegalPages: React.FC<LegalPagesProps> = ({ section, onChangeSection
               />
               <P>
                 لممارسة أي من هذه الحقوق، تواصل معنا على:{' '}
-                <span className="font-bold text-purple-600 dark:text-purple-400">{CONTACT_EMAIL}</span>
+                <span className="font-bold text-brand-600 dark:text-brand-400">{CONTACT_EMAIL}</span>
               </P>
 
               <H2>خصوصية الأطفال</H2>
@@ -298,7 +299,7 @@ export const LegalPages: React.FC<LegalPagesProps> = ({ section, onChangeSection
 
               <H2>التواصل</H2>
               <P>
-                <span className="font-bold text-purple-600 dark:text-purple-400">{CONTACT_EMAIL}</span>
+                <span className="font-bold text-brand-600 dark:text-brand-400">{CONTACT_EMAIL}</span>
               </P>
             </>
           )}
@@ -366,7 +367,7 @@ export const LegalPages: React.FC<LegalPagesProps> = ({ section, onChangeSection
                     </div>
                     <a
                       href={`mailto:${item.email}`}
-                      className="text-sm font-bold text-purple-600 dark:text-purple-400 hover:underline"
+                      className="text-sm font-bold text-brand-600 dark:text-brand-400 hover:underline"
                     >
                       {item.email}
                     </a>

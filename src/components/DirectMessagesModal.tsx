@@ -18,6 +18,10 @@ interface DirectMessagesModalProps {
   messages: DirectMessage[];
   onSendMessage: (recipientId: string, content: string) => void;
   activeChatPartner?: User | null;
+  /** يُستدعى عند فتح محادثة (من القائمة أو من activeChatPartner) — نقطة
+   *  واحدة لتعليم رسائل هذه المحادثة كمقروءة بدل ترك عدّاد الرسائل غير
+   *  المقروءة عالقاً على قيمته السابقة. */
+  onOpenConversation?: (partnerId: string) => void;
 }
 
 export const DirectMessagesModal: React.FC<DirectMessagesModalProps> = ({
@@ -27,7 +31,8 @@ export const DirectMessagesModal: React.FC<DirectMessagesModalProps> = ({
   conversations,
   messages,
   onSendMessage,
-  activeChatPartner
+  activeChatPartner,
+  onOpenConversation
 }) => {
   const [selectedPartner, setSelectedPartner] = useState<User | null>(activeChatPartner || null);
   const [text, setText] = useState('');
@@ -38,8 +43,20 @@ export const DirectMessagesModal: React.FC<DirectMessagesModalProps> = ({
   useEffect(() => {
     if (isOpen && activeChatPartner) {
       setSelectedPartner(activeChatPartner);
+      onOpenConversation?.(activeChatPartner.id);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, activeChatPartner]);
+
+  const unreadCountByPartnerId = React.useMemo(() => {
+    const counts: Record<string, number> = {};
+    messages.forEach((m) => {
+      if (!m.isRead && m.recipientId === currentUser.id) {
+        counts[m.senderId] = (counts[m.senderId] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [messages, currentUser.id]);
 
   if (!isOpen) return null;
 
@@ -106,48 +123,61 @@ export const DirectMessagesModal: React.FC<DirectMessagesModalProps> = ({
                 لا توجد محادثات سابقة حالياً
               </div>
             ) : (
-              conversations.map((c) => (
-                <div
-                  key={c.id}
-                  onClick={() =>
-                    setSelectedPartner({
-                      id: c.partnerId,
-                      fullName: c.partnerName,
-                      username: c.partnerName.replace(/\s+/g, '_').toLowerCase(),
-                      avatarUrl: c.partnerAvatar,
-                      role: c.partnerRole,
-                      email: '',
-                      followersCount: 0,
-                      followingCount: 0,
-                      articlesCount: 0,
-                      totalViews: 0,
-                      totalEarnings: 0,
-                      monthlyEarnings: 0
-                    })
-                  }
-                  className={`flex items-center gap-3 p-3.5 border-b border-slate-100 dark:border-slate-800/60 cursor-pointer transition-colors ${
-                    selectedPartner?.id === c.partnerId
-                      ? 'bg-teal-50 dark:bg-teal-950/40'
-                      : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
-                  }`}
-                >
-                  <img
-                    src={c.partnerAvatar}
-                    alt={c.partnerName}
-                    referrerPolicy="no-referrer"
-                    className="w-10 h-10 rounded-full object-cover shrink-0"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between mb-0.5">
-                      <span className="font-bold text-xs text-slate-900 dark:text-white truncate">
-                        {c.partnerName}
-                      </span>
-                      <span className="text-[10px] text-slate-400">{c.lastMessageTime}</span>
+              conversations.map((c) => {
+                const unread = unreadCountByPartnerId[c.partnerId] || 0;
+                return (
+                  <div
+                    key={c.id}
+                    onClick={() => {
+                      setSelectedPartner({
+                        id: c.partnerId,
+                        fullName: c.partnerName,
+                        username: c.partnerName.replace(/\s+/g, '_').toLowerCase(),
+                        avatarUrl: c.partnerAvatar,
+                        role: c.partnerRole,
+                        email: '',
+                        followersCount: 0,
+                        followingCount: 0,
+                        articlesCount: 0,
+                        totalViews: 0,
+                        totalEarnings: 0,
+                        monthlyEarnings: 0
+                      });
+                      onOpenConversation?.(c.partnerId);
+                    }}
+                    className={`flex items-center gap-3 p-3.5 border-b border-slate-100 dark:border-slate-800/60 cursor-pointer transition-colors ${
+                      selectedPartner?.id === c.partnerId
+                        ? 'bg-teal-50 dark:bg-teal-950/40'
+                        : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
+                    }`}
+                  >
+                    <img
+                      src={c.partnerAvatar}
+                      alt={c.partnerName}
+                      referrerPolicy="no-referrer"
+                      className="w-10 h-10 rounded-full object-cover shrink-0"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className={`text-xs truncate ${unread > 0 ? 'font-black text-slate-900 dark:text-white' : 'font-bold text-slate-900 dark:text-white'}`}>
+                          {c.partnerName}
+                        </span>
+                        <span className="text-[10px] text-slate-400 shrink-0">{c.lastMessageTime}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className={`text-[11px] truncate ${unread > 0 ? 'text-slate-700 dark:text-slate-200 font-bold' : 'text-slate-500'}`}>
+                          {c.lastMessage}
+                        </p>
+                        {unread > 0 && (
+                          <span className="shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-teal-600 text-white text-[10px] font-bold flex items-center justify-center">
+                            {unread > 9 ? '9+' : unread}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <p className="text-[11px] text-slate-500 truncate">{c.lastMessage}</p>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
 

@@ -337,6 +337,7 @@ export function subscribeToUsers(
           pendingEarnings: Number(data.pendingEarnings ?? 0),
           lifetimeEarnings: Number(data.lifetimeEarnings ?? (data.totalEarnings ?? 0)),
           joinedDate: data.createdAt ? new Date(data.createdAt).toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' }) : 'حديثاً',
+          createdAt: data.createdAt || undefined,
           aiQuota: data.aiQuota || {
             freeDailyLimit: DEFAULT_FREE_DAILY_LIMIT,
             usedToday: 0,
@@ -959,6 +960,66 @@ export function subscribeToMessages(
       if (onError) onError(error);
     }
   );
+}
+
+/** يُعلِّم كل رسائل محادثة معيّنة الواردة من الطرف الآخر كمقروءة — يُستدعى
+ *  عند فتح المستخدم لهذه المحادثة، بدل ترك عدّاد "غير مقروء" عالقاً على 0
+ *  دائماً أو غير دقيق. */
+export async function markConversationMessagesRead(currentUserId: string, otherUserId: string): Promise<void> {
+  if (!currentUserId || !otherUserId) return;
+  try {
+    const convId = conversationIdFor(currentUserId, otherUserId);
+    const q = query(
+      collection(db, 'messages'),
+      where('conversationId', '==', convId),
+      where('senderId', '==', otherUserId),
+      where('isRead', '==', false)
+    );
+    const snap = await getDocs(q);
+    if (snap.empty) return;
+    await Promise.all(snap.docs.map((d) => updateDoc(d.ref, { isRead: true })));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'messages');
+  }
+}
+
+// -------------------------------------------------------------------
+// القالب اللوني العام للتطبيق (settings/theme)
+// -------------------------------------------------------------------
+// مستند واحد عام، قراءته متاحة للجميع (بما فيهم الزوار غير المسجَّلين،
+// حتى تظهر صفحة الهبوط باللون الصحيح)، وكتابته مقصورة على الأدمن فقط
+// عبر قواعد أمان Firestore. يسمح هذا لأي تغيير يجريه المالك بالوصول
+// لحظياً لكل المستخدمين المتصلين حالياً عبر onSnapshot، دون أي حاجة
+// لإعادة نشر أو تحديث التطبيق.
+const THEME_DOC_REF = () => doc(db, 'settings', 'theme');
+
+export function subscribeToThemePreset(
+  onPreset: (preset: string | null) => void,
+  onError?: (err: any) => void
+) {
+  return onSnapshot(
+    THEME_DOC_REF(),
+    (snap) => {
+      onPreset(snap.exists() ? (snap.data().preset as string) || null : null);
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'settings/theme');
+      if (onError) onError(error);
+    }
+  );
+}
+
+export async function setThemePresetInFirestore(preset: string, updatedByUserId: string): Promise<void> {
+  try {
+    await setDoc(
+      THEME_DOC_REF(),
+      { preset, updatedAt: new Date().toISOString(), updatedBy: updatedByUserId },
+      { merge: true }
+    );
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'settings/theme');
+    throw error;
+  }
 }
 
 // -------------------------------------------------------------------

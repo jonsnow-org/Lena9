@@ -14,6 +14,7 @@ import {
   LayoutDashboard
 } from 'lucide-react';
 import { User, UserRole } from '../types';
+import { getTranslator } from '../data/translations';
 
 interface BottomNavProps {
   activeTab: string;
@@ -31,6 +32,9 @@ interface BottomNavProps {
   onAdminNavigate?: (tab: 'overview' | 'fraud' | 'campaigns' | 'moderation' | 'users' | 'finance' | 'settings') => void;
   writerActiveTab?: string;
   onWriterNavigate?: (tab: 'articles' | 'stats_earnings') => void;
+  /** دالة الترجمة الحالية — اختيارية بافتراضي عربي حتى لا يتعطل أي استدعاء
+   *  سابق لهذا المكوّن لا يمرّرها بعد. */
+  t?: (key: string) => string;
 }
 
 export const BottomNav: React.FC<BottomNavProps> = ({
@@ -46,14 +50,15 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   unreadCount = 0,
   unreadMessagesCount = 0,
   adminActiveTab,
-  onAdminNavigate
+  onAdminNavigate,
+  t = getTranslator('ar')
 }) => {
   // 1. READER ROLE: الرئيسية · استكشاف · إشعارات · رسائل · ملفي
   if (userRole === 'reader' || !currentUser) {
     return (
       <nav
         id="bottom-nav-reader"
-        className="fixed bottom-0 inset-x-0 z-40 bg-slate-950/95 backdrop-blur-xl border-t border-purple-500/20 shadow-2xl transition-colors pb-safe"
+        className="fixed bottom-0 inset-x-0 z-40 bg-slate-950/95 backdrop-blur-xl border-t border-brand-500/20 shadow-2xl transition-colors pb-safe"
       >
         <div className="max-w-lg mx-auto px-3 h-16 flex items-center justify-around">
           {/* 1. الرئيسية */}
@@ -66,7 +71,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             <div
               className={`p-1.5 rounded-xl transition-all ${
                 activeTab === 'feed'
-                  ? 'bg-purple-600/30 text-purple-300 border border-purple-500/40 scale-105'
+                  ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
                   : 'text-slate-400 group-hover:text-slate-200'
               }`}
             >
@@ -74,10 +79,10 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             </div>
             <span
               className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'feed' ? 'text-purple-300 font-extrabold' : 'text-slate-400'
+                activeTab === 'feed' ? 'text-brand-300 font-extrabold' : 'text-slate-400'
               }`}
             >
-              الرئيسية
+              {t('home')}
             </span>
           </button>
 
@@ -91,7 +96,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             <div
               className={`p-1.5 rounded-xl transition-all ${
                 activeTab === 'explore'
-                  ? 'bg-purple-600/30 text-purple-300 border border-purple-500/40 scale-105'
+                  ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
                   : 'text-slate-400 group-hover:text-slate-200'
               }`}
             >
@@ -99,10 +104,10 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             </div>
             <span
               className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'explore' ? 'text-purple-300 font-extrabold' : 'text-slate-400'
+                activeTab === 'explore' ? 'text-brand-300 font-extrabold' : 'text-slate-400'
               }`}
             >
-              استكشاف
+              {t('explore')}
             </span>
           </button>
 
@@ -117,23 +122,23 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             <div
               className={`p-1.5 rounded-xl transition-all relative ${
                 activeTab === 'notifications'
-                  ? 'bg-purple-600/30 text-purple-300 border border-purple-500/40 scale-105'
+                  ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
                   : 'text-slate-400 group-hover:text-slate-200'
               }`}
             >
               <Bell className="w-5 h-5" />
               {unreadCount > 0 && (
-                <span className="absolute -top-1 -end-1 w-4 h-4 bg-purple-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center ring-2 ring-slate-950 animate-pulse">
+                <span className="absolute -top-1 -end-1 w-4 h-4 bg-brand-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center ring-2 ring-slate-950 animate-pulse">
                   {unreadCount > 9 ? '9+' : unreadCount}
                 </span>
               )}
             </div>
             <span
               className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'notifications' ? 'text-purple-300 font-extrabold' : 'text-slate-400'
+                activeTab === 'notifications' ? 'text-brand-300 font-extrabold' : 'text-slate-400'
               }`}
             >
-              إشعارات
+              {t('notifications')}
             </span>
           </button>
 
@@ -147,7 +152,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             <div
               className={`p-1.5 rounded-xl transition-all relative ${
                 activeTab === 'messages'
-                  ? 'bg-purple-600/30 text-purple-300 border border-purple-500/40 scale-105'
+                  ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
                   : 'text-slate-400 group-hover:text-slate-200'
               }`}
             >
@@ -160,10 +165,10 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             </div>
             <span
               className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'messages' ? 'text-purple-300 font-extrabold' : 'text-slate-400'
+                activeTab === 'messages' ? 'text-brand-300 font-extrabold' : 'text-slate-400'
               }`}
             >
-              رسائل
+              {t('messages')}
             </span>
           </button>
 
@@ -177,7 +182,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             <div
               className={`p-1.5 rounded-xl transition-all ${
                 activeTab === 'profile'
-                  ? 'bg-purple-600/30 text-purple-300 border border-purple-500/40 scale-105'
+                  ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
                   : 'text-slate-400 group-hover:text-slate-200'
               }`}
             >
@@ -194,10 +199,10 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             </div>
             <span
               className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'profile' ? 'text-purple-300 font-extrabold' : 'text-slate-400'
+                activeTab === 'profile' ? 'text-brand-300 font-extrabold' : 'text-slate-400'
               }`}
             >
-              ملفي
+              {t('profile')}
             </span>
           </button>
         </div>
@@ -210,7 +215,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
     return (
       <nav
         id="bottom-nav-advertiser"
-        className="fixed bottom-0 inset-x-0 z-40 bg-slate-950/95 backdrop-blur-xl border-t border-purple-500/20 shadow-2xl transition-colors pb-safe"
+        className="fixed bottom-0 inset-x-0 z-40 bg-slate-950/95 backdrop-blur-xl border-t border-brand-500/20 shadow-2xl transition-colors pb-safe"
       >
         <div className="max-w-lg mx-auto px-2 h-16 flex items-center justify-around">
           {/* 1. الرئيسية */}
@@ -223,7 +228,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             <div
               className={`p-1.5 rounded-xl transition-all ${
                 activeTab === 'feed'
-                  ? 'bg-purple-600/30 text-purple-300 border border-purple-500/40 scale-105'
+                  ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
                   : 'text-slate-400 group-hover:text-slate-200'
               }`}
             >
@@ -231,10 +236,10 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             </div>
             <span
               className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'feed' ? 'text-purple-300 font-extrabold' : 'text-slate-400'
+                activeTab === 'feed' ? 'text-brand-300 font-extrabold' : 'text-slate-400'
               }`}
             >
-              الرئيسية
+              {t('home')}
             </span>
           </button>
 
@@ -248,7 +253,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             <div
               className={`p-1.5 rounded-xl transition-all ${
                 activeTab === 'campaigns'
-                  ? 'bg-purple-600/30 text-purple-300 border border-purple-500/40 scale-105'
+                  ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
                   : 'text-slate-400 group-hover:text-slate-200'
               }`}
             >
@@ -256,10 +261,10 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             </div>
             <span
               className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'campaigns' ? 'text-purple-300 font-extrabold' : 'text-slate-400'
+                activeTab === 'campaigns' ? 'text-brand-300 font-extrabold' : 'text-slate-400'
               }`}
             >
-              حملاتي
+              {t('myCampaigns')}
             </span>
           </button>
 
@@ -269,12 +274,12 @@ export const BottomNav: React.FC<BottomNavProps> = ({
               id="nav-adv-fab"
               type="button"
               onClick={onOpenCreateCampaign}
-              className="w-13 h-13 rounded-2xl bg-gradient-to-tr from-cyan-600 via-indigo-600 to-purple-600 text-white flex items-center justify-center shadow-lg shadow-cyan-600/40 active:scale-90 hover:scale-105 transition-all border-2 border-slate-900"
-              title="إنشاء حملة إعلانية جديدة"
+              className="w-13 h-13 rounded-2xl bg-gradient-to-tr from-cyan-600 via-brand-600 to-brand-600 text-white flex items-center justify-center shadow-lg shadow-cyan-600/40 active:scale-90 hover:scale-105 transition-all border-2 border-slate-900"
+              title={t('newCampaign')}
             >
               <PlusCircle className="w-6 h-6 stroke-[2.2]" />
             </button>
-            <span className="text-[10px] font-black text-cyan-300 mt-1">إنشاء حملة</span>
+            <span className="text-[10px] font-black text-cyan-300 mt-1">{t('newCampaign')}</span>
           </div>
 
           {/* 4. رسائل */}
@@ -287,7 +292,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             <div
               className={`p-1.5 rounded-xl transition-all relative ${
                 activeTab === 'messages'
-                  ? 'bg-purple-600/30 text-purple-300 border border-purple-500/40 scale-105'
+                  ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
                   : 'text-slate-400 group-hover:text-slate-200'
               }`}
             >
@@ -300,10 +305,10 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             </div>
             <span
               className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'messages' ? 'text-purple-300 font-extrabold' : 'text-slate-400'
+                activeTab === 'messages' ? 'text-brand-300 font-extrabold' : 'text-slate-400'
               }`}
             >
-              رسائل
+              {t('messages')}
             </span>
           </button>
 
@@ -317,23 +322,23 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             <div
               className={`p-1.5 rounded-xl transition-all relative ${
                 activeTab === 'notifications'
-                  ? 'bg-purple-600/30 text-purple-300 border border-purple-500/40 scale-105'
+                  ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
                   : 'text-slate-400 group-hover:text-slate-200'
               }`}
             >
               <Bell className="w-5 h-5" />
               {unreadCount > 0 && (
-                <span className="absolute -top-1 -end-1 w-4 h-4 bg-purple-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center ring-2 ring-slate-950 animate-pulse">
+                <span className="absolute -top-1 -end-1 w-4 h-4 bg-brand-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center ring-2 ring-slate-950 animate-pulse">
                   {unreadCount > 9 ? '9+' : unreadCount}
                 </span>
               )}
             </div>
             <span
               className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'notifications' ? 'text-purple-300 font-extrabold' : 'text-slate-400'
+                activeTab === 'notifications' ? 'text-brand-300 font-extrabold' : 'text-slate-400'
               }`}
             >
-              إشعارات
+              {t('notifications')}
             </span>
           </button>
 
@@ -347,7 +352,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             <div
               className={`p-1.5 rounded-xl transition-all ${
                 activeTab === 'profile'
-                  ? 'bg-purple-600/30 text-purple-300 border border-purple-500/40 scale-105'
+                  ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
                   : 'text-slate-400 group-hover:text-slate-200'
               }`}
             >
@@ -364,10 +369,10 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             </div>
             <span
               className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'profile' ? 'text-purple-300 font-extrabold' : 'text-slate-400'
+                activeTab === 'profile' ? 'text-brand-300 font-extrabold' : 'text-slate-400'
               }`}
             >
-              ملفي
+              {t('profile')}
             </span>
           </button>
         </div>
@@ -380,7 +385,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
     return (
       <nav
         id="bottom-nav-writer"
-        className="fixed bottom-0 inset-x-0 z-40 bg-slate-950/95 backdrop-blur-xl border-t border-purple-500/20 shadow-2xl transition-colors pb-safe"
+        className="fixed bottom-0 inset-x-0 z-40 bg-slate-950/95 backdrop-blur-xl border-t border-brand-500/20 shadow-2xl transition-colors pb-safe"
       >
         <div className="max-w-lg mx-auto px-2 h-16 flex items-center justify-around">
           {/* 1. الرئيسية */}
@@ -393,7 +398,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             <div
               className={`p-1.5 rounded-xl transition-all ${
                 activeTab === 'feed'
-                  ? 'bg-purple-600/30 text-purple-300 border border-purple-500/40 scale-105'
+                  ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
                   : 'text-slate-400 group-hover:text-slate-200'
               }`}
             >
@@ -401,10 +406,10 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             </div>
             <span
               className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'feed' ? 'text-purple-300 font-extrabold' : 'text-slate-400'
+                activeTab === 'feed' ? 'text-brand-300 font-extrabold' : 'text-slate-400'
               }`}
             >
-              الرئيسية
+              {t('home')}
             </span>
           </button>
 
@@ -418,7 +423,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             <div
               className={`p-1.5 rounded-xl transition-all ${
                 activeTab === 'articles'
-                  ? 'bg-purple-600/30 text-purple-300 border border-purple-500/40 scale-105'
+                  ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
                   : 'text-slate-400 group-hover:text-slate-200'
               }`}
             >
@@ -426,10 +431,10 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             </div>
             <span
               className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'articles' ? 'text-purple-300 font-extrabold' : 'text-slate-400'
+                activeTab === 'articles' ? 'text-brand-300 font-extrabold' : 'text-slate-400'
               }`}
             >
-              مقالاتي
+              {t('myArticles')}
             </span>
           </button>
 
@@ -439,12 +444,12 @@ export const BottomNav: React.FC<BottomNavProps> = ({
               id="nav-writer-fab"
               type="button"
               onClick={onOpenWriteAction}
-              className="w-13 h-13 rounded-2xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-purple-700 text-white flex items-center justify-center shadow-lg shadow-purple-600/40 active:scale-90 hover:scale-105 transition-all border-2 border-slate-900"
-              title="كتابة مقال جديد"
+              className="w-13 h-13 rounded-2xl bg-gradient-to-tr from-brand-600 via-brand-600 to-brand-700 text-white flex items-center justify-center shadow-lg shadow-brand-600/40 active:scale-90 hover:scale-105 transition-all border-2 border-slate-900"
+              title={t('createArticle')}
             >
               <PenTool className="w-6 h-6 stroke-[2.2]" />
             </button>
-            <span className="text-[10px] font-black text-purple-300 mt-1">كتابة</span>
+            <span className="text-[10px] font-black text-brand-300 mt-1">{t('write')}</span>
           </div>
 
           {/* 4. لوحة الكاتب */}
@@ -457,7 +462,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             <div
               className={`p-1.5 rounded-xl transition-all ${
                 activeTab === 'dashboard'
-                  ? 'bg-purple-600/30 text-purple-300 border border-purple-500/40 scale-105'
+                  ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
                   : 'text-slate-400 group-hover:text-slate-200'
               }`}
             >
@@ -465,10 +470,10 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             </div>
             <span
               className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'dashboard' ? 'text-purple-300 font-extrabold' : 'text-slate-400'
+                activeTab === 'dashboard' ? 'text-brand-300 font-extrabold' : 'text-slate-400'
               }`}
             >
-              لوحة الكاتب
+              {t('writerPanel')}
             </span>
           </button>
 
@@ -482,23 +487,23 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             <div
               className={`p-1.5 rounded-xl transition-all relative ${
                 activeTab === 'notifications'
-                  ? 'bg-purple-600/30 text-purple-300 border border-purple-500/40 scale-105'
+                  ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
                   : 'text-slate-400 group-hover:text-slate-200'
               }`}
             >
               <Bell className="w-5 h-5" />
               {unreadCount > 0 && (
-                <span className="absolute -top-1 -end-1 w-4 h-4 bg-purple-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center ring-2 ring-slate-950 animate-pulse">
+                <span className="absolute -top-1 -end-1 w-4 h-4 bg-brand-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center ring-2 ring-slate-950 animate-pulse">
                   {unreadCount > 9 ? '9+' : unreadCount}
                 </span>
               )}
             </div>
             <span
               className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'notifications' ? 'text-purple-300 font-extrabold' : 'text-slate-400'
+                activeTab === 'notifications' ? 'text-brand-300 font-extrabold' : 'text-slate-400'
               }`}
             >
-              إشعارات
+              {t('notifications')}
             </span>
           </button>
 
@@ -512,7 +517,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             <div
               className={`p-1.5 rounded-xl transition-all ${
                 activeTab === 'profile'
-                  ? 'bg-purple-600/30 text-purple-300 border border-purple-500/40 scale-105'
+                  ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
                   : 'text-slate-400 group-hover:text-slate-200'
               }`}
             >
@@ -529,10 +534,10 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             </div>
             <span
               className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'profile' ? 'text-purple-300 font-extrabold' : 'text-slate-400'
+                activeTab === 'profile' ? 'text-brand-300 font-extrabold' : 'text-slate-400'
               }`}
             >
-              ملفي
+              {t('profile')}
             </span>
           </button>
         </div>
@@ -544,7 +549,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   return (
     <nav
       id="bottom-nav-admin"
-      className="fixed bottom-0 inset-x-0 z-40 bg-slate-950/95 backdrop-blur-xl border-t border-purple-500/20 shadow-2xl transition-colors pb-safe"
+      className="fixed bottom-0 inset-x-0 z-40 bg-slate-950/95 backdrop-blur-xl border-t border-brand-500/20 shadow-2xl transition-colors pb-safe"
     >
       <div className="max-w-lg mx-auto px-2 h-16 flex items-center justify-around">
         {/* 1. الرئيسية */}
@@ -557,7 +562,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           <div
             className={`p-1.5 rounded-xl transition-all ${
               activeTab === 'feed'
-                ? 'bg-purple-600/30 text-purple-300 border border-purple-500/40 scale-105'
+                ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
                 : 'text-slate-400 group-hover:text-slate-200'
             }`}
           >
@@ -565,10 +570,10 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           </div>
           <span
             className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-              activeTab === 'feed' ? 'text-purple-300 font-extrabold' : 'text-slate-400'
+              activeTab === 'feed' ? 'text-brand-300 font-extrabold' : 'text-slate-400'
             }`}
           >
-            الرئيسية
+            {t('home')}
           </span>
         </button>
 
@@ -585,7 +590,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           <div
             className={`p-1.5 rounded-xl transition-all ${
               activeTab === 'admin' && (adminActiveTab === 'overview' || !adminActiveTab)
-                ? 'bg-purple-600/30 text-purple-300 border border-purple-500/40 scale-105'
+                ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
                 : 'text-slate-400 group-hover:text-slate-200'
             }`}
           >
@@ -594,11 +599,11 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           <span
             className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
               activeTab === 'admin' && (adminActiveTab === 'overview' || !adminActiveTab)
-                ? 'text-purple-300 font-extrabold'
+                ? 'text-brand-300 font-extrabold'
                 : 'text-slate-400'
             }`}
           >
-            لوحة الإدارة
+            {t('adminPanel')}
           </span>
         </button>
 
@@ -615,7 +620,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           <div
             className={`p-1.5 rounded-xl transition-all ${
               activeTab === 'admin' && adminActiveTab === 'users'
-                ? 'bg-purple-600/30 text-purple-300 border border-purple-500/40 scale-105'
+                ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
                 : 'text-slate-400 group-hover:text-slate-200'
             }`}
           >
@@ -624,11 +629,11 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           <span
             className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
               activeTab === 'admin' && adminActiveTab === 'users'
-                ? 'text-purple-300 font-extrabold'
+                ? 'text-brand-300 font-extrabold'
                 : 'text-slate-400'
             }`}
           >
-            المستخدمون
+            {t('users')}
           </span>
         </button>
 
@@ -645,7 +650,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           <div
             className={`p-1.5 rounded-xl transition-all ${
               activeTab === 'admin' && adminActiveTab === 'campaigns'
-                ? 'bg-purple-600/30 text-purple-300 border border-purple-500/40 scale-105'
+                ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
                 : 'text-slate-400 group-hover:text-slate-200'
             }`}
           >
@@ -654,11 +659,11 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           <span
             className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
               activeTab === 'admin' && adminActiveTab === 'campaigns'
-                ? 'text-purple-300 font-extrabold'
+                ? 'text-brand-300 font-extrabold'
                 : 'text-slate-400'
             }`}
           >
-            الحملات
+            {t('campaigns')}
           </span>
         </button>
 
@@ -672,23 +677,23 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           <div
             className={`p-1.5 rounded-xl transition-all relative ${
               activeTab === 'notifications'
-                ? 'bg-purple-600/30 text-purple-300 border border-purple-500/40 scale-105'
+                ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
                 : 'text-slate-400 group-hover:text-slate-200'
             }`}
           >
             <Bell className="w-5 h-5" />
             {unreadCount > 0 && (
-              <span className="absolute -top-1 -end-1 w-4 h-4 bg-purple-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center ring-2 ring-slate-950 animate-pulse">
+              <span className="absolute -top-1 -end-1 w-4 h-4 bg-brand-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center ring-2 ring-slate-950 animate-pulse">
                 {unreadCount > 9 ? '9+' : unreadCount}
               </span>
             )}
           </div>
           <span
             className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-              activeTab === 'notifications' ? 'text-purple-300 font-extrabold' : 'text-slate-400'
+              activeTab === 'notifications' ? 'text-brand-300 font-extrabold' : 'text-slate-400'
             }`}
           >
-            إشعارات
+            {t('notifications')}
           </span>
         </button>
 
@@ -702,7 +707,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           <div
             className={`p-1.5 rounded-xl transition-all ${
               activeTab === 'profile'
-                ? 'bg-purple-600/30 text-purple-300 border border-purple-500/40 scale-105'
+                ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
                 : 'text-slate-400 group-hover:text-slate-200'
             }`}
           >
@@ -719,10 +724,10 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           </div>
           <span
             className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-              activeTab === 'profile' ? 'text-purple-300 font-extrabold' : 'text-slate-400'
+              activeTab === 'profile' ? 'text-brand-300 font-extrabold' : 'text-slate-400'
             }`}
           >
-            ملفي
+            {t('profile')}
           </span>
         </button>
       </div>

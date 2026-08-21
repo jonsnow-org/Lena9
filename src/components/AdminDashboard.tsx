@@ -29,6 +29,7 @@ import {
 import { User, Article, AdCampaign, FraudFlag, Transaction, Wallet, ArticlePromotion } from '../types';
 import { evaluateAdEventBatch, calculateEventCost } from '../utils/fraudFilters';
 import { REVENUE_SHARES } from '../constants/revenueShares';
+import { THEME_PRESETS, ThemePresetKey, DEFAULT_THEME_PRESET } from '../constants/themePresets';
 
 interface AdminDashboardProps {
   currentUser: User;
@@ -87,6 +88,10 @@ interface AdminDashboardProps {
     description?: string;
   }[];
   onReleaseEarning?: (earning: { id: string; userId: string; amount: number }) => void;
+  /** القالب اللوني الحالي المُطبَّق على كل التطبيق لكل المستخدمين */
+  currentThemePreset?: ThemePresetKey;
+  /** يغيّر القالب اللوني للجميع فوراً (يُكتب في Firestore) */
+  onChangeThemePreset?: (preset: ThemePresetKey) => void;
 }
 
 type AdjustableBalanceField = 'walletBalance' | 'availableBalance' | 'pendingEarnings' | 'lifetimeEarnings';
@@ -152,7 +157,7 @@ const BalanceAdjustCell: React.FC<{
             setField(e.target.value as AdjustableBalanceField);
             setConfirming(false);
           }}
-          className="bg-slate-950 border border-slate-800 text-slate-300 rounded-lg px-1.5 py-1 text-[10px] focus:outline-none focus:border-purple-500"
+          className="bg-slate-950 border border-slate-800 text-slate-300 rounded-lg px-1.5 py-1 text-[10px] focus:outline-none focus:border-brand-500"
         >
           {(Object.keys(BALANCE_FIELD_LABELS) as AdjustableBalanceField[]).map((f) => (
             <option key={f} value={f}>{BALANCE_FIELD_LABELS[f]}</option>
@@ -168,7 +173,7 @@ const BalanceAdjustCell: React.FC<{
           }}
           placeholder="± المبلغ"
           title="أدخل رقماً موجباً للإضافة أو سالباً للخصم"
-          className="w-20 bg-slate-950 border border-slate-800 text-white rounded-lg px-1.5 py-1 text-[10px] font-mono focus:outline-none focus:border-purple-500"
+          className="w-20 bg-slate-950 border border-slate-800 text-white rounded-lg px-1.5 py-1 text-[10px] font-mono focus:outline-none focus:border-brand-500"
         />
       </div>
       <input
@@ -179,7 +184,7 @@ const BalanceAdjustCell: React.FC<{
           setConfirming(false);
         }}
         placeholder="سبب التعديل (إلزامي — يُسجَّل في سجل التدقيق)"
-        className="w-full bg-slate-950 border border-slate-800 text-slate-300 rounded-lg px-1.5 py-1 text-[10px] focus:outline-none focus:border-purple-500"
+        className="w-full bg-slate-950 border border-slate-800 text-slate-300 rounded-lg px-1.5 py-1 text-[10px] focus:outline-none focus:border-brand-500"
       />
       {confirming && (
         <p className="text-[10px] text-amber-400 font-bold">
@@ -189,7 +194,7 @@ const BalanceAdjustCell: React.FC<{
       <button
         onClick={handleApply}
         disabled={!canApply}
-        className="px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-700 disabled:opacity-30 disabled:cursor-not-allowed text-white text-[10px] font-bold transition-all"
+        className="px-2.5 py-1 rounded-lg bg-brand-600 hover:bg-brand-700 disabled:opacity-30 disabled:cursor-not-allowed text-white text-[10px] font-bold transition-all"
       >
         {confirming ? 'تأكيد نهائي' : 'تطبيق'}
       </button>
@@ -227,7 +232,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   earningsRecords = [],
   onReleaseEarning,
   activeTab: externalActiveTab,
-  onActiveTabChange
+  onActiveTabChange,
+  currentThemePreset = DEFAULT_THEME_PRESET,
+  onChangeThemePreset
 }) => {
   const [internalActiveTab, setInternalActiveTab] = useState<
     'overview' | 'fraud' | 'campaigns' | 'moderation' | 'users' | 'finance' | 'settings'
@@ -318,10 +325,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 pb-24">
       {/* Top Admin Header Bar */}
-      <div className="bg-gradient-to-r from-purple-950/80 via-slate-900 to-indigo-950/80 border-b border-purple-500/20 px-4 sm:px-8 py-6">
+      <div className="bg-gradient-to-r from-brand-950/80 via-slate-900 to-brand-950/80 border-b border-brand-500/20 px-4 sm:px-8 py-6">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-purple-600/30">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-brand-600 to-brand-600 flex items-center justify-center shadow-lg shadow-brand-600/30">
               <ShieldAlert className="w-6 h-6 text-white" />
             </div>
             <div>
@@ -329,7 +336,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
                   لوحة الإدارة المركزية والمالك
                 </h1>
-                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-brand-500/20 text-brand-300 border border-brand-500/30">
                   صلاحيات كاملة 🛡️
                 </span>
               </div>
@@ -340,7 +347,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
 
           {/* Quick Realtime Shield Status */}
-          <div className="flex flex-wrap items-center gap-3 bg-slate-900/90 border border-purple-500/20 rounded-2xl p-2.5 px-4 shadow-inner">
+          <div className="flex flex-wrap items-center gap-3 bg-slate-900/90 border border-brand-500/20 rounded-2xl p-2.5 px-4 shadow-inner">
             <div className="flex items-center gap-2 text-xs">
               <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
               <span className="text-slate-300 font-medium">درع مكافحة الاحتيال:</span>
@@ -376,7 +383,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 onClick={() => setActiveTab(tab.id as any)}
                 className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all ${
                   isActive
-                    ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-600/30'
+                    ? 'bg-gradient-to-r from-brand-600 to-brand-600 text-white shadow-lg shadow-brand-600/30'
                     : 'bg-slate-900/60 text-slate-400 hover:text-slate-200 hover:bg-slate-800/80 border border-slate-800'
                 }`}
               >
@@ -385,7 +392,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 {tab.badge !== undefined && tab.badge > 0 && (
                   <span
                     className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono font-bold ${
-                      isActive ? 'bg-white/20 text-white' : 'bg-slate-800 text-purple-300'
+                      isActive ? 'bg-white/20 text-white' : 'bg-slate-800 text-brand-300'
                     }`}
                   >
                     {tab.badge}
@@ -406,10 +413,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <div className="space-y-6">
             {/* Top Stat Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="p-5 rounded-2xl bg-gradient-to-br from-slate-900 to-purple-950/40 border border-purple-500/20 shadow-lg">
+              <div className="p-5 rounded-2xl bg-gradient-to-br from-slate-900 to-brand-950/40 border border-brand-500/20 shadow-lg">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-semibold text-slate-400">إجمالي دخل المنصة الصافي</span>
-                  <div className="w-8 h-8 rounded-xl bg-purple-500/20 flex items-center justify-center text-purple-400">
+                  <div className="w-8 h-8 rounded-xl bg-brand-500/20 flex items-center justify-center text-brand-400">
                     <DollarSign className="w-4 h-4" />
                   </div>
                 </div>
@@ -469,13 +476,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
 
             {/* Dual System Revenue Architecture Visualizer */}
-            <div className="p-6 rounded-2xl bg-slate-900/90 border border-purple-500/20">
+            <div className="p-6 rounded-2xl bg-slate-900/90 border border-brand-500/20">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  <Layers className="w-5 h-5 text-purple-400" />
+                  <Layers className="w-5 h-5 text-brand-400" />
                   هيكلية النظام الإعلاني المزدوج (Dual Advertising System)
                 </h3>
-                <span className="text-xs text-purple-300 font-mono bg-purple-950/60 px-3 py-1 rounded-full border border-purple-500/30">
+                <span className="text-xs text-brand-300 font-mono bg-brand-950/60 px-3 py-1 rounded-full border border-brand-500/30">
                   Zero Revenue Leakage Guaranteed
                 </span>
               </div>
@@ -510,26 +517,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
 
                 {/* Writer Ads Box */}
-                <div className="p-5 rounded-xl bg-gradient-to-br from-purple-950/30 to-slate-900 border border-purple-500/20">
+                <div className="p-5 rounded-xl bg-gradient-to-br from-brand-950/30 to-slate-900 border border-brand-500/20">
                   <div className="flex items-center justify-between mb-3">
-                    <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                    <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-brand-500/20 text-brand-300 border border-brand-500/30">
                       إعلانات الكُتّاب التشاركية (Writer Ads)
                     </span>
-                    <span className="text-xs font-black text-purple-400 font-mono">
+                    <span className="text-xs font-black text-brand-400 font-mono">
                       تقاسم {REVENUE_SHARES.IN_ARTICLE_ADS.WRITER_PERCENT}% كاتب / {REVENUE_SHARES.IN_ARTICLE_ADS.PLATFORM_PERCENT}% منصة
                     </span>
                   </div>
                   <ul className="text-xs text-slate-300 space-y-2 mb-4">
                     <li className="flex items-center gap-2">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-purple-400" />
+                      <CheckCircle2 className="w-3.5 h-3.5 text-brand-400" />
                       <span>تظهر داخل مقالات الكاتب (55% للكاتب / 45% للمنصة) وفي صفحته الشخصية (50% / 50%).</span>
                     </li>
                     <li className="flex items-center gap-2">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-purple-400" />
+                      <CheckCircle2 className="w-3.5 h-3.5 text-brand-400" />
                       <span>المبيعات للمقالات الحصرية: 85% للكاتب / 15% للمنصة.</span>
                     </li>
                     <li className="flex items-center gap-2">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-purple-400" />
+                      <CheckCircle2 className="w-3.5 h-3.5 text-brand-400" />
                       <span>محمية بالكامل بدرع منع النقر الذاتي (Self-Click Shield) وفحص CPM.</span>
                     </li>
                   </ul>
@@ -552,7 +559,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </h4>
                   <button
                     onClick={() => setActiveTab('fraud')}
-                    className="text-xs text-purple-400 hover:text-purple-300 font-semibold"
+                    className="text-xs text-brand-400 hover:text-brand-300 font-semibold"
                   >
                     عرض الكل ({fraudFlags.length})
                   </button>
@@ -593,7 +600,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800">
                 <div className="flex items-center justify-between mb-4">
                   <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                    <Activity className="w-4 h-4 text-purple-400" />
+                    <Activity className="w-4 h-4 text-brand-400" />
                     المهام والإجراءات المعلقة
                   </h4>
                   <span className="text-xs text-slate-400">مراجعة فورية</span>
@@ -609,7 +616,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </div>
                     <button
                       onClick={() => setActiveTab('finance')}
-                      className="px-3 py-1.5 rounded-lg bg-purple-600 text-white font-bold hover:bg-purple-500 text-xs"
+                      className="px-3 py-1.5 rounded-lg bg-brand-600 text-white font-bold hover:bg-brand-500 text-xs"
                     >
                       معالجة
                     </button>
@@ -624,7 +631,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </div>
                     <button
                       onClick={() => setActiveTab('users')}
-                      className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-bold hover:bg-indigo-500 text-xs"
+                      className="px-3 py-1.5 rounded-lg bg-brand-600 text-white font-bold hover:bg-brand-500 text-xs"
                     >
                       فحص KYC
                     </button>
@@ -680,7 +687,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     onClick={() => setFraudFilter(f.id)}
                     className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
                       fraudFilter === f.id
-                        ? 'bg-purple-600 text-white'
+                        ? 'bg-brand-600 text-white'
                         : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
                     }`}
                   >
@@ -710,7 +717,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     {filteredFraudFlags.map((flag) => (
                       <tr key={flag.id} className="hover:bg-slate-800/40 transition-colors">
                         <td className="p-3.5">
-                          <div className="font-mono font-bold text-purple-300">{flag.id}</div>
+                          <div className="font-mono font-bold text-brand-300">{flag.id}</div>
                           <div className="text-[11px] text-slate-500">{flag.detectedAt}</div>
                         </td>
 
@@ -722,7 +729,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             {flag.triggerType === 'click_throttle' && 'تكرار نقرات محظور'}
                             {flag.triggerType === 'bot_pattern' && 'نمط بوت مشبوه'}
                           </div>
-                          <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-slate-800 text-purple-300">
+                          <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-slate-800 text-brand-300">
                             {flag.pricingModel}
                           </span>
                         </td>
@@ -847,10 +854,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             )}
 
             {/* Master Controls Header */}
-            <div className="p-5 rounded-2xl bg-slate-900/90 border border-purple-500/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="p-5 rounded-2xl bg-slate-900/90 border border-brand-500/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div>
                 <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  <Megaphone className="w-5 h-5 text-purple-400" />
+                  <Megaphone className="w-5 h-5 text-brand-400" />
                   إدارة الحملات ونظام الإعلانات المركزي
                 </h3>
                 <p className="text-xs text-slate-400 mt-1">
@@ -865,7 +872,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   type="button"
                   onClick={() => setPlatformAdsEnabled(!platformAdsEnabled)}
                   className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                    platformAdsEnabled ? 'bg-purple-600' : 'bg-slate-700'
+                    platformAdsEnabled ? 'bg-brand-600' : 'bg-slate-700'
                   }`}
                 >
                   <span
@@ -882,12 +889,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               {campaigns.map((camp) => (
                 <div
                   key={camp.id}
-                  className="p-5 rounded-2xl bg-slate-900/90 border border-slate-800 flex flex-col justify-between hover:border-purple-500/30 transition-all shadow-lg"
+                  className="p-5 rounded-2xl bg-slate-900/90 border border-slate-800 flex flex-col justify-between hover:border-brand-500/30 transition-all shadow-lg"
                 >
                   <div>
                     <div className="flex items-start justify-between gap-2 mb-3">
                       <div>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 font-mono">
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-brand-500/20 text-brand-300 border border-brand-500/30 font-mono">
                           {camp.pricingModel.toUpperCase()}
                         </span>
                         <h4 className="text-sm font-bold text-white mt-1 line-clamp-1">
@@ -923,7 +930,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </div>
                       <div>
                         <div className="text-[10px] text-slate-400">النقرات/الظهور</div>
-                        <div className="text-xs font-bold text-purple-300 font-mono">
+                        <div className="text-xs font-bold text-brand-300 font-mono">
                           {camp.clicksCount}/{camp.impressionsCount}
                         </div>
                       </div>
@@ -968,7 +975,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl bg-slate-900/90 border border-slate-800">
               <div>
                 <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  <FileText className="w-5 h-5 text-purple-400" />
+                  <FileText className="w-5 h-5 text-brand-400" />
                   حوكمة المحتوى والمقالات المنشورة
                 </h3>
                 <p className="text-xs text-slate-400 mt-1">
@@ -983,7 +990,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     onClick={() => setArticleFilter(f)}
                     className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
                       articleFilter === f
-                        ? 'bg-purple-600 text-white'
+                        ? 'bg-brand-600 text-white'
                         : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
                     }`}
                   >
@@ -1006,11 +1013,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 .map((art) => (
                   <div
                     key={art.id}
-                    className="p-5 rounded-2xl bg-slate-900/90 border border-slate-800 flex flex-col justify-between hover:border-purple-500/30 transition-all"
+                    className="p-5 rounded-2xl bg-slate-900/90 border border-slate-800 flex flex-col justify-between hover:border-brand-500/30 transition-all"
                   >
                     <div>
                       <div className="flex items-center justify-between gap-2 mb-2">
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-purple-500/20 text-purple-300">
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-brand-500/20 text-brand-300">
                           {art.category}
                         </span>
                         {art.isLocked && (
@@ -1034,7 +1041,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </div>
                         <div>
                           <div className="text-[10px] text-slate-400">إيراد الإعلانات</div>
-                          <div className="font-bold text-purple-300 font-mono">${art.revenueFromAds}</div>
+                          <div className="font-bold text-brand-300 font-mono">${art.revenueFromAds}</div>
                         </div>
                         <div>
                           <div className="text-[10px] text-slate-400">إيراد المبيعات</div>
@@ -1046,7 +1053,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <div className="flex items-center gap-2 pt-3 border-t border-slate-800">
                       <button
                         onClick={() => onSelectArticle?.(art)}
-                        className="flex-1 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all"
+                        className="flex-1 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold transition-all"
                       >
                         معاينة المقال
                       </button>
@@ -1076,7 +1083,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   placeholder="البحث بالاسم، المعرف، أو البريد الإلكتروني..."
                   value={userSearch}
                   onChange={(e) => setUserSearch(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl pr-9 pl-4 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl pr-9 pl-4 py-2 text-xs text-white focus:outline-none focus:border-brand-500"
                 />
               </div>
 
@@ -1087,7 +1094,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     onClick={() => setUserRoleFilter(r)}
                     className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
                       userRoleFilter === r
-                        ? 'bg-purple-600 text-white'
+                        ? 'bg-brand-600 text-white'
                         : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
                     }`}
                   >
@@ -1125,7 +1132,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               src={u.avatarUrl}
                               alt={u.fullName}
                               referrerPolicy="no-referrer"
-                              className="w-9 h-9 rounded-xl object-cover border border-purple-500/20"
+                              className="w-9 h-9 rounded-xl object-cover border border-brand-500/20"
                             />
                             <div>
                               <div className="font-bold text-white flex items-center gap-1.5">
@@ -1141,7 +1148,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <select
                             value={u.role}
                             onChange={(e) => onUpdateUserRole?.(u.id, e.target.value as any)}
-                            className="bg-slate-950 border border-slate-800 text-purple-300 rounded-lg px-2 py-1 text-xs font-bold focus:outline-none focus:border-purple-500"
+                            className="bg-slate-950 border border-slate-800 text-brand-300 rounded-lg px-2 py-1 text-xs font-bold focus:outline-none focus:border-brand-500"
                           >
                             <option value="reader">قارئ (Reader)</option>
                             <option value="writer">كاتب (Writer)</option>
@@ -1218,7 +1225,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         {/* ============================================================ */}
         {activeTab === 'finance' && (
           <div className="space-y-6">
-            <div className="p-5 rounded-2xl bg-slate-900/90 border border-purple-500/20">
+            <div className="p-5 rounded-2xl bg-slate-900/90 border border-brand-500/20">
               <h3 className="text-base font-bold text-white flex items-center gap-2 mb-1">
                 <DollarSign className="w-5 h-5 text-emerald-400" />
                 معالجة طلبات سحب أرباح الكُتّاب
@@ -1245,7 +1252,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     {transactions.map((tx) => (
                       <tr key={tx.id} className="hover:bg-slate-800/40 transition-colors">
                         <td className="p-3.5 font-mono">
-                          <div className="font-bold text-purple-300">{tx.referenceId || tx.id}</div>
+                          <div className="font-bold text-brand-300">{tx.referenceId || tx.id}</div>
                           <div className="text-[11px] text-slate-500">{tx.createdAt}</div>
                         </td>
 
@@ -1659,7 +1666,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           )}
                         </div>
                         <div className="flex items-center gap-3 shrink-0">
-                          <div className="font-black text-purple-400 font-mono text-sm">
+                          <div className="font-black text-brand-400 font-mono text-sm">
                             ${(req.amount || 0).toFixed(2)}
                           </div>
                           {onUpdateMoneyRequest && req.status !== 'paid' && req.status !== 'rejected' && (
@@ -1781,9 +1788,47 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
         {activeTab === 'settings' && (
           <div className="max-w-3xl space-y-6">
+            {onChangeThemePreset && (
+              <div className="p-6 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-4">
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-brand-400" />
+                  لون قالب التطبيق (لكل المستخدمين)
+                </h3>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  اختيارك هنا يغيّر اللون الأساسي للتطبيق فوراً لكل المستخدمين المتصلين حالياً
+                  (الأزرار، شريط التنقل، الشارات، الروابط النشطة)، دون الحاجة لإعادة نشر التطبيق.
+                  ألوان النجاح/التحذير/الخطر (أخضر/أصفر/أحمر) لا تتغيّر أبداً — تبقى واضحة الدلالة دائماً.
+                </p>
+                <div className="grid grid-cols-4 sm:grid-cols-7 gap-3">
+                  {Object.values(THEME_PRESETS).map((preset) => {
+                    const isActive = currentThemePreset === preset.key;
+                    return (
+                      <button
+                        key={preset.key}
+                        onClick={() => onChangeThemePreset(preset.key)}
+                        title={preset.label}
+                        className={`flex flex-col items-center gap-1.5 p-2.5 rounded-2xl border-2 transition-all ${
+                          isActive ? 'border-white shadow-lg scale-105' : 'border-transparent hover:border-slate-600'
+                        }`}
+                      >
+                        <span
+                          className="w-9 h-9 rounded-full ring-2 ring-slate-800"
+                          style={{ backgroundColor: preset.swatch }}
+                        />
+                        <span className={`text-[10px] font-bold ${isActive ? 'text-white' : 'text-slate-400'}`}>
+                          {preset.label}
+                        </span>
+                        {isActive && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <div className="p-6 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-4">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <Settings className="w-5 h-5 text-purple-400" />
+                <Settings className="w-5 h-5 text-brand-400" />
                 معايير الأمان المالي وتقاسم الأرباح
               </h3>
 
@@ -1801,7 +1846,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <div className="font-bold text-white">حصة المنصة من مبيعات المقالات المقفولة</div>
                     <div className="text-[11px] text-slate-400">عمولة تشغيل المنصة واستضافة المحتوى المشفر</div>
                   </div>
-                  <span className="font-mono font-bold text-purple-400 text-sm">{REVENUE_SHARES.LOCKED_ARTICLES.PLATFORM_PERCENT}% (يحصل الكاتب {REVENUE_SHARES.LOCKED_ARTICLES.WRITER_PERCENT}%)</span>
+                  <span className="font-mono font-bold text-brand-400 text-sm">{REVENUE_SHARES.LOCKED_ARTICLES.PLATFORM_PERCENT}% (يحصل الكاتب {REVENUE_SHARES.LOCKED_ARTICLES.WRITER_PERCENT}%)</span>
                 </div>
 
                 <div className="flex items-center justify-between p-3 rounded-xl bg-slate-950 border border-slate-800">

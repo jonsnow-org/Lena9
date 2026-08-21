@@ -368,7 +368,7 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
                 onClick={() => setViewMode('preview')}
                 className={`px-3 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1 ${
                   viewMode === 'preview'
-                    ? 'bg-white dark:bg-slate-700 text-purple-600 dark:text-purple-300 shadow-2xs'
+                    ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-300 shadow-2xs'
                     : 'text-slate-600 dark:text-slate-400'
                 }`}
               >
@@ -414,8 +414,8 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
         )}
 
         {/* AI Writing Suite Toolbar Bar */}
-        <div className="px-5 py-2.5 bg-gradient-to-r from-purple-950/40 via-indigo-950/30 to-slate-900 border-b border-purple-500/20 flex flex-wrap items-center justify-between gap-2 text-xs">
-          <div className="flex items-center gap-1.5 text-purple-300 font-bold">
+        <div className="px-5 py-2.5 bg-gradient-to-r from-brand-950/40 via-brand-950/30 to-slate-900 border-b border-brand-500/20 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex items-center gap-1.5 text-brand-300 font-bold">
             <Sparkles className="w-4 h-4 text-amber-400" />
             <span>أدوات الذكاء الاصطناعي (Gemini):</span>
           </div>
@@ -425,9 +425,9 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
               type="button"
               disabled={isAiLoading}
               onClick={() => handleAiAction('suggest_titles')}
-              className="px-2.5 py-1.5 rounded-xl bg-purple-900/40 hover:bg-purple-800/60 border border-purple-500/30 text-purple-200 font-medium whitespace-nowrap active:scale-95 transition-all flex items-center gap-1"
+              className="px-2.5 py-1.5 rounded-xl bg-brand-900/40 hover:bg-brand-800/60 border border-brand-500/30 text-brand-200 font-medium whitespace-nowrap active:scale-95 transition-all flex items-center gap-1"
             >
-              <Wand2 className="w-3 h-3 text-purple-300" />
+              <Wand2 className="w-3 h-3 text-brand-300" />
               <span>اقتراح عناوين</span>
             </button>
 
@@ -435,7 +435,7 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
               type="button"
               disabled={isAiLoading}
               onClick={() => handleAiAction('generate_paragraph')}
-              className="px-2.5 py-1.5 rounded-xl bg-purple-900/40 hover:bg-purple-800/60 border border-purple-500/30 text-purple-200 font-medium whitespace-nowrap active:scale-95 transition-all flex items-center gap-1"
+              className="px-2.5 py-1.5 rounded-xl bg-brand-900/40 hover:bg-brand-800/60 border border-brand-500/30 text-brand-200 font-medium whitespace-nowrap active:scale-95 transition-all flex items-center gap-1"
             >
               <PenTool className="w-3 h-3 text-teal-300" />
               <span>توليد فقرة</span>
@@ -445,7 +445,7 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
               type="button"
               disabled={isAiLoading}
               onClick={() => handleAiAction('improve_style')}
-              className="px-2.5 py-1.5 rounded-xl bg-purple-900/40 hover:bg-purple-800/60 border border-purple-500/30 text-purple-200 font-medium whitespace-nowrap active:scale-95 transition-all flex items-center gap-1"
+              className="px-2.5 py-1.5 rounded-xl bg-brand-900/40 hover:bg-brand-800/60 border border-brand-500/30 text-brand-200 font-medium whitespace-nowrap active:scale-95 transition-all flex items-center gap-1"
             >
               <Sparkles className="w-3 h-3 text-amber-300" />
               <span>تحسين الأسلوب</span>
@@ -455,7 +455,7 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
               type="button"
               disabled={isAiLoading}
               onClick={() => handleAiAction('summarize_article')}
-              className="px-2.5 py-1.5 rounded-xl bg-purple-900/40 hover:bg-purple-800/60 border border-purple-500/30 text-purple-200 font-medium whitespace-nowrap active:scale-95 transition-all flex items-center gap-1"
+              className="px-2.5 py-1.5 rounded-xl bg-brand-900/40 hover:bg-brand-800/60 border border-brand-500/30 text-brand-200 font-medium whitespace-nowrap active:scale-95 transition-all flex items-center gap-1"
             >
               <FileText className="w-3 h-3 text-cyan-300" />
               <span>تلخيص المقال</span>
@@ -465,7 +465,7 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
               type="button"
               disabled={isAiLoading}
               onClick={() => handleAiAction('suggest_categories')}
-              className="px-2.5 py-1.5 rounded-xl bg-purple-900/40 hover:bg-purple-800/60 border border-purple-500/30 text-purple-200 font-medium whitespace-nowrap active:scale-95 transition-all flex items-center gap-1"
+              className="px-2.5 py-1.5 rounded-xl bg-brand-900/40 hover:bg-brand-800/60 border border-brand-500/30 text-brand-200 font-medium whitespace-nowrap active:scale-95 transition-all flex items-center gap-1"
             >
               <Tag className="w-3 h-3 text-emerald-300" />
               <span>اقتراح وسوم</span>
@@ -474,7 +474,7 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
 
           <div className="text-[11px] text-slate-400 flex items-center gap-1">
             <span>المتبقي اليوم:</span>
-            <span className="font-bold text-purple-300">
+            <span className="font-bold text-brand-300">
               {quotaStats?.isUnlimited ? '∞ غير محدود' : `${quotaStats?.remaining ?? 5}/5`}
             </span>
           </div>
@@ -482,7 +482,7 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
 
         {/* AI Output Banner if present */}
         {isAiLoading && (
-          <div className="p-3 bg-purple-950/60 border-b border-purple-500/30 flex items-center justify-center gap-2 text-xs text-purple-200 animate-pulse">
+          <div className="p-3 bg-brand-950/60 border-b border-brand-500/30 flex items-center justify-center gap-2 text-xs text-brand-200 animate-pulse">
             <Loader2 className="w-4 h-4 animate-spin text-teal-400" />
             <span>جاري صياغة وتحليل النص باستخدام Gemini AI...</span>
           </div>
@@ -501,7 +501,7 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
         )}
 
         {aiOutput && (
-          <div className="p-4 bg-purple-950/80 border-b border-purple-500/40 space-y-2.5">
+          <div className="p-4 bg-brand-950/80 border-b border-brand-500/40 space-y-2.5">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-teal-300 flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5" />
@@ -546,7 +546,7 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
                 <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/30 to-transparent" />
                 <div className="absolute bottom-6 start-6 end-6 text-white space-y-2">
                   <div className="flex items-center gap-2">
-                    <span className="px-3 py-1 rounded-xl bg-purple-600 text-white text-xs font-bold shadow-md">
+                    <span className="px-3 py-1 rounded-xl bg-brand-600 text-white text-xs font-bold shadow-md">
                       {category}
                     </span>
                     {isLocked && (
@@ -582,7 +582,7 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
 
               {/* Excerpt */}
               {description && (
-                <div className="p-4 rounded-2xl bg-purple-50 dark:bg-purple-950/20 border-s-4 border-purple-600 text-slate-700 dark:text-slate-300 text-sm italic">
+                <div className="p-4 rounded-2xl bg-brand-50 dark:bg-brand-950/20 border-s-4 border-brand-600 text-slate-700 dark:text-slate-300 text-sm italic">
                   {description}
                 </div>
               )}
