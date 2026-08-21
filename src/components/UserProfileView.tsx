@@ -3,6 +3,7 @@ import {
   User as UserIcon,
   Rocket,
   Wallet,
+  ShieldCheck,
   Award,
   BookOpen,
   Bookmark,
@@ -95,6 +96,12 @@ interface UserProfileViewProps {
   /** عدد الكتّاب الذين يتابعهم هذا المستخدم فعلياً (followedWriterIds.length)
    *  — بخلاف currentUser.followingCount المخزَّن الذي لا يُحدَّث أبداً. */
   followingCount?: number;
+  /** عدّادات الإشعارات المعلَّقة لخانات لوحة الأدمن المجمَّعة في هذه
+   *  الصفحة (أدوات المستخدمين/الدفع/الأمان) — اختيارية، تُخفى الشارة
+   *  ببساطة إن لم تُمرَّر. */
+  pendingKycCount?: number;
+  pendingMoneyCount?: number;
+  pendingFraudCount?: number;
 }
 
 export const UserProfileView: React.FC<UserProfileViewProps> = ({
@@ -125,11 +132,17 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   initialWriterTab,
   onWriterTabChange,
   onNavigateToAdmin,
-  followingCount
+  followingCount,
+  pendingKycCount = 0,
+  pendingMoneyCount = 0,
+  pendingFraudCount = 0
 }) => {
   const safeArticles = Array.isArray(articles) ? articles : [];
   const safeBookmarkedIds = Array.isArray(bookmarkedArticleIds) ? bookmarkedArticleIds : [];
   const safeCampaigns = Array.isArray(campaigns) ? campaigns : [];
+  // حملات بحالة "مسودة" بانتظار اعتماد الأدمن — نفس التعريف المستخدم في
+  // صندوق "حملات بانتظار الاعتماد" داخل AdminDashboard.
+  const pendingCampaignsCount = safeCampaigns.filter((c: any) => c.status === 'draft').length;
 
   // Common Active Tab state
   const [readerTab, setReaderTab] = useState<'bookmarks' | 'history' | 'campaigns' | 'following' | 'quota_wallet' | 'settings'>('bookmarks');
@@ -1334,12 +1347,11 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
               إدارة المستخدمين، مراجعة طلبات السحب والإيداع، اعتماد الحملات الإعلانية، ومتابعة
               التقارير المالية — كل ذلك من لوحة الإدارة المخصصة.
             </p>
-            {/* زر "فتح لوحة الإدارة الكاملة" و"طلبات الإيداع والسحب" أُزيلا
-                من هذه البطاقة عمداً — زر "لوحة الإدارة" في الشريط السفلي
-                (المرئي دائماً حتى في هذه الشاشة نفسها) هو المدخل الوحيد
-                للوحة الإدارة بكل تبويباتها، فلا حاجة لتكراره هنا. بقيت
-                المحفظة وحدها لأنها المدخل الوحيد المتاح للأدمن للوصول
-                السريع لرصيده من هذه الصفحة تحديداً. */}
+            {/* زر "فتح لوحة الإدارة الكاملة" أُزيل من هذه البطاقة عمداً —
+                زر "لوحة الإدارة" في الشريط السفلي (المرئي دائماً حتى في
+                هذه الشاشة نفسها) هو المدخل الوحيد للوحة الإدارة العامة.
+                بقيت المحفظة وحدها لأنها المدخل الوحيد المتاح للأدمن
+                للوصول السريع لرصيده من هذه الصفحة تحديداً. */}
             <div className="mt-4">
               <button
                 onClick={onOpenWallet}
@@ -1349,6 +1361,70 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                 <span>المحفظة (${(currentUser.availableBalance ?? currentUser.walletBalance ?? 0).toFixed(2)})</span>
               </button>
             </div>
+          </div>
+
+          {/* خانات أدوات الإدارة المجمَّعة — بدل تناثر روابط الاختصار
+              السابقة عبر القائمة الجانبية والشريط السفلي وهذه الصفحة معاً
+              (وهو ما كان يخلق التكرار الحقيقي)، أصبح هذا المكان الوحيد
+              لروابط الوصول السريع المباشر لتبويب محدد داخل لوحة الإدارة،
+              مجمَّعة في 4 خانات باسم يدل على وظيفتها، كل خانة تحمل شارة
+              عدد المعلَّق فيها إن وُجد. */}
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => onNavigateToAdmin?.('users')}
+              className="relative p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center hover:border-blue-400 active:scale-95 transition-all"
+            >
+              {pendingKycCount > 0 && (
+                <span className="absolute top-2 end-2 min-w-5 h-5 px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center">
+                  {pendingKycCount}
+                </span>
+              )}
+              <Users className="w-5 h-5 text-blue-500 mx-auto mb-1.5" />
+              <span className="text-xs font-bold text-slate-700 dark:text-slate-200">أدوات المستخدمين</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onNavigateToAdmin?.('campaigns')}
+              className="relative p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center hover:border-cyan-400 active:scale-95 transition-all"
+            >
+              {pendingCampaignsCount > 0 && (
+                <span className="absolute top-2 end-2 min-w-5 h-5 px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center">
+                  {pendingCampaignsCount}
+                </span>
+              )}
+              <Megaphone className="w-5 h-5 text-cyan-500 mx-auto mb-1.5" />
+              <span className="text-xs font-bold text-slate-700 dark:text-slate-200">أدوات الإعلانات</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onNavigateToAdmin?.('money')}
+              className="relative p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center hover:border-amber-400 active:scale-95 transition-all"
+            >
+              {pendingMoneyCount > 0 && (
+                <span className="absolute top-2 end-2 min-w-5 h-5 px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center">
+                  {pendingMoneyCount}
+                </span>
+              )}
+              <DollarSign className="w-5 h-5 text-amber-500 mx-auto mb-1.5" />
+              <span className="text-xs font-bold text-slate-700 dark:text-slate-200">أدوات الدفع</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onNavigateToAdmin?.('fraud')}
+              className="relative p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center hover:border-emerald-400 active:scale-95 transition-all"
+            >
+              {pendingFraudCount > 0 && (
+                <span className="absolute top-2 end-2 min-w-5 h-5 px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center">
+                  {pendingFraudCount}
+                </span>
+              )}
+              <ShieldCheck className="w-5 h-5 text-emerald-500 mx-auto mb-1.5" />
+              <span className="text-xs font-bold text-slate-700 dark:text-slate-200">الأمان ومكافحة الاحتيال</span>
+            </button>
           </div>
         </div>
       )}

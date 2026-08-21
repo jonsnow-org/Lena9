@@ -2300,6 +2300,15 @@ export function App() {
   // دالة الترجمة الحالية — تُعاد بناؤها فقط عند تغيّر اللغة المختارة.
   const t = useMemo(() => getTranslator(language), [language]);
 
+  // عدّادات المعلَّق لخانات لوحة الأدمن المجمَّعة في صفحة "ملفي" — نفس
+  // تعريف كل عدّاد المستخدَم في شارات AdminDashboard نفسها تماماً، حتى
+  // لا يعرض الرقمان (هنا وهناك) قيمتين مختلفتين لنفس المعنى.
+  const pendingKycCount = users.filter((u: any) => u.kycDetails?.status === 'pending').length;
+  const pendingMoneyCount = [...depositRequests, ...payoutRequests, ...purchaseRequests].filter(
+    (r) => r.status === 'pending'
+  ).length;
+  const pendingFraudCount = fraudFlags.length;
+
   const unreadNotifsCount = notifications.filter((n) => !n.isRead).length;
   // عدد الرسائل الخاصة غير المقروءة الواردة للمستخدم الحالي فعلياً — كان
   // هذا الرقم يُمرَّر دائماً كصفر ثابت لعدم اشتقاقه من بيانات الرسائل
@@ -2492,6 +2501,9 @@ export function App() {
             promotions={promotions}
             onSaveSocialLinks={handleSaveSocialLinks}
             onSaveProfile={handleSaveProfile}
+            pendingKycCount={pendingKycCount}
+            pendingMoneyCount={pendingMoneyCount}
+            pendingFraudCount={pendingFraudCount}
             onOpenSubscription={() => setIsSubscriptionOpen(true)}
             onSwitchUserRole={handleSwitchRole}
             theme={theme}
@@ -2543,6 +2555,9 @@ export function App() {
             promotions={promotions}
             onSaveSocialLinks={handleSaveSocialLinks}
             onSaveProfile={handleSaveProfile}
+            pendingKycCount={pendingKycCount}
+            pendingMoneyCount={pendingMoneyCount}
+            pendingFraudCount={pendingFraudCount}
             onOpenSubscription={() => setIsSubscriptionOpen(true)}
             onSwitchUserRole={handleSwitchRole}
             theme={theme}

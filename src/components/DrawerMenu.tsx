@@ -304,56 +304,60 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
               {/* استكشاف والمحفوظات: روابط عامة لأي مستخدم (بما فيهم من ترقّى
                   فعلياً لدور كاتب/معلن) — وليست حكراً على من لم يمارس أي
                   نشاط بعد، حتى لا تختفي من قوائم الكتّاب والمعلنين. */}
-              {persona === 'admin' && (
-                <span className="block text-[11px] font-bold text-slate-400 mb-1 px-1 pt-2">
-                  روابط عامة:
-                </span>
-              )}
-              <button
-                onClick={() => {
-                  onNavigateTab?.('explore');
-                  onClose();
-                }}
-                className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
-              >
-                <div className="flex items-center gap-3">
-                  <BookOpen className="w-4 h-4 text-brand-400" />
-                  <span>استكشاف المقالات والكتب</span>
-                </div>
-                <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
-              </button>
+              {/* استكشاف/إنشاء إعلان/المحفوظات/توثيق الهوية: مخفية عمداً عن
+                  حساب الأدمن — لا تنطبق عليه كمالك للمنصة (لا يحتاج توثيق
+                  هويته الخاصة)، أو أصبحت مجمَّعة كخانات مخصصة في صفحة
+                  "ملفي" بدل تكرارها هنا أيضاً. يبقى للأدمن في هذه المنطقة
+                  المحفظة فقط، كما طُلِب صراحة. */}
+              {persona !== 'admin' && (
+                <>
+                  <button
+                    onClick={() => {
+                      onNavigateTab?.('explore');
+                      onClose();
+                    }}
+                    className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      <BookOpen className="w-4 h-4 text-brand-400" />
+                      <span>استكشاف المقالات والكتب</span>
+                    </div>
+                    <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
+                  </button>
 
-              {/* إنشاء إعلان: متاح لأي حساب مسجَّل غير الزائر، ما عدا من لديه
-                  أصلاً زر حملات مخصص أعلاه (شخصية "معلن") تفادياً للتكرار. */}
-              {currentUser.id !== 'guest' && persona !== 'advertiser' && (
-                <button
-                  onClick={() => {
-                    onNavigateTab?.('campaigns');
-                    onClose();
-                  }}
-                  className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <Megaphone className="w-4 h-4 text-cyan-400" />
-                    <span>إنشاء إعلان وترويج (قارئ ومُعلن)</span>
-                  </div>
-                  <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
-                </button>
-              )}
+                  {/* إنشاء إعلان: متاح لأي حساب مسجَّل غير الزائر، ما عدا من لديه
+                      أصلاً زر حملات مخصص أعلاه (شخصية "معلن") تفادياً للتكرار. */}
+                  {currentUser.id !== 'guest' && persona !== 'advertiser' && (
+                    <button
+                      onClick={() => {
+                        onNavigateTab?.('campaigns');
+                        onClose();
+                      }}
+                      className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <Megaphone className="w-4 h-4 text-cyan-400" />
+                        <span>إنشاء إعلان وترويج (قارئ ومُعلن)</span>
+                      </div>
+                      <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
+                    </button>
+                  )}
 
-              <button
-                onClick={() => {
-                  onNavigateTab?.('saved');
-                  onClose();
-                }}
-                className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
-              >
-                <div className="flex items-center gap-3">
-                  <Bookmark className="w-4 h-4 text-amber-400" />
-                  <span>المحفوظات وسجل القراءة</span>
-                </div>
-                <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
-              </button>
+                  <button
+                    onClick={() => {
+                      onNavigateTab?.('saved');
+                      onClose();
+                    }}
+                    className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      <Bookmark className="w-4 h-4 text-amber-400" />
+                      <span>المحفوظات وسجل القراءة</span>
+                    </div>
+                    <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
+                  </button>
+                </>
+              )}
 
               {/* General Links */}
               {currentUser.id !== 'guest' && (
@@ -374,7 +378,7 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
                 </button>
               )}
 
-              {currentUser.id !== 'guest' && (
+              {currentUser.id !== 'guest' && persona !== 'admin' && (
                 <button
                   onClick={() => {
                     onOpenKyc();
