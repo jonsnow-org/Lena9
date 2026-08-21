@@ -1258,6 +1258,30 @@ export async function updateUserSocialLinks(
   }
 }
 
+/**
+ * حفظ بيانات الملف الشخصي الأساسية (الاسم/الاسم المستعار/اسم الجهة،
+ * السيرة الذاتية، صورة الحساب) — كانت هذه الحقول قابلة للتعديل حسب
+ * قواعد الأمان دائماً، لكن لا توجد أي واجهة فعلية تتيح للمستخدم تعديلها
+ * بنفسه بعد التسجيل الأولي (بما في ذلك حساب المالك نفسه).
+ */
+export async function updateUserProfileInFirestore(
+  userId: string,
+  updates: { fullName?: string; penName?: string; companyName?: string; bio?: string; avatarUrl?: string }
+): Promise<void> {
+  try {
+    const clean: Record<string, string> = {};
+    if (typeof updates.fullName === 'string' && updates.fullName.trim()) clean.fullName = updates.fullName.trim();
+    if (typeof updates.penName === 'string') clean.penName = updates.penName.trim();
+    if (typeof updates.companyName === 'string') clean.companyName = updates.companyName.trim();
+    if (typeof updates.bio === 'string') clean.bio = updates.bio.trim();
+    if (typeof updates.avatarUrl === 'string' && updates.avatarUrl.trim()) clean.avatarUrl = updates.avatarUrl.trim();
+    await updateDoc(doc(db, 'users', userId), clean);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `users/${userId}`);
+    throw error;
+  }
+}
+
 // -------------------------------------------------------------------
 // التعليقات — مخزّنة في Firestore ومتزامنة فعلياً بين كل المستخدمين
 // (كانت سابقاً تُحفظ في localStorage فقط، فلا يراها أحد غير صاحب الجهاز).

@@ -201,42 +201,95 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
               </button>
             </div>
 
+            {/* لوحة تحكم الأدمن — قسم مستقل وواضح فوق الروابط العامة، بدل
+                زر وحيد غامض الاسم كان يؤدي فعلياً للوحة الكاتب بالخطأ
+                (setActiveTab('dashboard') بدل 'admin' — تم تصحيحه في
+                App.tsx). كل رابط هنا يفتح تبويباً مختلفاً محدداً داخل
+                AdminDashboard مباشرة، دون المرور بصفحة "ملفي" أولاً. */}
+            {persona === 'admin' && (
+              <div className="space-y-1">
+                <span className="block text-[11px] font-bold text-brand-300 mb-1 px-1">
+                  👑 لوحة تحكم الأدمن:
+                </span>
+
+                <button
+                  onClick={() => {
+                    onNavigateTab?.('admin_overview');
+                    onClose();
+                  }}
+                  className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <TrendingUp className="w-4 h-4 text-brand-400" />
+                    <span>النظرة العامة والمالية المركزية</span>
+                  </div>
+                  <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
+                </button>
+
+                <button
+                  onClick={() => {
+                    onNavigateTab?.('admin_users');
+                    onClose();
+                  }}
+                  className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <Users className="w-4 h-4 text-blue-400" />
+                    <span>إدارة المستخدمين وKYC</span>
+                  </div>
+                  <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
+                </button>
+
+                <button
+                  onClick={() => {
+                    onNavigateTab?.('admin_campaigns');
+                    onClose();
+                  }}
+                  className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <Megaphone className="w-4 h-4 text-cyan-400" />
+                    <span>الحملات والإعلانات</span>
+                  </div>
+                  <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
+                </button>
+
+                <button
+                  onClick={() => {
+                    onNavigateTab?.('admin_money');
+                    onClose();
+                  }}
+                  className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <Wallet className="w-4 h-4 text-amber-400" />
+                    <span>طلبات الإيداع والسحب</span>
+                  </div>
+                  <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
+                </button>
+
+                <button
+                  onClick={() => {
+                    onNavigateTab?.('admin_fraud');
+                    onClose();
+                  }}
+                  className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <ShieldAlert className="w-4 h-4 text-red-400" />
+                    <span>مركز فحص الاحتيال والأمان (SOC)</span>
+                  </div>
+                  <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
+                </button>
+              </div>
+            )}
+
             {/* Role-Specific Direct Navigation Links */}
             <div className="space-y-1">
-              <span className="block text-[11px] font-bold text-slate-400 mb-1 px-1">
-                القوائم المخصصة لدورك:
-              </span>
-
-              {persona === 'admin' && (
-                <>
-                  <button
-                    onClick={() => {
-                      onNavigateTab?.('admin_overview');
-                      onClose();
-                    }}
-                    className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <TrendingUp className="w-4 h-4 text-brand-400" />
-                      <span>اللوحة الإدارية والمالية المركزية</span>
-                    </div>
-                    <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      onNavigateTab?.('admin_fraud');
-                      onClose();
-                    }}
-                    className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <ShieldAlert className="w-4 h-4 text-red-400" />
-                      <span>مركز فحص الاحتيال والأمان (SOC)</span>
-                    </div>
-                    <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
-                  </button>
-                </>
+              {persona !== 'admin' && (
+                <span className="block text-[11px] font-bold text-slate-400 mb-1 px-1">
+                  القوائم المخصصة لدورك:
+                </span>
               )}
 
               {persona === 'writer' && (
@@ -329,6 +382,11 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
               {/* استكشاف والمحفوظات: روابط عامة لأي مستخدم (بما فيهم من ترقّى
                   فعلياً لدور كاتب/معلن) — وليست حكراً على من لم يمارس أي
                   نشاط بعد، حتى لا تختفي من قوائم الكتّاب والمعلنين. */}
+              {persona === 'admin' && (
+                <span className="block text-[11px] font-bold text-slate-400 mb-1 px-1 pt-2">
+                  روابط عامة:
+                </span>
+              )}
               <button
                 onClick={() => {
                   onNavigateTab?.('explore');

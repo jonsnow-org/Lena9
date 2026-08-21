@@ -3,7 +3,6 @@ import {
   User as UserIcon,
   Rocket,
   Wallet,
-  ShieldCheck,
   Award,
   BookOpen,
   Bookmark,
@@ -49,6 +48,7 @@ import {
 } from 'lucide-react';
 import { User, Article, UserRole, AdCampaign, LanguageCode, ArticlePromotion } from '../types';
 import { SocialLinksEditor } from './SocialLinksEditor';
+import { EditProfileModal } from './EditProfileModal';
 import { AdSlot } from './AdSlot';
 import { REVENUE_SHARES } from '../constants/revenueShares';
 import { MIN_PAYOUT_USD, EARNINGS_HOLD_DAYS } from '../constants/payoutRules';
@@ -77,6 +77,7 @@ interface UserProfileViewProps {
   onPromoteArticle?: (article: Article) => void;
   promotions?: ArticlePromotion[];
   onSaveSocialLinks?: (links: Record<string, string>) => Promise<void> | void;
+  onSaveProfile?: (updates: { fullName?: string; penName?: string; companyName?: string; bio?: string; avatarUrl?: string }) => Promise<void> | void;
   onOpenNewCampaign?: () => void;
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
@@ -114,6 +115,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   onPromoteArticle,
   promotions = [],
   onSaveSocialLinks,
+  onSaveProfile,
   onOpenNewCampaign,
   theme,
   onToggleTheme,
@@ -139,6 +141,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   const setWriterTab = onWriterTabChange ?? setInternalWriterTab;
   const [writerArticleSubTab, setWriterArticleSubTab] = useState<'published' | 'drafts'>('published');
   const [advertiserTab, setAdvertiserTab] = useState<'campaigns' | 'performance' | 'create_ad' | 'billing'>('campaigns');
+  const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
 
   // Drafts stored locally
   const savedDraft = JSON.parse(localStorage.getItem('literium_article_editor_draft') || '{}');
@@ -258,6 +261,19 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                       <span>زائر</span>
                     </span>
                   )}
+                  {/* تعديل الاسم/الصورة/النبذة — لم يكن هناك أي مدخل لهذا
+                      بعد التسجيل الأولي رغم أن قواعد الأمان تسمح به دائماً
+                      لصاحب الحساب. */}
+                  {currentUser.id !== 'guest' && onSaveProfile && (
+                    <button
+                      type="button"
+                      onClick={() => setIsEditProfileOpen(true)}
+                      title="تعديل الملف الشخصي"
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </h2>
               </div>
 
@@ -331,16 +347,11 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   <span>إنشاء إعلان جديد</span>
                 </button>
               )}
-              {currentUser.role === 'admin' && onNavigateToAdmin && (
-                <button
-                  onClick={onNavigateToAdmin}
-                  className="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-md shadow-brand-500/20 active:scale-95 transition-all flex items-center gap-1.5"
-                >
-                  <Crown className="w-3.5 h-3.5" />
-                  <span>الذهاب إلى لوحة الإدارة</span>
-                </button>
-              )}
-              {currentUser.id !== 'guest' && (
+              {/* زر "الذهاب إلى لوحة الإدارة" أُزيل من هنا — كان يكرر تماماً
+                  زر "فتح لوحة الإدارة الكاملة" في البطاقة الخضراء أدناه
+                  (نفس onNavigateToAdmin، نفس الوجهة). بقي مدخل واحد واضح
+                  بدل مدخلين متجاورين لنفس الصفحة. */}
+              {currentUser.role !== 'admin' && currentUser.id !== 'guest' && (
                 <button
                   onClick={onOpenWallet}
                   className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-750 text-slate-800 dark:text-slate-200 text-xs font-bold border border-slate-200 dark:border-slate-700 transition-all flex items-center gap-1.5"
@@ -1323,51 +1334,41 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
               إدارة المستخدمين، مراجعة طلبات السحب والإيداع، اعتماد الحملات الإعلانية، ومتابعة
               التقارير المالية — كل ذلك من لوحة الإدارة المخصصة.
             </p>
-            {onNavigateToAdmin && (
+            <div className="mt-4 flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+              {onNavigateToAdmin && (
+                <button
+                  onClick={() => onNavigateToAdmin()}
+                  className="px-6 py-3 rounded-2xl bg-white text-brand-700 font-extrabold text-xs sm:text-sm shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2"
+                >
+                  <Crown className="w-4 h-4" />
+                  <span>فتح لوحة الإدارة الكاملة</span>
+                </button>
+              )}
+              {/* المحفظة نُقلت إلى هنا بجانب زر لوحة الإدارة — كانت مكرَّرة
+                  سابقاً في صف الأزرار العلوي بلا داعٍ. */}
               <button
-                onClick={onNavigateToAdmin}
-                className="mt-4 w-full sm:w-auto px-6 py-3 rounded-2xl bg-white text-brand-700 font-extrabold text-xs sm:text-sm shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2"
+                onClick={onOpenWallet}
+                className="px-5 py-3 rounded-2xl bg-brand-800/60 hover:bg-brand-800 border border-white/20 text-white font-bold text-xs sm:text-sm active:scale-95 transition-all flex items-center justify-center gap-2"
               >
-                <Crown className="w-4 h-4" />
-                <span>فتح لوحة الإدارة الكاملة</span>
+                <Wallet className="w-4 h-4" />
+                <span>المحفظة (${(currentUser.availableBalance ?? currentUser.walletBalance ?? 0).toFixed(2)})</span>
               </button>
-            )}
+            </div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <button
-              type="button"
-              onClick={() => onNavigateToAdmin?.('users')}
-              className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center hover:border-brand-400 active:scale-95 transition-all"
-            >
-              <Users className="w-5 h-5 text-brand-500 mx-auto mb-1.5" />
-              <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300">المستخدمون</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onNavigateToAdmin?.('campaigns')}
-              className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center hover:border-cyan-400 active:scale-95 transition-all"
-            >
-              <Megaphone className="w-5 h-5 text-cyan-500 mx-auto mb-1.5" />
-              <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300">الحملات</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onNavigateToAdmin?.('fraud')}
-              className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center hover:border-emerald-400 active:scale-95 transition-all"
-            >
-              <ShieldCheck className="w-5 h-5 text-emerald-500 mx-auto mb-1.5" />
-              <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300">مكافحة الاحتيال</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onNavigateToAdmin?.('money')}
-              className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center hover:border-amber-400 active:scale-95 transition-all"
-            >
-              <DollarSign className="w-5 h-5 text-amber-500 mx-auto mb-1.5" />
-              <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300">الماليات</span>
-            </button>
-          </div>
+          {/* بقي زر "الماليات" وحده هنا — أُزيلت المستخدمون/الحملات/مكافحة
+              الاحتيال لأنها مكررة تماماً: المستخدمون والحملات موجودان أصلاً
+              في الشريط السفلي لحساب الأدمن، ومكافحة الاحتيال موجودة كتبويب
+              داخل لوحة الإدارة نفسها (ومركز قيادة ليتيريوم) — إبقاؤها هنا
+              أيضاً كان يكرر نفس الوجهة من أربع نقاط دخول مختلفة. */}
+          <button
+            type="button"
+            onClick={() => onNavigateToAdmin?.('money')}
+            className="w-full p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-center gap-2 hover:border-amber-400 active:scale-95 transition-all"
+          >
+            <DollarSign className="w-5 h-5 text-amber-500" />
+            <span className="text-sm font-bold text-slate-700 dark:text-slate-200">طلبات الإيداع والسحب (الماليات)</span>
+          </button>
         </div>
       )}
 
@@ -1381,6 +1382,15 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
           <span>تسجيل الخروج من الحساب</span>
         </button>
       </div>
+
+      {onSaveProfile && (
+        <EditProfileModal
+          isOpen={isEditProfileOpen}
+          currentUser={currentUser}
+          onClose={() => setIsEditProfileOpen(false)}
+          onSave={onSaveProfile}
+        />
+      )}
     </div>
   );
 };

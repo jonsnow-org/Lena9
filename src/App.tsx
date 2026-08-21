@@ -110,6 +110,7 @@ import {
   logAdEvent,
   createPurchaseRequest,
   updateUserSocialLinks,
+  updateUserProfileInFirestore,
   subscribeToAdEvents,
   markAdEventProcessed,
   adminAdjustUserBalance,
@@ -812,6 +813,19 @@ export function App() {
       );
     } catch (err) {
       console.error('تعذر حفظ الروابط:', err);
+      throw err;
+    }
+  };
+
+  const handleSaveProfile = async (updates: {
+    fullName?: string; penName?: string; companyName?: string; bio?: string; avatarUrl?: string;
+  }) => {
+    if (!requireAuth()) return;
+    try {
+      await updateUserProfileInFirestore(currentUser.id, updates);
+      setUsers((prev) => prev.map((u) => (u.id === currentUser.id ? { ...u, ...updates } : u)));
+    } catch (err) {
+      console.error('تعذر حفظ الملف الشخصي:', err);
       throw err;
     }
   };
@@ -2472,6 +2486,7 @@ export function App() {
             onPromoteArticle={(art) => setPromotingArticle(art)}
             promotions={promotions}
             onSaveSocialLinks={handleSaveSocialLinks}
+            onSaveProfile={handleSaveProfile}
             onOpenSubscription={() => setIsSubscriptionOpen(true)}
             onSwitchUserRole={handleSwitchRole}
             theme={theme}
@@ -2522,6 +2537,7 @@ export function App() {
             onPromoteArticle={(art) => setPromotingArticle(art)}
             promotions={promotions}
             onSaveSocialLinks={handleSaveSocialLinks}
+            onSaveProfile={handleSaveProfile}
             onOpenSubscription={() => setIsSubscriptionOpen(true)}
             onSwitchUserRole={handleSwitchRole}
             theme={theme}
@@ -3047,11 +3063,23 @@ export function App() {
           switch (tab) {
             case 'admin_overview':
               setAdminActiveTab('overview');
-              setActiveTab('dashboard');
+              setActiveTab('admin');
               break;
             case 'admin_fraud':
               setAdminActiveTab('fraud');
-              setActiveTab('dashboard');
+              setActiveTab('admin');
+              break;
+            case 'admin_users':
+              setAdminActiveTab('users');
+              setActiveTab('admin');
+              break;
+            case 'admin_campaigns':
+              setAdminActiveTab('campaigns');
+              setActiveTab('admin');
+              break;
+            case 'admin_money':
+              setAdminActiveTab('money');
+              setActiveTab('admin');
               break;
             case 'writer_hub':
               setActiveTab('dashboard');
