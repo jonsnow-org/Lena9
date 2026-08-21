@@ -21,7 +21,7 @@ import { VideoUrlInput } from './VideoEmbed';
 import { MediaUploadInput } from './MediaUploadInput';
 
 // سعر خفيف مقصود لحملات ترويج القنوات/الحسابات الاجتماعية — أقل من سعر
-// البانر العادي ($0.20) لأنها زر دعوة بسيط لا مساحة بانر كاملة، ولأن
+// البانر العادي ($0.08) لأنها زر دعوة بسيط لا مساحة بانر كاملة، ولأن
 // المعلن يشحن رصيده دفعة واحدة (حد أدنى $50) فلا داعي لتحميل كل نقرة
 // برسوم تحويل الدفع — تلك تُدفع مرة واحدة عند الشحن فقط.
 const SOCIAL_PROMO_CPC_RATE = 0.05;
@@ -86,9 +86,9 @@ export const NewCampaignModal: React.FC<NewCampaignModalProps> = ({
   const [pricingModel, setPricingModel] = useState<PricingModel>('cpc');
   const [placementType, setPlacementType] = useState<AdPlacementType>('writer');
   const [durationHours, setDurationHours] = useState<number>(48);
-  const [cpcRate, setCpcRate] = useState<number>(0.20);
-  const [cpmRate, setCpmRate] = useState<number>(2.50);
-  const [totalBudget, setTotalBudget] = useState<number>(50);
+  const [cpcRate, setCpcRate] = useState<number>(0.08);
+  const [cpmRate, setCpmRate] = useState<number>(1.00);
+  const [totalBudget, setTotalBudget] = useState<number>(20);
   const [targetCategory, setTargetCategory] = useState<string>('all');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -97,14 +97,14 @@ export const NewCampaignModal: React.FC<NewCampaignModalProps> = ({
 
   const userMultiplier = Math.max(1, activeUsersCount / 10000);
   const fixedDurationPrices: Record<number, number> = {
-    24: Math.round(15 * userMultiplier),
-    48: Math.round(28 * userMultiplier),
-    72: Math.round(39 * userMultiplier),
-    168: Math.round(85 * userMultiplier)
+    24: Math.round(5 * userMultiplier),
+    48: Math.round(9 * userMultiplier),
+    72: Math.round(13 * userMultiplier),
+    168: Math.round(25 * userMultiplier)
   };
 
   const estimatedCost =
-    pricingModel === 'fixed' ? fixedDurationPrices[durationHours] || 28 : totalBudget;
+    pricingModel === 'fixed' ? fixedDurationPrices[durationHours] || 9 : totalBudget;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -262,7 +262,7 @@ export const NewCampaignModal: React.FC<NewCampaignModalProps> = ({
                   if (promotionKind !== 'website') {
                     setPromotionKind('website');
                     setPricingModel('cpc');
-                    setCpcRate(0.20);
+                    setCpcRate(0.08);
                   }
                 }}
                 className={`p-3 rounded-2xl border text-center transition-all ${
@@ -522,7 +522,7 @@ export const NewCampaignModal: React.FC<NewCampaignModalProps> = ({
                 >
                   <MousePointerClick className="w-4 h-4 mx-auto mb-1" />
                   <span className="block text-xs font-bold">بالنقرة (CPC)</span>
-                  <span className="text-[10px] opacity-75">$0.20 / نقرة</span>
+                  <span className="text-[10px] opacity-75">$0.08 / نقرة</span>
                 </button>
 
                 <button
@@ -536,7 +536,7 @@ export const NewCampaignModal: React.FC<NewCampaignModalProps> = ({
                 >
                   <Eye className="w-4 h-4 mx-auto mb-1" />
                   <span className="block text-xs font-bold">بالمشاهدات (CPM)</span>
-                  <span className="text-[10px] opacity-75">$2.50 / 1000</span>
+                  <span className="text-[10px] opacity-75">$1.00 / 1000</span>
                 </button>
               </div>
             )}

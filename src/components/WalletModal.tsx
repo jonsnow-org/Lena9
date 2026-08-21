@@ -20,6 +20,7 @@ import {
 import confetti from 'canvas-confetti';
 import { Transaction, PaymentMethod } from '../types';
 import { REVENUE_SHARES } from '../constants/revenueShares';
+import { MIN_DEPOSIT_USD, MIN_PAYOUT_USD } from '../constants/payoutRules';
 import {
   fetchPaymentStatus,
   createDepositCheckout,
@@ -69,12 +70,12 @@ export const WalletModal: React.FC<WalletModalProps> = ({
   const [automatedError, setAutomatedError] = useState('');
 
   // Deposit state
-  const [depositAmount, setDepositAmount] = useState<number>(50);
+  const [depositAmount, setDepositAmount] = useState<number>(MIN_DEPOSIT_USD);
   const [depositMethod, setDepositMethod] = useState<PaymentMethod>('stripe_card');
   const [depositSuccess, setDepositSuccess] = useState(false);
 
   // Withdraw state
-  const [withdrawAmount, setWithdrawAmount] = useState<number>(Math.min(balance, 50));
+  const [withdrawAmount, setWithdrawAmount] = useState<number>(Math.min(balance, MIN_PAYOUT_USD));
   const [withdrawMethod, setWithdrawMethod] = useState<PaymentMethod>('usdt_crypto');
   const [withdrawAccount, setWithdrawAccount] = useState('');
   const [withdrawSuccess, setWithdrawSuccess] = useState(false);
@@ -95,8 +96,8 @@ export const WalletModal: React.FC<WalletModalProps> = ({
 
   const handleAutomatedDeposit = async () => {
     setAutomatedError('');
-    if (!depositAmount || depositAmount < 1) {
-      setAutomatedError('أدخل مبلغاً صحيحاً.');
+    if (!depositAmount || depositAmount < MIN_DEPOSIT_USD) {
+      setAutomatedError(`الحد الأدنى للإيداع ${MIN_DEPOSIT_USD}$.`);
       return;
     }
     setIsAutomatedBusy(true);
@@ -131,8 +132,8 @@ export const WalletModal: React.FC<WalletModalProps> = ({
       setAutomatedError('يجب إتمام التحقق من الهوية (KYC) أولاً.');
       return;
     }
-    if (withdrawAmount < 50) {
-      setAutomatedError('الحد الأدنى للسحب هو 50 دولاراً.');
+    if (withdrawAmount < MIN_PAYOUT_USD) {
+      setAutomatedError(`الحد الأدنى للسحب هو ${MIN_PAYOUT_USD} دولاراً.`);
       return;
     }
     if (withdrawAmount > balance) {
@@ -159,7 +160,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
 
   const handleDepositSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (depositAmount <= 0) return;
+    if (depositAmount < MIN_DEPOSIT_USD) return;
 
     const fakeRef = `DEP-${Math.floor(100000 + Math.random() * 900000)}`;
     onDeposit(Number(depositAmount), depositMethod, fakeRef);
@@ -177,8 +178,8 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     // مطابق تماماً لحد handleWithdraw الفعلي في App.tsx — كان هذا النموذج
     // يعرض حداً أدنى مختلفاً (10$) يخالف الحد الحقيقي المطبَّق (50$)،
     // فيسمح للمستخدم بملء النموذج وإرساله ليُرفض لاحقاً بلا تفسير هنا.
-    if (withdrawAmount < 50) {
-      setWithdrawError('الحد الأدنى لطلب السحب هو 50 دولاراً.');
+    if (withdrawAmount < MIN_PAYOUT_USD) {
+      setWithdrawError(`الحد الأدنى لطلب السحب هو ${MIN_PAYOUT_USD} دولاراً.`);
       return;
     }
 
@@ -289,7 +290,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                   </div>
                   <div>
                     <span className="text-teal-300 block mb-0.5">الحد الأدنى للسحب</span>
-                    <span className="font-bold text-sm text-emerald-300">10.00$</span>
+                    <span className="font-bold text-sm text-emerald-300">{MIN_PAYOUT_USD.toFixed(2)}$</span>
                   </div>
                 </div>
               </div>
@@ -348,7 +349,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                       حدد المبلغ المراد إيداعه ($):
                     </label>
                     <div className="flex flex-wrap gap-2 mb-3">
-                      {[20, 50, 100, 250, 500].map((amt) => (
+                      {[MIN_DEPOSIT_USD, 25, 50, 100, 250].map((amt) => (
                         <button
                           key={amt}
                           type="button"
@@ -366,7 +367,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
 
                     <input
                       type="number"
-                      min="5"
+                      min={MIN_DEPOSIT_USD}
                       max="10000"
                       value={depositAmount}
                       onChange={(e) => setDepositAmount(Number(e.target.value))}
@@ -502,7 +503,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                         <button
                           type="button"
                           onClick={handleAutomatedWithdraw}
-                          disabled={isAutomatedBusy || withdrawAmount < 50 || withdrawAmount > balance}
+                          disabled={isAutomatedBusy || withdrawAmount < MIN_PAYOUT_USD || withdrawAmount > balance}
                           className="w-full py-3 rounded-xl bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white font-extrabold text-sm shadow-md transition-all flex items-center justify-center gap-2"
                         >
                           {isAutomatedBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
@@ -529,7 +530,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
 
                   <div>
                     <label className="block text-xs font-bold text-slate-900 dark:text-slate-200 mb-2">
-                      {paymentStatus?.automated ? 'أو أرسل طلب سحب يدوي بطريقة أخرى — الحد الأدنى 50$:' : 'طريقة استلام الأرباح:'}
+                      {paymentStatus?.automated ? `أو أرسل طلب سحب يدوي بطريقة أخرى — الحد الأدنى ${MIN_PAYOUT_USD}$:` : 'طريقة استلام الأرباح:'}
                     </label>
                     <div className="grid grid-cols-2 gap-2">
                       {[
@@ -557,11 +558,11 @@ export const WalletModal: React.FC<WalletModalProps> = ({
 
                   <div>
                     <label className="block text-xs font-bold text-slate-900 dark:text-slate-200 mb-2">
-                      مبلغ السحب (المتاح: {balance.toFixed(2)}$، الحد الأدنى 50$):
+                      مبلغ السحب (المتاح: {balance.toFixed(2)}$، الحد الأدنى {MIN_PAYOUT_USD}$):
                     </label>
                     <input
                       type="number"
-                      min="50"
+                      min={MIN_PAYOUT_USD}
                       max={balance}
                       step="1"
                       value={withdrawAmount}
@@ -614,7 +615,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
 
                   <button
                     type="submit"
-                    disabled={balance < 50}
+                    disabled={balance < MIN_PAYOUT_USD}
                     className="w-full py-3.5 rounded-2xl bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 text-white font-extrabold text-sm shadow-md transition-all disabled:opacity-50"
                   >
                     {pendingLargeWithdraw ? `تأكيد نهائي: سحب ${withdrawAmount}$` : `تأكيد طلب سحب ${withdrawAmount}$`}

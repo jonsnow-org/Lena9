@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Youtube, Send, Instagram, Twitter, Facebook, ExternalLink, ShieldCheck, Loader2, AlertCircle } from 'lucide-react';
+import { Youtube, Send, Instagram, Twitter, Facebook, ExternalLink, ShieldCheck, Loader2, AlertCircle, Gift } from 'lucide-react';
 import { AdCampaign, PromotionKind } from '../types';
 import { mountTelegramLoginWidget, TelegramWidgetUser } from '../utils/telegramWidgetAuth';
 import { requestYoutubeReadonlyToken, isGoogleOAuthConfigured } from '../utils/googleIdentity';
 import { verifyTelegramJoin, verifyYoutubeSubscription, fetchSocialVerifyStatus } from '../services/socialVerifyApi';
+import { SOCIAL_VERIFIED_ACTION_REWARD_USD } from '../constants/socialPromoRewards';
 
 const PLATFORM_META: Record<Exclude<PromotionKind, 'website'>, { label: string; platformName: string; icon: React.FC<any>; color: string }> = {
   youtube: { label: 'اشترك في القناة', platformName: 'يوتيوب', icon: Youtube, color: 'bg-red-600 hover:bg-red-700' },
@@ -34,6 +35,7 @@ export const SocialPromoCta: React.FC<SocialPromoCtaProps> = ({ campaign, onClic
   const canVerify = kind === 'telegram' || kind === 'youtube';
 
   const [verifyStatus, setVerifyStatus] = useState<'idle' | 'checking' | 'verified' | 'error'>('idle');
+  const [wasRewarded, setWasRewarded] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [serverSupport, setServerSupport] = useState({ telegram: false, youtube: false });
   const telegramContainerRef = useRef<HTMLDivElement | null>(null);
@@ -53,8 +55,9 @@ export const SocialPromoCta: React.FC<SocialPromoCtaProps> = ({ campaign, onClic
       setVerifyStatus('checking');
       setErrorMsg('');
       try {
-        const verified = await verifyTelegramJoin(campaign.id, user);
+        const { verified, rewarded } = await verifyTelegramJoin(campaign.id, user);
         setVerifyStatus(verified ? 'verified' : 'error');
+        setWasRewarded(rewarded);
         if (!verified) setErrorMsg('لم نجد اشتراكك في القناة بعد. انضم أولاً ثم أعد المحاولة.');
       } catch (err: any) {
         setVerifyStatus('error');
@@ -71,8 +74,9 @@ export const SocialPromoCta: React.FC<SocialPromoCtaProps> = ({ campaign, onClic
     setErrorMsg('');
     try {
       const token = await requestYoutubeReadonlyToken();
-      const verified = await verifyYoutubeSubscription(campaign.id, token);
+      const { verified, rewarded } = await verifyYoutubeSubscription(campaign.id, token);
       setVerifyStatus(verified ? 'verified' : 'error');
+      setWasRewarded(rewarded);
       if (!verified) setErrorMsg('لم نجد اشتراكك في القناة بعد. اشترك أولاً ثم أعد المحاولة.');
     } catch (err: any) {
       setVerifyStatus('error');
@@ -101,6 +105,10 @@ export const SocialPromoCta: React.FC<SocialPromoCtaProps> = ({ campaign, onClic
 
       {canVerify && verifyAvailable && verifyStatus !== 'verified' && (
         <div className="space-y-1.5">
+          <div className="flex items-center justify-center gap-1.5 text-[10px] font-bold text-amber-600 dark:text-amber-400">
+            <Gift className="w-3 h-3" />
+            <span>اربح ${SOCIAL_VERIFIED_ACTION_REWARD_USD.toFixed(2)} عند التحقق من انضمامك الحقيقي</span>
+          </div>
           {kind === 'youtube' ? (
             <button
               type="button"
@@ -142,7 +150,10 @@ export const SocialPromoCta: React.FC<SocialPromoCtaProps> = ({ campaign, onClic
       {canVerify && verifyStatus === 'verified' && (
         <div className="flex items-center justify-center gap-1.5 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
           <ShieldCheck className="w-3.5 h-3.5" />
-          <span>تم التحقق من انضمامك فعلياً ✓</span>
+          <span>
+            تم التحقق من انضمامك فعلياً ✓
+            {wasRewarded && ` — أُضيف ${SOCIAL_VERIFIED_ACTION_REWARD_USD.toFixed(2)}$ لأرباحك المعلّقة`}
+          </span>
         </div>
       )}
 

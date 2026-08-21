@@ -152,10 +152,10 @@ export function calculateEventCost(
 ): number {
   if (!campaign) return 0;
   if (campaign.pricingModel === 'cpc') {
-    return event.eventType === 'click' ? campaign.cpcRate || 0.15 : 0;
+    return event.eventType === 'click' ? campaign.cpcRate || 0.08 : 0;
   }
   if (campaign.pricingModel === 'cpm') {
-    return event.eventType === 'impression' ? (campaign.cpmRate || 2.5) / 1000 : 0;
+    return event.eventType === 'impression' ? (campaign.cpmRate || 1.0) / 1000 : 0;
   }
   // النموذج الثابت: التكلفة مدفوعة مقدماً، لا تُحسب لكل حدث
   return 0;

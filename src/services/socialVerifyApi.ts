@@ -18,7 +18,12 @@ export async function fetchSocialVerifyStatus(): Promise<{ telegram: boolean; yo
   }
 }
 
-export async function verifyTelegramJoin(campaignId: string, widgetData: TelegramWidgetUser): Promise<boolean> {
+export interface SocialVerifyResult {
+  verified: boolean;
+  rewarded: boolean;
+}
+
+export async function verifyTelegramJoin(campaignId: string, widgetData: TelegramWidgetUser): Promise<SocialVerifyResult> {
   const headers = await authHeaders();
   const res = await fetch('/api/social/verify-telegram', {
     method: 'POST',
@@ -27,10 +32,10 @@ export async function verifyTelegramJoin(campaignId: string, widgetData: Telegra
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data?.message || 'تعذر التحقق من الانضمام.');
-  return Boolean(data.verified);
+  return { verified: Boolean(data.verified), rewarded: Boolean(data.rewarded) };
 }
 
-export async function verifyYoutubeSubscription(campaignId: string, accessToken: string): Promise<boolean> {
+export async function verifyYoutubeSubscription(campaignId: string, accessToken: string): Promise<SocialVerifyResult> {
   const headers = await authHeaders();
   const res = await fetch('/api/social/verify-youtube', {
     method: 'POST',
@@ -39,5 +44,5 @@ export async function verifyYoutubeSubscription(campaignId: string, accessToken:
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data?.message || 'تعذر التحقق من الاشتراك.');
-  return Boolean(data.verified);
+  return { verified: Boolean(data.verified), rewarded: Boolean(data.rewarded) };
 }

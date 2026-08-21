@@ -15,6 +15,69 @@
  * المنصات على تتبّع النقرة الصادقة فقط دون ادّعاء تحقق وهمي.
  */
 import { createHash, createHmac } from 'crypto';
+import { getAdminDb, FieldValue } from './firebaseAdmin';
+import { SOCIAL_VERIFIED_ACTION_REWARD_USD } from '../src/constants/socialPromoRewards';
+
+/**
+ * يسجّل التحقق الفعلي، ويكافئ القارئ بمبلغ صغير حقيقي (SOCIAL_VERIFIED_
+ * ACTION_REWARD_USD) من ميزانية الحملة نفسها — مرة واحدة فقط لكل
+ * (حملة + قارئ)، ومقيّد تماماً بما تبقّى من ميزانية المعلن. تُنفَّذ
+ * القراءة والكتابة معاً ضمن معاملة Firestore واحدة لمنع أي سباق يسمح
+ * بمكافأة مزدوجة من نقرتين متزامنتين على زر "تحقق".
+ */
+export async function recordVerificationAndReward(
+  campaignId: string,
+  viewerId: string,
+  platform: 'telegram' | 'youtube',
+  extraFields: Record<string, any> = {}
+): Promise<{ rewarded: boolean; rewardAmount: number }> {
+  const db = getAdminDb();
+  const verificationRef = db.collection('socialVerifications').doc(`${campaignId}_${viewerId}`);
+  const campaignRef = db.collection('campaigns').doc(campaignId);
+  const userRef = db.collection('users').doc(viewerId);
+
+  let rewarded = false;
+
+  await db.runTransaction(async (tx) => {
+    const verSnap = await tx.get(verificationRef);
+    if (verSnap.exists) {
+      // تحقّق مسجَّل مسبقاً لنفس القارئ ونفس الحملة — لا مكافأة مكرّرة،
+      // نعيد فقط ما حدث فعلاً في المرة الأولى.
+      rewarded = Boolean(verSnap.data()?.rewarded);
+      return;
+    }
+
+    const campSnap = await tx.get(campaignRef);
+    const campData = campSnap.exists ? campSnap.data() || {} : {};
+    const remaining = Number(campData.totalBudget || 0) - Number(campData.totalSpent || 0);
+    rewarded = remaining >= SOCIAL_VERIFIED_ACTION_REWARD_USD;
+
+    tx.set(verificationRef, {
+      campaignId,
+      viewerId,
+      platform,
+      verifiedAt: new Date().toISOString(),
+      rewarded,
+      rewardAmount: rewarded ? SOCIAL_VERIFIED_ACTION_REWARD_USD : 0,
+      ...extraFields
+    });
+
+    if (rewarded) {
+      tx.update(campaignRef, {
+        totalSpent: FieldValue.increment(SOCIAL_VERIFIED_ACTION_REWARD_USD),
+        verifiedActionsCount: FieldValue.increment(1)
+      });
+      // نفس حقل pendingEarnings الذي تمر منه كل أرباح الإعلانات الأخرى —
+      // نفس فترة التجميد (30 يوماً) ونفس مراجعة الأدمن قبل السحب، بلا
+      // أي مسار مختصر جديد للمال.
+      tx.update(userRef, {
+        pendingEarnings: FieldValue.increment(SOCIAL_VERIFIED_ACTION_REWARD_USD)
+      });
+    }
+  });
+
+  return { rewarded, rewardAmount: rewarded ? SOCIAL_VERIFIED_ACTION_REWARD_USD : 0 };
+}
 
 export function isTelegramVerificationConfigured(): boolean {
   return Boolean(process.env.TELEGRAM_BOT_TOKEN);

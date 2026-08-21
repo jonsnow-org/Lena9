@@ -299,6 +299,8 @@ export interface AdCampaign {
   uploadedVideoUrl?: string;
   /** نوع الحملة: عادية، أو ترويج قناة/حساب اجتماعي. الافتراضي 'website' */
   promotionKind?: PromotionKind;
+  /** عدد التحققات الحقيقية (انضمام تيليجرام/اشتراك يوتيوب) المكافأة من ميزانية هذه الحملة */
+  verifiedActionsCount?: number;
 }
 
 export interface Wallet {

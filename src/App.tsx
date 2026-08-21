@@ -2753,7 +2753,7 @@ export function App() {
                             ? {
                                 ...c,
                                 clicksCount: c.clicksCount + 1,
-                                totalSpent: c.totalSpent + (c.cpcRate || 0.2)
+                                totalSpent: c.totalSpent + (c.cpcRate || 0.08)
                               }
                             : c
                         )
@@ -2779,7 +2779,7 @@ export function App() {
                             ? {
                                 ...c,
                                 impressionsCount: c.impressionsCount + 1,
-                                totalSpent: c.pricingModel === 'cpm' ? c.totalSpent + ((c.cpmRate || 2.5) / 1000) : c.totalSpent
+                                totalSpent: c.pricingModel === 'cpm' ? c.totalSpent + ((c.cpmRate || 1.0) / 1000) : c.totalSpent
                               }
                             : c
                         )

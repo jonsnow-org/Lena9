@@ -22,7 +22,8 @@ import {
   isTelegramVerificationConfigured,
   isYoutubeVerificationConfigured,
   verifyTelegramMembership,
-  verifyYoutubeSubscription
+  verifyYoutubeSubscription,
+  recordVerificationAndReward
 } from './server/socialVerify';
 
 dotenv.config();
@@ -668,21 +669,16 @@ async function startServer() {
 
       const result = await verifyTelegramMembership(widgetData, campaign.destinationUrl);
 
+      let rewarded = false;
       if (result.verified) {
-        await db
-          .collection('socialVerifications')
-          .doc(`${campaignId}_${uid}`)
-          .set({
-            campaignId,
-            viewerId: uid,
-            platform: 'telegram',
-            telegramUserId: result.telegramUserId,
-            telegramUsername: result.telegramUsername || null,
-            verifiedAt: new Date().toISOString()
-          });
+        const rewardResult = await recordVerificationAndReward(campaignId, uid, 'telegram', {
+          telegramUserId: result.telegramUserId,
+          telegramUsername: result.telegramUsername || null
+        });
+        rewarded = rewardResult.rewarded;
       }
 
-      res.json({ verified: result.verified });
+      res.json({ verified: result.verified, rewarded });
     } catch (err: any) {
       const status = err?.message === 'missing_auth_token' ? 401 : 400;
       res.status(status).json({ error: 'telegram_verify_failed', message: err?.message || 'تعذر التحقق من الانضمام.' });
@@ -709,19 +705,13 @@ async function startServer() {
 
       const result = await verifyYoutubeSubscription(accessToken, campaign.destinationUrl);
 
+      let rewarded = false;
       if (result.verified) {
-        await db
-          .collection('socialVerifications')
-          .doc(`${campaignId}_${uid}`)
-          .set({
-            campaignId,
-            viewerId: uid,
-            platform: 'youtube',
-            verifiedAt: new Date().toISOString()
-          });
+        const rewardResult = await recordVerificationAndReward(campaignId, uid, 'youtube');
+        rewarded = rewardResult.rewarded;
       }
 
-      res.json({ verified: result.verified });
+      res.json({ verified: result.verified, rewarded });
     } catch (err: any) {
       const status = err?.message === 'missing_auth_token' ? 401 : 400;
       res.status(status).json({ error: 'youtube_verify_failed', message: err?.message || 'تعذر التحقق من الاشتراك.' });
