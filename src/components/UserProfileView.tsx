@@ -1334,41 +1334,22 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
               إدارة المستخدمين، مراجعة طلبات السحب والإيداع، اعتماد الحملات الإعلانية، ومتابعة
               التقارير المالية — كل ذلك من لوحة الإدارة المخصصة.
             </p>
-            <div className="mt-4 flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-              {onNavigateToAdmin && (
-                <button
-                  onClick={() => onNavigateToAdmin()}
-                  className="px-6 py-3 rounded-2xl bg-white text-brand-700 font-extrabold text-xs sm:text-sm shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2"
-                >
-                  <Crown className="w-4 h-4" />
-                  <span>فتح لوحة الإدارة الكاملة</span>
-                </button>
-              )}
-              {/* المحفظة نُقلت إلى هنا بجانب زر لوحة الإدارة — كانت مكرَّرة
-                  سابقاً في صف الأزرار العلوي بلا داعٍ. */}
+            {/* زر "فتح لوحة الإدارة الكاملة" و"طلبات الإيداع والسحب" أُزيلا
+                من هذه البطاقة عمداً — زر "لوحة الإدارة" في الشريط السفلي
+                (المرئي دائماً حتى في هذه الشاشة نفسها) هو المدخل الوحيد
+                للوحة الإدارة بكل تبويباتها، فلا حاجة لتكراره هنا. بقيت
+                المحفظة وحدها لأنها المدخل الوحيد المتاح للأدمن للوصول
+                السريع لرصيده من هذه الصفحة تحديداً. */}
+            <div className="mt-4">
               <button
                 onClick={onOpenWallet}
-                className="px-5 py-3 rounded-2xl bg-brand-800/60 hover:bg-brand-800 border border-white/20 text-white font-bold text-xs sm:text-sm active:scale-95 transition-all flex items-center justify-center gap-2"
+                className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-white text-brand-700 font-extrabold text-xs sm:text-sm shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2"
               >
                 <Wallet className="w-4 h-4" />
                 <span>المحفظة (${(currentUser.availableBalance ?? currentUser.walletBalance ?? 0).toFixed(2)})</span>
               </button>
             </div>
           </div>
-
-          {/* بقي زر "الماليات" وحده هنا — أُزيلت المستخدمون/الحملات/مكافحة
-              الاحتيال لأنها مكررة تماماً: المستخدمون والحملات موجودان أصلاً
-              في الشريط السفلي لحساب الأدمن، ومكافحة الاحتيال موجودة كتبويب
-              داخل لوحة الإدارة نفسها (ومركز قيادة ليتيريوم) — إبقاؤها هنا
-              أيضاً كان يكرر نفس الوجهة من أربع نقاط دخول مختلفة. */}
-          <button
-            type="button"
-            onClick={() => onNavigateToAdmin?.('money')}
-            className="w-full p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-center gap-2 hover:border-amber-400 active:scale-95 transition-all"
-          >
-            <DollarSign className="w-5 h-5 text-amber-500" />
-            <span className="text-sm font-bold text-slate-700 dark:text-slate-200">طلبات الإيداع والسحب (الماليات)</span>
-          </button>
         </div>
       )}
 

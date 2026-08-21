@@ -10,7 +10,6 @@ import {
   User as UserIcon,
   TrendingUp,
   FileText,
-  Users,
   LayoutDashboard
 } from 'lucide-react';
 import { User, UserRole } from '../types';
@@ -544,7 +543,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
     );
   }
 
-  // 4. ADMIN ROLE: الرئيسية · لوحة الإدارة · المستخدمون · الحملات · رسائل · إشعارات · ملفي
+  // 4. ADMIN ROLE: الرئيسية · لوحة الإدارة (مدخل وحيد لكل تبويبات الإدارة) · رسائل · إشعارات · ملفي
   return (
     <nav
       id="bottom-nav-admin"
@@ -606,67 +605,13 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           </span>
         </button>
 
-        {/* 3. المستخدمون */}
-        <button
-          id="nav-admin-users"
-          type="button"
-          onClick={() => {
-            onChangeTab('admin');
-            onAdminNavigate?.('users');
-          }}
-          className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group"
-        >
-          <div
-            className={`p-1.5 rounded-xl transition-all ${
-              activeTab === 'admin' && adminActiveTab === 'users'
-                ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
-                : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
-            }`}
-          >
-            <Users className="w-5 h-5" />
-          </div>
-          <span
-            className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-              activeTab === 'admin' && adminActiveTab === 'users'
-                ? 'text-brand-700 dark:text-brand-300 font-extrabold'
-                : 'text-slate-500 dark:text-slate-400'
-            }`}
-          >
-            {t('users')}
-          </span>
-        </button>
+        {/* أزرار "المستخدمون" و"الحملات" أُزيلا من هنا عمداً — كانا يكرران
+            تماماً تبويبي "المستخدمون" و"الحملات" الموجودين أصلاً داخل شريط
+            تبويبات لوحة الإدارة نفسها (AdminDashboard)، فيصبح "لوحة الإدارة"
+            المدخل الوحيد لكل تبويبات الإدارة، ومن داخلها يختار الأدمن أي
+            تبويب يريد من شريطها الخاص — مدخل واحد فقط لكل وجهة، بلا تكرار. */}
 
-        {/* 4. الحملات */}
-        <button
-          id="nav-admin-campaigns"
-          type="button"
-          onClick={() => {
-            onChangeTab('admin');
-            onAdminNavigate?.('campaigns');
-          }}
-          className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group"
-        >
-          <div
-            className={`p-1.5 rounded-xl transition-all ${
-              activeTab === 'admin' && adminActiveTab === 'campaigns'
-                ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
-                : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
-            }`}
-          >
-            <Megaphone className="w-5 h-5" />
-          </div>
-          <span
-            className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-              activeTab === 'admin' && adminActiveTab === 'campaigns'
-                ? 'text-brand-700 dark:text-brand-300 font-extrabold'
-                : 'text-slate-500 dark:text-slate-400'
-            }`}
-          >
-            {t('campaigns')}
-          </span>
-        </button>
-
-        {/* 5. رسائل — كانت غائبة تماماً عن حساب الأدمن رغم توفرها لكل بقية
+        {/* 3. رسائل — كانت غائبة تماماً عن حساب الأدمن رغم توفرها لكل بقية
             الأدوار، فلا توجد أي وسيلة للأدمن لإرسال أو استقبال رسالة مباشرة. */}
         <button
           id="nav-admin-messages"
@@ -697,7 +642,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           </span>
         </button>
 
-        {/* 6. إشعارات */}
+        {/* 4. إشعارات */}
         <button
           id="nav-admin-notifications"
           type="button"
@@ -727,7 +672,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           </span>
         </button>
 
-        {/* 7. ملفي */}
+        {/* 5. ملفي */}
         <button
           id="nav-admin-profile"
           type="button"
