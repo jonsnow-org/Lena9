@@ -1245,6 +1245,11 @@ export function App() {
     touchStartPosRef.current = window.scrollY === 0 ? e.touches[0].clientY : 0;
   };
 
+  // rAF لا نداء مباشر: أثناء السحب الفعلي في أعلى الصفحة تصل touchmove بمعدل
+  // عالٍ جداً على بعض الهواتف — استدعاء setPullDistance في كل حدث يزاحم
+  // محرّك التمرير على نفس الإطار. تقييده بإطار رسم واحد كحد أقصى يبقي
+  // المؤشّر البصري سلساً دون إغراق React بتحديثات لا يراها أحد أصلاً.
+  const pullRafRef = useRef<number | null>(null);
   const handleTouchMove = (e: React.TouchEvent) => {
     if (touchStartPosRef.current > 0 && window.scrollY === 0) {
       const currentY = e.touches[0].clientY;
@@ -1252,7 +1257,12 @@ export function App() {
       if (diff > 0) {
         // Apply dampening / logarithmic resistance
         const dampened = Math.min(diff * 0.45, 90);
-        setPullDistance(dampened);
+        if (pullRafRef.current === null) {
+          pullRafRef.current = requestAnimationFrame(() => {
+            pullRafRef.current = null;
+            setPullDistance(dampened);
+          });
+        }
       }
     }
   };

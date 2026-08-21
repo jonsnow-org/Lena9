@@ -2,6 +2,7 @@ import React from 'react';
 import { Menu, LogIn } from 'lucide-react';
 import { User, UserRole, LanguageCode } from '../types';
 import { getTranslator } from '../data/translations';
+import { LiveClock, LiveStatusDot } from './LiveClock';
 
 // شريط علوي أبسط بعد نقل كل وظائفه (المساعد الذكي، تبديل اللغة، تبديل
 // المظهر، المحفظة، الملف الشخصي) إلى القائمة الجانبية — حيث توجد أصلاً
@@ -67,19 +68,24 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           </div>
         </div>
 
-        {/* End / Right: تسجيل الدخول للزائر فقط — بقية الوظائف كلها في
-            القائمة الجانبية الآن (زر القائمة أعلاه). */}
-        {!isUserLoggedIn && (
-          <button
-            id="header-auth-button"
-            type="button"
-            onClick={onOpenAuth}
-            className="px-4 py-2 rounded-2xl bg-gradient-to-r from-brand-600 to-brand-600 hover:from-brand-500 hover:to-brand-500 text-white text-xs font-black shadow-lg shadow-brand-600/30 flex items-center gap-1.5 active:scale-95 transition-all"
-          >
-            <LogIn className="w-3.5 h-3.5" />
-            <span>{t('login')}</span>
-          </button>
-        )}
+        {/* End / Right: ساعة تركيا/سوريا الحيّة + نقطة "الموقع يعمل" + تسجيل
+            الدخول للزائر فقط — بقية الوظائف كلها في القائمة الجانبية الآن. */}
+        <div className="flex items-center gap-2 sm:gap-3">
+          <LiveClock />
+          <LiveStatusDot />
+
+          {!isUserLoggedIn && (
+            <button
+              id="header-auth-button"
+              type="button"
+              onClick={onOpenAuth}
+              className="px-4 py-2 rounded-2xl bg-gradient-to-r from-brand-600 to-brand-600 hover:from-brand-500 hover:to-brand-500 text-white text-xs font-black shadow-lg shadow-brand-600/30 flex items-center gap-1.5 active:scale-95 transition-all"
+            >
+              <LogIn className="w-3.5 h-3.5" />
+              <span>{t('login')}</span>
+            </button>
+          )}
+        </div>
       </div>
     </header>
   );
