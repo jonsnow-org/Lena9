@@ -306,7 +306,13 @@ export function App() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
-  const [touchStartPos, setTouchStartPos] = useState(0);
+  // ⚠️ ref لا state: كانت handleTouchStart تنادي setTouchStartPos عند بداية
+  // كل لمسة تقريباً (أي نقطة أعلى الصفحة)، وهذا يعيد رسم App بأكمله (شجرة
+  // ضخمة بلا React.memo) عند كل نقرة تقريباً — على الهواتف الأضعف هذا كان
+  // يجعل التمرير العادي يبدو "متجمداً"، لأن كل touchstart يُطلق إعادة رسم
+  // ثقيلة تتنافس مع محرّك التمرير الأصلي للمتصفح على نفس اللحظة. تتبّع نقطة
+  // بداية اللمسة لا يحتاج إعادة رسم إطلاقاً — فهو غير مرئي بذاته.
+  const touchStartPosRef = useRef(0);
 
   // Active Selected Entity States
   const [readingArticle, setReadingArticle] = useState<Article | null>(null);
@@ -1236,17 +1242,13 @@ export function App() {
 
   // Pull to refresh handlers
   const handleTouchStart = (e: React.TouchEvent) => {
-    if (window.scrollY === 0) {
-      setTouchStartPos(e.touches[0].clientY);
-    } else {
-      setTouchStartPos(0);
-    }
+    touchStartPosRef.current = window.scrollY === 0 ? e.touches[0].clientY : 0;
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (touchStartPos > 0 && window.scrollY === 0) {
+    if (touchStartPosRef.current > 0 && window.scrollY === 0) {
       const currentY = e.touches[0].clientY;
-      const diff = currentY - touchStartPos;
+      const diff = currentY - touchStartPosRef.current;
       if (diff > 0) {
         // Apply dampening / logarithmic resistance
         const dampened = Math.min(diff * 0.45, 90);
@@ -1260,7 +1262,7 @@ export function App() {
       handleRefreshFeed();
     }
     setPullDistance(0);
-    setTouchStartPos(0);
+    touchStartPosRef.current = 0;
   };
 
   const handleRefreshFeed = () => {
