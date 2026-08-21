@@ -30,7 +30,7 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Article, Comment, ReactionType, AdCampaign, FraudFlag } from '../types';
-import { formatDateAr, timeAgoAr } from '../utils/dateFormat';
+import { formatDateAr, formatDateTimeAr, timeAgoAr } from '../utils/dateFormat';
 import { SmartAdBanner } from './SmartAdBanner';
 import { AdSlot } from './AdSlot';
 import { VideoEmbed } from './VideoEmbed';
@@ -261,8 +261,46 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
     onUnlockArticle(article);
   };
 
-  const handleCopyShareLink = () => {
-    navigator.clipboard.writeText(window.location.href);
+  const getShareUrl = () => {
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set('article', article.id);
+      return url.toString();
+    } catch {
+      return window.location.href;
+    }
+  };
+
+  const handleShareClick = async () => {
+    onShare?.();
+    const shareUrl = getShareUrl();
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: article.title,
+          text: article.description || article.title,
+          url: shareUrl
+        });
+        return;
+      } catch (err: any) {
+        if (err?.name === 'AbortError') return;
+      }
+    }
+    setShowShareModal(true);
+  };
+
+  const handleCopyShareLink = async () => {
+    const shareUrl = getShareUrl();
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+    } catch {
+      const input = document.createElement('input');
+      input.value = shareUrl;
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand('copy');
+      document.body.removeChild(input);
+    }
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2000);
   };
@@ -446,10 +484,7 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
 
             {/* Share */}
             <button
-              onClick={() => {
-                setShowShareModal(true);
-                onShare?.();
-              }}
+              onClick={handleShareClick}
               className="p-2 rounded-xl border bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 hover:text-teal-600 transition-colors active:scale-95"
               title="مشاركة المقال"
             >
@@ -555,7 +590,7 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
                   )}
                 </div>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  نُشر {formatDateAr(article.publishedAt)} • {article.readingTimeMinutes} دقائق قراءة
+                  نُشر في {formatDateTimeAr(article.publishedAt)} ({timeAgoAr(article.publishedAt)}) • {article.readingTimeMinutes} دقائق قراءة
                 </p>
               </div>
             </div>
@@ -985,12 +1020,12 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
                 مشاركة المقال
               </h4>
               <p className="text-xs text-slate-500 dark:text-slate-400 text-center mb-4">
-                شارك هذا المقال مع أصدقائك عبر المنصات الاجتماعية أو انسخ الرابط
+                شارك هذا المقال مع أصدقائك عبر المنصات الاجتماعية أو انسخ الرابط المباشر
               </p>
 
               <div className="grid grid-cols-4 gap-2 mb-4">
                 <a
-                  href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(article.title)}&url=${encodeURIComponent(window.location.href)}`}
+                  href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(article.title)}&url=${encodeURIComponent(getShareUrl())}`}
                   target="_blank"
                   rel="noreferrer"
                   className="flex flex-col items-center gap-1.5 p-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-xs font-semibold"
@@ -999,7 +1034,7 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
                   <span className="text-[10px]">تويتر</span>
                 </a>
                 <a
-                  href={`https://api.whatsapp.com/send?text=${encodeURIComponent(article.title + ' ' + window.location.href)}`}
+                  href={`https://api.whatsapp.com/send?text=${encodeURIComponent(article.title + ' ' + getShareUrl())}`}
                   target="_blank"
                   rel="noreferrer"
                   className="flex flex-col items-center gap-1.5 p-2.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 hover:bg-emerald-100 text-xs font-semibold"
@@ -1008,7 +1043,7 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
                   <span className="text-[10px]">واتساب</span>
                 </a>
                 <a
-                  href={`https://t.me/share/url?url=${encodeURIComponent(window.location.href)}&text=${encodeURIComponent(article.title)}`}
+                  href={`https://t.me/share/url?url=${encodeURIComponent(getShareUrl())}&text=${encodeURIComponent(article.title)}`}
                   target="_blank"
                   rel="noreferrer"
                   className="flex flex-col items-center gap-1.5 p-2.5 rounded-2xl bg-sky-50 dark:bg-sky-950/50 text-sky-600 hover:bg-sky-100 text-xs font-semibold"
@@ -1017,7 +1052,7 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
                   <span className="text-[10px]">تيليجرام</span>
                 </a>
                 <a
-                  href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(window.location.href)}`}
+                  href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(getShareUrl())}`}
                   target="_blank"
                   rel="noreferrer"
                   className="flex flex-col items-center gap-1.5 p-2.5 rounded-2xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 hover:bg-blue-100 text-xs font-semibold"

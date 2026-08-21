@@ -138,8 +138,10 @@ export const WriterDashboard: React.FC<WriterDashboardProps> = ({
           {/* Smart AI Writer Guidance */}
           <SmartAiGuidanceCard context="article_editor" />
 
-          {/* شروط تفعيل احتساب الأرباح / شارة منشئ المحتوى الموثّق */}
-          <CreatorEligibilityCard eligibility={eligibility} onOpenKyc={onOpenKyc} />
+          {/* شروط تفعيل احتساب الأرباح / شارة منشئ المحتوى الموثّق (للكُتّاب فقط وليس لمدير المنصة) */}
+          {writer.role !== 'admin' && (
+            <CreatorEligibilityCard eligibility={eligibility} onOpenKyc={onOpenKyc} />
+          )}
 
           {/* Metric Cards Grid */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">

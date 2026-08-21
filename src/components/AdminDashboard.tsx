@@ -24,12 +24,14 @@ import {
   Layers,
   Activity,
   UserCheck,
-  Ban
+  Ban,
+  Image as ImageIcon
 } from 'lucide-react';
 import { User, Article, AdCampaign, FraudFlag, Transaction, Wallet, ArticlePromotion } from '../types';
 import { evaluateAdEventBatch, calculateEventCost } from '../utils/fraudFilters';
 import { REVENUE_SHARES } from '../constants/revenueShares';
 import { THEME_PRESETS, ThemePresetKey, DEFAULT_THEME_PRESET } from '../constants/themePresets';
+import { BACKGROUND_PRESETS, BackgroundPresetKey, DEFAULT_BACKGROUND_PRESET } from '../constants/backgroundPresets';
 
 interface AdminDashboardProps {
   currentUser: User;
@@ -92,6 +94,10 @@ interface AdminDashboardProps {
   currentThemePreset?: ThemePresetKey;
   /** يغيّر القالب اللوني للجميع فوراً (يُكتب في Firestore) */
   onChangeThemePreset?: (preset: ThemePresetKey) => void;
+  /** خلفية القالب الحالية المُطبَّقة على كل التطبيق */
+  currentBackgroundPreset?: BackgroundPresetKey;
+  /** يغيّر خلفية القالب للجميع فوراً (يُكتب في Firestore) */
+  onChangeBackgroundPreset?: (preset: BackgroundPresetKey) => void;
 }
 
 type AdjustableBalanceField = 'walletBalance' | 'availableBalance' | 'pendingEarnings' | 'lifetimeEarnings';
@@ -234,7 +240,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   activeTab: externalActiveTab,
   onActiveTabChange,
   currentThemePreset = DEFAULT_THEME_PRESET,
-  onChangeThemePreset
+  onChangeThemePreset,
+  currentBackgroundPreset = DEFAULT_BACKGROUND_PRESET,
+  onChangeBackgroundPreset
 }) => {
   const [internalActiveTab, setInternalActiveTab] = useState<
     'overview' | 'fraud' | 'campaigns' | 'moderation' | 'users' | 'finance' | 'settings'
@@ -1819,6 +1827,75 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           {preset.label}
                         </span>
                         {isActive && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {onChangeBackgroundPreset && (
+              <div className="p-6 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <ImageIcon className="w-5 h-5 text-brand-400" />
+                    خلفية قالب التطبيق (لكل المستخدمين)
+                  </h3>
+                  <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-emerald-950/80 text-emerald-400 border border-emerald-800/60 font-medium">
+                    ✓ تحافظ على تباين الحروف وراحة القراءة
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  اختر خلفية جمالية عالية الجودة لقالب المنصة. تأتي كل خلفية بطبقة تظليل ذكية ومتناسقة تلقائياً
+                  مع الوضعين الفاتح والداكن لضمان أقصى درجات الوضوح والراحة البصرية للقراء والكتّاب.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {Object.values(BACKGROUND_PRESETS).map((preset) => {
+                    const isActive = currentBackgroundPreset === preset.key;
+                    return (
+                      <button
+                        key={preset.key}
+                        onClick={() => onChangeBackgroundPreset(preset.key)}
+                        className={`text-start p-3 rounded-2xl border-2 transition-all flex items-center gap-3 relative overflow-hidden group ${
+                          isActive
+                            ? 'border-brand-500 bg-brand-950/40 ring-2 ring-brand-500/20'
+                            : 'border-slate-800 bg-slate-950/60 hover:border-slate-700'
+                        }`}
+                      >
+                        <div className="w-14 h-14 rounded-xl overflow-hidden shrink-0 border border-slate-700 bg-slate-800 flex items-center justify-center relative">
+                          {preset.imageUrl ? (
+                            <img
+                              src={preset.previewUrl}
+                              alt={preset.label}
+                              className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <div className="w-full h-full bg-slate-900 flex items-center justify-center text-slate-500 text-xs font-bold">
+                              نقية
+                            </div>
+                          )}
+                          {isActive && (
+                            <div className="absolute inset-0 bg-brand-600/30 flex items-center justify-center">
+                              <CheckCircle2 className="w-5 h-5 text-white drop-shadow-md" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <div className={`text-xs font-bold truncate ${isActive ? 'text-brand-300 font-black' : 'text-white'}`}>
+                              {preset.label}
+                            </div>
+                            {isActive && (
+                              <span className="text-[9px] px-1.5 py-0.2 rounded bg-brand-500 text-white font-bold shrink-0">
+                                مفعّلة
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-slate-400 line-clamp-2 mt-0.5 leading-snug">
+                            {preset.description}
+                          </p>
+                        </div>
                       </button>
                     );
                   })}

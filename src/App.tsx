@@ -71,9 +71,18 @@ import { consumeAiUsage, applySubscriptionUpgrade } from './utils/aiQuota';
 import { rememberAccount } from './utils/savedAccounts';
 import { isEligibleForMonetization } from './utils/creatorEligibility';
 import { getTranslator } from './data/translations';
-import { applyThemePreset } from './utils/themeEngine';
+import { applyThemePreset, applyBackgroundPreset, syncBackgroundOverlayMode } from './utils/themeEngine';
 import { isValidThemePreset, DEFAULT_THEME_PRESET, ThemePresetKey } from './constants/themePresets';
-import { subscribeToThemePreset, setThemePresetInFirestore } from './services/firestoreService';
+import {
+  isValidBackgroundPreset,
+  DEFAULT_BACKGROUND_PRESET,
+  BackgroundPresetKey
+} from './constants/backgroundPresets';
+import {
+  subscribeToThemePreset,
+  setThemePresetInFirestore,
+  setBackgroundPresetInFirestore
+} from './services/firestoreService';
 import { PromoteArticleModal } from './components/PromoteArticleModal';
 import { LegalPages, LegalSection } from './components/LegalPages';
 import { SiteFooter } from './components/SiteFooter';
@@ -1101,6 +1110,7 @@ export function App() {
     } else {
       document.documentElement.classList.remove('dark');
     }
+    syncBackgroundOverlayMode();
   }, [theme]);
   useEffect(() => {
     localStorage.setItem('literium_lang', language);
@@ -1108,26 +1118,32 @@ export function App() {
     document.documentElement.lang = language;
   }, [language]);
 
-  // القالب اللوني العام: يستمع للتغيير الحي من Firestore ويطبّقه فوراً —
-  // يعمل لأي مستخدم متصل (بمن فيهم الزوار)، لأن اللون جزء من هوية التطبيق
+  // القالب اللوني العام وخلفية التطبيق: يستمع للتغيير الحي من Firestore ويطبّقه فوراً —
+  // يعمل لأي مستخدم متصل (بمن فيهم الزوار)، لأن اللون والخلفية جزء من هوية التطبيق
   // نفسه وليس تفضيلاً شخصياً لكل حساب.
   const [themePreset, setThemePresetState] = useState<ThemePresetKey>(DEFAULT_THEME_PRESET);
+  const [backgroundPreset, setBackgroundPresetState] = useState<BackgroundPresetKey>(DEFAULT_BACKGROUND_PRESET);
+
   useEffect(() => {
     const unsub = subscribeToThemePreset(
-      (preset) => {
-        const resolved = isValidThemePreset(preset) ? preset : DEFAULT_THEME_PRESET;
-        applyThemePreset(resolved);
-        setThemePresetState(resolved);
+      (settings) => {
+        const resolvedTheme = isValidThemePreset(settings.preset) ? settings.preset : DEFAULT_THEME_PRESET;
+        applyThemePreset(resolvedTheme);
+        setThemePresetState(resolvedTheme);
+
+        const resolvedBg = isValidBackgroundPreset(settings.backgroundPreset)
+          ? settings.backgroundPreset
+          : DEFAULT_BACKGROUND_PRESET;
+        applyBackgroundPreset(resolvedBg);
+        setBackgroundPresetState(resolvedBg);
       },
-      (err) => console.error('تعذر تحميل القالب اللوني:', err)
+      (err) => console.error('تعذر تحميل إعدادات القالب والخلفية:', err)
     );
     return () => unsub();
   }, []);
 
   const handleChangeThemePreset = async (preset: ThemePresetKey) => {
     if (currentUser.role !== 'admin') return;
-    // تحديث فوري محلياً (تفاؤلي) قبل انتظار تأكيد الخادم، ثم Firestore
-    // نفسه يبثّ التغيير لكل المستخدمين الآخرين المتصلين حالياً.
     applyThemePreset(preset);
     setThemePresetState(preset);
     try {
@@ -1135,6 +1151,18 @@ export function App() {
     } catch (err) {
       console.error('تعذر حفظ القالب اللوني:', err);
       alert('تعذر حفظ اللون الجديد. تحقق من اتصالك ثم حاول مجدداً.');
+    }
+  };
+
+  const handleChangeBackgroundPreset = async (preset: BackgroundPresetKey) => {
+    if (currentUser.role !== 'admin') return;
+    applyBackgroundPreset(preset);
+    setBackgroundPresetState(preset);
+    try {
+      await setBackgroundPresetInFirestore(preset, currentUser.id);
+    } catch (err) {
+      console.error('تعذر حفظ خلفية القالب:', err);
+      alert('تعذر حفظ الخلفية الجديدة. تحقق من اتصالك ثم حاول مجدداً.');
     }
   };
 
@@ -2561,6 +2589,8 @@ export function App() {
             onSelectUser={(u) => setViewingWriterProfile(u)}
             currentThemePreset={themePreset}
             onChangeThemePreset={handleChangeThemePreset}
+            currentBackgroundPreset={backgroundPreset}
+            onChangeBackgroundPreset={handleChangeBackgroundPreset}
           />
         ) : (
           /* Main Feed View: Available to all users/roles when on 'feed' */

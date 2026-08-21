@@ -984,23 +984,36 @@ export async function markConversationMessagesRead(currentUserId: string, otherU
 }
 
 // -------------------------------------------------------------------
-// القالب اللوني العام للتطبيق (settings/theme)
+// القالب اللوني العام وخلفية التطبيق (settings/theme)
 // -------------------------------------------------------------------
 // مستند واحد عام، قراءته متاحة للجميع (بما فيهم الزوار غير المسجَّلين،
-// حتى تظهر صفحة الهبوط باللون الصحيح)، وكتابته مقصورة على الأدمن فقط
-// عبر قواعد أمان Firestore. يسمح هذا لأي تغيير يجريه المالك بالوصول
+// حتى تظهر صفحة الهبوط باللون والخلفية الصحيحة)، وكتابته مقصورة على الأدمن
+// فقط عبر قواعد أمان Firestore. يسمح هذا لأي تغيير يجريه المالك بالوصول
 // لحظياً لكل المستخدمين المتصلين حالياً عبر onSnapshot، دون أي حاجة
 // لإعادة نشر أو تحديث التطبيق.
 const THEME_DOC_REF = () => doc(db, 'settings', 'theme');
 
+export interface ThemeSettingsData {
+  preset: string | null;
+  backgroundPreset: string | null;
+}
+
 export function subscribeToThemePreset(
-  onPreset: (preset: string | null) => void,
+  onSettings: (settings: ThemeSettingsData) => void,
   onError?: (err: any) => void
 ) {
   return onSnapshot(
     THEME_DOC_REF(),
     (snap) => {
-      onPreset(snap.exists() ? (snap.data().preset as string) || null : null);
+      if (snap.exists()) {
+        const data = snap.data();
+        onSettings({
+          preset: (data.preset as string) || null,
+          backgroundPreset: (data.backgroundPreset as string) || null
+        });
+      } else {
+        onSettings({ preset: null, backgroundPreset: null });
+      }
     },
     (error) => {
       handleFirestoreError(error, OperationType.LIST, 'settings/theme');
@@ -1014,6 +1027,19 @@ export async function setThemePresetInFirestore(preset: string, updatedByUserId:
     await setDoc(
       THEME_DOC_REF(),
       { preset, updatedAt: new Date().toISOString(), updatedBy: updatedByUserId },
+      { merge: true }
+    );
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'settings/theme');
+    throw error;
+  }
+}
+
+export async function setBackgroundPresetInFirestore(backgroundPreset: string, updatedByUserId: string): Promise<void> {
+  try {
+    await setDoc(
+      THEME_DOC_REF(),
+      { backgroundPreset, updatedAt: new Date().toISOString(), updatedBy: updatedByUserId },
       { merge: true }
     );
   } catch (error) {

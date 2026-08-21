@@ -299,29 +299,33 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               <div className="w-12 h-12 rounded-2xl bg-brand-600/20 text-brand-400 border border-brand-500/30 flex items-center justify-center mb-5">
                 <BookOpen className="w-6 h-6" />
               </div>
-              <h3 className="text-xl font-black text-white mb-2">1. للقرّاء: تجربة قراءة فائقة النقاء</h3>
+              <h3 className="text-xl font-black text-white mb-2">1. للقرّاء: واحة المعرفة والأدب النقي</h3>
               <p className="text-xs sm:text-sm text-slate-300 leading-relaxed mb-6">
-                اقرأ مقالات رصينة عالية الجودة في شتى مجالات الأدب، الفلسفة، والتكنولوجيا، مجاناً أو مدفوعة.
+                استمتع بقراءة مقالات وتحليلات حصرية معمقة خالية من الحشو، مع بيئة قراءة مصممة خصيصاً لراحة عينيك وفكرك.
               </p>
               <ul className="space-y-3 text-xs text-slate-300">
                 <li className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-brand-400 shrink-0" />
-                  <span>قارئ صوتي ذكي باللغة العربية مع تحكم بحجم الخط والثيمات</span>
+                  <span>قارئ صوتي ذكي بالذكاء الاصطناعي مع تحكم كامل بالسرعة</span>
                 </li>
                 <li className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-brand-400 shrink-0" />
-                  <span>مكتبة رقمية مجانية للكتب والمخطوطات القابلة للتحميل</span>
+                  <span>تخصيص ثيمات القراءة وخطوط مريحة وخلفيات فنية راقية</span>
                 </li>
                 <li className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-brand-400 shrink-0" />
-                  <span>حفظ المقالات في المفضلة وسجل قراءة شخصي متكامل</span>
+                  <span>مكتبة كتب رقمية مجانية ومفضلة شخصية لحفظ مقالاتك</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-brand-400 shrink-0" />
+                  <span>محفظة شحن سهلة لفتح المقالات الحصرية ودعم كتابك المفضلين</span>
                 </li>
               </ul>
               <button
                 onClick={onStartReading}
                 className="mt-6 w-full py-2.5 rounded-xl bg-brand-600/30 hover:bg-brand-600 border border-brand-500/40 text-brand-200 hover:text-white font-bold text-xs transition-all flex items-center justify-center gap-1.5"
               >
-                <span>ابدأ كقارئ الآن</span>
+                <span>تصفح المقالات كقارئ الآن</span>
                 <ArrowLeft className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -337,33 +341,35 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               <div className="w-12 h-12 rounded-2xl bg-teal-600/20 text-teal-400 border border-teal-500/30 flex items-center justify-center mb-5">
                 <PenTool className="w-6 h-6" />
               </div>
-              <h3 className="text-xl font-black text-white mb-2">2. للكتّاب: انشر مقالاتك واربح</h3>
+              <h3 className="text-xl font-black text-white mb-2">2. للكتّاب: انشر مقالاتك وحقق أرباحاً حقيقية</h3>
               <p className="text-xs sm:text-sm text-slate-300 leading-relaxed mb-6">
-                حوّل شغفك بالكتابة إلى دخل حقيقي ومستدام من خلال نموذج تقاسم الأرباح الأكبر عربياً.
+                حوّل إبداعك إلى عوائد مالية مجزية مع برنامج شركاء ليتيريوم الأعدل عربياً، وسحب أرباحك بسلاسة.
               </p>
               <ul className="space-y-3 text-xs text-slate-300">
                 <li className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-teal-400 shrink-0" />
                   <span>
-                    <strong>{REVENUE_SHARES.IN_ARTICLE_ADS.WRITER_PERCENT}%</strong> من عوائد إعلانات AdSense تذهب مباشرة للكاتب
+                    <strong>ربح يصل إلى 70%</strong> من مبيعات المقالات المقفولة وعوائد الإعلانات
                   </span>
                 </li>
                 <li className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-teal-400 shrink-0" />
-                  <span>
-                    <strong>{REVENUE_SHARES.LOCKED_ARTICLES.WRITER_PERCENT}%</strong> من مبيعات المقالات المقفولة والحصرية للكاتب
-                  </span>
+                  <span>استوديو كتابة مدعوم بنموذج Gemini AI لتوليد الصور وصياغة الأفكار</span>
                 </li>
                 <li className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-teal-400 shrink-0" />
-                  <span>استوديو كتابة مدعوم بنموذج Gemini AI لصياغة الأفكار والتدقيق</span>
+                  <span>شروط انضمام واضحة (10 مقالات، 100 متابع، 1,000 قراءة)</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-teal-400 shrink-0" />
+                  <span>سحب أرباح موثوق (بايبال، تحويل بنكي، بطاقات) بحد أدنى 50$ فقط</span>
                 </li>
               </ul>
               <button
                 onClick={() => onOpenRegister('writer')}
                 className="mt-6 w-full py-2.5 rounded-xl bg-teal-600/30 hover:bg-teal-600 border border-teal-500/40 text-teal-200 hover:text-white font-bold text-xs transition-all flex items-center justify-center gap-1.5"
               >
-                <span>سجّل ككاتب شريك</span>
+                <span>سجّل حساب كاتب وابدأ النشر</span>
                 <ArrowLeft className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -379,32 +385,145 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               <div className="w-12 h-12 rounded-2xl bg-cyan-600/20 text-cyan-400 border border-cyan-500/30 flex items-center justify-center mb-5">
                 <Megaphone className="w-6 h-6" />
               </div>
-              <h3 className="text-xl font-black text-white mb-2">3. للمعلنين والترويج: أعلن بحسابك مباشرة</h3>
+              <h3 className="text-xl font-black text-white mb-2">3. للمعلنين: وصول مباشر لجمهور نخبوي</h3>
               <p className="text-xs sm:text-sm text-slate-300 leading-relaxed mb-6">
-                ميزة الإعلان والترويج متاحة لجميع القرّاء والكتّاب مباشرة من لوحة التحكم، دون الحاجة لحساب منفصل!
+                أعلن عن خدماتك أو منتجاتك بحرية وسهولة من داخل حسابك، مستهدفاً جمهوراً عربياً مثقفاً وعالي التفاعل.
               </p>
               <ul className="space-y-3 text-xs text-slate-300">
                 <li className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-cyan-400 shrink-0" />
-                  <span>استهداف دقيق بحسب التصنيفات والمواضيع الأدبية والعلمية</span>
+                  <span>إطلاق حملات فورية من نفس الحساب دون تعقيد أو تسجيل إضافي</span>
                 </li>
                 <li className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-cyan-400 shrink-0" />
-                  <span>خيارات تسعير مرنة بالمدة الزمنية (24h/48h) أو بالنقرة CPC</span>
+                  <span>خطط مرنة: تسعير حسب مدة العرض (24/48 ساعة) أو بالنقرة CPC</span>
                 </li>
                 <li className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-cyan-400 shrink-0" />
-                  <span>لوحة تحكم وإحصائيات لحظية لمرات الظهور والنقر ومعدل التحويل</span>
+                  <span>استهداف دقيق بحسب مجالات المقالات (أدب، تقنية، مال، فكر)</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-cyan-400 shrink-0" />
+                  <span>لوحة تحليلات لحظية تتبع المشاهدات والنقرات ونسبة التحويل</span>
                 </li>
               </ul>
               <button
                 onClick={() => onOpenRegister('reader')}
                 className="mt-6 w-full py-2.5 rounded-xl bg-cyan-600/30 hover:bg-cyan-600 border border-cyan-500/40 text-cyan-200 hover:text-white font-bold text-xs transition-all flex items-center justify-center gap-1.5"
               >
-                <span>سجّل كقارئ ومُعلن</span>
+                <span>سجّل حسابك وأطلق إعلانك</span>
                 <ArrowLeft className="w-3.5 h-3.5" />
               </button>
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Why Register - Additional Incentive Cards Section */}
+      <section className="py-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto relative z-10">
+        <div className="text-center max-w-3xl mx-auto mb-12">
+          <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-brand-500/10 text-brand-300 text-xs font-bold border border-brand-500/20 mb-3">
+            <Zap className="w-3.5 h-3.5 text-amber-400" />
+            <span>مزايا حصرية تنتظرك عند التسجيل</span>
+          </div>
+          <h2 className="text-2xl sm:text-4xl font-black text-white">
+            لماذا يختار آلاف القراء والكتاب منصة ليتيريوم؟
+          </h2>
+          <p className="mt-3 text-sm sm:text-base text-slate-400">
+            تجربة رقمية فريدة تمنحك أدوات متطورة وحرية تامة في القراءة والتعبير والاستثمار
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+          {/* Card 1: AI Integration */}
+          <div className="p-6 rounded-3xl bg-slate-900/60 border border-slate-800 hover:border-brand-500/40 transition-all hover:-translate-y-1 duration-300 flex flex-col justify-between shadow-lg">
+            <div>
+              <div className="w-11 h-11 rounded-2xl bg-amber-500/15 text-amber-400 border border-amber-500/30 flex items-center justify-center mb-4">
+                <Sparkles className="w-5 h-5" />
+              </div>
+              <h3 className="text-base font-bold text-white mb-2">استوديو ذكاء اصطناعي</h3>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                توليد صور احترافية للمقالات، تلخيصات فورية، ومساعد لغوي فائق الدقة مدعوم بأحدث نماذج Gemini AI.
+              </p>
+            </div>
+            <div className="mt-5 pt-3 border-t border-slate-800 flex items-center gap-1 text-[11px] font-bold text-amber-400">
+              <Star className="w-3.5 h-3.5 fill-current" />
+              <span>متاح مجاناً لجميع الكتّاب</span>
+            </div>
+          </div>
+
+          {/* Card 2: Financial Safety & Withdrawals */}
+          <div className="p-6 rounded-3xl bg-slate-900/60 border border-slate-800 hover:border-teal-500/40 transition-all hover:-translate-y-1 duration-300 flex flex-col justify-between shadow-lg">
+            <div>
+              <div className="w-11 h-11 rounded-2xl bg-teal-500/15 text-teal-400 border border-teal-500/30 flex items-center justify-center mb-4">
+                <DollarSign className="w-5 h-5" />
+              </div>
+              <h3 className="text-base font-bold text-white mb-2">شفافية وسحب مالي فوري</h3>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                محفظة إلكترونية تتبع أرباحك لحظة بلحظة، مع إمكانية سحب مستحقاتك بكل أمان عبر بايبال والحساب البنكي والبطاقات عند بلوغ 50$.
+              </p>
+            </div>
+            <div className="mt-5 pt-3 border-t border-slate-800 flex items-center gap-1 text-[11px] font-bold text-teal-400">
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>سحب موثوق وبدون رسوم خفية</span>
+            </div>
+          </div>
+
+          {/* Card 3: Custom Themes & Artwork */}
+          <div className="p-6 rounded-3xl bg-slate-900/60 border border-slate-800 hover:border-purple-500/40 transition-all hover:-translate-y-1 duration-300 flex flex-col justify-between shadow-lg">
+            <div>
+              <div className="w-11 h-11 rounded-2xl bg-purple-500/15 text-purple-400 border border-purple-500/30 flex items-center justify-center mb-4">
+                <Globe className="w-5 h-5" />
+              </div>
+              <h3 className="text-base font-bold text-white mb-2">تخصيص كامل وخلفيات فنية</h3>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                اختر ثيمات مظهر مخصصة، وألوان القالب التي تفضلها، بالإضافة لمجموعة من الخلفيات الفنية عالية الجودة المريحة للنظر.
+              </p>
+            </div>
+            <div className="mt-5 pt-3 border-t border-slate-800 flex items-center gap-1 text-[11px] font-bold text-purple-400">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>راحة بصرية لا مثيل لها</span>
+            </div>
+          </div>
+
+          {/* Card 4: Community & Interaction */}
+          <div className="p-6 rounded-3xl bg-slate-900/60 border border-slate-800 hover:border-cyan-500/40 transition-all hover:-translate-y-1 duration-300 flex flex-col justify-between shadow-lg">
+            <div>
+              <div className="w-11 h-11 rounded-2xl bg-cyan-500/15 text-cyan-400 border border-cyan-500/30 flex items-center justify-center mb-4">
+                <Users className="w-5 h-5" />
+              </div>
+              <h3 className="text-base font-bold text-white mb-2">مجتمع تفاعلي راقٍ</h3>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                تفاعل عبر التعليقات، تابع كتابك المفضلين، قيّم المقالات، وشارك في بناء مكتبة معرفية عربية رائدة ومستدامة.
+              </p>
+            </div>
+            <div className="mt-5 pt-3 border-t border-slate-800 flex items-center gap-1 text-[11px] font-bold text-cyan-400">
+              <Award className="w-3.5 h-3.5" />
+              <span>شارات توثيق وشهرة للكتاب</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Quick CTA to register */}
+        <div className="mt-10 p-6 rounded-3xl bg-gradient-to-r from-brand-950/80 via-slate-900 to-teal-950/80 border border-brand-500/30 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
+          <div>
+            <h4 className="text-lg font-black text-white">هل أنت مستعد لبدء رحلتك في ليتيريوم؟</h4>
+            <p className="text-xs text-slate-400 mt-0.5">التسجيل مجاني ويستغرق أقل من دقيقة واحدة فقط.</p>
+          </div>
+          <div className="flex items-center gap-3 shrink-0 w-full sm:w-auto">
+            <button
+              onClick={() => onOpenRegister('reader')}
+              className="flex-1 sm:flex-initial px-6 py-3 rounded-2xl bg-brand-600 hover:bg-brand-500 text-white font-extrabold text-xs shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2"
+            >
+              <span>إنشاء حساب مجاني</span>
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+            <button
+              onClick={onOpenLogin}
+              className="flex-1 sm:flex-initial px-5 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs border border-slate-700 active:scale-95 transition-all"
+            >
+              تسجيل الدخول
+            </button>
           </div>
         </div>
       </section>

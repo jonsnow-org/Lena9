@@ -26,15 +26,17 @@ const MIN_PAYOUT = MIN_PAYOUT_USD;
 const MIN_DEPOSIT = MIN_DEPOSIT_USD;
 
 const DEPOSIT_METHODS = [
-  { id: 'bank_transfer', label: 'تحويل بنكي' },
-  { id: 'crypto', label: 'عملة رقمية' },
-  { id: 'wallet', label: 'محفظة إلكترونية' }
+  { id: 'bank_wire', label: 'تحويل بنكي (IBAN)' },
+  { id: 'usdt_crypto', label: 'عملة رقمية (USDT)' },
+  { id: 'paypal', label: 'باي بال (PayPal)' },
+  { id: 'payoneer', label: 'بايونير (Payoneer)' }
 ];
 
 const PAYOUT_METHODS = [
-  { id: 'bank_transfer', label: 'تحويل بنكي' },
-  { id: 'crypto', label: 'عملة رقمية' },
-  { id: 'wallet', label: 'محفظة إلكترونية' }
+  { id: 'usdt_crypto', label: 'عملة رقمية (USDT TRC20/BEP20)' },
+  { id: 'bank_wire', label: 'تحويل بنكي محلي/دولي (IBAN)' },
+  { id: 'paypal', label: 'حساب باي بال (PayPal)' },
+  { id: 'payoneer', label: 'حساب بايونير (Payoneer)' }
 ];
 
 export const MoneyRequestModal: React.FC<MoneyRequestModalProps> = ({
