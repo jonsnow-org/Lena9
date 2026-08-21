@@ -17,13 +17,19 @@ function getUploadConfigured(): Promise<boolean> {
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
-const MAX_VIDEO_DURATION_SECONDS = 60;
+const DEFAULT_MAX_VIDEO_DURATION_SECONDS = 60;
 
 interface MediaUploadInputProps {
   kind: 'image' | 'video';
   value: string;
   onChange: (url: string) => void;
   label: string;
+  /** سياق الرفع — يحدّد مجلد التخزين على Cloudinary وحد مدة الفيديو على
+   *  الخادم (انظر server.ts). الإعلانات فقط مقيّدة بدقيقة واحدة. */
+  purpose?: 'ad' | 'article';
+  /** تجاوز حد المدة الافتراضي (60 ثانية للإعلانات). مرّر undefined أو
+   *  Infinity لإلغاء التحقق المحلي من المدة كلياً (فيديو المقال مثلاً). */
+  maxDurationSeconds?: number;
 }
 
 /**
@@ -31,7 +37,13 @@ interface MediaUploadInputProps {
  * الخادم، ويعود تلقائياً لحقل رابط خارجي فقط عندما لا يكون كذلك — دون
  * كسر أي شيء ودون إظهار زر رفع لا يعمل.
  */
-export const MediaUploadInput: React.FC<MediaUploadInputProps> = ({ kind, value, onChange, label }) => {
+export const MediaUploadInput: React.FC<MediaUploadInputProps> = (props) => {
+  const { kind, value, onChange, label } = props;
+  // ملاحظة: تفكيك `purpose` مباشرة بقيمة افتراضية في قائمة المعاملات كان
+  // يوسّع نوعه إلى string عند TypeScript رغم كونه union في الواجهة —
+  // قراءته من props مع تثبيت النوع صراحةً هنا تتفادى ذلك.
+  const purpose: 'ad' | 'article' = props.purpose ?? 'ad';
+  const maxDurationSeconds: number = props.maxDurationSeconds ?? DEFAULT_MAX_VIDEO_DURATION_SECONDS;
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [showUrlField, setShowUrlField] = useState(false);
   const [status, setStatus] = useState<'idle' | 'uploading' | 'error' | 'done'>('idle');
@@ -84,20 +96,22 @@ export const MediaUploadInput: React.FC<MediaUploadInputProps> = ({ kind, value,
         setErrorMsg('حجم الفيديو يتجاوز 50 ميغابايت.');
         return;
       }
-      try {
-        const duration = await validateVideoDuration(file);
-        if (duration > MAX_VIDEO_DURATION_SECONDS) {
-          setErrorMsg('مدة الفيديو تتجاوز الدقيقة المسموحة. يرجى اختيار مقطع أقصر.');
-          return;
+      if (Number.isFinite(maxDurationSeconds)) {
+        try {
+          const duration = await validateVideoDuration(file);
+          if (duration > maxDurationSeconds) {
+            setErrorMsg('مدة الفيديو تتجاوز الحد المسموح. يرجى اختيار مقطع أقصر.');
+            return;
+          }
+        } catch {
+          // لا نمنع الرفع إن فشل قياس المدة محلياً — الخادم يتحقق منها فعلياً بعد الرفع
         }
-      } catch {
-        // لا نمنع الرفع إن فشل قياس المدة محلياً — الخادم يتحقق منها فعلياً بعد الرفع
       }
     }
 
     setStatus('uploading');
     try {
-      const result = await uploadAdMedia(file);
+      const result = await uploadAdMedia(file, purpose);
       onChange(result.url);
       setStatus('done');
     } catch (err: any) {
@@ -207,7 +221,13 @@ export const MediaUploadInput: React.FC<MediaUploadInputProps> = ({ kind, value,
               ) : (
                 <>
                   <UploadCloud className="w-5 h-5" />
-                  <span>{kind === 'image' ? 'انقر لرفع صورة (حتى 8 ميغابايت)' : 'انقر لرفع فيديو قصير (حتى دقيقة، 50 ميغابايت)'}</span>
+                  <span>
+                    {kind === 'image'
+                      ? 'انقر لرفع صورة (حتى 8 ميغابايت)'
+                      : Number.isFinite(maxDurationSeconds)
+                      ? 'انقر لرفع فيديو قصير (حتى دقيقة، 50 ميغابايت)'
+                      : 'انقر لرفع فيديو (حتى 50 ميغابايت، بلا حد للمدة)'}
+                  </span>
                 </>
               )}
             </button>

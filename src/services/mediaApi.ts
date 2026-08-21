@@ -24,13 +24,14 @@ export async function fetchMediaUploadStatus(): Promise<boolean> {
   }
 }
 
-export async function uploadAdMedia(file: File): Promise<MediaUploadResult> {
+export async function uploadAdMedia(file: File, purpose: 'ad' | 'article' = 'ad'): Promise<MediaUploadResult> {
   const user = auth.currentUser;
   if (!user) throw new Error('يجب تسجيل الدخول أولاً.');
   const token = await user.getIdToken();
 
   const formData = new FormData();
   formData.append('file', file);
+  formData.append('purpose', purpose);
 
   const res = await fetch('/api/media/upload', {
     method: 'POST',

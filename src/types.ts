@@ -235,6 +235,12 @@ export interface Article {
   tags: string[];
   /** رابط فيديو مضمّن (يوتيوب أو Vimeo) — لا يُرفع ملف */
   videoUrl?: string;
+  /** مقطع فيديو مرفوع مباشرة (مستضاف على Cloudinary)، بديل عن videoUrl —
+   *  بلا حد لمدة الفيديو (بخلاف فيديو الإعلانات المحدود بدقيقة). */
+  uploadedVideoUrl?: string;
+  /** رابط مرجعي/مصدر يُعرض داخل المقال كإحالة (وليس كوسيط عرض) — مثلاً
+   *  رابط الدراسة أو الخبر الذي استند إليه الكاتب. */
+  sourceUrl?: string;
 }
 
 export type PricingModel = 'fixed' | 'cpm' | 'cpc';

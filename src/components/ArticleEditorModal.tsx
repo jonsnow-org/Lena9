@@ -3,7 +3,6 @@ import {
   X,
   Sparkles,
   Lock,
-  Image as ImageIcon,
   Save,
   CheckCircle,
   Wand2,
@@ -26,10 +25,12 @@ import {
   Layers,
   DollarSign,
   ArrowRight,
-  TrendingUp
+  TrendingUp,
+  Link as LinkIcon
 } from 'lucide-react';
 import { Article, ArticleCategory, User } from '../types';
-import { VideoUrlInput } from './VideoEmbed';
+import { VideoUrlInput, VideoEmbed } from './VideoEmbed';
+import { MediaUploadInput } from './MediaUploadInput';
 import { getRemainingAiUses } from '../utils/aiQuota';
 import { REVENUE_SHARES } from '../constants/revenueShares';
 
@@ -86,6 +87,8 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
   const [subCategory, setSubCategory] = useState('');
   const [featuredImage, setFeaturedImage] = useState(COVER_IMAGE_PRESETS[0].url);
   const [videoUrl, setVideoUrl] = useState('');
+  const [uploadedVideoUrl, setUploadedVideoUrl] = useState('');
+  const [sourceUrl, setSourceUrl] = useState('');
   const [isLocked, setIsLocked] = useState(false);
   const [lockedPrice, setLockedPrice] = useState<number>(3.0);
   const [tagsInput, setTagsInput] = useState('أدب, فكر, قراءات');
@@ -108,6 +111,8 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
       setSubCategory(initialArticle.subCategory || '');
       setFeaturedImage(initialArticle.featuredImage || COVER_IMAGE_PRESETS[0].url);
       setVideoUrl(initialArticle.videoUrl || '');
+      setUploadedVideoUrl(initialArticle.uploadedVideoUrl || '');
+      setSourceUrl(initialArticle.sourceUrl || '');
       setIsLocked(initialArticle.isLocked || false);
       setLockedPrice(initialArticle.lockedPrice || 3.0);
       setTagsInput(
@@ -122,6 +127,8 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
       setSubCategory(savedDraft.subCategory || '');
       setFeaturedImage(savedDraft.featuredImage || COVER_IMAGE_PRESETS[0].url);
       setVideoUrl(savedDraft.videoUrl || '');
+      setUploadedVideoUrl(savedDraft.uploadedVideoUrl || '');
+      setSourceUrl(savedDraft.sourceUrl || '');
       setIsLocked(savedDraft.isLocked || false);
       setLockedPrice(savedDraft.lockedPrice || 3.0);
       setTagsInput(
@@ -157,6 +164,8 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
           subCategory,
           featuredImage,
           videoUrl,
+          uploadedVideoUrl,
+          sourceUrl,
           isLocked,
           lockedPrice,
           tags: tagsInput.split(',').map((s) => s.trim()).filter(Boolean)
@@ -170,7 +179,7 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
 
       return () => clearTimeout(timer);
     }
-  }, [title, description, content, category, subCategory, featuredImage, isLocked, lockedPrice, tagsInput, initialArticle]);
+  }, [title, description, content, category, subCategory, featuredImage, videoUrl, uploadedVideoUrl, sourceUrl, isLocked, lockedPrice, tagsInput, initialArticle]);
 
   if (!isOpen) return null;
 
@@ -316,6 +325,8 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
           subCategory: subCategory.trim() || undefined,
           featuredImage,
           videoUrl,
+          uploadedVideoUrl: uploadedVideoUrl.trim() || undefined,
+          sourceUrl: sourceUrl.trim() || undefined,
           isLocked,
           lockedPrice: isLocked ? Number(lockedPrice) : 0,
           tags: tagsArray.length > 0 ? tagsArray : ['أدب', 'ثقافة']
@@ -607,6 +618,23 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
                 {content || 'اكتب محتوى المقال في وضع التحرير لتشاهد المعاينة الحية هنا...'}
               </div>
 
+              {/* Video: uploaded file takes priority over an embed link */}
+              {uploadedVideoUrl ? (
+                <video src={uploadedVideoUrl} controls playsInline className="w-full rounded-2xl" />
+              ) : (
+                videoUrl && <VideoEmbed url={videoUrl} />
+              )}
+
+              {/* Source/reference link — shown as a citation, not as media */}
+              {sourceUrl && (
+                <div className="text-xs text-slate-500 dark:text-slate-400">
+                  <span className="font-bold">المصدر: </span>
+                  <a href={sourceUrl} target="_blank" rel="noopener noreferrer" dir="ltr" className="text-teal-600 dark:text-teal-400 hover:underline break-all">
+                    {sourceUrl}
+                  </a>
+                </div>
+              )}
+
               {/* Tags */}
               <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex flex-wrap gap-2">
                 {tagsInput.split(',').map((tag, i) => (
@@ -688,32 +716,50 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
                 </div>
               </div>
 
-              {/* Cover Image Selector & Presets */}
+              {/* Cover Image Upload & Presets */}
               <div className="space-y-2 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                    <ImageIcon className="w-3.5 h-3.5 text-teal-500" />
-                    <span>صورة غلاف المقال (رابط مباشر أو اختر من المعرض الأدبي):</span>
-                  </label>
-                </div>
+                <MediaUploadInput
+                  kind="image"
+                  purpose="article"
+                  value={featuredImage}
+                  onChange={setFeaturedImage}
+                  label="صورة غلاف المقال"
+                />
 
-                <div className="flex items-center gap-2">
-                  <input
-                    type="url"
-                    value={featuredImage}
-                    onChange={(e) => setFeaturedImage(e.target.value)}
-                    placeholder="https://example.com/image.jpg"
-                    className="flex-1 px-3.5 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs"
+                {/* رفع فيديو حقيقي للمقال — بلا حد لمدة الفيديو */}
+                <div className="pt-3 mt-1 border-t border-slate-200 dark:border-slate-700">
+                  <MediaUploadInput
+                    kind="video"
+                    purpose="article"
+                    maxDurationSeconds={Infinity}
+                    value={uploadedVideoUrl}
+                    onChange={setUploadedVideoUrl}
+                    label="فيديو المقال (رفع مباشر، اختياري)"
                   />
                 </div>
 
-                {/* رابط فيديو مضمّن — بديل عن الرفع المباشر */}
+                {/* رابط فيديو مضمّن (يوتيوب/Vimeo) — بديل عن الرفع المباشر */}
                 <div className="pt-3 mt-1 border-t border-slate-200 dark:border-slate-700">
                   <VideoUrlInput
                     value={videoUrl}
                     onChange={setVideoUrl}
-                    label="رابط فيديو للمقال (اختياري)"
-                    maxDurationHint="لا يوجد حد لمدة فيديو المقال."
+                    label="أو رابط تضمين فيديو (يوتيوب/Vimeo، اختياري)"
+                  />
+                </div>
+
+                {/* رابط مرجعي/مصدر — يظهر داخل المقال كإحالة، وليس كوسيط عرض */}
+                <div className="pt-3 mt-1 border-t border-slate-200 dark:border-slate-700 space-y-1.5">
+                  <label className="flex items-center gap-1.5 text-xs font-bold text-slate-800 dark:text-slate-200">
+                    <LinkIcon className="w-3.5 h-3.5" />
+                    <span>رابط مرجعي/مصدر (اختياري، يظهر في نهاية المقال كإحالة)</span>
+                  </label>
+                  <input
+                    type="url"
+                    dir="ltr"
+                    value={sourceUrl}
+                    onChange={(e) => setSourceUrl(e.target.value)}
+                    placeholder="https://example.com/source-article"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs outline-hidden focus:border-teal-500 text-start"
                   />
                 </div>
 

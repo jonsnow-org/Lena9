@@ -1875,6 +1875,9 @@ export function App() {
           'https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?w=1200&auto=format&fit=crop&q=80',
         category: articleData.category || 'literature',
         subCategory: articleData.subCategory || '',
+        videoUrl: articleData.videoUrl || undefined,
+        uploadedVideoUrl: articleData.uploadedVideoUrl || undefined,
+        sourceUrl: articleData.sourceUrl || undefined,
         isLocked: !!articleData.isLocked,
         lockedPrice: articleData.isLocked ? articleData.lockedPrice || 3.0 : 0,
         readingTimeMinutes:

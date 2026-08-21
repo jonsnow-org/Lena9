@@ -59,7 +59,7 @@ export interface UploadResult {
  */
 export function uploadMediaBuffer(
   buffer: Buffer,
-  opts: { folder: string; resourceType: 'image' | 'video' }
+  opts: { folder: string; resourceType: 'image' | 'video'; maxDurationSeconds?: number }
 ): Promise<UploadResult> {
   tryConfigure();
   if (!configured) {
@@ -79,8 +79,9 @@ export function uploadMediaBuffer(
         }
 
         if (opts.resourceType === 'video') {
+          const durationLimit = opts.maxDurationSeconds ?? MAX_VIDEO_DURATION_SECONDS;
           const duration = (result as any).duration as number | undefined;
-          if (typeof duration === 'number' && duration > MAX_VIDEO_DURATION_SECONDS) {
+          if (typeof duration === 'number' && duration > durationLimit) {
             try {
               await cloudinary.uploader.destroy(result.public_id, { resource_type: 'video' });
             } catch {

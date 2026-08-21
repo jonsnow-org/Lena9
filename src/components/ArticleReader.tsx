@@ -707,10 +707,37 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
             )}
           </div>
 
-          {/* فيديو المقال المضمّن */}
-          {article.videoUrl && (
+          {/* فيديو المقال: الملف المرفوع مباشرة له الأولوية على رابط التضمين */}
+          {article.uploadedVideoUrl ? (
             <div className="my-6">
-              <VideoEmbed url={article.videoUrl} />
+              <video
+                src={article.uploadedVideoUrl}
+                controls
+                playsInline
+                className="w-full rounded-2xl bg-slate-950"
+              />
+            </div>
+          ) : (
+            article.videoUrl && (
+              <div className="my-6">
+                <VideoEmbed url={article.videoUrl} />
+              </div>
+            )
+          )}
+
+          {/* رابط مرجعي/مصدر — إحالة فقط، وليس وسيط عرض */}
+          {article.sourceUrl && (
+            <div className="my-4 text-xs text-slate-500 dark:text-slate-400">
+              <span className="font-bold">المصدر: </span>
+              <a
+                href={article.sourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                dir="ltr"
+                className="text-teal-600 dark:text-teal-400 hover:underline break-all"
+              >
+                {article.sourceUrl}
+              </a>
             </div>
           )}
 
