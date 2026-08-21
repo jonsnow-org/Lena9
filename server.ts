@@ -191,6 +191,14 @@ async function startServer() {
               providerRef: event.providerRef,
               createdAt: new Date().toISOString()
             });
+            tx.set(db.collection('notifications').doc(), {
+              userId: event.uid,
+              type: 'system',
+              title: '💰 تم إيداع رصيدك',
+              message: `تم إضافة ${event.amount}$ إلى محفظتك تلقائياً بعد تأكيد الدفع بالبطاقة.`,
+              isRead: false,
+              createdAt: new Date().toISOString()
+            });
           });
         }
         // account.updated (payout_account_updated) لا يحتاج فعلاً هنا —
@@ -254,6 +262,14 @@ async function startServer() {
                 method: `nowpayments (${payload.pay_currency || 'crypto'})`,
                 status: 'completed',
                 providerRef: String(payload.payment_id),
+                createdAt: new Date().toISOString()
+              });
+              tx.set(db.collection('notifications').doc(), {
+                userId: uid,
+                type: 'system',
+                title: '💰 تم إيداع رصيدك',
+                message: `تم إضافة ${amount}$ إلى محفظتك تلقائياً بعد تأكيد شبكة العملات الرقمية.`,
+                isRead: false,
                 createdAt: new Date().toISOString()
               });
             });
@@ -676,6 +692,14 @@ async function startServer() {
           method: 'stripe',
           status: 'completed',
           providerRef: payout.providerRef,
+          createdAt: new Date().toISOString()
+        });
+        tx.set(db.collection('notifications').doc(), {
+          userId: uid,
+          type: 'withdrawal',
+          title: '✅ تم تنفيذ عملية السحب',
+          message: `تم تحويل ${amount}$ إلى حسابك المرتبط تلقائياً.`,
+          isRead: false,
           createdAt: new Date().toISOString()
         });
       });

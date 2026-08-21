@@ -1065,6 +1065,31 @@ export function App() {
           await adminAdjustUserBalance(req.userId, { availableBalance: newAvailable });
         }
       }
+
+      // إشعار صاحب الطلب بنتيجة المراجعة — يشمل الاعتماد والرفض معاً، حتى
+      // لا يبقى المستخدم بلا أي علم بمصير طلبه المالي إلا بالدخول يدوياً
+      // للتحقق من رصيده كل مرة.
+      const isDeposit = collectionName === 'depositRequests';
+      const notifTitleMap: Record<string, string> = {
+        approved: isDeposit ? '💰 تم إيداع رصيدك' : '✅ تم اعتماد طلب السحب',
+        paid: '✅ تم تنفيذ عملية السحب',
+        rejected: isDeposit ? '❌ تم رفض طلب الإيداع' : '❌ تم رفض طلب السحب'
+      };
+      const notifMessageMap: Record<string, string> = {
+        approved: isDeposit
+          ? `تم إضافة ${currentReq.amount}$ إلى محفظتك بعد تأكيد إدارة المنصة لوصول المبلغ.`
+          : `تمت الموافقة على طلب سحب ${currentReq.amount}$، وسيُحوَّل المبلغ خلال 24-48 ساعة.`,
+        paid: `تم تحويل ${currentReq.amount}$ إلى حسابك بنجاح.`,
+        rejected: isDeposit
+          ? `تعذر اعتماد طلب إيداع ${currentReq.amount}$. تواصل مع الدعم لمعرفة السبب.`
+          : `تعذر اعتماد طلب سحب ${currentReq.amount}$. تواصل مع الدعم لمعرفة السبب.`
+      };
+      createNotificationInFirestore({
+        userId: currentReq.userId,
+        type: isDeposit ? 'system' : 'withdrawal',
+        title: notifTitleMap[status],
+        message: notifMessageMap[status]
+      });
     } catch (err) {
       console.error('تعذر تحديث حالة الطلب المالي:', err);
       alert('تعذر تحديث حالة الطلب. تأكد من صلاحيات الأدمن ثم حاول مجدداً.');
