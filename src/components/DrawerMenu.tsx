@@ -120,7 +120,16 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
         <div className="w-screen max-w-sm bg-slate-900 border-s border-brand-500/20 text-white shadow-2xl flex flex-col justify-between overflow-hidden animate-slide-in-right">
           {/* Header */}
           <div className="p-5 border-b border-brand-500/20 bg-slate-950/80 flex items-center justify-between">
-            <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                if (currentUser.id === 'guest') return;
+                onOpenProfile();
+                onClose();
+              }}
+              className="flex items-center gap-3 text-start rounded-xl -m-1 p-1 hover:bg-slate-900/60 transition-colors"
+              title="فتح ملفي الشخصي"
+            >
               <img
                 src={currentUser.avatarUrl}
                 alt={currentUser.fullName}
@@ -140,7 +149,7 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
                   {getRoleLabel(currentUser.role)}
                 </span>
               </div>
-            </div>
+            </button>
 
             <button
               onClick={onClose}
@@ -367,6 +376,24 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
               </button>
 
               {/* General Links */}
+              {currentUser.id !== 'guest' && (
+                <button
+                  onClick={() => {
+                    onOpenWallet();
+                    onClose();
+                  }}
+                  className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <Wallet className="w-4 h-4 text-emerald-400" />
+                    <span>المحفظة والأرباح</span>
+                  </div>
+                  <span className="text-[11px] text-emerald-400 font-mono font-bold">
+                    ${(currentUser.availableBalance ?? currentUser.walletBalance ?? 0).toFixed(2)}
+                  </span>
+                </button>
+              )}
+
               <button
                 onClick={() => {
                   onOpenKyc();

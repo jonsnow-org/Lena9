@@ -16,7 +16,7 @@ import {
   MessageSquare
 } from 'lucide-react';
 import { Article, User } from '../types';
-import { timeAgoAr } from '../utils/dateFormat';
+import { formatDateTimeAr } from '../utils/dateFormat';
 
 interface ExploreViewProps {
   articles: Article[];
@@ -266,7 +266,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                         {art.writerName}
                       </span>
                       <span>•</span>
-                      <span>{timeAgoAr(art.publishedAt)}</span>
+                      <span>{formatDateTimeAr(art.publishedAt)}</span>
                     </div>
 
                     <h4 className="font-black text-xs sm:text-sm text-slate-900 dark:text-white line-clamp-1 mb-1">

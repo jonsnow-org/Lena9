@@ -72,6 +72,7 @@ import { rememberAccount } from './utils/savedAccounts';
 import { isEligibleForMonetization } from './utils/creatorEligibility';
 import { getTranslator } from './data/translations';
 import { applyThemePreset, applyBackgroundPreset, syncBackgroundOverlayMode } from './utils/themeEngine';
+import { subscribePlatformAdsEnabled, getPlatformAdsEnabled } from './utils/platformAdsStore';
 import { isValidThemePreset, DEFAULT_THEME_PRESET, ThemePresetKey } from './constants/themePresets';
 import {
   isValidBackgroundPreset,
@@ -81,7 +82,8 @@ import {
 import {
   subscribeToThemePreset,
   setThemePresetInFirestore,
-  setBackgroundPresetInFirestore
+  setBackgroundPresetInFirestore,
+  setPlatformAdsEnabledInFirestore
 } from './services/firestoreService';
 import { PromoteArticleModal } from './components/PromoteArticleModal';
 import { LegalPages, LegalSection } from './components/LegalPages';
@@ -165,8 +167,7 @@ import {
   setUserBannedInFirestore,
   setCampaignStatusInFirestore,
   setArticleStatusInFirestore,
-  resolveFraudFlagInFirestore,
-  approvePayoutInFirestore
+  resolveFraudFlagInFirestore
 } from './services/firestoreService';
 
 // Minimal read-only placeholder used ONLY while browsing unauthenticated
@@ -357,7 +358,7 @@ export function App() {
   // can actually control it; AdminDashboard has its own separate tab
   // system from the top-level `activeTab` above.
   const [adminActiveTab, setAdminActiveTab] = useState<
-    'overview' | 'fraud' | 'campaigns' | 'moderation' | 'users' | 'finance' | 'promotions' | 'settings'
+    'overview' | 'fraud' | 'campaigns' | 'moderation' | 'users' | 'promotions' | 'money' | 'accounting' | 'settings'
   >('overview');
   // Same lifting pattern for the writer's profile sub-tabs (مقالاتي /
   // الأرباح), which live inside UserProfileView's own tab system.
@@ -1163,6 +1164,24 @@ export function App() {
     } catch (err) {
       console.error('تعذر حفظ خلفية القالب:', err);
       alert('تعذر حفظ الخلفية الجديدة. تحقق من اتصالك ثم حاول مجدداً.');
+    }
+  };
+
+  // مفتاح إعلانات المنصة العامة — نفس مخزن AdSlot المشترك، حتى تُطابق
+  // شارة اللوحة الحالة الحقيقية المطبَّقة فعلياً على كل الإعلانات.
+  const [platformAdsEnabled, setPlatformAdsEnabledState] = useState(getPlatformAdsEnabled());
+  useEffect(() => {
+    return subscribePlatformAdsEnabled(setPlatformAdsEnabledState);
+  }, []);
+
+  const handleTogglePlatformAds = async (enabled: boolean) => {
+    if (currentUser.role !== 'admin') return;
+    setPlatformAdsEnabledState(enabled);
+    try {
+      await setPlatformAdsEnabledInFirestore(enabled, currentUser.id);
+    } catch (err) {
+      console.error('تعذر حفظ إعداد إعلانات المنصة:', err);
+      alert('تعذر حفظ الإعداد الجديد. تحقق من اتصالك ثم حاول مجدداً.');
     }
   };
 
@@ -2173,6 +2192,18 @@ export function App() {
     return users.filter((u) => followedWriterIds.includes(u.id));
   }, [users, followedWriterIds]);
 
+  // عدد المتابعين الحقيقي لكل مستخدم، محسوب من مجموعة follows الفعلية —
+  // مصدر واحد يُعاد استخدامه في كل مكان يحتاج رقم متابعين دقيق (لوحة
+  // الإدارة، أهلية منشئي المحتوى، لوحة الكاتب...) بدل حقل المستخدم
+  // المخزَّن الذي لا يُحدَّث من أي مسار ويبقى صفراً دائماً.
+  const followersCountByUserId = useMemo(() => {
+    const counts: Record<string, number> = {};
+    followsData.forEach((f) => {
+      counts[f.followingId] = (counts[f.followingId] || 0) + 1;
+    });
+    return counts;
+  }, [followsData]);
+
   // دالة الترجمة الحالية — تُعاد بناؤها فقط عند تغيّر اللغة المختارة.
   const t = useMemo(() => getTranslator(language), [language]);
 
@@ -2273,7 +2304,7 @@ export function App() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors font-sans antialiased">
+    <div className="min-h-screen flex flex-col text-slate-900 dark:text-slate-100 transition-colors font-sans antialiased">
       {/* Top Fixed Header */}
       <TopHeader
         currentUser={currentUser}
@@ -2456,8 +2487,6 @@ export function App() {
             articles={articles}
             campaigns={campaigns}
             fraudFlags={fraudFlags}
-            transactions={transactions}
-            platformBalance={campaigns.reduce((sum, c) => sum + (c.totalSpent || 0), 0)}
             promotions={promotions}
             onSaveSocialLinks={handleSaveSocialLinks}
             onUpdatePromotionStatus={handleUpdatePromotionStatus}
@@ -2531,12 +2560,6 @@ export function App() {
               );
               await resolveFraudFlagInFirestore(flagId, action);
             }}
-            onApprovePayout={async (txId) => {
-              setTransactions((prev) =>
-                prev.map((tx) => (tx.id === txId ? { ...tx, status: 'completed' } : tx))
-              );
-              await approvePayoutInFirestore(txId);
-            }}
             /* تعديل رصيد مستخدم يدوياً من الأدمن — كانت هذه الأداة موعودة في
                نصوص عدة تبويبات ("عدّل رصيد المستخدم يدوياً من تبويب
                المستخدمين") دون أن تُبنى فعلياً. amount هنا فرق يُضاف لقيمة
@@ -2587,10 +2610,13 @@ export function App() {
             }}
             onSelectArticle={(art) => setReadingArticle(art)}
             onSelectUser={(u) => setViewingWriterProfile(u)}
+            followersCountByUserId={followersCountByUserId}
             currentThemePreset={themePreset}
             onChangeThemePreset={handleChangeThemePreset}
             currentBackgroundPreset={backgroundPreset}
             onChangeBackgroundPreset={handleChangeBackgroundPreset}
+            platformAdsEnabled={platformAdsEnabled}
+            onTogglePlatformAds={handleTogglePlatformAds}
           />
         ) : (
           /* Main Feed View: Available to all users/roles when on 'feed' */

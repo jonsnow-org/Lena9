@@ -326,5 +326,12 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isAdmin();
     }
+
+    // مفتاح تشغيل/إيقاف إعلانات المنصة العامة — نفس منطق settings/theme
+    // تماماً (قراءة عامة، كتابة أدمن فقط).
+    match /settings/platformAds {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
   }
 }

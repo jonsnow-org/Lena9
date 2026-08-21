@@ -27,7 +27,7 @@ import { Article, User, ArticlePromotion } from '../types';
 import { SmartAiGuidanceCard } from './SmartAiGuidanceCard';
 import { REVENUE_SHARES } from '../constants/revenueShares';
 import { MIN_PAYOUT_USD, EARNINGS_HOLD_DAYS } from '../constants/payoutRules';
-import { timeAgoAr } from '../utils/dateFormat';
+import { formatDateTimeAr } from '../utils/dateFormat';
 import { getCreatorEligibility } from '../utils/creatorEligibility';
 import { CreatorEligibilityCard } from './CreatorEligibilityCard';
 
@@ -336,7 +336,7 @@ export const WriterDashboard: React.FC<WriterDashboardProps> = ({
                       <div className="flex items-center gap-4 text-xs text-slate-400 mt-1.5">
                         <span>{art.category}</span>
                         <span>•</span>
-                        <span>{timeAgoAr(art.publishedAt)}</span>
+                        <span>{formatDateTimeAr(art.publishedAt)}</span>
                         <span>•</span>
                         <span>{art.viewsCount || 0} قراءة</span>
                       </div>

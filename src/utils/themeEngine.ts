@@ -33,7 +33,7 @@ export function applyBackgroundPreset(preset: BackgroundPresetKey): void {
   let bgLayer = document.getElementById('literium-theme-bg-layer');
   let overlayLayer = document.getElementById('literium-theme-overlay-layer');
 
-  if (!def.imageUrl || def.key === 'none') {
+  if ((!def.imageUrl && !def.cssBackground) || def.key === 'none') {
     if (bgLayer) bgLayer.style.opacity = '0';
     if (overlayLayer) overlayLayer.style.opacity = '0';
   } else {
@@ -50,9 +50,11 @@ export function applyBackgroundPreset(preset: BackgroundPresetKey): void {
       document.body.prepend(overlayLayer);
     }
 
-    bgLayer.style.backgroundImage = `url("${def.imageUrl}")`;
+    // تدرّج CSS خالص (بلا صورة خارجية) إن توفّر، وإلا صورة الخلفية —
+    // كلاهما قيمة صالحة لـ background-image.
+    bgLayer.style.backgroundImage = def.cssBackground || `url("${def.imageUrl}")`;
     bgLayer.style.opacity = '1';
-    
+
     const isDark = document.documentElement.classList.contains('dark');
     overlayLayer.style.backgroundColor = isDark ? def.overlayDark : def.overlayLight;
     overlayLayer.style.opacity = '1';

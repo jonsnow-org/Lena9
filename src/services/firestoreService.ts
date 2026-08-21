@@ -1035,6 +1035,22 @@ export async function setThemePresetInFirestore(preset: string, updatedByUserId:
   }
 }
 
+/** يشغّل/يوقف إعلانات المنصة العامة (Platform Ads) لكل المستخدمين فوراً.
+ *  مستند مستقل عن settings/theme لأنه مفهوم مختلف تماماً (تحكم تشغيلي
+ *  بالإعلانات، لا علاقة له بالمظهر). */
+export async function setPlatformAdsEnabledInFirestore(enabled: boolean, updatedByUserId: string): Promise<void> {
+  try {
+    await setDoc(
+      doc(db, 'settings', 'platformAds'),
+      { enabled, updatedAt: new Date().toISOString(), updatedBy: updatedByUserId },
+      { merge: true }
+    );
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'settings/platformAds');
+    throw error;
+  }
+}
+
 export async function setBackgroundPresetInFirestore(backgroundPreset: string, updatedByUserId: string): Promise<void> {
   try {
     await setDoc(

@@ -1,7 +1,7 @@
 import React from 'react';
 import { Sparkles, Calendar, Eye, Lock, ArrowLeft, Star, Bookmark } from 'lucide-react';
 import { Article } from '../types';
-import { timeAgoAr } from '../utils/dateFormat';
+import { formatDateTimeAr } from '../utils/dateFormat';
 
 interface FeaturedArticlesSectionProps {
   articles?: Article[];
@@ -106,7 +106,7 @@ export const FeaturedArticlesSection: React.FC<FeaturedArticlesSectionProps> = (
 
                   <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-200">
                     <Calendar className="w-3 h-3 text-teal-400" />
-                    <span>{timeAgoAr(article.publishedAt)}</span>
+                    <span>{formatDateTimeAr(article.publishedAt)}</span>
                   </div>
                 </div>
               </div>

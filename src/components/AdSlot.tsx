@@ -3,6 +3,7 @@ import { AdCampaign } from '../types';
 import { logAdEvent } from '../services/firestoreService';
 import { VideoEmbed } from './VideoEmbed';
 import { parseVideoUrl } from '../utils/videoEmbed';
+import { subscribePlatformAdsEnabled, getPlatformAdsEnabled } from '../utils/platformAdsStore';
 
 /**
  * رموز المواضع الإعلانية المعتمدة في المنصة.
@@ -86,8 +87,17 @@ export const AdSlot: React.FC<AdSlotProps> = ({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const hasLoggedImpression = useRef(false);
   const [slotIndex] = useState(() => renderedAdsOnPage++);
+  const [platformAdsEnabled, setPlatformAdsEnabled] = useState(getPlatformAdsEnabled());
 
   const config = SLOT_CONFIG[slotId];
+
+  // مفتاح المالك العام لإعلانات المنصة — يُطفئ فقط مواضع beneficiary
+  // 'platform' (الإعلانات المملوكة للمنصة نفسها)، ولا يؤثر إطلاقاً على
+  // إعلانات الكتّاب التشاركية التي تبقى مصدر دخل مستقل لهم.
+  useEffect(() => {
+    if (config.beneficiary !== 'platform') return;
+    return subscribePlatformAdsEnabled(setPlatformAdsEnabled);
+  }, [config.beneficiary]);
 
   /**
    * اختيار الإعلان بالأولوية:
@@ -97,6 +107,7 @@ export const AdSlot: React.FC<AdSlotProps> = ({
    * 4. لا شيء — لا تُعرض مساحة فارغة إطلاقاً
    */
   const selectedCampaign = useMemo(() => {
+    if (config.beneficiary === 'platform' && !platformAdsEnabled) return null;
     const active = campaigns.filter((c) => c.status === 'active');
     if (active.length === 0) return null;
 
@@ -117,31 +128,44 @@ export const AdSlot: React.FC<AdSlotProps> = ({
 
     // اختيار ثابت حسب ترتيب الموضع، لمنع ظهور نفس الإعلان مرتين في الصفحة
     return eligible[slotIndex % eligible.length] || null;
-  }, [campaigns, config.sponsorOnly, category, slotIndex]);
+  }, [campaigns, config.sponsorOnly, config.beneficiary, platformAdsEnabled, category, slotIndex]);
 
-  // تسجيل الظهور مرة واحدة عند دخول الإعلان فعلياً إلى الشاشة.
-  // لا يُحتسب أي مبلغ هنا — الاحتساب يتم لاحقاً بمراجعة الأدمن.
+  // تسجيل الظهور فقط بعد بقاء 50% من الإعلان مرئياً لمدة ثانية متواصلة
+  // (Viewability) — وليس عند مجرد دخوله الشاشة للحظة عابرة أثناء التمرير
+  // السريع. أي خروج من نطاق الرؤية قبل اكتمال الثانية يُلغي المؤقّت
+  // ويُعاد بدؤه عند العودة. لا يُحتسب أي مبلغ هنا — الاحتساب يتم لاحقاً
+  // بمراجعة الأدمن.
+  const MIN_VIEWABLE_MS = 1000;
   useEffect(() => {
     if (!selectedCampaign || hasLoggedImpression.current) return;
     const el = containerRef.current;
     if (!el || typeof IntersectionObserver === 'undefined') return;
 
+    let dwellTimer: ReturnType<typeof setTimeout> | null = null;
+
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
           if (entry.isIntersecting && !hasLoggedImpression.current) {
-            hasLoggedImpression.current = true;
-            logAdEvent({
-              campaignId: selectedCampaign.id,
-              slotId,
-              articleId,
-              writerId,
-              viewerId,
-              eventType: 'impression'
-            }).catch(() => {
-              /* تسجيل الظهور ليس حرجاً — لا نزعج المستخدم برسالة خطأ */
-            });
-            observer.disconnect();
+            if (dwellTimer) clearTimeout(dwellTimer);
+            dwellTimer = setTimeout(() => {
+              if (hasLoggedImpression.current) return;
+              hasLoggedImpression.current = true;
+              logAdEvent({
+                campaignId: selectedCampaign.id,
+                slotId,
+                articleId,
+                writerId,
+                viewerId,
+                eventType: 'impression'
+              }).catch(() => {
+                /* تسجيل الظهور ليس حرجاً — لا نزعج المستخدم برسالة خطأ */
+              });
+              observer.disconnect();
+            }, MIN_VIEWABLE_MS);
+          } else if (dwellTimer) {
+            clearTimeout(dwellTimer);
+            dwellTimer = null;
           }
         });
       },
@@ -149,7 +173,10 @@ export const AdSlot: React.FC<AdSlotProps> = ({
     );
 
     observer.observe(el);
-    return () => observer.disconnect();
+    return () => {
+      if (dwellTimer) clearTimeout(dwellTimer);
+      observer.disconnect();
+    };
   }, [selectedCampaign, slotId, articleId, writerId, viewerId]);
 
   const handleClick = () => {

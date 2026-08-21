@@ -13,7 +13,6 @@ import {
   XCircle,
   Eye,
   Filter,
-  ArrowUpRight,
   Sparkles,
   Settings,
   RefreshCw,
@@ -27,7 +26,7 @@ import {
   Ban,
   Image as ImageIcon
 } from 'lucide-react';
-import { User, Article, AdCampaign, FraudFlag, Transaction, Wallet, ArticlePromotion } from '../types';
+import { User, Article, AdCampaign, FraudFlag, ArticlePromotion } from '../types';
 import { evaluateAdEventBatch, calculateEventCost } from '../utils/fraudFilters';
 import { REVENUE_SHARES } from '../constants/revenueShares';
 import { THEME_PRESETS, ThemePresetKey, DEFAULT_THEME_PRESET } from '../constants/themePresets';
@@ -39,8 +38,6 @@ interface AdminDashboardProps {
   articles: Article[];
   campaigns: AdCampaign[];
   fraudFlags: FraudFlag[];
-  transactions: Transaction[];
-  platformBalance?: number;
   onUpdateUserRole?: (userId: string, newRole: User['role']) => void;
   onToggleUserVerified?: (userId: string) => void;
   onApproveKyc?: (userId: string) => void;
@@ -48,14 +45,13 @@ interface AdminDashboardProps {
   onUpdateCampaignStatus?: (campaignId: string, status: AdCampaign['status']) => void;
   onUpdateArticleStatus?: (articleId: string, status: Article['status']) => void;
   onResolveFraudFlag?: (flagId: string, action: 'resolved' | 'dismissed') => void;
-  onApprovePayout?: (transactionId: string) => void;
   onSelectArticle?: (article: Article) => void;
   onSelectUser?: (user: User) => void;
   // Lets a parent (the bottom nav) drive which internal tab is shown.
   // Optional — the component still manages its own tab state if these
   // aren't supplied, so it keeps working when used standalone.
-  activeTab?: 'overview' | 'fraud' | 'campaigns' | 'moderation' | 'users' | 'finance' | 'promotions' | 'money' | 'accounting' | 'settings';
-  onActiveTabChange?: (tab: 'overview' | 'fraud' | 'campaigns' | 'moderation' | 'users' | 'finance' | 'promotions' | 'money' | 'accounting' | 'settings') => void;
+  activeTab?: 'overview' | 'fraud' | 'campaigns' | 'moderation' | 'users' | 'promotions' | 'money' | 'accounting' | 'settings';
+  onActiveTabChange?: (tab: 'overview' | 'fraud' | 'campaigns' | 'moderation' | 'users' | 'promotions' | 'money' | 'accounting' | 'settings') => void;
   promotions?: ArticlePromotion[];
   onUpdatePromotionStatus?: (promotionId: string, status: 'approved' | 'rejected') => void;
   depositRequests?: any[];
@@ -98,6 +94,14 @@ interface AdminDashboardProps {
   currentBackgroundPreset?: BackgroundPresetKey;
   /** يغيّر خلفية القالب للجميع فوراً (يُكتب في Firestore) */
   onChangeBackgroundPreset?: (preset: BackgroundPresetKey) => void;
+  /** هل إعلانات المنصة العامة (Platform Ads) مفعّلة حالياً لكل المستخدمين */
+  platformAdsEnabled?: boolean;
+  /** يشغّل/يوقف إعلانات المنصة العامة للجميع فوراً (يُكتب في Firestore) */
+  onTogglePlatformAds?: (enabled: boolean) => void;
+  /** عدد المتابعين الحقيقي لكل مستخدم، محسوب من مجموعة follows الفعلية —
+   *  بخلاف user.followersCount المخزَّن الذي لا يُحدَّث من أي مسار ويبقى
+   *  صفراً دائماً. */
+  followersCountByUserId?: Record<string, number>;
 }
 
 type AdjustableBalanceField = 'walletBalance' | 'availableBalance' | 'pendingEarnings' | 'lifetimeEarnings';
@@ -214,7 +218,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   articles = [],
   campaigns = [],
   fraudFlags = [],
-  transactions = [],
   onUpdateUserRole,
   onToggleUserVerified,
   onApproveKyc,
@@ -222,7 +225,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onUpdateCampaignStatus,
   onUpdateArticleStatus,
   onResolveFraudFlag,
-  onApprovePayout,
   onSelectArticle,
   onSelectUser,
   promotions = [],
@@ -242,10 +244,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   currentThemePreset = DEFAULT_THEME_PRESET,
   onChangeThemePreset,
   currentBackgroundPreset = DEFAULT_BACKGROUND_PRESET,
-  onChangeBackgroundPreset
+  onChangeBackgroundPreset,
+  platformAdsEnabled = true,
+  onTogglePlatformAds,
+  followersCountByUserId = {}
 }) => {
   const [internalActiveTab, setInternalActiveTab] = useState<
-    'overview' | 'fraud' | 'campaigns' | 'moderation' | 'users' | 'finance' | 'settings'
+    'overview' | 'fraud' | 'campaigns' | 'moderation' | 'users' | 'settings'
   >('overview');
   // Controlled-if-provided pattern: use the parent's tab + setter when given
   // (so the bottom nav's admin buttons actually drive this screen), fall
@@ -257,7 +262,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [userRoleFilter, setUserRoleFilter] = useState<string>('all');
   const [userSearch, setUserSearch] = useState<string>('');
   const [articleFilter, setArticleFilter] = useState<string>('all');
-  const [platformAdsEnabled, setPlatformAdsEnabled] = useState<boolean>(true);
 
   // Financial Metrics Calculation strictly from real Firestore data
   const totalPlatformAdRevenue = campaigns
@@ -288,9 +292,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     0
   );
 
-  const pendingWithdrawals = transactions.filter(
-    (t) => t.type === 'withdrawal' && t.status === 'pending'
-  );
+  // طلبات السحب الحقيقية المعلَّقة — من مجموعة payoutRequests الفعلية
+  // (وليس من transactions التي كانت مصدرها الحقيقي أرباح المالك الخاصة
+  // فقط، فتُظهر رقماً لا علاقة له بطلبات سحب بقية المستخدمين).
+  const pendingPayoutRequests = payoutRequests.filter((r: any) => r.status === 'pending');
 
   const filteredUsers = users.filter((u) => {
     const matchRole = userRoleFilter === 'all' || u.role === userRoleFilter;
@@ -341,25 +346,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
-                  لوحة الإدارة المركزية والمالك
+                <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+                  مركز قيادة <span className="text-brand-400">ليتيريوم</span>
                 </h1>
                 <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-brand-500/20 text-brand-300 border border-brand-500/30">
-                  صلاحيات كاملة 🛡️
+                  👑 مالك المنصة
                 </span>
               </div>
               <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
-                مرحباً {currentUser.fullName} • مراقبة النزاهة الإعلانية، الحوكمة المالية، ومكافحة الاحتيال
+                أهلاً {currentUser.fullName} • مراقبة النزاهة الإعلانية، الحوكمة المالية، ومكافحة الاحتيال
               </p>
             </div>
           </div>
 
-          {/* Quick Realtime Shield Status */}
+          {/* Quick Realtime Shield Status — أرقام محسوبة فعلياً من بيانات
+              الاحتيال الحقيقية، وليست نسبة ثابتة مزيَّفة */}
           <div className="flex flex-wrap items-center gap-3 bg-slate-900/90 border border-brand-500/20 rounded-2xl p-2.5 px-4 shadow-inner">
             <div className="flex items-center gap-2 text-xs">
-              <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+              <div className={`w-2.5 h-2.5 rounded-full ${fraudFlags.length > 0 ? 'bg-amber-500' : 'bg-emerald-500'} animate-pulse`} />
               <span className="text-slate-300 font-medium">درع مكافحة الاحتيال:</span>
-              <span className="text-emerald-400 font-bold">نشط بنسبة 99.8%</span>
+              <span className={`font-bold ${fraudFlags.length > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                {fraudFlags.length > 0 ? `${fraudFlags.length} حادثة مكتشفة` : 'نشط — لا حوادث حالياً'}
+              </span>
             </div>
             <div className="h-4 w-px bg-slate-800" />
             <div className="text-xs text-slate-300">
@@ -375,9 +383,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             { id: 'fraud', label: 'فحص الاحتيال والأمان', icon: ShieldCheck, badge: fraudFlags.length },
             { id: 'campaigns', label: 'إدارة الحملات والإعلانات', icon: Megaphone, badge: campaigns.length },
             { id: 'moderation', label: 'حوكمة المحتوى والمقالات', icon: FileText, badge: articles.length },
-            { id: 'users', label: 'إدارة المستخدمين وKYC', icon: Users, badge: users.length },
-            { id: 'finance', label: 'طلبات السحب والفوترة', icon: DollarSign, badge: pendingWithdrawals.length },
             { id: 'promotions', label: 'طلبات ترويج المقالات', icon: Rocket, badge: promotions.filter((p) => p.status === 'pending').length },
+            { id: 'users', label: 'إدارة المستخدمين وKYC', icon: Users, badge: users.length },
             { id: 'money', label: 'الإيداع والسحب', icon: DollarSign, badge: [...depositRequests, ...payoutRequests, ...purchaseRequests].filter((r) => r.status === 'pending').length },
             { id: 'accounting', label: 'احتساب أرباح الإعلانات', icon: TrendingUp, badge: adEvents.filter((e) => !e.processed).length },
             { id: 'settings', label: 'إعدادات المنظومة', icon: Settings }
@@ -431,9 +438,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <div className="text-2xl sm:text-3xl font-black text-white font-mono">
                   ${netPlatformRevenue.toFixed(2)}
                 </div>
-                <div className="mt-2 text-[11px] text-emerald-400 flex items-center gap-1">
-                  <ArrowUpRight className="w-3.5 h-3.5" />
-                  <span>+18.4% نمو شهري</span>
+                <div className="mt-2 text-[11px] text-slate-400">
+                  إجمالي حصة المنصة من الإعلانات والمبيعات (محتسب من بيانات حقيقية)
                 </div>
               </div>
 
@@ -619,11 +625,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <div>
                       <div className="font-bold text-white">طلبات سحب أرباح الكُتّاب</div>
                       <div className="text-[11px] text-slate-400">
-                        {pendingWithdrawals.length} طلبات بانتظار التحويل المالي
+                        {pendingPayoutRequests.length} طلبات بانتظار التحويل المالي
                       </div>
                     </div>
                     <button
-                      onClick={() => setActiveTab('finance')}
+                      onClick={() => setActiveTab('money')}
                       className="px-3 py-1.5 rounded-lg bg-brand-600 text-white font-bold hover:bg-brand-500 text-xs"
                     >
                       معالجة
@@ -878,7 +884,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <span className="text-xs font-semibold text-slate-300">إعلانات المنصة العامة (100% للمالك):</span>
                 <button
                   type="button"
-                  onClick={() => setPlatformAdsEnabled(!platformAdsEnabled)}
+                  onClick={() => onTogglePlatformAds?.(!platformAdsEnabled)}
+                  title={platformAdsEnabled ? 'إيقاف إعلانات المنصة لكل المستخدمين' : 'تشغيل إعلانات المنصة لكل المستخدمين'}
                   className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                     platformAdsEnabled ? 'bg-brand-600' : 'bg-slate-700'
                   }`}
@@ -1183,7 +1190,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </td>
 
                         <td className="p-3.5 font-mono text-slate-300">
-                          {u.followersCount} متابع • {u.articlesCount || 0} مقال
+                          {followersCountByUserId[u.id] ?? 0} متابع • {u.articlesCount || 0} مقال
                         </td>
 
                         <td className="p-3.5 font-mono font-bold text-emerald-400">
@@ -1229,93 +1236,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         )}
 
         {/* ============================================================ */}
-        {/* TAB 6: FINANCE & PAYOUTS */}
-        {/* ============================================================ */}
-        {activeTab === 'finance' && (
-          <div className="space-y-6">
-            <div className="p-5 rounded-2xl bg-slate-900/90 border border-brand-500/20">
-              <h3 className="text-base font-bold text-white flex items-center gap-2 mb-1">
-                <DollarSign className="w-5 h-5 text-emerald-400" />
-                معالجة طلبات سحب أرباح الكُتّاب
-              </h3>
-              <p className="text-xs text-slate-400">
-                تدقيق السحوبات والتحويلات عبر USDT TRC20 والحوالات البنكية بعد التأكد من نزاهة الأرباح.
-              </p>
-            </div>
-
-            <div className="rounded-2xl bg-slate-900/90 border border-slate-800 overflow-hidden shadow-xl">
-              <div className="overflow-x-auto">
-                <table className="w-full text-right text-xs">
-                  <thead className="bg-slate-950/80 text-slate-400 font-semibold border-b border-slate-800">
-                    <tr>
-                      <th className="p-3.5">رقم المعاملة والتاريخ</th>
-                      <th className="p-3.5">النوع والبيان</th>
-                      <th className="p-3.5">طريقة الدفع والحساب</th>
-                      <th className="p-3.5">المبلغ</th>
-                      <th className="p-3.5">الحالة</th>
-                      <th className="p-3.5 text-center">الإجراء</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/60">
-                    {transactions.map((tx) => (
-                      <tr key={tx.id} className="hover:bg-slate-800/40 transition-colors">
-                        <td className="p-3.5 font-mono">
-                          <div className="font-bold text-brand-300">{tx.referenceId || tx.id}</div>
-                          <div className="text-[11px] text-slate-500">{tx.createdAt}</div>
-                        </td>
-
-                        <td className="p-3.5">
-                          <div className="font-bold text-white">{tx.description}</div>
-                          {tx.relatedArticleTitle && (
-                            <div className="text-[11px] text-slate-400">{tx.relatedArticleTitle}</div>
-                          )}
-                        </td>
-
-                        <td className="p-3.5 text-slate-300 font-medium">
-                          {tx.paymentMethod}
-                        </td>
-
-                        <td className="p-3.5 font-mono font-bold text-emerald-400 text-sm">
-                          ${tx.amount.toFixed(2)}
-                        </td>
-
-                        <td className="p-3.5">
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              tx.status === 'completed'
-                                ? 'bg-emerald-500/20 text-emerald-400'
-                                : tx.status === 'pending'
-                                ? 'bg-amber-500/20 text-amber-300'
-                                : 'bg-red-500/20 text-red-300'
-                            }`}
-                          >
-                            {tx.status === 'completed' ? 'مكتمل' : 'قيد الانتظار'}
-                          </span>
-                        </td>
-
-                        <td className="p-3.5 text-center">
-                          {tx.status === 'pending' ? (
-                            <button
-                              onClick={() => onApprovePayout?.(tx.id)}
-                              className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs"
-                            >
-                              موافقة وصرف
-                            </button>
-                          ) : (
-                            <span className="text-[11px] text-slate-500">تمت المعالجة</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ============================================================ */}
-        {/* TAB 7: SYSTEM SETTINGS */}
+        {/* TAB: AD REVENUE ACCOUNTING */}
         {/* ============================================================ */}
         {activeTab === 'accounting' && (() => {
           const unprocessed = adEvents.filter((e: any) => !e.processed);
@@ -1807,7 +1728,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   (الأزرار، شريط التنقل، الشارات، الروابط النشطة)، دون الحاجة لإعادة نشر التطبيق.
                   ألوان النجاح/التحذير/الخطر (أخضر/أصفر/أحمر) لا تتغيّر أبداً — تبقى واضحة الدلالة دائماً.
                 </p>
-                <div className="grid grid-cols-4 sm:grid-cols-7 gap-3">
+                <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-11 gap-3">
                   {Object.values(THEME_PRESETS).map((preset) => {
                     const isActive = currentThemePreset === preset.key;
                     return (
@@ -1869,6 +1790,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               alt={preset.label}
                               className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
                               referrerPolicy="no-referrer"
+                            />
+                          ) : preset.cssBackground ? (
+                            <div
+                              className="w-full h-full group-hover:scale-110 transition-transform duration-300"
+                              style={{ backgroundImage: preset.cssBackground }}
                             />
                           ) : (
                             <div className="w-full h-full bg-slate-900 flex items-center justify-center text-slate-500 text-xs font-bold">

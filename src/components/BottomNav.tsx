@@ -29,7 +29,7 @@ interface BottomNavProps {
   unreadCount?: number;
   unreadMessagesCount?: number;
   adminActiveTab?: string;
-  onAdminNavigate?: (tab: 'overview' | 'fraud' | 'campaigns' | 'moderation' | 'users' | 'finance' | 'settings') => void;
+  onAdminNavigate?: (tab: 'overview' | 'fraud' | 'campaigns' | 'moderation' | 'users' | 'settings') => void;
   writerActiveTab?: string;
   onWriterNavigate?: (tab: 'articles' | 'stats_earnings') => void;
   /** دالة الترجمة الحالية — اختيارية بافتراضي عربي حتى لا يتعطل أي استدعاء

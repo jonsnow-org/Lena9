@@ -8,7 +8,18 @@
 // مقياس Tailwind الأصلي، وهو ما يحافظ تلقائياً على تباين النص المقروء
 // فوق كل خلفية بعد تبديل اللون — لأن كل مكان في الواجهة مبني على منطق
 // "درجة فاتحة + نص داكن" أو "درجة داكنة + نص فاتح" بغضّ النظر عن اللون.
-export type ThemePresetKey = 'purple' | 'red' | 'amber' | 'green' | 'blue' | 'cyan' | 'rose';
+export type ThemePresetKey =
+  | 'purple'
+  | 'red'
+  | 'amber'
+  | 'green'
+  | 'blue'
+  | 'cyan'
+  | 'rose'
+  | 'gold'
+  | 'silver'
+  | 'orange'
+  | 'bronze';
 
 export interface ThemePresetDefinition {
   key: ThemePresetKey;
@@ -151,6 +162,82 @@ export const THEME_PRESETS: Record<ThemePresetKey, ThemePresetDefinition> = {
       '800': 'oklch(45.5% 0.188 13.697)',
       '900': 'oklch(41% 0.159 10.272)',
       '950': 'oklch(27.1% 0.105 12.094)'
+    }
+  },
+  gold: {
+    key: 'gold',
+    label: 'ذهبي',
+    labelEn: 'Gold',
+    swatch: '#c8952a',
+    shades: {
+      '50': 'oklch(98.5% 0.020 85)',
+      '100': 'oklch(96% 0.050 85)',
+      '200': 'oklch(92% 0.095 85)',
+      '300': 'oklch(87% 0.140 85)',
+      '400': 'oklch(80% 0.175 82)',
+      '500': 'oklch(73% 0.190 78)',
+      '600': 'oklch(64% 0.185 70)',
+      '700': 'oklch(53% 0.160 60)',
+      '800': 'oklch(45% 0.130 55)',
+      '900': 'oklch(39% 0.105 50)',
+      '950': 'oklch(26% 0.070 45)'
+    }
+  },
+  silver: {
+    key: 'silver',
+    label: 'فضي',
+    labelEn: 'Silver',
+    swatch: '#6b7c93',
+    shades: {
+      '50': 'oklch(98% 0.006 250)',
+      '100': 'oklch(95.5% 0.012 250)',
+      '200': 'oklch(90.5% 0.020 250)',
+      '300': 'oklch(83% 0.032 252)',
+      '400': 'oklch(72% 0.045 254)',
+      '500': 'oklch(62% 0.055 256)',
+      '600': 'oklch(52% 0.055 258)',
+      '700': 'oklch(44% 0.050 258)',
+      '800': 'oklch(36% 0.042 260)',
+      '900': 'oklch(29% 0.035 262)',
+      '950': 'oklch(18% 0.028 264)'
+    }
+  },
+  orange: {
+    key: 'orange',
+    label: 'برتقالي',
+    labelEn: 'Orange',
+    swatch: '#ea580c',
+    shades: {
+      '50': 'oklch(98% 0.016 73.684)',
+      '100': 'oklch(95.4% 0.038 75.164)',
+      '200': 'oklch(90.1% 0.076 70.697)',
+      '300': 'oklch(83.7% 0.128 66.29)',
+      '400': 'oklch(75% 0.183 55.934)',
+      '500': 'oklch(70.5% 0.213 47.604)',
+      '600': 'oklch(64.6% 0.222 41.116)',
+      '700': 'oklch(55.3% 0.195 38.402)',
+      '800': 'oklch(47% 0.157 37.304)',
+      '900': 'oklch(40.8% 0.123 38.172)',
+      '950': 'oklch(26.6% 0.079 36.259)'
+    }
+  },
+  bronze: {
+    key: 'bronze',
+    label: 'برونزي',
+    labelEn: 'Bronze',
+    swatch: '#a15b34',
+    shades: {
+      '50': 'oklch(97% 0.015 50)',
+      '100': 'oklch(93% 0.035 48)',
+      '200': 'oklch(87% 0.065 45)',
+      '300': 'oklch(79% 0.095 42)',
+      '400': 'oklch(69% 0.120 38)',
+      '500': 'oklch(59% 0.130 34)',
+      '600': 'oklch(50% 0.125 30)',
+      '700': 'oklch(42% 0.110 28)',
+      '800': 'oklch(35% 0.090 26)',
+      '900': 'oklch(29% 0.070 24)',
+      '950': 'oklch(18% 0.045 22)'
     }
   }
 };

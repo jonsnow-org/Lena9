@@ -20,7 +20,7 @@ import {
   Star
 } from 'lucide-react';
 import { User, Article, AdCampaign } from '../types';
-import { timeAgoAr } from '../utils/dateFormat';
+import { formatDateTimeAr } from '../utils/dateFormat';
 import { AdSlot } from './AdSlot';
 import { getCreatorEligibility } from '../utils/creatorEligibility';
 
@@ -331,7 +331,7 @@ export const WriterProfileView: React.FC<WriterProfileViewProps> = ({
                       <span>{art.commentsCount}</span>
                     </span>
                     <span>•</span>
-                    <span>{timeAgoAr(art.publishedAt)}</span>
+                    <span>{formatDateTimeAr(art.publishedAt)}</span>
                   </div>
                 </div>
               </div>

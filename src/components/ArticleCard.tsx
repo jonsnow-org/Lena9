@@ -1,7 +1,7 @@
 import React from 'react';
 import { Eye, Heart, MessageSquare, Lock, CheckCircle2, Bookmark, Calendar, ArrowLeft, Sparkles, Clock } from 'lucide-react';
 import { Article } from '../types';
-import { timeAgoAr, formatDateTimeAr, formatDateAr } from '../utils/dateFormat';
+import { formatDateTimeAr, formatDateAr } from '../utils/dateFormat';
 
 interface ArticleCardProps {
   article: Article;
@@ -102,9 +102,7 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
                 )}
               </div>
               <span className="text-[11px] text-slate-400 dark:text-slate-500 font-medium flex items-center gap-1">
-                <span>{timeAgoAr(article.publishedAt)}</span>
-                <span>•</span>
-                <span className="text-[10px] text-slate-400">{formatDateTimeAr(article.publishedAt)}</span>
+                <span>{formatDateAr(article.publishedAt)}</span>
               </span>
             </div>
           </div>

@@ -12,15 +12,24 @@ export type BackgroundPresetKey =
   | 'celestial_night'
   | 'arabesque_geometry'
   | 'minimalist_gradient'
-  | 'emerald_forest';
+  | 'emerald_forest'
+  | 'aurora_mesh'
+  | 'midnight_gradient'
+  | 'marble_luxury';
 
 export interface BackgroundPresetDefinition {
   key: BackgroundPresetKey;
   label: string;
   labelEn: string;
   description: string;
+  /** معاينة مصغّرة داخل لوحة الإدارة — رابط صورة أو تدرّج CSS، حسب النوع */
   previewUrl: string;
+  /** رابط صورة خارجية (Unsplash) — فارغ إن كانت الخلفية تدرّجاً بلا صورة */
   imageUrl: string;
+  /** تدرّج CSS مُولَّد بالكامل محلياً (بلا أي اعتماد على صورة خارجية أو
+   *  اتصال إنترنت) — يُستخدم بدل imageUrl عند توفّره، فلا تتأخر الخلفية
+   *  بالتحميل ولا يمكن أن تنكسر أبداً. */
+  cssBackground?: string;
   overlayLight: string;
   overlayDark: string;
 }
@@ -97,6 +106,43 @@ export const BACKGROUND_PRESETS: Record<BackgroundPresetKey, BackgroundPresetDef
     imageUrl: 'https://images.unsplash.com/photo-1448375240586-882707db888b?w=1920&auto=format&fit=crop&q=80',
     overlayLight: 'rgba(244, 249, 245, 0.93)',
     overlayDark: 'rgba(2, 18, 10, 0.90)'
+  },
+  // الخلفيات الثلاث التالية تدرّجات CSS مُولَّدة بالكامل محلياً — بلا أي
+  // صورة خارجية، فتظهر فوراً بلا تحميل ولا يمكن أن تنكسر أبداً مهما حدث
+  // لاتصال الإنترنت.
+  aurora_mesh: {
+    key: 'aurora_mesh',
+    label: 'توهّج الشفق الأدبي',
+    labelEn: 'Literary Aurora Mesh',
+    description: 'تدرّج ألوان ناعم متعدد الطبقات بروح عصرية راقية — بلا أي صورة، يظهر فوراً دون تحميل.',
+    previewUrl: '',
+    imageUrl: '',
+    cssBackground:
+      'radial-gradient(at 15% 20%, rgba(168,85,247,0.45) 0, transparent 55%), radial-gradient(at 85% 25%, rgba(56,189,248,0.40) 0, transparent 55%), radial-gradient(at 50% 85%, rgba(236,72,153,0.30) 0, transparent 55%), linear-gradient(180deg, #0f172a 0%, #1e1b4b 100%)',
+    overlayLight: 'rgba(255, 255, 255, 0.90)',
+    overlayDark: 'rgba(2, 6, 23, 0.82)'
+  },
+  midnight_gradient: {
+    key: 'midnight_gradient',
+    label: 'عمق ليلي متدرّج',
+    labelEn: 'Midnight Depth',
+    description: 'تدرّج داكن هادئ يريح العين في القراءة الليلية الطويلة — تدرّج CSS خالص بلا صورة.',
+    previewUrl: '',
+    imageUrl: '',
+    cssBackground: 'linear-gradient(160deg, #020617 0%, #0f172a 45%, #1e293b 100%)',
+    overlayLight: 'rgba(255, 255, 255, 0.93)',
+    overlayDark: 'rgba(2, 6, 23, 0.75)'
+  },
+  marble_luxury: {
+    key: 'marble_luxury',
+    label: 'رخام فاخر دافئ',
+    labelEn: 'Warm Marble Luxury',
+    description: 'درجات رخام كريمية فاخرة وناعمة تمنح إحساساً بالفخامة الهادئة — تدرّج CSS خالص بلا صورة.',
+    previewUrl: '',
+    imageUrl: '',
+    cssBackground: 'linear-gradient(135deg, #fdfbf7 0%, #f3ede3 40%, #e8ddd0 70%, #f5f0e8 100%)',
+    overlayLight: 'rgba(255, 255, 255, 0.90)',
+    overlayDark: 'rgba(2, 6, 23, 0.93)'
   }
 };
 
