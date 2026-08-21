@@ -20,6 +20,12 @@ import { AdCampaign, PricingModel, AdPlacementType, PromotionKind } from '../typ
 import { VideoUrlInput } from './VideoEmbed';
 import { MediaUploadInput } from './MediaUploadInput';
 
+// سعر خفيف مقصود لحملات ترويج القنوات/الحسابات الاجتماعية — أقل من سعر
+// البانر العادي ($0.20) لأنها زر دعوة بسيط لا مساحة بانر كاملة، ولأن
+// المعلن يشحن رصيده دفعة واحدة (حد أدنى $50) فلا داعي لتحميل كل نقرة
+// برسوم تحويل الدفع — تلك تُدفع مرة واحدة عند الشحن فقط.
+const SOCIAL_PROMO_CPC_RATE = 0.05;
+
 const PROMOTION_PLATFORMS: { id: Exclude<PromotionKind, 'website'>; label: string; urlHint: string }[] = [
   { id: 'telegram', label: 'قناة تيليجرام', urlHint: 'https://t.me/channel_username' },
   { id: 'youtube', label: 'قناة يوتيوب', urlHint: 'https://youtube.com/@channel_handle' },
@@ -252,7 +258,13 @@ export const NewCampaignModal: React.FC<NewCampaignModalProps> = ({
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
-                onClick={() => setPromotionKind('website')}
+                onClick={() => {
+                  if (promotionKind !== 'website') {
+                    setPromotionKind('website');
+                    setPricingModel('cpc');
+                    setCpcRate(0.20);
+                  }
+                }}
                 className={`p-3 rounded-2xl border text-center transition-all ${
                   promotionKind === 'website'
                     ? 'border-cyan-500 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 font-extrabold ring-2 ring-cyan-500/20'
@@ -267,6 +279,8 @@ export const NewCampaignModal: React.FC<NewCampaignModalProps> = ({
                 onClick={() => {
                   if (promotionKind === 'website') {
                     setPromotionKind('telegram');
+                    setPricingModel('cpc');
+                    setCpcRate(SOCIAL_PROMO_CPC_RATE);
                     if (destinationUrl === 'https://literium.app') setDestinationUrl('');
                   }
                 }}
@@ -468,52 +482,67 @@ export const NewCampaignModal: React.FC<NewCampaignModalProps> = ({
             <label className="block text-xs font-bold text-slate-800 dark:text-slate-200">
               3. نموذج التسعير والميزانية
             </label>
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => setPricingModel('fixed')}
-                className={`p-3 rounded-2xl border text-center transition-all ${
-                  pricingModel === 'fixed'
-                    ? 'border-cyan-500 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 font-extrabold ring-2 ring-cyan-500/20'
-                    : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
-                }`}
-              >
-                <Clock className="w-4 h-4 mx-auto mb-1" />
-                <span className="block text-xs font-bold">زمني ثابت</span>
-                <span className="text-[10px] opacity-75">24h - 7 أيام</span>
-              </button>
 
-              <button
-                type="button"
-                onClick={() => setPricingModel('cpc')}
-                className={`p-3 rounded-2xl border text-center transition-all ${
-                  pricingModel === 'cpc'
-                    ? 'border-cyan-500 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 font-extrabold ring-2 ring-cyan-500/20'
-                    : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
-                }`}
-              >
-                <MousePointerClick className="w-4 h-4 mx-auto mb-1" />
-                <span className="block text-xs font-bold">بالنقرة (CPC)</span>
-                <span className="text-[10px] opacity-75">$0.20 / نقرة</span>
-              </button>
+            {promotionKind !== 'website' ? (
+              <div className="p-3.5 rounded-2xl bg-cyan-50/50 dark:bg-cyan-950/20 border border-cyan-200/60 dark:border-cyan-800/40 flex items-center gap-3">
+                <MousePointerClick className="w-5 h-5 text-cyan-600 dark:text-cyan-400 shrink-0" />
+                <div className="text-xs">
+                  <span className="font-extrabold text-cyan-700 dark:text-cyan-300">
+                    ${SOCIAL_PROMO_CPC_RATE.toFixed(2)} لكل نقرة موثقة
+                  </span>
+                  <span className="block text-slate-500 dark:text-slate-400 mt-0.5">
+                    سعر خفيف مخصّص لترويج القنوات — يُخصم فقط عند نقرة حقيقية، لا رسوم إضافية.
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPricingModel('fixed')}
+                  className={`p-3 rounded-2xl border text-center transition-all ${
+                    pricingModel === 'fixed'
+                      ? 'border-cyan-500 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 font-extrabold ring-2 ring-cyan-500/20'
+                      : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+                  }`}
+                >
+                  <Clock className="w-4 h-4 mx-auto mb-1" />
+                  <span className="block text-xs font-bold">زمني ثابت</span>
+                  <span className="text-[10px] opacity-75">24h - 7 أيام</span>
+                </button>
 
-              <button
-                type="button"
-                onClick={() => setPricingModel('cpm')}
-                className={`p-3 rounded-2xl border text-center transition-all ${
-                  pricingModel === 'cpm'
-                    ? 'border-cyan-500 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 font-extrabold ring-2 ring-cyan-500/20'
-                    : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
-                }`}
-              >
-                <Eye className="w-4 h-4 mx-auto mb-1" />
-                <span className="block text-xs font-bold">بالمشاهدات (CPM)</span>
-                <span className="text-[10px] opacity-75">$2.50 / 1000</span>
-              </button>
-            </div>
+                <button
+                  type="button"
+                  onClick={() => setPricingModel('cpc')}
+                  className={`p-3 rounded-2xl border text-center transition-all ${
+                    pricingModel === 'cpc'
+                      ? 'border-cyan-500 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 font-extrabold ring-2 ring-cyan-500/20'
+                      : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+                  }`}
+                >
+                  <MousePointerClick className="w-4 h-4 mx-auto mb-1" />
+                  <span className="block text-xs font-bold">بالنقرة (CPC)</span>
+                  <span className="text-[10px] opacity-75">$0.20 / نقرة</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPricingModel('cpm')}
+                  className={`p-3 rounded-2xl border text-center transition-all ${
+                    pricingModel === 'cpm'
+                      ? 'border-cyan-500 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 font-extrabold ring-2 ring-cyan-500/20'
+                      : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+                  }`}
+                >
+                  <Eye className="w-4 h-4 mx-auto mb-1" />
+                  <span className="block text-xs font-bold">بالمشاهدات (CPM)</span>
+                  <span className="text-[10px] opacity-75">$2.50 / 1000</span>
+                </button>
+              </div>
+            )}
 
             {/* Pricing Model Details */}
-            {pricingModel === 'fixed' && (
+            {promotionKind === 'website' && pricingModel === 'fixed' && (
               <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-2">
                 <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300">
                   اختر مدة العرض المستمرة:
