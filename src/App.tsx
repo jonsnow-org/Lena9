@@ -531,7 +531,7 @@ export function App() {
             localStorage.setItem('literium_has_seen_landing', 'true');
             setShowLandingPage(false);
             setIsAuthOpen(false);
-            setActiveTab(user.role === 'writer' || user.role === 'admin' ? 'dashboard' : 'feed');
+            setActiveTab(user.role === 'admin' ? 'admin' : user.role === 'writer' ? 'dashboard' : 'feed');
           }
         } catch (authDocError) {
           console.error('Error synchronizing authenticated user with Firestore:', authDocError);
