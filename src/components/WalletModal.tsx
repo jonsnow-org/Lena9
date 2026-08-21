@@ -27,6 +27,8 @@ import {
   fetchPayoutAccountStatus,
   createPayoutConnectLink,
   createAutomatedPayout,
+  fetchNowPaymentsStatus,
+  createNowPaymentsInvoice,
   PaymentStatus,
   PayoutAccountStatus
 } from '../services/paymentsApi';
@@ -69,6 +71,12 @@ export const WalletModal: React.FC<WalletModalProps> = ({
   const [isAutomatedBusy, setIsAutomatedBusy] = useState(false);
   const [automatedError, setAutomatedError] = useState('');
 
+  // نفس فكرة paymentStatus تماماً لكن لبوابة NOWPayments (عملات رقمية) —
+  // مستقلة كلياً، قد تعمل إحداهما دون الأخرى.
+  const [cryptoAutomated, setCryptoAutomated] = useState(false);
+  const [isCryptoBusy, setIsCryptoBusy] = useState(false);
+  const [cryptoError, setCryptoError] = useState('');
+
   // Deposit state
   const [depositAmount, setDepositAmount] = useState<number>(MIN_DEPOSIT_USD);
   const [depositMethod, setDepositMethod] = useState<PaymentMethod>('stripe_card');
@@ -85,6 +93,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
   useEffect(() => {
     if (!isOpen) return;
     fetchPaymentStatus().then(setPaymentStatus);
+    fetchNowPaymentsStatus().then((s) => setCryptoAutomated(s.automated));
   }, [isOpen]);
 
   useEffect(() => {
@@ -107,6 +116,22 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     } catch (err: any) {
       setAutomatedError(err?.message || 'تعذر بدء عملية الدفع.');
       setIsAutomatedBusy(false);
+    }
+  };
+
+  const handleCryptoDeposit = async () => {
+    setCryptoError('');
+    if (!depositAmount || depositAmount < MIN_DEPOSIT_USD) {
+      setCryptoError(`الحد الأدنى للإيداع ${MIN_DEPOSIT_USD}$.`);
+      return;
+    }
+    setIsCryptoBusy(true);
+    try {
+      const { checkoutUrl } = await createNowPaymentsInvoice(Number(depositAmount));
+      window.location.href = checkoutUrl;
+    } catch (err: any) {
+      setCryptoError(err?.message || 'تعذر بدء عملية الدفع بالعملة الرقمية.');
+      setIsCryptoBusy(false);
     }
   };
 
@@ -402,9 +427,36 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                     </div>
                   )}
 
+                  {/* دفع فوري بعملة رقمية عبر NOWPayments — يظهر فقط إن
+                      ضبط المالك مفاتيحه على الخادم، مستقل تماماً عن Stripe. */}
+                  {cryptoAutomated && (
+                    <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 space-y-2.5">
+                      <div className="flex items-center gap-2 text-amber-800 dark:text-amber-300 text-xs font-bold">
+                        <Zap className="w-4 h-4" />
+                        <span>دفع فوري بعملة رقمية — يُضاف الرصيد تلقائياً فور تأكيد الشبكة</span>
+                      </div>
+                      {cryptoError && (
+                        <p className="text-[11px] text-rose-600 dark:text-rose-400">{cryptoError}</p>
+                      )}
+                      <button
+                        type="button"
+                        onClick={handleCryptoDeposit}
+                        disabled={isCryptoBusy}
+                        className="w-full py-3 rounded-xl bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white font-extrabold text-sm shadow-md transition-all flex items-center justify-center gap-2"
+                      >
+                        {isCryptoBusy ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <DollarSign className="w-4 h-4" />
+                        )}
+                        <span>ادفع {depositAmount}$ الآن بعملة رقمية</span>
+                      </button>
+                    </div>
+                  )}
+
                   <div>
                     <label className="block text-xs font-bold text-slate-900 dark:text-slate-200 mb-2">
-                      {paymentStatus?.automated ? 'أو أرسل طلب إيداع يدوي بطريقة أخرى:' : 'اختر وسيلة الإيداع:'}
+                      {paymentStatus?.automated || cryptoAutomated ? 'أو أرسل طلب إيداع يدوي بطريقة أخرى:' : 'اختر وسيلة الإيداع:'}
                     </label>
                     <div className="grid grid-cols-2 gap-2">
                       {[

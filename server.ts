@@ -25,6 +25,12 @@ import {
   verifyYoutubeSubscription,
   recordVerificationAndReward
 } from './server/socialVerify';
+import {
+  isNowPaymentsConfigured,
+  isNowPaymentsIpnConfigured,
+  createNowPaymentsInvoice,
+  verifyNowPaymentsIpnSignature
+} from './server/nowPayments';
 
 dotenv.config();
 
@@ -194,6 +200,70 @@ async function startServer() {
       } catch (err: any) {
         console.error('Stripe webhook error:', err?.message || err);
         res.status(400).json({ error: 'webhook_error', message: err?.message || 'خطأ في معالجة الحدث.' });
+      }
+    }
+  );
+
+  // ⚠️ نفس السبب تماماً كسبب webhook Stripe أعلاه — يجب تسجيله قبل
+  // express.json() العام ليصل جسم الطلب خاماً، فتوقيع NOWPayments
+  // (HMAC-SHA512 على الجسم بعد ترتيب مفاتيحه أبجدياً) يحتاج النص الخام
+  // بالضبط كما وصل، لا نسخة مُعاد تسلسلها بعد التحليل.
+  app.post(
+    '/api/payments/webhook/nowpayments',
+    express.raw({ type: 'application/json' }),
+    async (req, res) => {
+      if (!isNowPaymentsConfigured() || !isNowPaymentsIpnConfigured()) {
+        return res.status(503).json({ error: 'nowpayments_not_configured' });
+      }
+      try {
+        const signature = req.headers['x-nowpayments-sig'] as string | undefined;
+        const payload = JSON.parse((req.body as Buffer).toString('utf8'));
+
+        if (!verifyNowPaymentsIpnSignature(payload, signature)) {
+          return res.status(400).json({ error: 'invalid_signature' });
+        }
+
+        const status = payload.payment_status as string;
+        const finished = status === 'finished' || status === 'confirmed';
+
+        if (finished) {
+          const orderId = String(payload.order_id || '');
+          const uid = orderId.split('_')[0];
+          const amount = Number(payload.price_amount);
+
+          if (uid && Number.isFinite(amount) && amount > 0) {
+            const db = getAdminDb();
+            const eventRef = db.collection('paymentWebhookEvents').doc(`nowpayments_${payload.payment_id}`);
+            const userRef = db.collection('users').doc(uid);
+            const depositRef = db.collection('depositRequests').doc();
+
+            await db.runTransaction(async (tx) => {
+              const eventSnap = await tx.get(eventRef);
+              if (eventSnap.exists) return; // مُعالَج مسبقاً — NOWPayments قد يعيد إرسال نفس الإشعار
+
+              tx.set(eventRef, {
+                kind: 'deposit_completed',
+                uid,
+                amount,
+                processedAt: new Date().toISOString()
+              });
+              tx.update(userRef, { walletBalance: FieldValue.increment(amount) });
+              tx.set(depositRef, {
+                userId: uid,
+                amount,
+                method: `nowpayments (${payload.pay_currency || 'crypto'})`,
+                status: 'completed',
+                providerRef: String(payload.payment_id),
+                createdAt: new Date().toISOString()
+              });
+            });
+          }
+        }
+
+        res.json({ received: true });
+      } catch (err: any) {
+        console.error('NOWPayments webhook error:', err?.message || err);
+        res.status(400).json({ error: 'webhook_error', message: err?.message || 'خطأ في معالجة إشعار الدفع.' });
       }
     }
   );
@@ -457,6 +527,47 @@ async function startServer() {
       const status = err?.message === 'missing_auth_token' ? 401 : 500;
       console.error('deposit/create-checkout error:', err?.message || err);
       res.status(status).json({ error: 'deposit_checkout_failed', message: err?.message || 'تعذر بدء عملية الإيداع.' });
+    }
+  });
+
+  // ------------------------------------------------------------------
+  // إيداع فوري بعملات رقمية عبر NOWPayments — مستقل تماماً عن Stripe،
+  // يعمل أو لا يعمل بشكل منفصل حسب مفاتيحه الخاصة فقط.
+  // ------------------------------------------------------------------
+  app.get('/api/payments/nowpayments/status', (req, res) => {
+    res.json({
+      automated: isNowPaymentsConfigured() && isNowPaymentsIpnConfigured() && isAdminConfigured(),
+      configured: isNowPaymentsConfigured()
+    });
+  });
+
+  app.post('/api/payments/nowpayments/create-invoice', async (req, res) => {
+    if (!isNowPaymentsConfigured() || !isNowPaymentsIpnConfigured() || !isAdminConfigured()) {
+      return res.status(503).json({
+        error: 'nowpayments_not_configured',
+        message: 'الدفع الفوري بالعملات الرقمية غير مفعّل على هذا الخادم بعد.'
+      });
+    }
+    try {
+      const { uid } = await verifyRequestAuth(req.headers.authorization);
+      const amount = Number(req.body?.amount);
+      if (!Number.isFinite(amount) || amount < 1 || amount > 50000) {
+        return res.status(400).json({ error: 'invalid_amount', message: 'المبلغ يجب أن يكون بين 1 و50,000$.' });
+      }
+
+      const baseUrl = (process.env.APP_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
+      const result = await createNowPaymentsInvoice({
+        uid,
+        amount,
+        successUrl: `${baseUrl}/?payment=success`,
+        cancelUrl: `${baseUrl}/?payment=cancelled`,
+        ipnCallbackUrl: `${baseUrl}/api/payments/webhook/nowpayments`
+      });
+      res.json({ checkoutUrl: result.invoiceUrl });
+    } catch (err: any) {
+      const status = err?.message === 'missing_auth_token' ? 401 : 500;
+      console.error('nowpayments/create-invoice error:', err?.message || err);
+      res.status(status).json({ error: 'nowpayments_invoice_failed', message: err?.message || 'تعذر بدء عملية الدفع بالعملة الرقمية.' });
     }
   });
 

@@ -50,6 +50,32 @@ export async function createDepositCheckout(amount: number): Promise<{ checkoutU
   return data;
 }
 
+/**
+ * حالة الدفع الفوري بعملات رقمية عبر NOWPayments — مستقلة تماماً عن
+ * حالة Stripe (fetchPaymentStatus أعلاه)، قد تعمل إحداهما دون الأخرى.
+ */
+export async function fetchNowPaymentsStatus(): Promise<{ automated: boolean }> {
+  try {
+    const res = await fetch('/api/payments/nowpayments/status');
+    if (!res.ok) return { automated: false };
+    return await res.json();
+  } catch {
+    return { automated: false };
+  }
+}
+
+export async function createNowPaymentsInvoice(amount: number): Promise<{ checkoutUrl: string }> {
+  const headers = await authHeaders();
+  const res = await fetch('/api/payments/nowpayments/create-invoice', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ amount })
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.message || 'تعذر بدء عملية الدفع بالعملة الرقمية.');
+  return data;
+}
+
 export async function fetchPayoutAccountStatus(): Promise<PayoutAccountStatus> {
   const headers = await authHeaders();
   const res = await fetch('/api/payments/payout/status', { headers });
