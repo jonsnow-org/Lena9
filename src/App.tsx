@@ -53,7 +53,6 @@ import { ArticleReader } from './components/ArticleReader';
 import { ArticleEditorModal } from './components/ArticleEditorModal';
 import { AdminDashboard } from './components/AdminDashboard';
 import { AdvertiserDashboard } from './components/AdvertiserDashboard';
-import { WriterDashboard } from './components/WriterDashboard';
 import { WriterProfileView } from './components/WriterProfileView';
 import { ExploreView } from './components/ExploreView';
 import { AdsRevenueView } from './components/AdsRevenueView';
@@ -531,7 +530,7 @@ export function App() {
             localStorage.setItem('literium_has_seen_landing', 'true');
             setShowLandingPage(false);
             setIsAuthOpen(false);
-            setActiveTab(user.role === 'admin' ? 'admin' : user.role === 'writer' ? 'dashboard' : 'feed');
+            setActiveTab(user.role === 'admin' ? 'admin' : user.role === 'writer' ? 'profile' : 'feed');
           }
         } catch (authDocError) {
           console.error('Error synchronizing authenticated user with Firestore:', authDocError);
@@ -2234,8 +2233,10 @@ export function App() {
     } catch (err) {
       console.warn('Role Firestore sync notice:', err);
     }
-    if (role === 'writer' || role === 'advertiser') {
-      setActiveTab('dashboard');
+    if (role === 'writer') {
+      setActiveTab('profile');
+    } else if (role === 'advertiser') {
+      setActiveTab('campaigns');
     } else {
       setActiveTab('feed');
     }
@@ -2347,7 +2348,7 @@ export function App() {
             // refreshing while browsing as a guest would skip the landing
             // page (and its login options) on every future visit, trapping
             // the person in guest mode until they found the logout button.
-            setActiveTab(currentUser.role === 'writer' || currentUser.role === 'admin' ? 'dashboard' : 'feed');
+            setActiveTab(currentUser.role === 'admin' ? 'admin' : currentUser.role === 'writer' ? 'profile' : 'feed');
           }}
           onOpenRegister={(role) => {
             // فتح شاشة الدخول/التسجيل يعني نية واضحة وصريحة من المستخدم
@@ -2479,6 +2480,7 @@ export function App() {
             articles={articles}
             bookmarkedArticleIds={bookmarkedArticleIds}
             followingCount={followedWriterIds.length}
+            followersCount={followsData.filter((f) => f.followingId === currentUser.id).length}
             campaigns={campaigns}
             initialWriterTab={writerActiveTab}
             onWriterTabChange={setWriterActiveTab}
@@ -2533,6 +2535,7 @@ export function App() {
             articles={articles}
             bookmarkedArticleIds={bookmarkedArticleIds}
             followingCount={followedWriterIds.length}
+            followersCount={followsData.filter((f) => f.followingId === currentUser.id).length}
             campaigns={campaigns}
             initialWriterTab="articles"
             onWriterTabChange={setWriterActiveTab}
@@ -2565,23 +2568,6 @@ export function App() {
             language={language}
             onToggleLanguage={() => setLanguage(LANGUAGE_CYCLE[(LANGUAGE_CYCLE.indexOf(language) + 1) % LANGUAGE_CYCLE.length])}
             onLogout={handleLogout}
-          />
-        ) : activeTab === 'dashboard' && currentUser.id !== 'guest' ? (
-          <WriterDashboard
-            writer={currentUser}
-            articles={articles}
-            onOpenArticleEditor={(art) => {
-              setEditingArticle(art || null);
-              setIsArticleEditorOpen(true);
-            }}
-            onOpenWallet={() => setIsWalletOpen(true)}
-            onOpenKyc={() => setIsKycOpen(true)}
-            onSelectArticle={(art) => setReadingArticle(art)}
-            onDeleteArticle={handleDeleteArticle}
-            onPromoteArticle={(art) => setPromotingArticle(art)}
-            promotions={promotions}
-            onSaveSocialLinks={handleSaveSocialLinks}
-            followersCount={followsData.filter((f) => f.followingId === currentUser.id).length}
           />
         ) : activeTab === 'campaigns' && currentUser.id !== 'guest' ? (
           <AdvertiserDashboard
@@ -3018,14 +3004,6 @@ export function App() {
         }}
         userRole={navPersona}
         currentUser={currentUser}
-        onOpenWriteAction={() => {
-          if (navPersona === 'writer') {
-            setEditingArticle(null);
-            setIsArticleEditorOpen(true);
-          } else {
-            setIsNewCampaignOpen(true);
-          }
-        }}
         onOpenCreateCampaign={() => setIsNewCampaignOpen(true)}
         onOpenNotifications={() => setIsNotificationsOpen(true)}
         onOpenMessages={() => setIsDirectMessagesOpen(true)}
@@ -3103,7 +3081,7 @@ export function App() {
               setActiveTab('admin');
               break;
             case 'writer_hub':
-              setActiveTab('dashboard');
+              setActiveTab('profile');
               break;
             case 'my_articles':
               setWriterActiveTab('articles');

@@ -53,6 +53,8 @@ import { EditProfileModal } from './EditProfileModal';
 import { AdSlot } from './AdSlot';
 import { auth, resendVerificationEmail } from '../firebase';
 import { MailWarning } from 'lucide-react';
+import { getCreatorEligibility } from '../utils/creatorEligibility';
+import { CreatorEligibilityCard } from './CreatorEligibilityCard';
 import { REVENUE_SHARES } from '../constants/revenueShares';
 import { MIN_PAYOUT_USD, EARNINGS_HOLD_DAYS } from '../constants/payoutRules';
 import {
@@ -98,6 +100,11 @@ interface UserProfileViewProps {
   /** عدد الكتّاب الذين يتابعهم هذا المستخدم فعلياً (followedWriterIds.length)
    *  — بخلاف currentUser.followingCount المخزَّن الذي لا يُحدَّث أبداً. */
   followingCount?: number;
+  /** عدد المتابعين الحقيقي المحسوب من مجموعة follows الفعلية — بخلاف
+   *  currentUser.followersCount المخزَّن الذي لا يُحدَّث أبداً من أي مسار.
+   *  كان هذا يُمرَّر سابقاً فقط لصفحة "استوديو الكاتب" المنفصلة (WriterDashboard)
+   *  التي أُلغيت كوجهة قائمة بذاتها ودُمج محتواها هنا. */
+  followersCount?: number;
   /** عدّادات الإشعارات المعلَّقة لخانات لوحة الأدمن المجمَّعة في هذه
    *  الصفحة (أدوات المستخدمين/الدفع/الأمان) — اختيارية، تُخفى الشارة
    *  ببساطة إن لم تُمرَّر. */
@@ -135,6 +142,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   onWriterTabChange,
   onNavigateToAdmin,
   followingCount,
+  followersCount,
   pendingKycCount = 0,
   pendingMoneyCount = 0,
   pendingFraudCount = 0
@@ -185,6 +193,11 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
     ? getDaysRemaining(currentUser.aiQuota.planExpiresAt)
     : 0;
 
+  // عدد متابعي هذا الحساب الفعلي + حالة الأهلية لاحتساب الأرباح — نفس
+  // المصدر المستخدم سابقاً في صفحة "استوديو الكاتب" المستقلة قبل دمجها هنا.
+  const realFollowersCount = followersCount ?? currentUser.followersCount ?? 0;
+  const creatorEligibility = getCreatorEligibility(currentUser, articles, realFollowersCount);
+
   // Filter user's articles and bookmarks
   const myAllArticles = safeArticles.filter((a) => a.writerId === currentUser.id);
   const myPublishedArticles = myAllArticles.filter((a) => a.status === 'published' || !a.status);
@@ -220,6 +233,25 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
 
   return (
     <div className="space-y-6 animate-android-in pb-24 max-w-6xl mx-auto">
+      {/* زر كتابة مقال جديد — أيقونة قلم مجرَّدة بلا صندوق أو خلفية، أعلى
+          يسار الملف الشخصي. الكتابة متاحة لأي حساب مسجَّل من البداية،
+          فيظهر لأي مستخدم غير زائر بغض النظر عن دوره. كان هذا سابقاً زراً
+          عائماً داخل الشريط السفلي لدور الكاتب فقط، فكرّر الوصول لنفس
+          الوظيفة الموجودة أصلاً هنا؛ نقله هنا وحّد نقطة الدخول. */}
+      {currentUser.id !== 'guest' && (
+        <div className="flex justify-[left]">
+          <button
+            type="button"
+            onClick={onOpenArticleEditor}
+            title="كتابة مقال جديد"
+            aria-label="كتابة مقال جديد"
+            className="text-slate-500 hover:text-brand-600 dark:text-slate-400 dark:hover:text-brand-400 active:scale-90 transition-all p-1"
+          >
+            <PenTool className="w-6 h-6" strokeWidth={2} />
+          </button>
+        </div>
+      )}
+
       {/* Top Main Identity Banner Card */}
       <div className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-5 sm:p-7 shadow-sm relative overflow-hidden">
         {/* Ambient Gradient Glow depending on role */}
@@ -343,6 +375,23 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                       {spec}
                     </span>
                   ))}
+                </div>
+              )}
+
+              {/* متابعون / يتابع — كانا غائبين تماماً عن صفحة ملف الكاتب
+                  الشخصي رغم توفرهما في صفحة أي كاتب آخر يزوره. عدّادان
+                  حقيقيان من مجموعة follows الفعلية، وليسا زرّي فتح قائمة
+                  كاملة بعد (تلك ميزة أوسع لم تُبنَ لها واجهة مستقلة بعد). */}
+              {currentUser.role === 'writer' && (
+                <div className="flex items-center justify-center sm:justify-start gap-4 pt-1">
+                  <div className="text-center sm:text-start">
+                    <span className="block text-sm font-black text-slate-900 dark:text-white">{realFollowersCount.toLocaleString('ar-EG')}</span>
+                    <span className="block text-[10px] text-slate-400 font-bold">متابعون</span>
+                  </div>
+                  <div className="text-center sm:text-start">
+                    <span className="block text-sm font-black text-slate-900 dark:text-white">{(followingCount ?? currentUser.followingCount ?? 0).toLocaleString('ar-EG')}</span>
+                    <span className="block text-[10px] text-slate-400 font-bold">يتابع</span>
+                  </div>
                 </div>
               )}
             </div>
@@ -1077,6 +1126,44 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
           {/* Writer Tab 2: Earnings & Withdrawals */}
           {writerTab === 'stats_earnings' && (
             <div className="space-y-5">
+              {/* شروط تفعيل احتساب الأرباح — كانت سابقاً تظهر فقط في صفحة
+                  "استوديو الكاتب" المنفصلة (WriterDashboard) التي أُلغيت
+                  كوجهة تنقّل قائمة بذاتها؛ محتواها دُمج هنا كي لا يُفقد. */}
+              {currentUser.role !== 'admin' && (
+                <CreatorEligibilityCard eligibility={creatorEligibility} onOpenKyc={onOpenKyc} />
+              )}
+
+              {/* Overview KPI Cards */}
+              <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                  <div className="flex items-center justify-between text-slate-400 mb-1.5">
+                    <span className="text-[11px] font-bold">إجمالي القراءات</span>
+                    <Eye className="w-3.5 h-3.5" />
+                  </div>
+                  <p className="text-lg font-black text-slate-900 dark:text-white">
+                    {myAllArticles.reduce((sum, a) => sum + (a.viewsCount || 0), 0).toLocaleString('ar-EG')}
+                  </p>
+                </div>
+                <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                  <div className="flex items-center justify-between text-slate-400 mb-1.5">
+                    <span className="text-[11px] font-bold">المتابعون</span>
+                    <Heart className="w-3.5 h-3.5" />
+                  </div>
+                  <p className="text-lg font-black text-slate-900 dark:text-white">
+                    {realFollowersCount.toLocaleString('ar-EG')}
+                  </p>
+                </div>
+                <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                  <div className="flex items-center justify-between text-slate-400 mb-1.5">
+                    <span className="text-[11px] font-bold">المقالات المنشورة</span>
+                    <BookOpen className="w-3.5 h-3.5" />
+                  </div>
+                  <p className="text-lg font-black text-slate-900 dark:text-white">
+                    {myPublishedArticles.length.toLocaleString('ar-EG')}
+                  </p>
+                </div>
+              </div>
+
               <div className="p-6 rounded-3xl bg-gradient-to-br from-teal-950/40 via-slate-900 to-slate-900 border border-teal-500/30 flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div>
                   <span className="text-xs font-bold text-teal-400">الرصيد المتاح للسحب</span>

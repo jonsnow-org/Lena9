@@ -4,12 +4,9 @@ import {
   Compass,
   Bell,
   MessageSquare,
-  PenTool,
   PlusCircle,
   Megaphone,
   User as UserIcon,
-  TrendingUp,
-  FileText,
   LayoutDashboard
 } from 'lucide-react';
 import { User, UserRole } from '../types';
@@ -20,7 +17,6 @@ interface BottomNavProps {
   onChangeTab: (tab: string) => void;
   userRole: UserRole;
   currentUser: User | null;
-  onOpenWriteAction?: () => void;
   onOpenCreateCampaign?: () => void;
   onOpenNotifications?: () => void;
   onOpenMessages?: () => void;
@@ -41,7 +37,6 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   onChangeTab,
   userRole,
   currentUser,
-  onOpenWriteAction,
   onOpenCreateCampaign,
   onOpenNotifications,
   onOpenMessages,
@@ -379,7 +374,11 @@ export const BottomNav: React.FC<BottomNavProps> = ({
     );
   }
 
-  // 3. WRITER ROLE: الرئيسية · مقالاتي · كتابة · لوحة الكاتب · ملفي
+  // 3. WRITER ROLE: الرئيسية · رسائل · إشعارات · ملفي
+  // "مقالاتي" و"لوحة الكاتب" أُزيلا لأنهما كانا يكرران "ملفي" (نفس المحتوى
+  // أصبح أقساماً داخل صفحة الملف الشخصي)، وزر "كتابة" العائم انتقل إلى
+  // أيقونة قلم مستقلة أعلى الملف الشخصي (انظر UserProfileView) بدل بقائه
+  // هنا مكرَّراً أيضاً.
   if (userRole === 'writer') {
     return (
       <nav
@@ -412,71 +411,39 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             </span>
           </button>
 
-          {/* 2. مقالاتي */}
+          {/* 2. رسائل — كانت غائبة تماماً عن حساب الكاتب رغم توفرها لكل
+              بقية الأدوار، ما كان يمنع الكاتب من الوصول لردوده إن لم يكن
+              داخل ملف مستخدم آخر بالتحديد. */}
           <button
-            id="nav-writer-articles"
+            id="nav-writer-messages"
             type="button"
-            onClick={() => onChangeTab('articles')}
-            className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group"
+            onClick={onOpenMessages}
+            className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group relative"
           >
             <div
-              className={`p-1.5 rounded-xl transition-all ${
-                activeTab === 'articles'
+              className={`p-1.5 rounded-xl transition-all relative ${
+                activeTab === 'messages'
                   ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
                   : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
               }`}
             >
-              <FileText className="w-5 h-5" />
+              <MessageSquare className="w-5 h-5" />
+              {unreadMessagesCount > 0 && (
+                <span className="absolute -top-1 -end-1 w-4 h-4 bg-teal-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center ring-2 ring-white dark:ring-slate-950">
+                  {unreadMessagesCount}
+                </span>
+              )}
             </div>
             <span
               className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'articles' ? 'text-brand-700 dark:text-brand-300 font-extrabold' : 'text-slate-500 dark:text-slate-400'
+                activeTab === 'messages' ? 'text-brand-700 dark:text-brand-300 font-extrabold' : 'text-slate-500 dark:text-slate-400'
               }`}
             >
-              {t('myArticles')}
+              {t('messages')}
             </span>
           </button>
 
-          {/* 3. Central FAB: كتابة */}
-          <div className="flex-1 flex flex-col items-center justify-center -mt-6">
-            <button
-              id="nav-writer-fab"
-              type="button"
-              onClick={onOpenWriteAction}
-              className="w-13 h-13 rounded-2xl bg-gradient-to-tr from-brand-600 via-brand-600 to-brand-700 text-white flex items-center justify-center shadow-lg shadow-brand-600/40 active:scale-90 hover:scale-105 transition-all border-2 border-white dark:border-slate-900"
-              title={t('createArticle')}
-            >
-              <PenTool className="w-6 h-6 stroke-[2.2]" />
-            </button>
-            <span className="text-[10px] font-black text-brand-600 dark:text-brand-300 mt-1">{t('write')}</span>
-          </div>
-
-          {/* 4. لوحة الكاتب */}
-          <button
-            id="nav-writer-dashboard"
-            type="button"
-            onClick={() => onChangeTab('dashboard')}
-            className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group"
-          >
-            <div
-              className={`p-1.5 rounded-xl transition-all ${
-                activeTab === 'dashboard'
-                  ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
-                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
-              }`}
-            >
-              <TrendingUp className="w-5 h-5" />
-            </div>
-            <span
-              className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'dashboard' ? 'text-brand-700 dark:text-brand-300 font-extrabold' : 'text-slate-500 dark:text-slate-400'
-              }`}
-            >
-              {t('writerPanel')}
-            </span>
-          </button>
-
-          {/* 5. إشعارات */}
+          {/* 3. إشعارات */}
           <button
             id="nav-writer-notifications"
             type="button"
