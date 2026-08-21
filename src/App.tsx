@@ -129,6 +129,7 @@ import {
   subscribeToArticleRatings,
   rateArticleInFirestore,
   syncArticleRatingSummary,
+  setArticleReactionInFirestore,
   subscribeToAllEarningsAdmin,
   markEarningReleasedInFirestore,
   updateUserAiQuotaInFirestore,
@@ -1423,23 +1424,6 @@ export function App() {
    * مراجعته واحتسابه من لوحة الإدارة بعد تصفية الاحتيال.
    * كما صُحّحت النسب لتقرأ من المصدر المركزي بدلاً من أرقام مكتوبة يدوياً.
    */
-  const handleWriterAdRevenue = (
-    campaign: AdCampaign,
-    article: Article,
-    eventType: 'click' | 'impression'
-  ) => {
-    logAdEvent({
-      campaignId: campaign.id,
-      slotId: 'article_top',
-      articleId: article.id,
-      writerId: article.writerId,
-      viewerId: currentUserId || null,
-      eventType
-    }).catch(() => {
-      /* تسجيل الحدث ليس جزءاً من تجربة المستخدم */
-    });
-  };
-
   /**
    * شراء مقال مقفول.
    *
@@ -1723,6 +1707,15 @@ export function App() {
     } catch (err) {
       console.error('تعذر حفظ التقييم:', err);
       alert('تعذر حفظ تقييمك. تحقق من اتصالك ثم حاول مجدداً.');
+    }
+  };
+
+  const handleReactToArticle = async (articleId: string, type: string) => {
+    if (!requireAuth()) return;
+    try {
+      await setArticleReactionInFirestore(articleId, currentUserId, type);
+    } catch (err) {
+      console.error('تعذر حفظ الانطباع:', err);
     }
   };
 
@@ -2488,7 +2481,7 @@ export function App() {
         ) : activeTab === 'campaigns' && currentUser.id !== 'guest' ? (
           <AdvertiserDashboard
             campaigns={campaigns.filter((c) => c.advertiserId === currentUser.id)}
-            onCreateCampaign={handleCreateCampaign}
+            onOpenNewCampaign={() => setIsNewCampaignOpen(true)}
             onToggleCampaignStatus={handleToggleCampaignStatus}
             advertiserBalance={currentUser.walletBalance || 0}
             onOpenDeposit={() => setIsWalletOpen(true)}
@@ -3021,44 +3014,9 @@ export function App() {
           onShare={() => handleShareArticle(readingArticle)}
           onRate={(stars) => handleRateArticle(readingArticle.id, stars)}
           myRating={myRatingsByArticleId[readingArticle.id] || 0}
+          onReact={(type) => handleReactToArticle(readingArticle.id, type)}
           sponsoredCampaign={campaigns.find((c) => c.status === 'active' && c.placementType === 'writer')}
           currentUserId={currentUser.id}
-          onAdClick={(camp, isValid) => {
-            if (isValid) {
-              setCampaigns((prev) =>
-                prev.map((c) =>
-                  c.id === camp.id
-                    ? { ...c, clicksCount: c.clicksCount + 1, totalSpent: c.totalSpent + (c.cpcRate || 0.2) }
-                    : c
-                )
-              );
-              handleWriterAdRevenue(camp, readingArticle, 'click');
-            }
-          }}
-          onAdImpression={(camp, isValid) => {
-            if (isValid) {
-              setCampaigns((prev) =>
-                prev.map((c) =>
-                  c.id === camp.id
-                    ? {
-                        ...c,
-                        impressionsCount: c.impressionsCount + 1,
-                        totalSpent: c.pricingModel === 'cpm' ? c.totalSpent + ((c.cpmRate || 2.5) / 1000) : c.totalSpent
-                      }
-                    : c
-                )
-              );
-              handleWriterAdRevenue(camp, readingArticle, 'impression');
-            }
-          }}
-          onFraudDetected={(flag) => {
-            const newFlag: FraudFlag = {
-              id: `ff_${Date.now()}`,
-              detectedAt: new Date().toISOString().split('T')[0] + ' ' + new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
-              ...flag
-            };
-            setFraudFlags((prev) => [newFlag, ...prev]);
-          }}
           onWriterProfileClick={(wId) => {
             const w = users.find((u) => u.id === wId);
             if (w) {

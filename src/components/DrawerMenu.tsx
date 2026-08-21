@@ -394,25 +394,27 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
                 </button>
               )}
 
-              <button
-                onClick={() => {
-                  onOpenKyc();
-                  onClose();
-                }}
-                className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
-              >
-                <div className="flex items-center gap-3">
-                  <ShieldCheck className="w-4 h-4 text-blue-400" />
-                  <span>توثيق الهوية (KYC)</span>
-                </div>
-                {currentUser.isKycVerified ? (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
-                    معتمد ✓
-                  </span>
-                ) : (
-                  <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
-                )}
-              </button>
+              {currentUser.id !== 'guest' && (
+                <button
+                  onClick={() => {
+                    onOpenKyc();
+                    onClose();
+                  }}
+                  className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <ShieldCheck className="w-4 h-4 text-blue-400" />
+                    <span>توثيق الهوية (KYC)</span>
+                  </div>
+                  {currentUser.isKycVerified ? (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
+                      معتمد ✓
+                    </span>
+                  ) : (
+                    <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
+                  )}
+                </button>
+              )}
 
               <button
                 onClick={() => {

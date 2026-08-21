@@ -74,6 +74,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
 
     if (activeFilter === 'trending') return art.viewsCount > 100;
     if (activeFilter === 'top_rated') return (art.ratingsCount || 0) > 0 && (art.rating || 0) >= 4.8;
+    if (activeFilter === 'writers') return writers.some((w) => w.id === art.writerId);
     if (activeFilter === 'locked') return art.isLocked;
     return true;
   });

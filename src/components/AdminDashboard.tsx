@@ -901,7 +901,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
             {/* Campaign Cards Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {campaigns.map((camp) => (
+              {campaigns.map((camp) => {
+                // نفس فحص الرصيد المطبَّق في قسم "حملات بانتظار الاعتماد" أعلاه —
+                // حملة draft لم تُفحص ميزانيتها بعد، فلا يجوز تفعيلها من هذه
+                // البطاقة متجاوزةً الفحص (كانت تتيح ذلك سابقاً بلا أي تحقق).
+                const adv: any = users.find((u: any) => u.id === camp.advertiserId);
+                const advBalance = adv?.walletBalance ?? 0;
+                const requested = (camp as any).requestedBudget ?? 0;
+                const draftBlocked = camp.status === 'draft' && advBalance < requested;
+                return (
                 <div
                   key={camp.id}
                   className="p-5 rounded-2xl bg-slate-900/90 border border-slate-800 flex flex-col justify-between hover:border-brand-500/30 transition-all shadow-lg"
@@ -957,7 +965,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     {camp.status !== 'active' ? (
                       <button
                         onClick={() => onUpdateCampaignStatus?.(camp.id, 'active')}
-                        className="flex-1 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all"
+                        disabled={draftBlocked}
+                        title={draftBlocked ? `رصيد المعلن ($${advBalance.toFixed(2)}) أقل من المطلوب ($${requested.toFixed(2)})` : undefined}
+                        className="flex-1 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold transition-all"
                       >
                         اعتماد وتفعيل
                       </button>
@@ -977,7 +987,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </button>
                   </div>
                 </div>
-              ))}
+              );
+              })}
             </div>
           </div>
         )}
@@ -1142,7 +1153,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     {filteredUsers.map((u) => (
                       <tr key={u.id} className="hover:bg-slate-800/40 transition-colors">
                         <td className="p-3.5">
-                          <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => onSelectUser?.(u)}
+                            disabled={!onSelectUser}
+                            className="flex items-center gap-3 text-start disabled:cursor-default enabled:hover:opacity-80 transition-opacity"
+                            title={onSelectUser ? 'عرض الملف الشخصي' : undefined}
+                          >
                             <img
                               src={u.avatarUrl}
                               alt={u.fullName}
@@ -1156,7 +1173,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               </div>
                               <div className="text-[11px] text-slate-400 font-mono">@{u.username} • {u.email}</div>
                             </div>
-                          </div>
+                          </button>
                         </td>
 
                         <td className="p-3.5">

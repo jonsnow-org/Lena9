@@ -243,6 +243,15 @@ service cloud.firestore {
       allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
     }
 
+    // انطباعات القارئ العاطفية (❤️/💡/😂/😲/😢) — نفس نمط likes/ratings تماماً.
+    match /reactions/{reactionId} {
+      allow read: if true;
+      allow create, update: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && reactionId == request.resource.data.articleId + '_' + request.resource.data.userId;
+      allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
     // تقييمات المقالات — مستند واحد لكل (مقال + مستخدم) بنفس النمط تماماً،
     // يسمح بتقييم حقيقي (1-5 نجوم) قابل للتعديل لاحقاً من نفس المستخدم،
     // ويمنع أي تلاعب بتقييم باسم شخص آخر.

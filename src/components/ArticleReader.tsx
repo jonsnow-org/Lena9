@@ -29,7 +29,7 @@ import {
   Sliders
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { Article, Comment, ReactionType, AdCampaign, FraudFlag } from '../types';
+import { Article, Comment, ReactionType, AdCampaign } from '../types';
 import { formatDateAr, formatDateTimeAr, timeAgoAr } from '../utils/dateFormat';
 import { SmartAdBanner } from './SmartAdBanner';
 import { AdSlot } from './AdSlot';
@@ -55,14 +55,12 @@ interface ArticleReaderProps {
   onShare?: () => void;
   onRate?: (stars: number) => void;
   myRating?: number;
+  onReact?: (type: ReactionType) => void;
   sponsoredCampaign?: AdCampaign | null;
   onWriterProfileClick?: (writerId: string) => void;
   currentUserId?: string;
-  onAdClick?: (campaign: AdCampaign, isValid: boolean) => void;
-  onAdImpression?: (campaign: AdCampaign, isValid: boolean) => void;
   campaigns?: AdCampaign[];
   isAdFree?: boolean;
-  onFraudDetected?: (flag: Omit<FraudFlag, 'id' | 'detectedAt'>) => void;
 }
 
 export const ArticleReader: React.FC<ArticleReaderProps> = ({
@@ -84,11 +82,9 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
   sponsoredCampaign,
   onWriterProfileClick,
   currentUserId,
-  onAdClick,
-  onAdImpression,
   campaigns = [],
   isAdFree = false,
-  onFraudDetected
+  onReact
 }) => {
   const [activeReaction, setActiveReaction] = useState<ReactionType | null>(null);
   const [newCommentText, setNewCommentText] = useState('');
@@ -231,7 +227,9 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
   }, []);
 
   const handleReactionClick = (reaction: ReactionType) => {
-    setActiveReaction(activeReaction === reaction ? null : reaction);
+    const next = activeReaction === reaction ? null : reaction;
+    setActiveReaction(next);
+    if (next) onReact?.(next);
   };
 
   const handleCommentSubmit = (e: React.FormEvent) => {

@@ -60,6 +60,14 @@ export const WriterProfileView: React.FC<WriterProfileViewProps> = ({
   const [activeTab, setActiveTab] = useState<'articles' | 'about'>('articles');
   const writerArticles = articles.filter((a) => a.writerId === writer.id);
   const totalViews = writerArticles.reduce((acc, a) => acc + a.viewsCount, 0);
+  // متوسط تقييم حقيقي محسوب من مقالات الكاتب فعلياً (بدل رقم افتراضي
+  // "4.9" كان يظهر لأي كاتب بلا أي تقييمات حقيقية بعد).
+  const writerRatingsCount = writerArticles.reduce((acc, a) => acc + (a.ratingsCount || 0), 0);
+  const writerRatingsSum = writerArticles.reduce(
+    (acc, a) => acc + (a.ratingsSum ?? a.rating * (a.ratingsCount || 0)),
+    0
+  );
+  const writerAvgRating = writerRatingsCount > 0 ? writerRatingsSum / writerRatingsCount : 0;
   const creatorEligibility = getCreatorEligibility(writer, articles, followersCount ?? writer.followersCount);
 
   return (
@@ -206,7 +214,11 @@ export const WriterProfileView: React.FC<WriterProfileViewProps> = ({
 
             <div className="flex items-center gap-1 text-amber-500 font-bold">
               <Star className="w-3.5 h-3.5 fill-amber-500" />
-              <span>{writer.rating || 4.9} تقييم القراء</span>
+              <span>
+                {writerRatingsCount > 0
+                  ? `${writerAvgRating.toFixed(1)} تقييم القراء (${writerRatingsCount})`
+                  : 'لا تقييمات بعد'}
+              </span>
             </div>
 
             {writer.joinedDate && (

@@ -16,18 +16,17 @@ import {
   ShieldAlert,
   Zap,
   CheckCircle2,
-  X,
   BarChart3,
   Layers,
   HelpCircle
 } from 'lucide-react';
-import { AdCampaign, PricingModel, AdPlacementType } from '../types';
+import { AdCampaign } from '../types';
 import { SmartAiGuidanceCard } from './SmartAiGuidanceCard';
 import { REVENUE_SHARES } from '../constants/revenueShares';
 
 interface AdvertiserDashboardProps {
   campaigns: AdCampaign[];
-  onCreateCampaign: (campaignData: Partial<AdCampaign>) => void;
+  onOpenNewCampaign: () => void;
   onToggleCampaignStatus: (campaignId: string) => void;
   advertiserBalance: number;
   onOpenDeposit: () => void;
@@ -36,76 +35,19 @@ interface AdvertiserDashboardProps {
 
 export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
   campaigns,
-  onCreateCampaign,
+  onOpenNewCampaign,
   onToggleCampaignStatus,
   advertiserBalance,
   onOpenDeposit,
   activeUsersCount
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'campaigns' | 'create' | 'analytics' | 'billing'>('campaigns');
-  const [showCreateModal, setShowCreateModal] = useState(false);
-
-  // Form State
-  const [campaignName, setCampaignName] = useState('');
-  const [description, setDescription] = useState('');
-  const [adText, setAdText] = useState('');
-  const [imageUrl, setImageUrl] = useState('https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=800&auto=format&fit=crop&q=80');
-  const [destinationUrl, setDestinationUrl] = useState('https://techhorizon.io');
-  const [pricingModel, setPricingModel] = useState<PricingModel>('cpc');
-  const [placementType, setPlacementType] = useState<AdPlacementType>('writer');
-  const [durationHours, setDurationHours] = useState<number>(48);
-  const [cpcRate, setCpcRate] = useState<number>(0.20);
-  const [cpmRate, setCpmRate] = useState<number>(2.50);
-  const [totalBudget, setTotalBudget] = useState<number>(50);
-  const [targetCategory, setTargetCategory] = useState<string>('all');
-
-  // Standard fixed duration pricing tiers
-  const fixedDurationPrices: Record<number, number> = {
-    24: 15,
-    48: 28,
-    72: 39,
-    168: 85
-  };
-
-  const currentEstimatedCost =
-    pricingModel === 'fixed' ? fixedDurationPrices[durationHours] || 28 : totalBudget;
+  const [activeSubTab, setActiveSubTab] = useState<'campaigns' | 'analytics' | 'billing'>('campaigns');
 
   const totalImpressions = campaigns.reduce((acc, c) => acc + c.impressionsCount, 0);
   const totalClicks = campaigns.reduce((acc, c) => acc + c.clicksCount, 0);
   const totalSpent = campaigns.reduce((acc, c) => acc + c.totalSpent, 0);
   const avgCtr = totalImpressions > 0 ? ((totalClicks / totalImpressions) * 100).toFixed(2) : '0.00';
   const totalFraudBlocked = campaigns.reduce((acc, c) => acc + (c.fraudBlockedCount || 0), 0);
-
-  const handleCreateSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!campaignName.trim() || !adText.trim()) return;
-
-    onCreateCampaign({
-      campaignName,
-      description,
-      adText,
-      imageUrl,
-      destinationUrl,
-      type: pricingModel === 'fixed' ? 'impression' : 'cpc',
-      pricingModel,
-      placementType,
-      durationHours: pricingModel === 'fixed' ? durationHours : undefined,
-      cpcRate: pricingModel === 'cpc' ? cpcRate : undefined,
-      cpmRate: pricingModel === 'cpm' ? cpmRate : undefined,
-      // اسم الحقل الذي تقرأه App.tsx فعلياً للتحقق من الرصيد وعرضه على
-      // الأدمن هو requestedBudget (انظر NewCampaignModal.tsx) — لا
-      // totalBudget، الذي يبقى صفراً حتى يعتمده الأدمن.
-      requestedBudget: currentEstimatedCost,
-      status: 'active',
-      targetCategories: targetCategory === 'all' ? ['all'] : [targetCategory],
-      fraudBlockedCount: 0
-    });
-
-    setShowCreateModal(false);
-    setCampaignName('');
-    setAdText('');
-    setActiveSubTab('campaigns');
-  };
 
   return (
     <div className="space-y-6 animate-fade-in pb-16">
@@ -133,7 +75,7 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
           </button>
 
           <button
-            onClick={() => setShowCreateModal(true)}
+            onClick={onOpenNewCampaign}
             className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-brand-600 to-brand-600 hover:from-brand-500 hover:to-brand-500 text-white font-bold text-xs sm:text-sm shadow-lg shadow-brand-600/30 flex items-center gap-2 transition-transform hover:scale-105 active:scale-95"
           >
             <PlusCircle className="w-4 h-4" />
@@ -228,7 +170,7 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
             </h3>
 
             <button
-              onClick={() => setShowCreateModal(true)}
+              onClick={onOpenNewCampaign}
               className="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md"
             >
               <PlusCircle className="w-4 h-4" />
@@ -242,7 +184,7 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
                 <Megaphone className="w-10 h-10 text-slate-500 mx-auto mb-2" />
                 <p className="text-slate-300 font-bold text-sm">لا توجد حملات إعلانية منشأة بعد</p>
                 <button
-                  onClick={() => setShowCreateModal(true)}
+                  onClick={onOpenNewCampaign}
                   className="mt-3 px-4 py-2 rounded-xl bg-brand-600 text-white text-xs font-bold"
                 >
                   إنشاء أول إعلان الآن
@@ -404,245 +346,6 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
         </div>
       )}
 
-      {/* Campaign Creation Modal */}
-      {showCreateModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-2xl bg-slate-900 border border-brand-500/30 rounded-3xl text-white shadow-2xl p-6 relative animate-scaleIn max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between pb-4 border-b border-brand-500/20">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-brand-600/30 border border-brand-500/40 flex items-center justify-center text-brand-300">
-                  <PlusCircle className="w-4 h-4" />
-                </div>
-                <h3 className="text-base font-black text-white">إنشاء وتصميم حملة إعلانية جديدة</h3>
-              </div>
-              <button
-                onClick={() => setShowCreateModal(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateSubmit} className="space-y-4 mt-4">
-              {/* Campaign Name */}
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">اسم الحملة الإعلانية:</label>
-                <input
-                  type="text"
-                  required
-                  value={campaignName}
-                  onChange={(e) => setCampaignName(e.target.value)}
-                  placeholder="مثال: إطلاق كورس الذكاء الاصطناعي للمطورين"
-                  className="w-full p-3 rounded-xl bg-slate-950 border border-brand-500/20 text-white text-xs focus:border-brand-500 outline-none"
-                />
-              </div>
-
-              {/* Ad Text / Headline */}
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">نص الإعلان والعرض الجذاب:</label>
-                <textarea
-                  required
-                  rows={2}
-                  value={adText}
-                  onChange={(e) => setAdText(e.target.value)}
-                  placeholder="سجل الآن واحصل على خصم 40% على جميع المسارات المتقدمة..."
-                  className="w-full p-3 rounded-xl bg-slate-950 border border-brand-500/20 text-white text-xs focus:border-brand-500 outline-none"
-                />
-              </div>
-
-              {/* Destination URL */}
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">رابط الوجهة (Landing Page URL):</label>
-                <input
-                  type="url"
-                  required
-                  value={destinationUrl}
-                  onChange={(e) => setDestinationUrl(e.target.value)}
-                  placeholder="https://example.com/special-offer"
-                  className="w-full p-3 rounded-xl bg-slate-950 border border-brand-500/20 text-white text-xs focus:border-brand-500 outline-none"
-                />
-              </div>
-
-              {/* Cover Image URL */}
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">رابط صورة البانر (16:9 أو مستطيل):</label>
-                <input
-                  type="url"
-                  required
-                  value={imageUrl}
-                  onChange={(e) => setImageUrl(e.target.value)}
-                  className="w-full p-3 rounded-xl bg-slate-950 border border-brand-500/20 text-white text-xs focus:border-brand-500 outline-none"
-                />
-              </div>
-
-              {/* Pricing Model Selector */}
-              <div className="p-4 rounded-2xl bg-slate-950 border border-brand-500/20 space-y-3">
-                <label className="block text-xs font-black text-brand-300">
-                  اختر نموذج التسعير والمحاسبة:
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { id: 'fixed' as PricingModel, label: 'إعلان ثابت (Fixed)', desc: 'دفع محدد للمدة' },
-                    { id: 'cpm' as PricingModel, label: 'نموذج الظهور (CPM)', desc: 'لكل 1000 ظهور مؤكد' },
-                    { id: 'cpc' as PricingModel, label: 'نموذج النقر (CPC)', desc: 'الدفع للنقرة الصالحة' }
-                  ].map((pm) => (
-                    <button
-                      key={pm.id}
-                      type="button"
-                      onClick={() => setPricingModel(pm.id)}
-                      className={`p-3 rounded-xl text-right transition-all border ${
-                        pricingModel === pm.id
-                          ? 'bg-brand-600/30 text-white border-brand-500 shadow-sm'
-                          : 'bg-slate-900 text-slate-400 border-slate-800 hover:border-slate-700'
-                      }`}
-                    >
-                      <div className="text-xs font-bold">{pm.label}</div>
-                      <div className="text-[10px] text-brand-300 mt-0.5">{pm.desc}</div>
-                    </button>
-                  ))}
-                </div>
-
-                {/* Placement Type */}
-                <div className="pt-2">
-                  <label className="block text-xs font-bold text-slate-300 mb-1.5">
-                    نوع ومكان ظهور الإعلان:
-                  </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setPlacementType('writer')}
-                      className={`p-2.5 rounded-xl text-right text-xs transition-all border ${
-                        placementType === 'writer'
-                          ? 'bg-brand-600/30 text-white border-brand-500'
-                          : 'bg-slate-900 text-slate-400 border-slate-800'
-                      }`}
-                    >
-                      <div className="font-bold">إعلانات مقالات الكُتّاب (Writer Ads)</div>
-                      <div className="text-[10px] text-brand-300">مشاركة {REVENUE_SHARES.IN_ARTICLE_ADS.WRITER_PERCENT}% للكاتب / {REVENUE_SHARES.IN_ARTICLE_ADS.PLATFORM_PERCENT}% للمنصة</div>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPlacementType('platform')}
-                      className={`p-2.5 rounded-xl text-right text-xs transition-all border ${
-                        placementType === 'platform'
-                          ? 'bg-brand-600/30 text-white border-brand-500'
-                          : 'bg-slate-900 text-slate-400 border-slate-800'
-                      }`}
-                    >
-                      <div className="font-bold">إعلانات الواجهة والمنصة (Platform Ads)</div>
-                      <div className="text-[10px] text-brand-300">100% عوائد لصالح المنصة</div>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Specific Pricing Config */}
-                {pricingModel === 'fixed' && (
-                  <div className="pt-2">
-                    <label className="block text-xs text-slate-300 mb-1 font-bold">المدة الزمنية للإعلان:</label>
-                    <div className="grid grid-cols-4 gap-2">
-                      {[
-                        { hours: 24, label: '24 ساعة' },
-                        { hours: 48, label: '48 ساعة' },
-                        { hours: 72, label: '3 أيام' },
-                        { hours: 168, label: 'أسبوع كامل' }
-                      ].map((item) => (
-                        <button
-                          key={item.hours}
-                          type="button"
-                          onClick={() => setDurationHours(item.hours)}
-                          className={`p-2 rounded-xl text-center text-xs font-bold transition-all ${
-                            durationHours === item.hours
-                              ? 'bg-brand-600 text-white'
-                              : 'bg-slate-900 text-slate-400 hover:bg-slate-800'
-                          }`}
-                        >
-                          <div>{item.label}</div>
-                          <div className="text-[10px] text-brand-300 font-mono">${fixedDurationPrices[item.hours]}</div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {pricingModel === 'cpm' && (
-                  <div className="grid grid-cols-2 gap-3 pt-2">
-                    <div>
-                      <label className="block text-xs text-slate-300 mb-1 font-bold">سعر الـ 1000 ظهور (CPM):</label>
-                      <input
-                        type="number"
-                        step="0.1"
-                        min="1"
-                        value={cpmRate}
-                        onChange={(e) => setCpmRate(parseFloat(e.target.value) || 2.5)}
-                        className="w-full p-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-xs font-mono"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-slate-300 mb-1 font-bold">الميزانية الإجمالية ($):</label>
-                      <input
-                        type="number"
-                        min="10"
-                        value={totalBudget}
-                        onChange={(e) => setTotalBudget(parseFloat(e.target.value) || 50)}
-                        className="w-full p-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-xs font-mono"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {pricingModel === 'cpc' && (
-                  <div className="grid grid-cols-2 gap-3 pt-2">
-                    <div>
-                      <label className="block text-xs text-slate-300 mb-1 font-bold">سعر النقرة الواحدة (CPC):</label>
-                      <input
-                        type="number"
-                        step="0.05"
-                        min="0.1"
-                        value={cpcRate}
-                        onChange={(e) => setCpcRate(parseFloat(e.target.value) || 0.20)}
-                        className="w-full p-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-xs font-mono"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-slate-300 mb-1 font-bold">الميزانية الإجمالية ($):</label>
-                      <input
-                        type="number"
-                        min="10"
-                        value={totalBudget}
-                        onChange={(e) => setTotalBudget(parseFloat(e.target.value) || 50)}
-                        className="w-full p-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-xs font-mono"
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Total Summary */}
-              <div className="p-3 rounded-2xl bg-brand-950/40 border border-brand-500/30 flex items-center justify-between">
-                <div>
-                  <span className="text-xs text-slate-400">التكلفة التقديرية للحملة:</span>
-                  <div className="text-lg font-black text-emerald-400 font-mono">${currentEstimatedCost}</div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowCreateModal(false)}
-                    className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold"
-                  >
-                    إلغاء
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-6 py-2 rounded-xl bg-gradient-to-r from-brand-600 to-brand-600 text-white text-xs font-bold shadow-md shadow-brand-600/30 hover:scale-105 transition-all"
-                  >
-                    تأكيد وإطلاق الحملة
-                  </button>
-                </div>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

@@ -346,7 +346,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-750 text-slate-800 dark:text-slate-200 text-xs font-bold border border-slate-200 dark:border-slate-700 transition-all flex items-center gap-1.5"
                 >
                   <Wallet className="w-3.5 h-3.5 text-brand-500" />
-                  <span>المحفظة (${(currentUser.totalEarnings || 0).toFixed(2)})</span>
+                  <span>المحفظة (${(currentUser.availableBalance ?? currentUser.walletBalance ?? 0).toFixed(2)})</span>
                 </button>
               )}
             </div>
@@ -574,7 +574,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                     >
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-slate-900 dark:text-white line-clamp-1">
-                          {camp.title}
+                          {camp.campaignName}
                         </span>
                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                           camp.status === 'active'
@@ -588,7 +588,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                       <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500">
                         <span>المشاهدات: {camp.impressionsCount.toLocaleString()}</span>
                         <span>النقرات: {camp.clicksCount.toLocaleString()}</span>
-                        <span>الميزانية: {camp.budget}$</span>
+                        <span>الميزانية: {(camp.totalBudget ?? 0).toFixed(2)}$</span>
                       </div>
                     </div>
                   ))}
@@ -660,7 +660,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   <div>
                     <span className="text-xs text-slate-500">رصيد المحفظة المتاح للشراء والترويج</span>
                     <h3 className="text-2xl font-black text-slate-900 dark:text-white">
-                      ${(currentUser.totalEarnings || 0).toFixed(2)}
+                      ${(currentUser.walletBalance || 0).toFixed(2)}
                     </h3>
                   </div>
                 </div>
@@ -735,7 +735,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                 <DollarSign className="w-4 h-4 text-amber-500" />
               </div>
               <h3 className="text-2xl font-black text-slate-900 dark:text-white">
-                ${(currentUser.totalEarnings || 0).toFixed(2)}
+                ${(currentUser.lifetimeEarnings || 0).toFixed(2)}
               </h3>
               <p className="text-[11px] text-amber-600 font-bold mt-1">
                 {REVENUE_SHARES.IN_ARTICLE_ADS.WRITER_PERCENT}% إعلانات + {REVENUE_SHARES.LOCKED_ARTICLES.WRITER_PERCENT}% مبيعات
@@ -1143,7 +1143,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                 <DollarSign className="w-4 h-4 text-amber-500" />
               </div>
               <h3 className="text-2xl font-black text-slate-900 dark:text-white">
-                ${(currentUser.totalEarnings || 0).toFixed(2)}
+                ${(currentUser.walletBalance || 0).toFixed(2)}
               </h3>
               <p className="text-[11px] text-amber-600 font-bold mt-1">جاهز لتمويل الحملات</p>
             </div>

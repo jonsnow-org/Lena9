@@ -1357,6 +1357,39 @@ export async function unlikeArticleInFirestore(articleId: string, userId: string
 }
 
 // -------------------------------------------------------------------
+// انطباعات القارئ العاطفية (❤️ أحببته / 💡 ملهم / 😂 طريف ...) — نفس
+// نمط "likes"/"ratings" تماماً (مستند واحد لكل مقال+مستخدم). كانت
+// تُحفظ محلياً فقط في ArticleReader وتختفي عند تحديث الصفحة رغم أنها
+// تبدو للقارئ وكأنها سُجِّلت — الآن تُخزَّن فعلياً.
+// -------------------------------------------------------------------
+export async function setArticleReactionInFirestore(
+  articleId: string,
+  userId: string,
+  type: string
+): Promise<void> {
+  try {
+    await setDoc(doc(db, 'reactions', `${articleId}_${userId}`), {
+      articleId,
+      userId,
+      type,
+      createdAt: new Date().toISOString()
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'reactions');
+    throw error;
+  }
+}
+
+export async function removeArticleReactionInFirestore(articleId: string, userId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'reactions', `${articleId}_${userId}`));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, 'reactions');
+    throw error;
+  }
+}
+
+// -------------------------------------------------------------------
 // الإشعارات — تُكتب في Firestore فعلياً لصاحب الحساب المعني (وليس فقط
 // لنفس المستخدم الذي نفّذ الحدث)، حتى تصل إشعارات المتابعة/الإعجاب/
 // التعليق/الرد/المشاركة لكل مستخدم آخر بشكل حقيقي.
