@@ -129,6 +129,8 @@ import {
   subscribeToNotifications,
   markNotificationReadInFirestore,
   markAllNotificationsReadInFirestore,
+  deleteNotificationInFirestore,
+  clearAllNotificationsInFirestore,
   incrementArticleViewInFirestore,
   subscribeToArticleRatings,
   rateArticleInFirestore,
@@ -3233,13 +3235,33 @@ export function App() {
         }}
       />
 
-      {/* Notifications Modal */}
+      {/* Notifications Modal — التحديد كمقروء والحذف كانا يعدّلان الحالة
+          المحلية فقط دون أي كتابة فعلية إلى Firestore، فيعود كل شيء
+          "غير مقروء" فور تحديث الصفحة (subscribeToNotifications يعيد
+          القيم الحقيقية من الخادم). أصبحت الآن كتابات فعلية. */}
       <NotificationsModal
         isOpen={isNotificationsOpen}
         onClose={() => setIsNotificationsOpen(false)}
         notifications={notifications}
         onMarkAllAsRead={() => {
-          setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+          markAllNotificationsReadInFirestore(notifications).catch((err) =>
+            console.error('تعذر تحديد كل الإشعارات كمقروءة:', err)
+          );
+        }}
+        onMarkOneAsRead={(id) => {
+          markNotificationReadInFirestore(id).catch((err) =>
+            console.error('تعذر تحديد الإشعار كمقروء:', err)
+          );
+        }}
+        onDeleteOne={(id) => {
+          deleteNotificationInFirestore(id).catch((err) =>
+            console.error('تعذر حذف الإشعار:', err)
+          );
+        }}
+        onClearAll={() => {
+          clearAllNotificationsInFirestore(notifications).catch((err) =>
+            console.error('تعذر مسح الإشعارات:', err)
+          );
         }}
       />
 

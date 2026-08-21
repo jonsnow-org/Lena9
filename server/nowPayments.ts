@@ -33,10 +33,28 @@ export async function createNowPaymentsInvoice(params: {
   amount: number;
   successUrl: string;
   cancelUrl: string;
-  ipnCallbackUrl: string;
+  /**
+   * تعمّدت جعله اختيارياً: تمرير رابط ويب هوك هنا يستبدل — لكل فاتورة —
+   * رابط IPN الافتراضي المضبوط يدوياً في لوحة NOWPayments (Settings →
+   * IPN)، وهو مبني على host مُستنتَج من الطلب (req.get('host')) قد لا
+   * يطابق النطاق العام الفعلي خلف أي وسيط/دومين مخصص. تركه فارغاً يجعل
+   * NOWPayments يستخدم رابط IPN الذي تحقّق صاحب المنصة يدوياً من صحته —
+   * أضمن من أي استنتاج تلقائي وقت التشغيل.
+   */
+  ipnCallbackUrl?: string;
 }): Promise<NowPaymentsInvoiceResult> {
   const apiKey = process.env.NOWPAYMENTS_API_KEY;
   if (!apiKey) throw new Error('nowpayments_not_configured');
+
+  const requestBody: Record<string, unknown> = {
+    price_amount: params.amount,
+    price_currency: 'usd',
+    order_id: `${params.uid}_${Date.now()}`,
+    order_description: 'شحن محفظة ليتيريوم',
+    success_url: params.successUrl,
+    cancel_url: params.cancelUrl
+  };
+  if (params.ipnCallbackUrl) requestBody.ipn_callback_url = params.ipnCallbackUrl;
 
   const res = await fetch(`${NOWPAYMENTS_API_BASE}/invoice`, {
     method: 'POST',
@@ -44,15 +62,7 @@ export async function createNowPaymentsInvoice(params: {
       'x-api-key': apiKey,
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({
-      price_amount: params.amount,
-      price_currency: 'usd',
-      order_id: `${params.uid}_${Date.now()}`,
-      order_description: 'شحن محفظة ليتيريوم',
-      ipn_callback_url: params.ipnCallbackUrl,
-      success_url: params.successUrl,
-      cancel_url: params.cancelUrl
-    })
+    body: JSON.stringify(requestBody)
   });
 
   const body = await res.json();

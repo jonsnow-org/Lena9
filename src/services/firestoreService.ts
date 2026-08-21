@@ -1495,6 +1495,24 @@ export async function markAllNotificationsReadInFirestore(
   }
 }
 
+/** حذف إشعار واحد — قواعد الأمان تسمح لصاحب الإشعار فقط بحذفه. */
+export async function deleteNotificationInFirestore(notificationId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'notifications', notificationId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `notifications/${notificationId}`);
+  }
+}
+
+/** مسح كل إشعارات المستخدم دفعة واحدة — زر "مسح الكل" لم يكن موجوداً إطلاقاً من قبل. */
+export async function clearAllNotificationsInFirestore(notifications: AppNotification[]): Promise<void> {
+  try {
+    await Promise.all(notifications.map((n) => deleteDoc(doc(db, 'notifications', n.id))));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, 'notifications');
+  }
+}
+
 // -------------------------------------------------------------------
 // المشاهدات — تُسجَّل مرة واحدة فعلياً لكل مقال في كل جلسة تصفح، بدل
 // عدم وجود أي تسجيل مشاهدات إطلاقاً كما كان الحال سابقاً.

@@ -148,6 +148,13 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  // ⚠️ خلف أي وسيط (proxy) تنتهي عنده شهادة TLS (وهذا حال أي نشر جادّ —
+  // Cloud Run، Render، إلخ) يرى Node الاتصال الداخلي كـ http عادي، فتُخطئ
+  // req.protocol ويعتقد الطلب "غير آمن". بدون هذا السطر، أي رابط يُبنى من
+  // req.protocol (مثل روابط إعادة التوجيه بعد الدفع) قد يخرج بصيغة
+  // http:// خاطئة تماماً رغم أن الموقع الفعلي https فقط.
+  app.set('trust proxy', true);
+
   // ⚠️ يجب تسجيل مسار Webhook قبل express.json() العام أدناه — التحقق من
   // توقيع Stripe يحتاج الجسم الخام (raw) غير المُحلَّل، وexpress.json()
   // كان سيستهلك التدفّق (stream) ويحوّله JSON قبل وصوله هنا فيفشل التحقق.
@@ -572,12 +579,15 @@ async function startServer() {
       }
 
       const baseUrl = (process.env.APP_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
+      // ⚠️ لا يُمرَّر ipnCallbackUrl هنا عمداً — راجع التعليق في
+      // createNowPaymentsInvoice. NOWPayments يستخدم رابط IPN المضبوط
+      // يدوياً في لوحته (والذي تحقق المالك من صحته فعلياً)، بدل رابط
+      // مبني تلقائياً من الطلب قد يختلف عن النطاق العام الحقيقي.
       const result = await createNowPaymentsInvoice({
         uid,
         amount,
         successUrl: `${baseUrl}/?payment=success`,
-        cancelUrl: `${baseUrl}/?payment=cancelled`,
-        ipnCallbackUrl: `${baseUrl}/api/payments/webhook/nowpayments`
+        cancelUrl: `${baseUrl}/?payment=cancelled`
       });
       res.json({ checkoutUrl: result.invoiceUrl });
     } catch (err: any) {

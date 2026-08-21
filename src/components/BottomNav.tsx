@@ -544,7 +544,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
     );
   }
 
-  // 4. ADMIN ROLE: الرئيسية · لوحة الإدارة · المستخدمون · الحملات · ملفي
+  // 4. ADMIN ROLE: الرئيسية · لوحة الإدارة · المستخدمون · الحملات · رسائل · إشعارات · ملفي
   return (
     <nav
       id="bottom-nav-admin"
@@ -666,7 +666,38 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           </span>
         </button>
 
-        {/* 5. إشعارات */}
+        {/* 5. رسائل — كانت غائبة تماماً عن حساب الأدمن رغم توفرها لكل بقية
+            الأدوار، فلا توجد أي وسيلة للأدمن لإرسال أو استقبال رسالة مباشرة. */}
+        <button
+          id="nav-admin-messages"
+          type="button"
+          onClick={onOpenMessages}
+          className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group relative"
+        >
+          <div
+            className={`p-1.5 rounded-xl transition-all relative ${
+              activeTab === 'messages'
+                ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
+                : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
+            }`}
+          >
+            <MessageSquare className="w-5 h-5" />
+            {unreadMessagesCount > 0 && (
+              <span className="absolute -top-1 -end-1 w-4 h-4 bg-teal-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center ring-2 ring-white dark:ring-slate-950">
+                {unreadMessagesCount}
+              </span>
+            )}
+          </div>
+          <span
+            className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
+              activeTab === 'messages' ? 'text-brand-700 dark:text-brand-300 font-extrabold' : 'text-slate-500 dark:text-slate-400'
+            }`}
+          >
+            {t('messages')}
+          </span>
+        </button>
+
+        {/* 6. إشعارات */}
         <button
           id="nav-admin-notifications"
           type="button"
@@ -696,7 +727,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           </span>
         </button>
 
-        {/* 6. ملفي */}
+        {/* 7. ملفي */}
         <button
           id="nav-admin-profile"
           type="button"

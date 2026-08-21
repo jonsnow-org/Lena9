@@ -7,7 +7,10 @@ import {
   MessageSquare,
   Sparkles,
   UserPlus,
-  Check
+  Check,
+  Trash2,
+  Megaphone,
+  Reply
 } from 'lucide-react';
 import { AppNotification } from '../types';
 
@@ -16,13 +19,34 @@ interface NotificationsModalProps {
   onClose: () => void;
   notifications: AppNotification[];
   onMarkAllAsRead: () => void;
+  onMarkOneAsRead: (id: string) => void;
+  onDeleteOne: (id: string) => void;
+  onClearAll: () => void;
+}
+
+/** وقت نسبي مختصر (منذ...) بدل عرض التاريخ الخام ISO كما هو. */
+function formatRelativeTime(iso: string): string {
+  const date = new Date(iso);
+  if (isNaN(date.getTime())) return iso;
+  const diffMs = Date.now() - date.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return 'الآن';
+  if (diffMin < 60) return `منذ ${diffMin} د`;
+  const diffHours = Math.floor(diffMin / 60);
+  if (diffHours < 24) return `منذ ${diffHours} س`;
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 30) return `منذ ${diffDays} يوم`;
+  return date.toLocaleDateString('ar-SY', { day: 'numeric', month: 'short' });
 }
 
 export const NotificationsModal: React.FC<NotificationsModalProps> = ({
   isOpen,
   onClose,
   notifications,
-  onMarkAllAsRead
+  onMarkAllAsRead,
+  onMarkOneAsRead,
+  onDeleteOne,
+  onClearAll
 }) => {
   if (!isOpen) return null;
 
@@ -30,12 +54,18 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
     switch (type) {
       case 'earning':
         return <DollarSign className="w-4 h-4 text-emerald-500" />;
+      case 'withdrawal':
+        return <DollarSign className="w-4 h-4 text-amber-500" />;
       case 'follow':
         return <UserPlus className="w-4 h-4 text-teal-500" />;
       case 'comment':
         return <MessageSquare className="w-4 h-4 text-cyan-500" />;
+      case 'reply':
+        return <Reply className="w-4 h-4 text-cyan-500" />;
       case 'like':
         return <Heart className="w-4 h-4 text-rose-500" />;
+      case 'campaign':
+        return <Megaphone className="w-4 h-4 text-blue-500" />;
       default:
         return <Sparkles className="w-4 h-4 text-amber-500" />;
     }
@@ -68,39 +98,61 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
             notifications.map((notif) => (
               <div
                 key={notif.id}
-                className={`flex items-start gap-3 p-3.5 rounded-2xl border transition-colors ${
+                onClick={() => !notif.isRead && onMarkOneAsRead(notif.id)}
+                className={`flex items-start gap-3 p-3.5 rounded-2xl border transition-colors group ${
                   notif.isRead
                     ? 'bg-slate-50/50 dark:bg-slate-800/40 border-slate-200/60 dark:border-slate-800'
-                    : 'bg-teal-50/70 dark:bg-teal-950/40 border-teal-200 dark:border-teal-800'
+                    : 'bg-teal-50/70 dark:bg-teal-950/40 border-teal-200 dark:border-teal-800 cursor-pointer'
                 }`}
               >
                 <div className="w-8 h-8 rounded-xl bg-white dark:bg-slate-800 shadow-2xs flex items-center justify-center shrink-0">
                   {getIcon(notif.type)}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between mb-0.5">
+                  <div className="flex items-center justify-between gap-2 mb-0.5">
                     <span className="font-bold text-xs text-slate-900 dark:text-white">
                       {notif.title}
                     </span>
-                    <span className="text-[10px] text-slate-400">{notif.createdAt}</span>
+                    <span className="text-[10px] text-slate-400 shrink-0">{formatRelativeTime(notif.createdAt)}</span>
                   </div>
                   <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
                     {notif.message}
                   </p>
                 </div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeleteOne(notif.id);
+                  }}
+                  title="حذف الإشعار"
+                  className="p-1.5 rounded-lg text-slate-300 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 opacity-0 group-hover:opacity-100 transition-all shrink-0"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
               </div>
             ))
           )}
         </div>
 
-        <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/80 flex items-center justify-between">
-          <button
-            onClick={onMarkAllAsRead}
-            className="text-xs text-teal-600 dark:text-teal-400 font-bold hover:underline flex items-center gap-1"
-          >
-            <Check className="w-3.5 h-3.5" />
-            <span>تحديد الكل كمقروء</span>
-          </button>
+        <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/80 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onMarkAllAsRead}
+              className="text-xs text-teal-600 dark:text-teal-400 font-bold hover:underline flex items-center gap-1"
+            >
+              <Check className="w-3.5 h-3.5" />
+              <span>تحديد الكل كمقروء</span>
+            </button>
+            {notifications.length > 0 && (
+              <button
+                onClick={onClearAll}
+                className="text-xs text-rose-500 dark:text-rose-400 font-bold hover:underline flex items-center gap-1"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>مسح الكل</span>
+              </button>
+            )}
+          </div>
           <button
             onClick={onClose}
             className="px-4 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold"
