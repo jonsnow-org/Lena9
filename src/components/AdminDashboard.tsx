@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Rocket,
   ShieldAlert,
@@ -263,58 +263,103 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [userSearch, setUserSearch] = useState<string>('');
   const [articleFilter, setArticleFilter] = useState<string>('all');
 
-  // Financial Metrics Calculation strictly from real Firestore data
-  const totalPlatformAdRevenue = campaigns
-    .filter((c) => c.placementType === 'platform' || c.type === 'fixed')
-    .reduce((acc, c) => acc + (c.totalSpent || 0), 0);
+  // Financial Metrics Calculation strictly from real Firestore data.
+  // ⚠️ ملفوفة بـ useMemo لسبب أداء حقيقي: هذه اللوحة تستقبل كل مجموعات
+  // Firestore تقريباً (users/campaigns/articles/fraudFlags/adEvents...)
+  // كخصائص props، فأي تحديث onSnapshot لأي منها في أي مكان بالتطبيق —
+  // حتى لو لم يكن الأدمن يتصفّح هذا التبويب إطلاقاً — كان يعيد تنفيذ كل
+  // عمليات filter/reduce هذه من الصفر على المصفوفات الكاملة في كل مرة.
+  // على موقع حقيقي تتراكم فيه بيانات فعلية (لا بيانات تجريبية فارغة)،
+  // هذا يعني عملاً حسابياً متكرراً وغير ضروري على نفس اللحظة التي قد
+  // يحاول فيها المستخدم التمرير بإصبعه — يزاحمها ويجعل التمرير يبدو
+  // متقطعاً أو عالقاً. الآن لا تُعاد هذه الحسابات إلا عند تغيّر campaigns
+  // أو articles أو fraudFlags فعلياً.
+  const {
+    totalPlatformAdRevenue,
+    totalWriterAdRevenue,
+    platformAdSenseCut,
+    writersAdSenseCut,
+    totalLockedArticlesSales,
+    platformSalesCut,
+    writersSalesCut,
+    netPlatformRevenue,
+    totalBlockedFraudRevenue
+  } = useMemo(() => {
+    const totalPlatformAdRevenue = campaigns
+      .filter((c) => c.placementType === 'platform' || c.type === 'fixed')
+      .reduce((acc, c) => acc + (c.totalSpent || 0), 0);
 
-  const totalWriterAdRevenue = campaigns
-    .filter((c) => c.placementType === 'writer' || c.type === 'cpm' || c.type === 'cpc')
-    .reduce((acc, c) => acc + (c.totalSpent || 0), 0);
+    const totalWriterAdRevenue = campaigns
+      .filter((c) => c.placementType === 'writer' || c.type === 'cpm' || c.type === 'cpc')
+      .reduce((acc, c) => acc + (c.totalSpent || 0), 0);
 
-  // In-article writer ads: 45% platform / 55% writer
-  const platformAdSenseCut = totalWriterAdRevenue * REVENUE_SHARES.IN_ARTICLE_ADS.PLATFORM;
-  const writersAdSenseCut = totalWriterAdRevenue * REVENUE_SHARES.IN_ARTICLE_ADS.WRITER;
+    // In-article writer ads: 45% platform / 55% writer
+    const platformAdSenseCut = totalWriterAdRevenue * REVENUE_SHARES.IN_ARTICLE_ADS.PLATFORM;
+    const writersAdSenseCut = totalWriterAdRevenue * REVENUE_SHARES.IN_ARTICLE_ADS.WRITER;
 
-  const totalLockedArticlesSales = articles
-    .filter((a) => a.isLocked)
-    .reduce((acc, a) => acc + (a.revenueFromSales || 0), 0);
+    const totalLockedArticlesSales = articles
+      .filter((a) => a.isLocked)
+      .reduce((acc, a) => acc + (a.revenueFromSales || 0), 0);
 
-  // Locked articles sales: 15% platform / 85% writer
-  const platformSalesCut = totalLockedArticlesSales * REVENUE_SHARES.LOCKED_ARTICLES.PLATFORM;
-  const writersSalesCut = totalLockedArticlesSales * REVENUE_SHARES.LOCKED_ARTICLES.WRITER;
+    // Locked articles sales: 15% platform / 85% writer
+    const platformSalesCut = totalLockedArticlesSales * REVENUE_SHARES.LOCKED_ARTICLES.PLATFORM;
+    const writersSalesCut = totalLockedArticlesSales * REVENUE_SHARES.LOCKED_ARTICLES.WRITER;
 
-  // Purely computed from actual transactions and campaigns without artificial add-ons
-  const netPlatformRevenue = totalPlatformAdRevenue + platformAdSenseCut + platformSalesCut;
+    // Purely computed from actual transactions and campaigns without artificial add-ons
+    const netPlatformRevenue = totalPlatformAdRevenue + platformAdSenseCut + platformSalesCut;
 
-  const totalBlockedFraudRevenue = fraudFlags.reduce(
-    (acc, f) => acc + (f.revenueBlocked || 0),
-    0
-  );
+    const totalBlockedFraudRevenue = fraudFlags.reduce(
+      (acc, f) => acc + (f.revenueBlocked || 0),
+      0
+    );
+
+    return {
+      totalPlatformAdRevenue,
+      totalWriterAdRevenue,
+      platformAdSenseCut,
+      writersAdSenseCut,
+      totalLockedArticlesSales,
+      platformSalesCut,
+      writersSalesCut,
+      netPlatformRevenue,
+      totalBlockedFraudRevenue
+    };
+  }, [campaigns, articles, fraudFlags]);
 
   // طلبات السحب الحقيقية المعلَّقة — من مجموعة payoutRequests الفعلية
   // (وليس من transactions التي كانت مصدرها الحقيقي أرباح المالك الخاصة
   // فقط، فتُظهر رقماً لا علاقة له بطلبات سحب بقية المستخدمين).
-  const pendingPayoutRequests = payoutRequests.filter((r: any) => r.status === 'pending');
+  const pendingPayoutRequests = useMemo(
+    () => payoutRequests.filter((r: any) => r.status === 'pending'),
+    [payoutRequests]
+  );
 
-  const filteredUsers = users.filter((u) => {
-    const matchRole = userRoleFilter === 'all' || u.role === userRoleFilter;
-    const matchSearch =
-      userSearch === '' ||
-      u.fullName.toLowerCase().includes(userSearch.toLowerCase()) ||
-      u.username.toLowerCase().includes(userSearch.toLowerCase()) ||
-      u.email.toLowerCase().includes(userSearch.toLowerCase());
-    return matchRole && matchSearch;
-  });
+  const filteredUsers = useMemo(
+    () =>
+      users.filter((u) => {
+        const matchRole = userRoleFilter === 'all' || u.role === userRoleFilter;
+        const matchSearch =
+          userSearch === '' ||
+          u.fullName.toLowerCase().includes(userSearch.toLowerCase()) ||
+          u.username.toLowerCase().includes(userSearch.toLowerCase()) ||
+          u.email.toLowerCase().includes(userSearch.toLowerCase());
+        return matchRole && matchSearch;
+      }),
+    [users, userRoleFilter, userSearch]
+  );
 
-  const filteredFraudFlags = fraudFlags.filter((f) => {
-    if (fraudFilter === 'all') return true;
-    if (fraudFilter === 'high_critical') return f.severity === 'high' || f.severity === 'critical';
-    if (fraudFilter === 'self_click') return f.triggerType === 'self_click';
-    if (fraudFilter === 'cpc') return f.pricingModel === 'cpc';
-    if (fraudFilter === 'cpm') return f.pricingModel === 'cpm';
-    return true;
-  });
+  const filteredFraudFlags = useMemo(
+    () =>
+      fraudFlags.filter((f) => {
+        if (fraudFilter === 'all') return true;
+        if (fraudFilter === 'high_critical') return f.severity === 'high' || f.severity === 'critical';
+        if (fraudFilter === 'self_click') return f.triggerType === 'self_click';
+        if (fraudFilter === 'cpc') return f.pricingModel === 'cpc';
+        if (fraudFilter === 'cpm') return f.pricingModel === 'cpm';
+        return true;
+      }),
+    [fraudFlags, fraudFilter]
+  );
 
   // دفاع محلي إضافي — بجانب قواعد أمان Firestore التي تبقى خط الدفاع
   // الحقيقي الذي يرفض أي كتابة فعلية من غير الأدمن — لا تُعرض أدوات
