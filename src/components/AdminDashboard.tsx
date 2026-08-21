@@ -1053,9 +1053,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             </div>
 
-            {/* Campaign Cards Grid */}
+            {/* Campaign Cards Grid — الحملات المسودة (draft) مستبعدة هنا عمداً:
+                لها بالفعل بطاقتها الكاملة القابلة للاعتماد/الرفض في صندوق
+                "حملات بانتظار الاعتماد" أعلاه، فعرضها هنا أيضاً كان يكرر
+                نفس زرَي "اعتماد وتفعيل"/"رفض" لنفس الحملة في مكانين على نفس
+                الشاشة دفعة واحدة. */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {campaigns.map((camp) => {
+              {campaigns.filter((c: any) => c.status !== 'draft').map((camp) => {
                 // نفس فحص الرصيد المطبَّق في قسم "حملات بانتظار الاعتماد" أعلاه —
                 // حملة draft لم تُفحص ميزانيتها بعد، فلا يجوز تفعيلها من هذه
                 // البطاقة متجاوزةً الفحص (كانت تتيح ذلك سابقاً بلا أي تحقق).
