@@ -16,7 +16,8 @@ import {
   ArrowRight,
   ShieldCheck,
   Zap,
-  Info
+  Info,
+  ChevronUp
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -307,12 +308,8 @@ export function App() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
-  // ⚠️ ref لا state: كانت handleTouchStart تنادي setTouchStartPos عند بداية
-  // كل لمسة تقريباً (أي نقطة أعلى الصفحة)، وهذا يعيد رسم App بأكمله (شجرة
-  // ضخمة بلا React.memo) عند كل نقرة تقريباً — على الهواتف الأضعف هذا كان
-  // يجعل التمرير العادي يبدو "متجمداً"، لأن كل touchstart يُطلق إعادة رسم
-  // ثقيلة تتنافس مع محرّك التمرير الأصلي للمتصفح على نفس اللحظة. تتبّع نقطة
-  // بداية اللمسة لا يحتاج إعادة رسم إطلاقاً — فهو غير مرئي بذاته.
+  const [showScrollTop, setShowScrollTop] = useState(false);
+  // ⚠️ ref لا state: تتبّع نقطة بداية اللمسة لا يحتاج إعادة رسم إطلاقاً
   const touchStartPosRef = useRef(0);
 
   // Active Selected Entity States
@@ -1241,28 +1238,56 @@ export function App() {
       .slice(0, 6);
   }, [users, searchQuery]);
 
-  // Pull to refresh handlers
-  const handleTouchStart = (e: React.TouchEvent) => {
-    touchStartPosRef.current = window.scrollY === 0 ? e.touches[0].clientY : 0;
+  // Listen to scroll position for Scroll-to-Top floating button
+  useEffect(() => {
+    let ticking = false;
+    const handleScroll = () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          const scrollY = window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
+          setShowScrollTop(scrollY > 350);
+          ticking = false;
+        });
+        ticking = true;
+      }
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const scrollToTop = () => {
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth'
+    });
   };
 
-  // rAF لا نداء مباشر: أثناء السحب الفعلي في أعلى الصفحة تصل touchmove بمعدل
-  // عالٍ جداً على بعض الهواتف — استدعاء setPullDistance في كل حدث يزاحم
-  // محرّك التمرير على نفس الإطار. تقييده بإطار رسم واحد كحد أقصى يبقي
-  // المؤشّر البصري سلساً دون إغراق React بتحديثات لا يراها أحد أصلاً.
+  // Pull to refresh handlers
+  const handleTouchStart = (e: React.TouchEvent) => {
+    const scrollY = window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
+    touchStartPosRef.current = scrollY <= 1 ? e.touches[0].clientY : 0;
+  };
+
   const pullRafRef = useRef<number | null>(null);
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (touchStartPosRef.current > 0 && window.scrollY === 0) {
+    const scrollY = window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
+    if (touchStartPosRef.current > 0 && scrollY <= 1) {
       const currentY = e.touches[0].clientY;
       const diff = currentY - touchStartPosRef.current;
       if (diff > 0) {
-        // Apply dampening / logarithmic resistance
+        // سحب لأسفل عند قمة الصفحة لتحديث الخلاصة
         const dampened = Math.min(diff * 0.45, 90);
         if (pullRafRef.current === null) {
           pullRafRef.current = requestAnimationFrame(() => {
             pullRafRef.current = null;
             setPullDistance(dampened);
           });
+        }
+      } else if (diff < -5) {
+        // سحب لأعلى للتمرير العادي — يتم فك التعليق فوراً ليتحكم المتصفح بالتمرير
+        touchStartPosRef.current = 0;
+        if (pullDistance > 0) {
+          setPullDistance(0);
         }
       }
     }
@@ -1280,7 +1305,6 @@ export function App() {
     setIsRefreshing(true);
     setTimeout(() => {
       setIsRefreshing(false);
-      // Give haptic-like visual feedback
     }, 750);
   };
 
@@ -2886,6 +2910,18 @@ export function App() {
         {/* التذييل — روابط الصفحات القانونية مطلوبة في كل صفحة لقبول AdSense */}
         <SiteFooter onOpenLegal={(sec) => setLegalSection(sec)} />
       </main>
+
+      {/* زر عائم للصعود للأعلى عند التمرير لأسفل */}
+      {showScrollTop && (
+        <button
+          id="btn-scroll-to-top"
+          onClick={scrollToTop}
+          aria-label="العودة لأعلى الصفحة"
+          className="fixed bottom-20 left-4 sm:bottom-24 sm:left-6 z-40 p-3 rounded-full bg-teal-600 hover:bg-teal-700 text-white shadow-xl shadow-teal-600/30 transition-all duration-300 transform hover:scale-110 active:scale-95 flex items-center justify-center cursor-pointer border border-white/20 backdrop-blur-sm"
+        >
+          <ChevronUp className="w-5 h-5" />
+        </button>
+      )}
 
       {/* Bottom Navigation Bar */}
       <BottomNav

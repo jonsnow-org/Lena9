@@ -40,16 +40,16 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   return (
     <header
       id="top-app-bar"
-      className="sticky top-0 z-40 bg-slate-950/95 backdrop-blur-xl border-b border-brand-500/20 transition-colors shadow-lg"
+      className="sticky top-0 z-40 bg-white/95 text-slate-900 border-b border-slate-200/90 dark:bg-slate-950/95 dark:text-white dark:border-brand-500/20 backdrop-blur-xl transition-colors shadow-xs"
     >
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-14 flex items-center justify-between gap-2">
         {/* Start / Left: Drawer trigger & Brand logo */}
-        <div className="flex items-center gap-2 sm:gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           <button
             id="header-drawer-button"
             type="button"
             onClick={onOpenDrawer}
-            className="w-10 h-10 rounded-2xl flex items-center justify-center text-slate-200 hover:bg-slate-900 active:scale-95 transition-all touch-manipulation border border-brand-500/20"
+            className="w-10 h-10 rounded-2xl flex items-center justify-center text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-900 active:scale-95 transition-all touch-manipulation border border-slate-200 dark:border-brand-500/20 shadow-2xs"
             title={t('menu')}
           >
             <Menu className="w-5 h-5 stroke-[2.2]" />
@@ -57,20 +57,20 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
 
           <div
             onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-            className="flex items-center gap-2.5 cursor-pointer select-none active:opacity-80 transition-opacity"
+            className="flex items-center gap-2 cursor-pointer select-none active:opacity-80 transition-opacity"
           >
-            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-2xl bg-gradient-to-tr from-brand-600 via-brand-600 to-brand-700 text-white flex items-center justify-center font-black text-base shadow-lg shadow-brand-600/30 ring-2 ring-brand-500/30">
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-2xl bg-gradient-to-tr from-brand-600 via-brand-600 to-brand-700 text-white flex items-center justify-center font-black text-base shadow-md shadow-brand-600/20 ring-2 ring-brand-500/30">
               L
             </div>
-            <span className="font-black text-base sm:text-lg tracking-tight text-white leading-none">
+            <span className="font-black text-base sm:text-lg tracking-tight text-slate-900 dark:text-white leading-none">
               LITERIUM
             </span>
           </div>
         </div>
 
         {/* End / Right: ساعة تركيا/سوريا الحيّة + نقطة "الموقع يعمل" + تسجيل
-            الدخول للزائر فقط — بقية الوظائف كلها في القائمة الجانبية الآن. */}
-        <div className="flex items-center gap-2 sm:gap-3">
+            الدخول للزائر فقط */}
+        <div className="flex items-center gap-1.5 sm:gap-2.5">
           <LiveClock />
           <LiveStatusDot />
 
@@ -79,7 +79,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               id="header-auth-button"
               type="button"
               onClick={onOpenAuth}
-              className="px-4 py-2 rounded-2xl bg-gradient-to-r from-brand-600 to-brand-600 hover:from-brand-500 hover:to-brand-500 text-white text-xs font-black shadow-lg shadow-brand-600/30 flex items-center gap-1.5 active:scale-95 transition-all"
+              className="px-3 sm:px-4 py-2 rounded-2xl bg-gradient-to-r from-brand-600 to-brand-600 hover:from-brand-500 hover:to-brand-500 text-white text-xs font-black shadow-md shadow-brand-600/30 flex items-center gap-1.5 active:scale-95 transition-all shrink-0"
             >
               <LogIn className="w-3.5 h-3.5" />
               <span>{t('login')}</span>

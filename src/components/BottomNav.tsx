@@ -58,7 +58,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
     return (
       <nav
         id="bottom-nav-reader"
-        className="fixed bottom-0 inset-x-0 z-40 bg-slate-950/95 backdrop-blur-xl border-t border-brand-500/20 shadow-2xl transition-colors pb-safe"
+        className="fixed bottom-0 inset-x-0 z-40 bg-white/95 text-slate-900 border-t border-slate-200/90 shadow-xl dark:bg-slate-950/95 dark:text-white dark:border-brand-500/20 backdrop-blur-xl transition-colors pb-safe"
       >
         <div className="max-w-lg mx-auto px-3 h-16 flex items-center justify-around">
           {/* 1. الرئيسية */}
@@ -71,15 +71,15 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             <div
               className={`p-1.5 rounded-xl transition-all ${
                 activeTab === 'feed'
-                  ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
-                  : 'text-slate-400 group-hover:text-slate-200'
+                  ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
+                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
               }`}
             >
               <Home className="w-5 h-5" />
             </div>
             <span
               className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'feed' ? 'text-brand-300 font-extrabold' : 'text-slate-400'
+                activeTab === 'feed' ? 'text-brand-700 dark:text-brand-300 font-extrabold' : 'text-slate-500 dark:text-slate-400'
               }`}
             >
               {t('home')}
@@ -96,23 +96,22 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             <div
               className={`p-1.5 rounded-xl transition-all ${
                 activeTab === 'explore'
-                  ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
-                  : 'text-slate-400 group-hover:text-slate-200'
+                  ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
+                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
               }`}
             >
               <Compass className="w-5 h-5" />
             </div>
             <span
               className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'explore' ? 'text-brand-300 font-extrabold' : 'text-slate-400'
+                activeTab === 'explore' ? 'text-brand-700 dark:text-brand-300 font-extrabold' : 'text-slate-500 dark:text-slate-400'
               }`}
             >
               {t('explore')}
             </span>
           </button>
 
-          {/* 3. إشعارات — الآن موحّدة داخل الشريط السفلي لكل الأدوار
-              (بدل الاعتماد على زر أعلى الشاشة فقط) بناءً على طلب صريح. */}
+          {/* 3. إشعارات */}
           <button
             id="nav-reader-notifications"
             type="button"
@@ -122,20 +121,20 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             <div
               className={`p-1.5 rounded-xl transition-all relative ${
                 activeTab === 'notifications'
-                  ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
-                  : 'text-slate-400 group-hover:text-slate-200'
+                  ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
+                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
               }`}
             >
               <Bell className="w-5 h-5" />
               {unreadCount > 0 && (
-                <span className="absolute -top-1 -end-1 w-4 h-4 bg-brand-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center ring-2 ring-slate-950 animate-pulse">
+                <span className="absolute -top-1 -end-1 w-4 h-4 bg-brand-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center ring-2 ring-white dark:ring-slate-950 animate-pulse">
                   {unreadCount > 9 ? '9+' : unreadCount}
                 </span>
               )}
             </div>
             <span
               className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'notifications' ? 'text-brand-300 font-extrabold' : 'text-slate-400'
+                activeTab === 'notifications' ? 'text-brand-700 dark:text-brand-300 font-extrabold' : 'text-slate-500 dark:text-slate-400'
               }`}
             >
               {t('notifications')}
@@ -152,20 +151,20 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             <div
               className={`p-1.5 rounded-xl transition-all relative ${
                 activeTab === 'messages'
-                  ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
-                  : 'text-slate-400 group-hover:text-slate-200'
+                  ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
+                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
               }`}
             >
               <MessageSquare className="w-5 h-5" />
               {unreadMessagesCount > 0 && (
-                <span className="absolute -top-1 -end-1 w-4 h-4 bg-teal-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center ring-2 ring-slate-950">
+                <span className="absolute -top-1 -end-1 w-4 h-4 bg-teal-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center ring-2 ring-white dark:ring-slate-950">
                   {unreadMessagesCount}
                 </span>
               )}
             </div>
             <span
               className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'messages' ? 'text-brand-300 font-extrabold' : 'text-slate-400'
+                activeTab === 'messages' ? 'text-brand-700 dark:text-brand-300 font-extrabold' : 'text-slate-500 dark:text-slate-400'
               }`}
             >
               {t('messages')}
@@ -182,8 +181,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             <div
               className={`p-1.5 rounded-xl transition-all ${
                 activeTab === 'profile'
-                  ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
-                  : 'text-slate-400 group-hover:text-slate-200'
+                  ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
+                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
               }`}
             >
               {currentUser?.avatarUrl ? (
@@ -199,7 +198,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             </div>
             <span
               className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'profile' ? 'text-brand-300 font-extrabold' : 'text-slate-400'
+                activeTab === 'profile' ? 'text-brand-700 dark:text-brand-300 font-extrabold' : 'text-slate-500 dark:text-slate-400'
               }`}
             >
               {t('profile')}
@@ -215,7 +214,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
     return (
       <nav
         id="bottom-nav-advertiser"
-        className="fixed bottom-0 inset-x-0 z-40 bg-slate-950/95 backdrop-blur-xl border-t border-brand-500/20 shadow-2xl transition-colors pb-safe"
+        className="fixed bottom-0 inset-x-0 z-40 bg-white/95 text-slate-900 border-t border-slate-200/90 shadow-xl dark:bg-slate-950/95 dark:text-white dark:border-brand-500/20 backdrop-blur-xl transition-colors pb-safe"
       >
         <div className="max-w-lg mx-auto px-2 h-16 flex items-center justify-around">
           {/* 1. الرئيسية */}
@@ -228,15 +227,15 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             <div
               className={`p-1.5 rounded-xl transition-all ${
                 activeTab === 'feed'
-                  ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
-                  : 'text-slate-400 group-hover:text-slate-200'
+                  ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
+                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
               }`}
             >
               <Home className="w-5 h-5" />
             </div>
             <span
               className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'feed' ? 'text-brand-300 font-extrabold' : 'text-slate-400'
+                activeTab === 'feed' ? 'text-brand-700 dark:text-brand-300 font-extrabold' : 'text-slate-500 dark:text-slate-400'
               }`}
             >
               {t('home')}
@@ -253,15 +252,15 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             <div
               className={`p-1.5 rounded-xl transition-all ${
                 activeTab === 'campaigns'
-                  ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
-                  : 'text-slate-400 group-hover:text-slate-200'
+                  ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
+                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
               }`}
             >
               <Megaphone className="w-5 h-5" />
             </div>
             <span
               className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'campaigns' ? 'text-brand-300 font-extrabold' : 'text-slate-400'
+                activeTab === 'campaigns' ? 'text-brand-700 dark:text-brand-300 font-extrabold' : 'text-slate-500 dark:text-slate-400'
               }`}
             >
               {t('myCampaigns')}
@@ -274,12 +273,12 @@ export const BottomNav: React.FC<BottomNavProps> = ({
               id="nav-adv-fab"
               type="button"
               onClick={onOpenCreateCampaign}
-              className="w-13 h-13 rounded-2xl bg-gradient-to-tr from-cyan-600 via-brand-600 to-brand-600 text-white flex items-center justify-center shadow-lg shadow-cyan-600/40 active:scale-90 hover:scale-105 transition-all border-2 border-slate-900"
+              className="w-13 h-13 rounded-2xl bg-gradient-to-tr from-cyan-600 via-brand-600 to-brand-600 text-white flex items-center justify-center shadow-lg shadow-cyan-600/40 active:scale-90 hover:scale-105 transition-all border-2 border-white dark:border-slate-900"
               title={t('newCampaign')}
             >
               <PlusCircle className="w-6 h-6 stroke-[2.2]" />
             </button>
-            <span className="text-[10px] font-black text-cyan-300 mt-1">{t('newCampaign')}</span>
+            <span className="text-[10px] font-black text-cyan-600 dark:text-cyan-300 mt-1">{t('newCampaign')}</span>
           </div>
 
           {/* 4. رسائل */}
@@ -292,20 +291,20 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             <div
               className={`p-1.5 rounded-xl transition-all relative ${
                 activeTab === 'messages'
-                  ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
-                  : 'text-slate-400 group-hover:text-slate-200'
+                  ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
+                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
               }`}
             >
               <MessageSquare className="w-5 h-5" />
               {unreadMessagesCount > 0 && (
-                <span className="absolute -top-1 -end-1 w-4 h-4 bg-teal-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center ring-2 ring-slate-950">
+                <span className="absolute -top-1 -end-1 w-4 h-4 bg-teal-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center ring-2 ring-white dark:ring-slate-950">
                   {unreadMessagesCount}
                 </span>
               )}
             </div>
             <span
               className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'messages' ? 'text-brand-300 font-extrabold' : 'text-slate-400'
+                activeTab === 'messages' ? 'text-brand-700 dark:text-brand-300 font-extrabold' : 'text-slate-500 dark:text-slate-400'
               }`}
             >
               {t('messages')}
@@ -322,20 +321,20 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             <div
               className={`p-1.5 rounded-xl transition-all relative ${
                 activeTab === 'notifications'
-                  ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
-                  : 'text-slate-400 group-hover:text-slate-200'
+                  ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
+                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
               }`}
             >
               <Bell className="w-5 h-5" />
               {unreadCount > 0 && (
-                <span className="absolute -top-1 -end-1 w-4 h-4 bg-brand-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center ring-2 ring-slate-950 animate-pulse">
+                <span className="absolute -top-1 -end-1 w-4 h-4 bg-brand-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center ring-2 ring-white dark:ring-slate-950 animate-pulse">
                   {unreadCount > 9 ? '9+' : unreadCount}
                 </span>
               )}
             </div>
             <span
               className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'notifications' ? 'text-brand-300 font-extrabold' : 'text-slate-400'
+                activeTab === 'notifications' ? 'text-brand-700 dark:text-brand-300 font-extrabold' : 'text-slate-500 dark:text-slate-400'
               }`}
             >
               {t('notifications')}
@@ -352,8 +351,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             <div
               className={`p-1.5 rounded-xl transition-all ${
                 activeTab === 'profile'
-                  ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
-                  : 'text-slate-400 group-hover:text-slate-200'
+                  ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
+                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
               }`}
             >
               {currentUser?.avatarUrl ? (
@@ -369,7 +368,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             </div>
             <span
               className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'profile' ? 'text-brand-300 font-extrabold' : 'text-slate-400'
+                activeTab === 'profile' ? 'text-brand-700 dark:text-brand-300 font-extrabold' : 'text-slate-500 dark:text-slate-400'
               }`}
             >
               {t('profile')}
@@ -385,7 +384,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
     return (
       <nav
         id="bottom-nav-writer"
-        className="fixed bottom-0 inset-x-0 z-40 bg-slate-950/95 backdrop-blur-xl border-t border-brand-500/20 shadow-2xl transition-colors pb-safe"
+        className="fixed bottom-0 inset-x-0 z-40 bg-white/95 text-slate-900 border-t border-slate-200/90 shadow-xl dark:bg-slate-950/95 dark:text-white dark:border-brand-500/20 backdrop-blur-xl transition-colors pb-safe"
       >
         <div className="max-w-lg mx-auto px-2 h-16 flex items-center justify-around">
           {/* 1. الرئيسية */}
@@ -398,15 +397,15 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             <div
               className={`p-1.5 rounded-xl transition-all ${
                 activeTab === 'feed'
-                  ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
-                  : 'text-slate-400 group-hover:text-slate-200'
+                  ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
+                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
               }`}
             >
               <Home className="w-5 h-5" />
             </div>
             <span
               className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'feed' ? 'text-brand-300 font-extrabold' : 'text-slate-400'
+                activeTab === 'feed' ? 'text-brand-700 dark:text-brand-300 font-extrabold' : 'text-slate-500 dark:text-slate-400'
               }`}
             >
               {t('home')}
@@ -423,15 +422,15 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             <div
               className={`p-1.5 rounded-xl transition-all ${
                 activeTab === 'articles'
-                  ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
-                  : 'text-slate-400 group-hover:text-slate-200'
+                  ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
+                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
               }`}
             >
               <FileText className="w-5 h-5" />
             </div>
             <span
               className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'articles' ? 'text-brand-300 font-extrabold' : 'text-slate-400'
+                activeTab === 'articles' ? 'text-brand-700 dark:text-brand-300 font-extrabold' : 'text-slate-500 dark:text-slate-400'
               }`}
             >
               {t('myArticles')}
@@ -444,12 +443,12 @@ export const BottomNav: React.FC<BottomNavProps> = ({
               id="nav-writer-fab"
               type="button"
               onClick={onOpenWriteAction}
-              className="w-13 h-13 rounded-2xl bg-gradient-to-tr from-brand-600 via-brand-600 to-brand-700 text-white flex items-center justify-center shadow-lg shadow-brand-600/40 active:scale-90 hover:scale-105 transition-all border-2 border-slate-900"
+              className="w-13 h-13 rounded-2xl bg-gradient-to-tr from-brand-600 via-brand-600 to-brand-700 text-white flex items-center justify-center shadow-lg shadow-brand-600/40 active:scale-90 hover:scale-105 transition-all border-2 border-white dark:border-slate-900"
               title={t('createArticle')}
             >
               <PenTool className="w-6 h-6 stroke-[2.2]" />
             </button>
-            <span className="text-[10px] font-black text-brand-300 mt-1">{t('write')}</span>
+            <span className="text-[10px] font-black text-brand-600 dark:text-brand-300 mt-1">{t('write')}</span>
           </div>
 
           {/* 4. لوحة الكاتب */}
@@ -462,15 +461,15 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             <div
               className={`p-1.5 rounded-xl transition-all ${
                 activeTab === 'dashboard'
-                  ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
-                  : 'text-slate-400 group-hover:text-slate-200'
+                  ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
+                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
               }`}
             >
               <TrendingUp className="w-5 h-5" />
             </div>
             <span
               className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'dashboard' ? 'text-brand-300 font-extrabold' : 'text-slate-400'
+                activeTab === 'dashboard' ? 'text-brand-700 dark:text-brand-300 font-extrabold' : 'text-slate-500 dark:text-slate-400'
               }`}
             >
               {t('writerPanel')}
@@ -487,20 +486,20 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             <div
               className={`p-1.5 rounded-xl transition-all relative ${
                 activeTab === 'notifications'
-                  ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
-                  : 'text-slate-400 group-hover:text-slate-200'
+                  ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
+                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
               }`}
             >
               <Bell className="w-5 h-5" />
               {unreadCount > 0 && (
-                <span className="absolute -top-1 -end-1 w-4 h-4 bg-brand-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center ring-2 ring-slate-950 animate-pulse">
+                <span className="absolute -top-1 -end-1 w-4 h-4 bg-brand-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center ring-2 ring-white dark:ring-slate-950 animate-pulse">
                   {unreadCount > 9 ? '9+' : unreadCount}
                 </span>
               )}
             </div>
             <span
               className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'notifications' ? 'text-brand-300 font-extrabold' : 'text-slate-400'
+                activeTab === 'notifications' ? 'text-brand-700 dark:text-brand-300 font-extrabold' : 'text-slate-500 dark:text-slate-400'
               }`}
             >
               {t('notifications')}
@@ -517,8 +516,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             <div
               className={`p-1.5 rounded-xl transition-all ${
                 activeTab === 'profile'
-                  ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
-                  : 'text-slate-400 group-hover:text-slate-200'
+                  ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
+                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
               }`}
             >
               {currentUser?.avatarUrl ? (
@@ -534,7 +533,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             </div>
             <span
               className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'profile' ? 'text-brand-300 font-extrabold' : 'text-slate-400'
+                activeTab === 'profile' ? 'text-brand-700 dark:text-brand-300 font-extrabold' : 'text-slate-500 dark:text-slate-400'
               }`}
             >
               {t('profile')}
@@ -549,7 +548,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   return (
     <nav
       id="bottom-nav-admin"
-      className="fixed bottom-0 inset-x-0 z-40 bg-slate-950/95 backdrop-blur-xl border-t border-brand-500/20 shadow-2xl transition-colors pb-safe"
+      className="fixed bottom-0 inset-x-0 z-40 bg-white/95 text-slate-900 border-t border-slate-200/90 shadow-xl dark:bg-slate-950/95 dark:text-white dark:border-brand-500/20 backdrop-blur-xl transition-colors pb-safe"
     >
       <div className="max-w-lg mx-auto px-2 h-16 flex items-center justify-around">
         {/* 1. الرئيسية */}
@@ -562,15 +561,15 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           <div
             className={`p-1.5 rounded-xl transition-all ${
               activeTab === 'feed'
-                ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
-                : 'text-slate-400 group-hover:text-slate-200'
+                ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
+                : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
             }`}
           >
             <Home className="w-5 h-5" />
           </div>
           <span
             className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-              activeTab === 'feed' ? 'text-brand-300 font-extrabold' : 'text-slate-400'
+              activeTab === 'feed' ? 'text-brand-700 dark:text-brand-300 font-extrabold' : 'text-slate-500 dark:text-slate-400'
             }`}
           >
             {t('home')}
@@ -590,8 +589,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           <div
             className={`p-1.5 rounded-xl transition-all ${
               activeTab === 'admin' && (adminActiveTab === 'overview' || !adminActiveTab)
-                ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
-                : 'text-slate-400 group-hover:text-slate-200'
+                ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
+                : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
             }`}
           >
             <LayoutDashboard className="w-5 h-5" />
@@ -599,8 +598,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           <span
             className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
               activeTab === 'admin' && (adminActiveTab === 'overview' || !adminActiveTab)
-                ? 'text-brand-300 font-extrabold'
-                : 'text-slate-400'
+                ? 'text-brand-700 dark:text-brand-300 font-extrabold'
+                : 'text-slate-500 dark:text-slate-400'
             }`}
           >
             {t('adminPanel')}
@@ -620,8 +619,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           <div
             className={`p-1.5 rounded-xl transition-all ${
               activeTab === 'admin' && adminActiveTab === 'users'
-                ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
-                : 'text-slate-400 group-hover:text-slate-200'
+                ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
+                : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
             }`}
           >
             <Users className="w-5 h-5" />
@@ -629,8 +628,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           <span
             className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
               activeTab === 'admin' && adminActiveTab === 'users'
-                ? 'text-brand-300 font-extrabold'
-                : 'text-slate-400'
+                ? 'text-brand-700 dark:text-brand-300 font-extrabold'
+                : 'text-slate-500 dark:text-slate-400'
             }`}
           >
             {t('users')}
@@ -650,8 +649,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           <div
             className={`p-1.5 rounded-xl transition-all ${
               activeTab === 'admin' && adminActiveTab === 'campaigns'
-                ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
-                : 'text-slate-400 group-hover:text-slate-200'
+                ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
+                : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
             }`}
           >
             <Megaphone className="w-5 h-5" />
@@ -659,8 +658,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           <span
             className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
               activeTab === 'admin' && adminActiveTab === 'campaigns'
-                ? 'text-brand-300 font-extrabold'
-                : 'text-slate-400'
+                ? 'text-brand-700 dark:text-brand-300 font-extrabold'
+                : 'text-slate-500 dark:text-slate-400'
             }`}
           >
             {t('campaigns')}
@@ -677,20 +676,20 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           <div
             className={`p-1.5 rounded-xl transition-all relative ${
               activeTab === 'notifications'
-                ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
-                : 'text-slate-400 group-hover:text-slate-200'
+                ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
+                : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
             }`}
           >
             <Bell className="w-5 h-5" />
             {unreadCount > 0 && (
-              <span className="absolute -top-1 -end-1 w-4 h-4 bg-brand-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center ring-2 ring-slate-950 animate-pulse">
+              <span className="absolute -top-1 -end-1 w-4 h-4 bg-brand-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center ring-2 ring-white dark:ring-slate-950 animate-pulse">
                 {unreadCount > 9 ? '9+' : unreadCount}
               </span>
             )}
           </div>
           <span
             className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-              activeTab === 'notifications' ? 'text-brand-300 font-extrabold' : 'text-slate-400'
+              activeTab === 'notifications' ? 'text-brand-700 dark:text-brand-300 font-extrabold' : 'text-slate-500 dark:text-slate-400'
             }`}
           >
             {t('notifications')}
@@ -707,8 +706,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           <div
             className={`p-1.5 rounded-xl transition-all ${
               activeTab === 'profile'
-                ? 'bg-brand-600/30 text-brand-300 border border-brand-500/40 scale-105'
-                : 'text-slate-400 group-hover:text-slate-200'
+                ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
+                : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
             }`}
           >
             {currentUser?.avatarUrl ? (
@@ -724,7 +723,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           </div>
           <span
             className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-              activeTab === 'profile' ? 'text-brand-300 font-extrabold' : 'text-slate-400'
+              activeTab === 'profile' ? 'text-brand-700 dark:text-brand-300 font-extrabold' : 'text-slate-500 dark:text-slate-400'
             }`}
           >
             {t('profile')}
