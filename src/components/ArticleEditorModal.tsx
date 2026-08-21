@@ -142,9 +142,8 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
   const [activeAiTool, setActiveAiTool] = useState<string | null>(null);
   const [aiErrorMessage, setAiErrorMessage] = useState<string | null>(null);
 
-  // Word count & read time
+  // Word count
   const wordCount = content.trim() ? content.trim().split(/\s+/).length : 0;
-  const estimatedReadTime = Math.max(1, Math.ceil(wordCount / 180));
 
   // Auto save draft to localStorage
   useEffect(() => {
@@ -287,9 +286,12 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
     setIsSubmitting(true);
 
     try {
+      // الوسوم تُخزَّن دائماً بلا علامة # (تُضاف تلقائياً عند العرض في كل
+      // مكان — معاينة المحرر وصفحة قراءة المقال)، حتى لو كتبها المستخدم
+      // بنفسه في الحقل — لتفادي ظهورها مكررة "##".
       const tagsArray = tagsInput
         .split(',')
-        .map((s) => s.trim())
+        .map((s) => s.trim().replace(/^#+/, ''))
         .filter(Boolean);
 
       await onSaveArticle(
@@ -343,7 +345,7 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
                 )}
               </h3>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                {wordCount} كلمة • تقريباً {estimatedReadTime} دقيقة قراءة
+                {wordCount} كلمة
               </p>
             </div>
           </div>
@@ -575,7 +577,7 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
                     <h4 className="font-extrabold text-sm text-slate-900 dark:text-white">
                       {currentUser?.penName || currentUser?.fullName || 'اسم الكاتب'}
                     </h4>
-                    <p className="text-xs text-slate-500">مؤلف شريك في ليتيريوم • {estimatedReadTime} دقيقة قراءة</p>
+                    <p className="text-xs text-slate-500">مؤلف شريك في ليتيريوم</p>
                   </div>
                 </div>
               </div>
@@ -599,7 +601,7 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
                     key={i}
                     className="px-3 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300"
                   >
-                    #{tag.trim()}
+                    #{tag.trim().replace(/^#+/, '')}
                   </span>
                 ))}
               </div>
@@ -647,19 +649,27 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
                     <option value="science">العلوم والمعرفة</option>
                     <option value="arts">الفنون والنقد</option>
                     <option value="business">الاقتصاد والأعمال</option>
+                    <option value="health">طب وصحة</option>
+                    <option value="politics">سياسي</option>
+                    <option value="education">تعليمي</option>
+                    <option value="beauty_fashion">مكياج وموضة وجمال</option>
+                    <option value="sports">رياضة</option>
+                    <option value="food">طبخ وأكلات</option>
+                    <option value="travel">سفر وسياحة</option>
+                    <option value="family">تربية وأسرة</option>
                     <option value="general">عام ودراسات</option>
                   </select>
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                    الوسوم (مفصولة بفواصل)
+                    الوسوم (تبدأ بـ #، مفصولة بفواصل)
                   </label>
                   <input
                     type="text"
                     value={tagsInput}
                     onChange={(e) => setTagsInput(e.target.value)}
-                    placeholder="مثال: شعر, فلسفة, نقد, لغة عربية"
+                    placeholder="مثال: #شعر, #فلسفة, #نقد, #لغة_عربية"
                     className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-200 outline-hidden focus:border-teal-500"
                   />
                 </div>

@@ -126,6 +126,13 @@ export type ArticleCategory =
   | 'science'
   | 'health'
   | 'arts'
+  | 'politics'
+  | 'education'
+  | 'beauty_fashion'
+  | 'sports'
+  | 'food'
+  | 'travel'
+  | 'family'
   | 'general';
 
 export interface CommentReply {

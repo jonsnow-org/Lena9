@@ -1258,7 +1258,15 @@ export function App() {
     { id: 'philosophy', label: 'الفلسفة والفكر' },
     { id: 'business', label: 'ريادة الأعمال والمال' },
     { id: 'science', label: 'العلوم والفضاء' },
-    { id: 'health', label: 'الصحة والرفاهية' }
+    { id: 'health', label: 'الصحة والرفاهية' },
+    { id: 'arts', label: 'الفنون والنقد' },
+    { id: 'politics', label: 'سياسي' },
+    { id: 'education', label: 'تعليمي' },
+    { id: 'beauty_fashion', label: 'مكياج وموضة وجمال' },
+    { id: 'sports', label: 'رياضة' },
+    { id: 'food', label: 'طبخ وأكلات' },
+    { id: 'travel', label: 'سفر وسياحة' },
+    { id: 'family', label: 'تربية وأسرة' }
   ];
 
   // Filtered Articles based on search & category

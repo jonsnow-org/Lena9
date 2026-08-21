@@ -31,6 +31,14 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
       case 'business': return 'ريادة الأعمال والمال';
       case 'science': return 'العلوم والفضاء';
       case 'health': return 'الصحة والرفاهية';
+      case 'arts': return 'الفنون والنقد';
+      case 'politics': return 'سياسي';
+      case 'education': return 'تعليمي';
+      case 'beauty_fashion': return 'مكياج وموضة وجمال';
+      case 'sports': return 'رياضة';
+      case 'food': return 'طبخ وأكلات';
+      case 'travel': return 'سفر وسياحة';
+      case 'family': return 'تربية وأسرة';
       default: return 'عام';
     }
   };
