@@ -343,6 +343,14 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // كود الشبكات الإعلانية الخارجية الاحتياطية (PropellerAds/Adsterra) —
+    // نفس منطق settings/platformAds تماماً (قراءة عامة لأن AdSlot يحتاجها
+    // لدى كل زائر، وكتابة أدمن فقط لأنها كود HTML/JS خام يُدرَج في DOM).
+    match /settings/externalAds {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
     // سجلات التحقق الحقيقي من انضمام/اشتراك القارئ (تيليجرام ويوتيوب) —
     // تُكتب حصراً من الخادم عبر Firebase Admin SDK بعد تحقق فعلي عبر واجهة
     // برمجية خارجية (Telegram Bot API / YouTube Data API)، وليس من العميل

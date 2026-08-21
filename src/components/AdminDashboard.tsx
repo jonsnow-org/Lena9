@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Rocket,
   ShieldAlert,
@@ -31,6 +31,7 @@ import { evaluateAdEventBatch, calculateEventCost } from '../utils/fraudFilters'
 import { REVENUE_SHARES } from '../constants/revenueShares';
 import { THEME_PRESETS, ThemePresetKey, DEFAULT_THEME_PRESET } from '../constants/themePresets';
 import { BACKGROUND_PRESETS, BackgroundPresetKey, DEFAULT_BACKGROUND_PRESET } from '../constants/backgroundPresets';
+import { ExternalAdsConfig, ExternalAdNetworkConfig } from '../utils/externalAdsStore';
 
 interface AdminDashboardProps {
   currentUser: User;
@@ -98,6 +99,10 @@ interface AdminDashboardProps {
   platformAdsEnabled?: boolean;
   /** يشغّل/يوقف إعلانات المنصة العامة للجميع فوراً (يُكتب في Firestore) */
   onTogglePlatformAds?: (enabled: boolean) => void;
+  /** إعدادات الشبكات الإعلانية الخارجية الاحتياطية (PropellerAds/Adsterra) */
+  externalAdsConfig?: ExternalAdsConfig;
+  /** يحفظ إعدادات الشبكات الإعلانية الخارجية فوراً (يُكتب في Firestore) */
+  onSaveExternalAdsConfig?: (config: ExternalAdsConfig) => void;
   /** عدد المتابعين الحقيقي لكل مستخدم، محسوب من مجموعة follows الفعلية —
    *  بخلاف user.followersCount المخزَّن الذي لا يُحدَّث من أي مسار ويبقى
    *  صفراً دائماً. */
@@ -247,6 +252,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onChangeBackgroundPreset,
   platformAdsEnabled = true,
   onTogglePlatformAds,
+  externalAdsConfig,
+  onSaveExternalAdsConfig,
   followersCountByUserId = {}
 }) => {
   const [internalActiveTab, setInternalActiveTab] = useState<
@@ -262,6 +269,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [userRoleFilter, setUserRoleFilter] = useState<string>('all');
   const [userSearch, setUserSearch] = useState<string>('');
   const [articleFilter, setArticleFilter] = useState<string>('all');
+
+  // مسوّدة تحرير محلية لإعدادات الشبكات الإعلانية الخارجية الاحتياطية —
+  // تُزامَن مرة واحدة فقط من أول قيمة حقيقية تصل من Firestore (عبر props)
+  // كي لا تُفقَد تعديلات الأدمن الجارية إذا وصل تحديث onSnapshot أثناء الكتابة.
+  const [externalAdsDraft, setExternalAdsDraft] = useState<ExternalAdsConfig>(
+    externalAdsConfig || {
+      propellerAds: { enabled: false, snippet: '' },
+      adsterra: { enabled: false, snippet: '' }
+    }
+  );
+  const hasSyncedExternalAdsRef = useRef(false);
+  useEffect(() => {
+    if (hasSyncedExternalAdsRef.current || !externalAdsConfig) return;
+    setExternalAdsDraft(externalAdsConfig);
+    hasSyncedExternalAdsRef.current = true;
+  }, [externalAdsConfig]);
+  const [externalAdsSavedFlash, setExternalAdsSavedFlash] = useState(false);
+  const handleSaveExternalAds = () => {
+    onSaveExternalAdsConfig?.(externalAdsDraft);
+    setExternalAdsSavedFlash(true);
+    setTimeout(() => setExternalAdsSavedFlash(false), 2000);
+  };
 
   // Financial Metrics Calculation strictly from real Firestore data.
   // ⚠️ ملفوفة بـ useMemo لسبب أداء حقيقي: هذه اللوحة تستقبل كل مجموعات
@@ -941,6 +970,86 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     }`}
                   />
                 </button>
+              </div>
+            </div>
+
+            {/* شبكات إعلانية خارجية احتياطية (PropellerAds/Adsterra) */}
+            <div className="p-5 rounded-2xl bg-slate-900/90 border border-amber-500/20 space-y-4">
+              <div>
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <Megaphone className="w-5 h-5 text-amber-400" />
+                  شبكات إعلانية خارجية احتياطية
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  تُعرض فقط في مواضع إعلانات المنصة (وليس مواضع الكتّاب)، وفقط عندما لا توجد
+                  حملة معلن داخلية مناسبة للموضع — طبقة احتياطية إضافية لزيادة العائد. الصق
+                  كود HTML/JS الجاهز من لوحة كل شبكة كما هو دون أي تعديل.
+                </p>
+                <p className="text-xs text-amber-400/90 mt-2 font-semibold">
+                  ⚠️ تجنّب صيغ Popunder أو Interstitial (نوافذ منبثقة/شاشات اعتراضية) — قد تُصنَّف
+                  مخالفة من Google Safe Browsing وتُعطّل قبول AdSense لاحقاً حتى لو لم تشترك فيه بعد.
+                </p>
+              </div>
+
+              {(
+                [
+                  { key: 'propellerAds' as const, label: 'PropellerAds' },
+                  { key: 'adsterra' as const, label: 'Adsterra' }
+                ]
+              ).map(({ key, label }) => {
+                const network: ExternalAdNetworkConfig = externalAdsDraft[key];
+                return (
+                  <div key={key} className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-bold text-slate-200">{label}</span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExternalAdsDraft((prev) => ({
+                            ...prev,
+                            [key]: { ...prev[key], enabled: !prev[key].enabled }
+                          }))
+                        }
+                        title={network.enabled ? `إيقاف ${label}` : `تشغيل ${label}`}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          network.enabled ? 'bg-amber-500' : 'bg-slate-700'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                            network.enabled ? 'translate-x-1' : 'translate-x-6'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                    <textarea
+                      value={network.snippet}
+                      onChange={(e) =>
+                        setExternalAdsDraft((prev) => ({
+                          ...prev,
+                          [key]: { ...prev[key], snippet: e.target.value }
+                        }))
+                      }
+                      placeholder={`الصق كود ${label} الجاهز هنا (HTML/JS)...`}
+                      rows={4}
+                      dir="ltr"
+                      className="w-full rounded-lg bg-slate-900 border border-slate-800 text-slate-200 text-xs font-mono p-2.5 focus:outline-none focus:border-amber-500/60"
+                    />
+                  </div>
+                );
+              })}
+
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleSaveExternalAds}
+                  className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold transition-colors"
+                >
+                  حفظ إعدادات الشبكات الخارجية
+                </button>
+                {externalAdsSavedFlash && (
+                  <span className="text-xs font-semibold text-emerald-400">تم الحفظ ✓</span>
+                )}
               </div>
             </div>
 

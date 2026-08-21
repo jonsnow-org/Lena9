@@ -1058,6 +1058,24 @@ export async function setPlatformAdsEnabledInFirestore(enabled: boolean, updated
   }
 }
 
+/** يحفظ إعدادات الشبكات الإعلانية الخارجية الاحتياطية (PropellerAds/
+ *  Adsterra) — كود HTML/JS خام لكل شبكة مع مفتاح تفعيل مستقل. */
+export async function setExternalAdsConfigInFirestore(
+  config: { propellerAds: { enabled: boolean; snippet: string }; adsterra: { enabled: boolean; snippet: string } },
+  updatedByUserId: string
+): Promise<void> {
+  try {
+    await setDoc(
+      doc(db, 'settings', 'externalAds'),
+      { ...config, updatedAt: new Date().toISOString(), updatedBy: updatedByUserId },
+      { merge: true }
+    );
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'settings/externalAds');
+    throw error;
+  }
+}
+
 export async function setBackgroundPresetInFirestore(backgroundPreset: string, updatedByUserId: string): Promise<void> {
   try {
     await setDoc(

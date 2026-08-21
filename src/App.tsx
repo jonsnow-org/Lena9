@@ -74,6 +74,7 @@ import { isEligibleForMonetization } from './utils/creatorEligibility';
 import { getTranslator } from './data/translations';
 import { applyThemePreset, applyBackgroundPreset, syncBackgroundOverlayMode } from './utils/themeEngine';
 import { subscribePlatformAdsEnabled, getPlatformAdsEnabled } from './utils/platformAdsStore';
+import { subscribeExternalAdsConfig, getExternalAdsConfig, ExternalAdsConfig } from './utils/externalAdsStore';
 import { isValidThemePreset, DEFAULT_THEME_PRESET, ThemePresetKey } from './constants/themePresets';
 import {
   isValidBackgroundPreset,
@@ -84,7 +85,8 @@ import {
   subscribeToThemePreset,
   setThemePresetInFirestore,
   setBackgroundPresetInFirestore,
-  setPlatformAdsEnabledInFirestore
+  setPlatformAdsEnabledInFirestore,
+  setExternalAdsConfigInFirestore
 } from './services/firestoreService';
 import { PromoteArticleModal } from './components/PromoteArticleModal';
 import { LegalPages, LegalSection } from './components/LegalPages';
@@ -1185,6 +1187,24 @@ export function App() {
       await setPlatformAdsEnabledInFirestore(enabled, currentUser.id);
     } catch (err) {
       console.error('تعذر حفظ إعداد إعلانات المنصة:', err);
+      alert('تعذر حفظ الإعداد الجديد. تحقق من اتصالك ثم حاول مجدداً.');
+    }
+  };
+
+  // إعدادات الشبكات الإعلانية الخارجية الاحتياطية — نفس مخزن AdSlot
+  // المشترك تماماً كحال platformAdsEnabled أعلاه.
+  const [externalAdsConfig, setExternalAdsConfigState] = useState(getExternalAdsConfig());
+  useEffect(() => {
+    return subscribeExternalAdsConfig(setExternalAdsConfigState);
+  }, []);
+
+  const handleSaveExternalAdsConfig = async (config: ExternalAdsConfig) => {
+    if (currentUser.role !== 'admin') return;
+    setExternalAdsConfigState(config);
+    try {
+      await setExternalAdsConfigInFirestore(config, currentUser.id);
+    } catch (err) {
+      console.error('تعذر حفظ إعدادات الشبكات الإعلانية الخارجية:', err);
       alert('تعذر حفظ الإعداد الجديد. تحقق من اتصالك ثم حاول مجدداً.');
     }
   };
@@ -2648,6 +2668,8 @@ export function App() {
             onChangeBackgroundPreset={handleChangeBackgroundPreset}
             platformAdsEnabled={platformAdsEnabled}
             onTogglePlatformAds={handleTogglePlatformAds}
+            externalAdsConfig={externalAdsConfig}
+            onSaveExternalAdsConfig={handleSaveExternalAdsConfig}
           />
         ) : (
           /* Main Feed View: Available to all users/roles when on 'feed' */

@@ -4,6 +4,13 @@ import { logAdEvent } from '../services/firestoreService';
 import { VideoEmbed } from './VideoEmbed';
 import { parseVideoUrl } from '../utils/videoEmbed';
 import { subscribePlatformAdsEnabled, getPlatformAdsEnabled } from '../utils/platformAdsStore';
+import {
+  subscribeExternalAdsConfig,
+  getExternalAdsConfig,
+  pickActiveExternalNetwork,
+  ExternalAdNetworkConfig
+} from '../utils/externalAdsStore';
+import { ExternalAdScript } from './ExternalAdScript';
 import { SocialPromoCta } from './SocialPromoCta';
 
 /**
@@ -89,6 +96,7 @@ export const AdSlot: React.FC<AdSlotProps> = ({
   const hasLoggedImpression = useRef(false);
   const [slotIndex] = useState(() => renderedAdsOnPage++);
   const [platformAdsEnabled, setPlatformAdsEnabled] = useState(getPlatformAdsEnabled());
+  const [externalAdsConfig, setExternalAdsConfig] = useState(getExternalAdsConfig());
 
   const config = SLOT_CONFIG[slotId];
 
@@ -100,12 +108,23 @@ export const AdSlot: React.FC<AdSlotProps> = ({
     return subscribePlatformAdsEnabled(setPlatformAdsEnabled);
   }, [config.beneficiary]);
 
+  // الشبكات الإعلانية الخارجية الاحتياطية (PropellerAds/Adsterra) تُطبَّق
+  // فقط على مواضع المنصة نفسها (نفس نطاق platformAdsEnabled أعلاه) — لا
+  // تمس مواضع الكتّاب التشاركية، لأن حصة الكاتب من هذه الشبكات غير
+  // محسوبة أو موزَّعة في هذا الإصدار.
+  useEffect(() => {
+    if (config.beneficiary !== 'platform') return;
+    return subscribeExternalAdsConfig(setExternalAdsConfig);
+  }, [config.beneficiary]);
+
   /**
    * اختيار الإعلان بالأولوية:
    * 1. راعي القسم (لموضع category_banner فقط، ولا يشاركه أحد)
    * 2. حملة معلن داخلية نشطة مناسبة للموضع
-   * 3. AdSense (المكان محجوز، غير مفعّل بعد)
-   * 4. لا شيء — لا تُعرض مساحة فارغة إطلاقاً
+   * 3. شبكة إعلانية خارجية احتياطية (PropellerAds/Adsterra) إن فُعِّلت
+   *    من لوحة الإدارة — مواضع المنصة فقط، انظر externalNetwork أدناه
+   * 4. AdSense (المكان محجوز، غير مفعّل بعد)
+   * 5. لا شيء — لا تُعرض مساحة فارغة إطلاقاً
    */
   const selectedCampaign = useMemo(() => {
     if (config.beneficiary === 'platform' && !platformAdsEnabled) return null;
@@ -130,6 +149,14 @@ export const AdSlot: React.FC<AdSlotProps> = ({
     // اختيار ثابت حسب ترتيب الموضع، لمنع ظهور نفس الإعلان مرتين في الصفحة
     return eligible[slotIndex % eligible.length] || null;
   }, [campaigns, config.sponsorOnly, config.beneficiary, platformAdsEnabled, category, slotIndex]);
+
+  // الطبقة الاحتياطية الرابعة: تُستخدَم فقط عندما لا توجد حملة داخلية
+  // مناسبة (selectedCampaign فارغ) وفي مواضع المنصة المفعَّلة حصراً.
+  const externalNetwork: ExternalAdNetworkConfig | null = useMemo(() => {
+    if (selectedCampaign) return null;
+    if (config.beneficiary !== 'platform' || !platformAdsEnabled) return null;
+    return pickActiveExternalNetwork(externalAdsConfig);
+  }, [selectedCampaign, config.beneficiary, platformAdsEnabled, externalAdsConfig]);
 
   // تسجيل الظهور فقط بعد بقاء 50% من الإعلان مرئياً لمدة ثانية متواصلة
   // (Viewability) — وليس عند مجرد دخوله الشاشة للحظة عابرة أثناء التمرير
@@ -200,6 +227,18 @@ export const AdSlot: React.FC<AdSlotProps> = ({
 
   // احترام الحد الأقصى للصفحة
   if (slotIndex >= MAX_ADS_PER_PAGE) return null;
+
+  // لا حملة داخلية، لكن توجد شبكة إعلانية خارجية احتياطية مفعّلة لهذا
+  // الموضع — نعرض كودها كما هو، بدون أي تتبّع إفصاح/نقر خاص بنا (تتبُّع
+  // هذه الشبكات مستقل تماماً ومُدار من طرفها).
+  if (!selectedCampaign && externalNetwork) {
+    return (
+      <div ref={containerRef} className={inRead ? 'my-8' : 'my-5'}>
+        <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 mb-1.5">إعلان</div>
+        <ExternalAdScript snippet={externalNetwork.snippet} className="w-full flex justify-center overflow-hidden" />
+      </div>
+    );
+  }
 
   // لا إعلان متاح: لا تُعرض مساحة فارغة ولا هيكل عظمي
   if (!selectedCampaign) return null;
