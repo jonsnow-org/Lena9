@@ -50,12 +50,16 @@ interface WalletModalProps {
 // (رقم زائد) يُنفَّذ مباشرة بلا أي فرصة للتراجع.
 const LARGE_WITHDRAW_CONFIRM_THRESHOLD = 500;
 
-// إيداع يدوي عبر زر "Pay with Cwallet" (كود Tip Box الشخصي لحساب المالك).
-// الزر لا يحمل أي ربط تلقائي بمبلغ/مستخدم محدد ولا webhook تأكيد — لذا هذا
-// مسار يدوي بحت مطابق لبقية الطرق اليدوية: يدفع المستخدم عبره، ثم يُنشئ
-// طلب إيداع pending يتحقق المالك يدوياً من وصوله فعلياً في حساب Cwallet
-// قبل اعتماده.
+// إيداع يدوي عبر Cwallet Tip Box (كود المالك الشخصي). سكريبت الزر المُدمَج
+// (opencc.js) يفحص الصفحة عن عنصر الزر عند تحميله فقط، ولا يلتقط عنصراً
+// يُدرَج لاحقاً ديناميكياً من React (تبويب الإيداع)، فلا يفتح شيئاً عند
+// الضغط. الرابط المباشر أدناه هو أحد الصيغ الرسمية الأربع البديلة لنفس
+// كود الإيداع (رابط/QR/زر/صورة) — أوثق من الاعتماد على توقيت تحميل سكريبت
+// خارجي داخل تطبيق صفحة واحدة (SPA). لا يوجد ربط تلقائي بمبلغ/مستخدم محدد
+// ولا webhook تأكيد، لذا هذا مسار يدوي: يدفع المستخدم عبر الرابط، ثم يُنشئ
+// طلب إيداع pending يتحقق المالك يدوياً من وصوله فعلياً قبل اعتماده.
 const CWALLET_TIP_CODE = '32AQW87R';
+const CWALLET_PAY_URL = `https://cwallet.com/t/${CWALLET_TIP_CODE}`;
 
 export const WalletModal: React.FC<WalletModalProps> = ({
   isOpen,
@@ -101,18 +105,6 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     fetchPaymentStatus().then(setPaymentStatus);
     fetchNowPaymentsStatus().then((s) => setCryptoAutomated(s.automated));
   }, [isOpen]);
-
-  // يُحمَّل سكريبت Cwallet مرة واحدة فقط لكل صفحة (وليس عند كل فتح للنافذة)
-  // — يبحث السكريبت عن عنصر الزر في الصفحة ويفعّله بنفسه عند تحميله.
-  useEffect(() => {
-    if (!isOpen || activeTab !== 'deposit') return;
-    if (document.getElementById('cwallet-opencc-script')) return;
-    const script = document.createElement('script');
-    script.id = 'cwallet-opencc-script';
-    script.src = 'https://cwallet.com/opencc.js';
-    script.async = true;
-    document.body.appendChild(script);
-  }, [isOpen, activeTab]);
 
   useEffect(() => {
     if (!isOpen || activeTab !== 'withdraw' || !paymentStatus?.automated) return;
@@ -488,15 +480,17 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                       <span>الدفع عبر Cwallet — يُعتمد الرصيد بعد تأكيد الوصول</span>
                     </div>
                     <p className="text-[11px] text-emerald-700 dark:text-emerald-400 leading-relaxed">
-                      ادفع {depositAmount}$ عبر الزر أدناه (يفتح صفحة Cwallet لإتمام الدفع بعملة رقمية)، ثم اضغط زر تسجيل الطلب. سيُضاف المبلغ إلى رصيدك بعد أن يتحقق فريق المنصة يدوياً من وصوله.
+                      ادفع {depositAmount}$ عبر الزر أدناه (يفتح صفحة Cwallet في نافذة جديدة لإتمام الدفع بعملة رقمية)، ثم عد هنا واضغط زر تسجيل الطلب. سيُضاف المبلغ إلى رصيدك بعد أن يتحقق فريق المنصة يدوياً من وصوله.
                     </p>
-                    <div
-                      className="ccwallet__tipbox__button"
-                      data-code={CWALLET_TIP_CODE}
-                      data-button-type="button"
-                      data-button-text="Pay with Cwallet"
-                      data-button-style="green"
-                    />
+                    <a
+                      href={CWALLET_PAY_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full py-3 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-sm shadow-md transition-all flex items-center justify-center gap-2"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      <span>Pay with Cwallet</span>
+                    </a>
                     <button
                       type="button"
                       onClick={handleCwalletDeposit}
