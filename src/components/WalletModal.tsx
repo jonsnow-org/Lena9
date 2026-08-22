@@ -79,7 +79,6 @@ export const WalletModal: React.FC<WalletModalProps> = ({
 
   // Deposit state
   const [depositAmount, setDepositAmount] = useState<number>(MIN_DEPOSIT_USD);
-  const [depositMethod, setDepositMethod] = useState<PaymentMethod>('stripe_card');
   const [depositSuccess, setDepositSuccess] = useState(false);
 
   // Withdraw state
@@ -183,13 +182,11 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     }
   };
 
+  // طرق الإيداع اليدوي (PayPal / USDT يدوي / تحويل بنكي) قيد التطوير ولم
+  // يعد لها زر إرسال — هذا يبقى فقط ليمنع أي إرسال ضمني للنموذج (مثلاً عبر
+  // Enter داخل حقل المبلغ) من إنشاء طلب إيداع وهمي بلا وجهة تحويل حقيقية.
   const handleDepositSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (depositAmount < MIN_DEPOSIT_USD) return;
-
-    const fakeRef = `DEP-${Math.floor(100000 + Math.random() * 900000)}`;
-    onDeposit(Number(depositAmount), depositMethod, fakeRef);
-    setDepositSuccess(true);
     setTimeout(() => {
       setDepositSuccess(false);
       setActiveTab('overview');
@@ -454,9 +451,15 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                     </div>
                   )}
 
+                  {/* طرق الإيداع اليدوي (PayPal / USDT يدوي / تحويل بنكي) ما زالت
+                      قيد التطوير — لا تعرض للمستخدم أي بيانات حساب فعلية
+                      يُحوّل إليها، ما كان يسمح بإرسال طلب إيداع بلا أي وجهة
+                      حقيقية. تُعرض هنا فقط لإعلام المستخدم أنها قادمة قريباً،
+                      ومعطّلة تماماً حتى تُستكمل ببيانات حساب حقيقية وشاشة
+                      اعتماد إدارية مخصصة لها. */}
                   <div>
                     <label className="block text-xs font-bold text-slate-900 dark:text-slate-200 mb-2">
-                      {paymentStatus?.automated || cryptoAutomated ? 'أو أرسل طلب إيداع يدوي بطريقة أخرى:' : 'اختر وسيلة الإيداع:'}
+                      طرق إيداع إضافية:
                     </label>
                     <div className="grid grid-cols-2 gap-2">
                       {[
@@ -467,26 +470,22 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                         <button
                           key={m.id}
                           type="button"
-                          onClick={() => setDepositMethod(m.id)}
-                          className={`p-3 rounded-2xl border text-start transition-all ${
-                            depositMethod === m.id
-                              ? 'bg-teal-50 dark:bg-teal-950/60 border-teal-600 text-teal-900 dark:text-teal-200 ring-2 ring-teal-500/20'
-                              : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
-                          }`}
+                          disabled
+                          title="قيد التطوير — سيتم تفعيلها قريباً"
+                          className="relative p-3 rounded-2xl border text-start bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 cursor-not-allowed opacity-70"
                         >
+                          <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 text-[9px] font-bold">
+                            قيد التطوير
+                          </span>
                           <span className="block text-xs font-bold">{m.label}</span>
                           <span className="block text-[10px] text-slate-400">{m.desc}</span>
                         </button>
                       ))}
                     </div>
+                    <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                      هذه الطرق قيد التطوير حالياً وستتوفر قريباً. استخدم الدفع الفوري بالبطاقة أو بالعملة الرقمية أعلاه للإيداع الآن.
+                    </p>
                   </div>
-
-                  <button
-                    type="submit"
-                    className="w-full py-3.5 rounded-2xl bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 text-white font-extrabold text-sm shadow-md transition-all hover:scale-[1.01]"
-                  >
-                    إرسال طلب إيداع يدوي بـ {depositAmount}$
-                  </button>
                 </>
               )}
             </form>
