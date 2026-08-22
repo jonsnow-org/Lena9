@@ -50,6 +50,13 @@ interface WalletModalProps {
 // (رقم زائد) يُنفَّذ مباشرة بلا أي فرصة للتراجع.
 const LARGE_WITHDRAW_CONFIRM_THRESHOLD = 500;
 
+// إيداع يدوي عبر زر "Pay with Cwallet" (كود Tip Box الشخصي لحساب المالك).
+// الزر لا يحمل أي ربط تلقائي بمبلغ/مستخدم محدد ولا webhook تأكيد — لذا هذا
+// مسار يدوي بحت مطابق لبقية الطرق اليدوية: يدفع المستخدم عبره، ثم يُنشئ
+// طلب إيداع pending يتحقق المالك يدوياً من وصوله فعلياً في حساب Cwallet
+// قبل اعتماده.
+const CWALLET_TIP_CODE = '32AQW87R';
+
 export const WalletModal: React.FC<WalletModalProps> = ({
   isOpen,
   onClose,
@@ -94,6 +101,18 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     fetchPaymentStatus().then(setPaymentStatus);
     fetchNowPaymentsStatus().then((s) => setCryptoAutomated(s.automated));
   }, [isOpen]);
+
+  // يُحمَّل سكريبت Cwallet مرة واحدة فقط لكل صفحة (وليس عند كل فتح للنافذة)
+  // — يبحث السكريبت عن عنصر الزر في الصفحة ويفعّله بنفسه عند تحميله.
+  useEffect(() => {
+    if (!isOpen || activeTab !== 'deposit') return;
+    if (document.getElementById('cwallet-opencc-script')) return;
+    const script = document.createElement('script');
+    script.id = 'cwallet-opencc-script';
+    script.src = 'https://cwallet.com/opencc.js';
+    script.async = true;
+    document.body.appendChild(script);
+  }, [isOpen, activeTab]);
 
   useEffect(() => {
     if (!isOpen || activeTab !== 'withdraw' || !paymentStatus?.automated) return;
@@ -182,11 +201,22 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     }
   };
 
-  // طرق الإيداع اليدوي (PayPal / USDT يدوي / تحويل بنكي) قيد التطوير ولم
-  // يعد لها زر إرسال — هذا يبقى فقط ليمنع أي إرسال ضمني للنموذج (مثلاً عبر
-  // Enter داخل حقل المبلغ) من إنشاء طلب إيداع وهمي بلا وجهة تحويل حقيقية.
+  // طرق الإيداع اليدوي المتبقية (PayPal / USDT يدوي / تحويل بنكي) قيد
+  // التطوير ولم يعد لها زر إرسال ضمن هذا النموذج — هذا يبقى فقط ليمنع أي
+  // إرسال ضمني (مثلاً عبر Enter داخل حقل المبلغ) من إنشاء طلب بلا وجهة
+  // تحويل حقيقية. إيداع Cwallet له زر مستقل خاص به (handleCwalletDeposit).
   const handleDepositSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+  };
+
+  const handleCwalletDeposit = () => {
+    if (!depositAmount || depositAmount < MIN_DEPOSIT_USD) return;
+    onDeposit(Number(depositAmount), 'cwallet', `Cwallet tip code: ${CWALLET_TIP_CODE}`);
+    setDepositSuccess(true);
+    setTimeout(() => {
+      setDepositSuccess(false);
+      setActiveTab('overview');
+    }, 2200);
   };
 
   const handleWithdrawSubmit = (e: React.FormEvent) => {
@@ -447,8 +477,37 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                     </div>
                   )}
 
-                  {/* طرق الإيداع اليدوي (PayPal / USDT يدوي / تحويل بنكي) ما زالت
-                      قيد التطوير — لا تعرض للمستخدم أي بيانات حساب فعلية
+                  {/* إيداع يدوي عبر زر Cwallet — لا يوجد ربط تلقائي بمبلغ/
+                      مستخدم محدد ولا webhook تأكيد (زر "Tip Box" وليس بوابة
+                      دفع كاملة)، لذا هذا تحويل يدوي: يدفع المستخدم عبر الزر
+                      ثم يُنشئ طلب إيداع pending يتحقق المالك يدوياً من وصوله
+                      فعلياً في حساب Cwallet قبل اعتماده. */}
+                  <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 space-y-2.5">
+                    <div className="flex items-center gap-2 text-emerald-800 dark:text-emerald-300 text-xs font-bold">
+                      <Building2 className="w-4 h-4" />
+                      <span>الدفع عبر Cwallet — يُعتمد الرصيد بعد تأكيد الوصول</span>
+                    </div>
+                    <p className="text-[11px] text-emerald-700 dark:text-emerald-400 leading-relaxed">
+                      ادفع {depositAmount}$ عبر الزر أدناه (يفتح صفحة Cwallet لإتمام الدفع بعملة رقمية)، ثم اضغط زر تسجيل الطلب. سيُضاف المبلغ إلى رصيدك بعد أن يتحقق فريق المنصة يدوياً من وصوله.
+                    </p>
+                    <div
+                      className="ccwallet__tipbox__button"
+                      data-code={CWALLET_TIP_CODE}
+                      data-button-type="button"
+                      data-button-text="Pay with Cwallet"
+                      data-button-style="green"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleCwalletDeposit}
+                      className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-sm shadow-md transition-all"
+                    >
+                      دفعت عبر Cwallet — سجّل طلب الإيداع
+                    </button>
+                  </div>
+
+                  {/* طرق الإيداع اليدوي الأخرى (PayPal / USDT يدوي / تحويل بنكي)
+                      ما زالت قيد التطوير — لا تعرض للمستخدم أي بيانات حساب فعلية
                       يُحوّل إليها، ما كان يسمح بإرسال طلب إيداع بلا أي وجهة
                       حقيقية. تُعرض هنا فقط لإعلام المستخدم أنها قادمة قريباً،
                       ومعطّلة تماماً حتى تُستكمل ببيانات حساب حقيقية وشاشة
