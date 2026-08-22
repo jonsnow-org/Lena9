@@ -62,25 +62,23 @@ const WRITER_AVATAR_PRESETS = [
   'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=300&auto=format&fit=crop&q=80'
 ];
 
-// NOTE: 'admin' is intentionally NOT a selectable role here. Admin accounts
-// must never be self-registered through a public form — they should be
-// granted manually in Firestore (or via a separate internal tool) by an
-// existing admin. This was previously a critical security hole.
-const SELECTABLE_ROLES: { role: UserRole; label: string; subLabel: string; icon: React.ReactNode; accent: string }[] = [
-  { role: 'reader', label: 'قارئ ومُعلن', subLabel: 'قراءة حرة + إنشاء إعلانات وترويج', icon: <BookOpen className="w-4 h-4" />, accent: 'purple' },
-  { role: 'writer', label: 'كاتب ومؤلف', subLabel: `نشر مقالات وجني أرباح ${REVENUE_SHARES.IN_ARTICLE_ADS.WRITER_PERCENT}-${REVENUE_SHARES.LOCKED_ARTICLES.WRITER_PERCENT}%`, icon: <PenTool className="w-4 h-4" />, accent: 'teal' }
-];
+// الدور الموحد للتسجيل: كاتب ومؤلف (يتيح الكتابة، القراءة، والإعلان فور التسجيل)
+const UNIFIED_REGISTER_ROLE_INFO = {
+  label: 'كاتب ومؤلف',
+  subLabel: `نشر مقالات وجني أرباح ${REVENUE_SHARES.IN_ARTICLE_ADS.WRITER_PERCENT}-${REVENUE_SHARES.LOCKED_ARTICLES.WRITER_PERCENT}% مع القراءة الحرة وإطلاق الإعلانات`,
+  icon: <PenTool className="w-5 h-5 text-teal-600 dark:text-teal-400" />
+};
 
 export const AuthModal: React.FC<AuthModalProps> = ({
   isOpen,
   onClose,
   onGoogleSignIn,
   externalError,
-  initialRole = 'reader',
+  initialRole = 'writer',
   initialMode = 'login'
 }) => {
   const [mode, setMode] = useState<'login' | 'register'>(initialMode);
-  const [role, setRole] = useState<UserRole>(initialRole === 'admin' ? 'reader' : initialRole);
+  const [role, setRole] = useState<UserRole>('writer');
   const [isLoading, setIsLoading] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
 
@@ -89,39 +87,29 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  // Role-Specific: Writer Fields
+  // Profile / Writer Fields
   const [penName, setPenName] = useState('');
   const [writerBio, setWriterBio] = useState('');
   const [selectedSpecialties, setSelectedSpecialties] = useState<string[]>(['الأدب والشعر']);
   const [selectedAvatar, setSelectedAvatar] = useState(WRITER_AVATAR_PRESETS[0]);
-
-  // Role-Specific: Advertiser Fields
-  const [companyName, setCompanyName] = useState('');
-  const [companyIndustry, setCompanyIndustry] = useState('حلول رقمية وبرمجيات');
-  const [companyWebsite, setCompanyWebsite] = useState('');
 
   // الحسابات المحفوظة على هذا الجهاز + هل يعرض المستخدم نموذج حساب جديد فارغ
   const [savedAccounts, setSavedAccounts] = useState<SavedAccount[]>([]);
   const [useNewAccountForm, setUseNewAccountForm] = useState(false);
 
   useEffect(() => {
-    if (initialRole) setRole(initialRole === 'admin' ? 'reader' : initialRole);
+    setRole('writer');
     if (initialMode) setMode(initialMode);
     setAuthError(null);
     setIsLoading(false);
 
     // إفراغ الحقول في كل مرة تُفتح فيها النافذة.
-    // بدون هذا، تبقى بيانات آخر محاولة دخول عالقة في الحقول لأن المكوّن
-    // لا يُفكّ تركيبه عند الإغلاق — وهو سبب عدم وجود "حقول فارغة" للدخول
-    // بحساب مختلف.
     if (isOpen) {
       setEmail('');
       setPassword('');
       setFullName('');
       setPenName('');
       setWriterBio('');
-      setCompanyName('');
-      setCompanyWebsite('');
 
       const accounts = getSavedAccounts();
       setSavedAccounts(accounts);
@@ -163,27 +151,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           return;
         }
       } else {
-        const finalName =
-          role === 'writer'
-            ? penName || fullName || 'كاتب ليتيريوم'
-            : role === 'advertiser'
-            ? companyName || fullName || 'مؤسسة معلنة'
-            : fullName || email.split('@')[0];
+        const finalName = penName || fullName || 'كاتب ليتيريوم';
 
-        await registerWithEmail(email, password, role, {
+        await registerWithEmail(email, password, 'writer', {
           fullName: finalName,
-          penName: role === 'writer' ? penName || finalName : undefined,
-          companyName: role === 'advertiser' ? companyName || finalName : undefined,
-          companyIndustry: role === 'advertiser' ? companyIndustry : undefined,
-          companyWebsite: role === 'advertiser' ? companyWebsite : undefined,
-          specialties: role === 'writer' ? selectedSpecialties : undefined,
-          avatarUrl: role === 'writer' ? selectedAvatar : undefined,
-          bio:
-            role === 'writer'
-              ? writerBio || 'مؤلف وباحث شغوف بالكتابة ونشر الوعي الثقافي والأدبي.'
-              : role === 'advertiser'
-              ? 'شركة رائدة في تقديم الحلول والخدمات الرقمية للمجتمع.'
-              : 'عضو نشط في مجتمع ليتيريوم للقراءة والثقافة.'
+          penName: penName || finalName,
+          specialties: selectedSpecialties,
+          avatarUrl: selectedAvatar,
+          bio: writerBio || 'مؤلف وباحث شغوف بالكتابة ونشر الوعي الثقافي والأدبي.'
         });
       }
       // Success: the onAuthStateChanged listener in App.tsx takes it from here
@@ -197,24 +172,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
-  const accentClasses: Record<string, { border: string; bg: string; text: string; ring: string }> = {
-    purple: { border: 'border-brand-500', bg: 'bg-brand-500/10', text: 'text-brand-600 dark:text-brand-400', ring: 'ring-brand-500/20' },
-    teal: { border: 'border-teal-500', bg: 'bg-teal-500/10', text: 'text-teal-600 dark:text-teal-400', ring: 'ring-teal-500/20' },
-    cyan: { border: 'border-cyan-500', bg: 'bg-cyan-500/10', text: 'text-cyan-600 dark:text-cyan-400', ring: 'ring-cyan-500/20' }
-  };
-
-  const submitButtonColor =
-    role === 'writer' ? 'bg-teal-600 hover:bg-teal-700 shadow-teal-500/20' :
-    role === 'advertiser' ? 'bg-cyan-600 hover:bg-cyan-700 shadow-cyan-500/20' :
-    'bg-brand-600 hover:bg-brand-700 shadow-brand-500/20';
-
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 md:p-6 animate-fade-in">
       <div className="relative w-full max-w-xl rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col overflow-hidden">
         {/* Header with Mode Switcher */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/90">
           <div className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-2xl bg-brand-600/10 text-brand-600 dark:text-brand-400 flex items-center justify-center font-bold">
+            <div className="w-9 h-9 rounded-2xl bg-teal-600/10 text-teal-600 dark:text-teal-400 flex items-center justify-center font-bold">
               {mode === 'login' ? <LogIn className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}
             </div>
             <div>
@@ -222,7 +186,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 {mode === 'login' ? 'تسجيل الدخول إلى ليتيريوم' : 'إنشاء حساب جديد'}
               </h3>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                {mode === 'login' ? 'مرحباً بعودتك إلى فضاء الأدب والفكر' : 'اختر دورك للاستفادة من مميزات المنصة'}
+                {mode === 'login' ? 'مرحباً بعودتك إلى فضاء الأدب والفكر' : 'انضم ككاتب ومؤلف واستمتع بكافة مميزات المنصة'}
               </p>
             </div>
           </div>
@@ -243,18 +207,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </div>
           )}
 
-          {/* Google Sign-In removed: this deployment runs under an AI Studio
-              preview domain that doesn't reliably complete the OAuth
-              handshake with Firebase's authDomain on mobile browsers
-              (third-party storage restrictions). Email/password is the only
-              supported sign-in method to avoid silent failures. */}
-
-          {/* اختيار حساب محفوظ على هذا الجهاز، أو الدخول بحساب مختلف.
-              لا تُحفظ كلمات المرور إطلاقاً — البطاقة تعبّئ البريد فقط. */}
+          {/* اختيار حساب محفوظ على هذا الجهاز، أو الدخول بحساب مختلف */}
           {mode === 'login' && savedAccounts.length > 0 && !useNewAccountForm && (
             <div className="space-y-2.5">
-              {/* زر واضح وثابت أعلى القائمة للدخول بحساب مختلف تماماً — حتى لا
-                  يشعر المستخدم أنه "عالق" مع الحسابات المعروضة فقط. */}
               <button
                 type="button"
                 onClick={() => {
@@ -263,7 +218,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   setAuthError(null);
                   setUseNewAccountForm(true);
                 }}
-                className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-brand-600 hover:bg-brand-700 text-white font-extrabold text-xs shadow-md active:scale-95 transition-all"
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-xs shadow-md active:scale-95 transition-all"
               >
                 <UserCog className="w-4 h-4" />
                 <span>تسجيل الدخول بحساب آخر أو إنشاء حساب جديد</span>
@@ -277,7 +232,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 {savedAccounts.map((acc) => (
                   <div
                     key={acc.uid}
-                    className="flex items-center gap-3 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-brand-400 dark:hover:border-brand-600 bg-slate-50/60 dark:bg-slate-800/40 transition-colors"
+                    className="flex items-center gap-3 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-teal-400 dark:hover:border-teal-600 bg-slate-50/60 dark:bg-slate-800/40 transition-colors"
                   >
                     <button
                       type="button"
@@ -296,7 +251,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           className="w-9 h-9 rounded-full object-cover shrink-0"
                         />
                       ) : (
-                        <div className="w-9 h-9 rounded-full bg-brand-600/15 text-brand-600 dark:text-brand-400 flex items-center justify-center font-black text-sm shrink-0">
+                        <div className="w-9 h-9 rounded-full bg-teal-600/15 text-teal-600 dark:text-teal-400 flex items-center justify-center font-black text-sm shrink-0">
                           {(acc.fullName || acc.email)[0]?.toUpperCase()}
                         </div>
                       )}
@@ -338,110 +293,85 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 setAuthError(null);
                 setUseNewAccountForm(false);
               }}
-              className="text-[11px] font-bold text-brand-600 dark:text-brand-400 hover:underline"
+              className="text-[11px] font-bold text-teal-600 dark:text-teal-400 hover:underline"
             >
               → العودة إلى الحسابات المحفوظة
             </button>
           )}
 
-          {/* Role Tabs for Registration */}
+          {/* Unified Role Badge for Registration — خيار موحد يحافظ على نص كاتب ومؤلف */}
           {mode === 'register' && (
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                اختر دورك في المنصة:
-              </label>
-              <div className="grid grid-cols-2 gap-2.5">
-                {SELECTABLE_ROLES.map(({ role: r, label, subLabel, icon, accent }) => {
-                  const active = role === r;
-                  const cls = accentClasses[accent];
-                  return (
-                    <button
-                      key={r}
-                      type="button"
-                      onClick={() => setRole(r)}
-                      className={`p-3 rounded-2xl border text-center transition-all flex flex-col items-center gap-1 text-start ${
-                        active
-                          ? `${cls.border} ${cls.bg} ${cls.text} font-extrabold ring-2 ${cls.ring}`
-                          : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:border-slate-300'
-                      }`}
-                    >
-                      <div className="flex items-center gap-1.5 font-black text-xs">
-                        {icon}
-                        <span>{label}</span>
-                      </div>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 font-normal leading-tight">
-                        {subLabel}
-                      </span>
-                    </button>
-                  );
-                })}
+            <div className="p-3.5 rounded-2xl border border-teal-500/60 bg-teal-500/10 ring-2 ring-teal-500/20 text-start flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-teal-600/20 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
+                <PenTool className="w-5 h-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 font-black text-xs sm:text-sm text-teal-900 dark:text-teal-200">
+                  <span>{UNIFIED_REGISTER_ROLE_INFO.label}</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-teal-600/20 text-teal-700 dark:text-teal-300 font-bold">
+                    شامل القراءة والنشر والإعلان
+                  </span>
+                </div>
+                <p className="text-[11px] text-teal-700/80 dark:text-teal-300/80 font-normal leading-relaxed mt-0.5">
+                  {UNIFIED_REGISTER_ROLE_INFO.subLabel}
+                </p>
               </div>
             </div>
           )}
 
-          {/* Email/Password Form — يُخفى عند عرض قائمة الحسابات المحفوظة */}
+          {/* Form */}
           {!(mode === 'login' && savedAccounts.length > 0 && !useNewAccountForm) && (
           <form onSubmit={handleSubmit} className="space-y-4">
-            {mode === 'register' && role === 'reader' && (
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  الاسم الكامل / اسم العرض
-                </label>
-                <input
-                  type="text"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="مثال: سارة العتيبي"
-                  className="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs sm:text-sm outline-hidden focus:border-brand-500"
-                  required
-                />
-              </div>
-            )}
-
-            {mode === 'register' && role === 'writer' && (
+            {mode === 'register' && (
               <div className="space-y-3.5 p-4 rounded-2xl bg-teal-50/40 dark:bg-teal-950/20 border border-teal-200/60 dark:border-teal-900/40">
                 <div className="flex items-center gap-1.5 text-xs font-bold text-teal-800 dark:text-teal-300">
                   <PenTool className="w-4 h-4 text-teal-600" />
-                  <span>ملء البيانات الشخصية:</span>
+                  <span>بيانات الكاتب والملف الأدبي:</span>
                 </div>
 
-                {/* شروط تحقيق الربح والانضمام لبرنامج شركاء المحتوى — تُعرض هنا
-                    مباشرة في نفس صفحة التسجيل حتى يعرف الكاتب المحتمل مسبقاً
-                    ما المطلوب قبل احتساب أي أرباح فعلية له. */}
-                <div className="p-3 rounded-xl bg-white/70 dark:bg-slate-900/40 border border-teal-200/50 dark:border-teal-900/30 space-y-2">
-                  <div className="flex items-center gap-1.5 text-[11px] font-extrabold text-teal-700 dark:text-teal-400">
-                    <Info className="w-3.5 h-3.5" />
+                {/* شروط تحقيق الربح والانضمام لبرنامج شركاء المحتوى */}
+                <div className="p-3.5 rounded-xl bg-white/80 dark:bg-slate-900/50 border border-teal-200/60 dark:border-teal-900/40 space-y-2.5">
+                  <div className="flex items-center gap-1.5 text-xs font-extrabold text-teal-800 dark:text-teal-300">
+                    <Info className="w-4 h-4 text-teal-600 shrink-0" />
                     <span>شروط الانضمام لبرنامج شركاء المحتوى (احتساب الأرباح)</span>
                   </div>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                    الكتابة والنشر متاحة فوراً لأي حساب دون قيد. لكن احتساب أرباح الإعلانات ومبيعات
-                    المقالات المقفلة يبدأ فقط بعد تحقيق كل الشروط التالية معاً:
+                  <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+                    الكتابة والقراءة والنشر متاحة فوراً لأي حساب مسجل دون قيد. لكن احتساب أرباح الإعلانات ومبيعات المقالات المقفلة يبدأ فقط بعد تحقيق كل الشروط التالية معاً:
                   </p>
-                  <ul className="space-y-1">
+                  <ul className="space-y-1.5">
                     {[
                       `${CREATOR_ELIGIBILITY_THRESHOLDS.MIN_FOLLOWERS} متابع على الأقل`,
                       `${CREATOR_ELIGIBILITY_THRESHOLDS.MIN_VALID_VIEWS.toLocaleString('ar-EG')} مشاهدة موثوقة على الأقل لمقالاتك المنشورة`,
                       `${CREATOR_ELIGIBILITY_THRESHOLDS.MIN_ACCOUNT_AGE_DAYS} يوماً على الأقل على عمر الحساب`,
                       `${CREATOR_ELIGIBILITY_THRESHOLDS.MIN_PUBLISHED_ARTICLES} مقالات منشورة على الأقل`,
-                      'توثيق الهوية (KYC) — شرط أخير إلزامي مهما تحققت بقية الشروط'
+                      'توثيق الهوية (KYC) — شرط إلزامي لسحب الأرباح'
                     ].map((cond) => (
-                      <li key={cond} className="flex items-start gap-1.5 text-[10px] text-slate-600 dark:text-slate-300">
-                        <CheckCircle2 className="w-3 h-3 text-teal-600 shrink-0 mt-0.5" />
+                      <li key={cond} className="flex items-start gap-1.5 text-[11px] text-slate-700 dark:text-slate-300 font-medium">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-teal-600 shrink-0 mt-0.5" />
                         <span>{cond}</span>
                       </li>
                     ))}
                   </ul>
-                  <div className="pt-1.5 border-t border-teal-200/50 dark:border-teal-900/30 space-y-1">
-                    <p className="text-[10px] font-bold text-slate-700 dark:text-slate-300">حصة الكاتب من الأرباح بعد تحقيق الأهلية:</p>
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400">• إعلانات داخل المقالات: {REVENUE_SHARES.IN_ARTICLE_ADS.LABEL}</p>
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400">• إعلانات الملف الشخصي: {REVENUE_SHARES.WRITER_PROFILE_ADS.LABEL}</p>
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400">• مبيعات المقالات المقفلة: {REVENUE_SHARES.LOCKED_ARTICLES.LABEL}</p>
+                  <div className="pt-2 border-t border-teal-200/50 dark:border-teal-900/30 space-y-1 text-[11px]">
+                    <p className="font-bold text-slate-800 dark:text-slate-200">حصة الكاتب من الأرباح بعد تحقيق الأهلية:</p>
+                    <p className="text-slate-600 dark:text-slate-400">• إعلانات داخل المقالات: <span className="font-bold text-teal-600 dark:text-teal-400">{REVENUE_SHARES.IN_ARTICLE_ADS.LABEL}</span></p>
+                    <p className="text-slate-600 dark:text-slate-400">• إعلانات الملف الشخصي: <span className="font-bold text-teal-600 dark:text-teal-400">{REVENUE_SHARES.WRITER_PROFILE_ADS.LABEL}</span></p>
+                    <p className="text-slate-600 dark:text-slate-400">• مبيعات المقالات المقفلة: <span className="font-bold text-teal-600 dark:text-teal-400">{REVENUE_SHARES.LOCKED_ARTICLES.LABEL}</span></p>
+                  </div>
+                </div>
+
+                {/* توضيح بخصوص الإعلانات والترويج */}
+                <div className="p-3 rounded-xl bg-cyan-50/50 dark:bg-cyan-950/20 border border-cyan-200/60 dark:border-cyan-900/40 flex items-start gap-2.5 text-cyan-900 dark:text-cyan-200">
+                  <Megaphone className="w-4 h-4 text-cyan-600 shrink-0 mt-0.5" />
+                  <div className="text-[11px] leading-relaxed">
+                    <span className="font-extrabold">للراغبين بالإعلان والترويج: </span>
+                    <span>الترويج والإعلان متاح لجميع الحسابات المسجلة ولا يتطلب أي اشتراك خاص، بل يحتاج فقط لفتح حساب في المنصة وإيداع الرصيد في محفظتك لإطلاق حملاتك فوراً.</span>
                   </div>
                 </div>
 
                 <div>
                   <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    الاسم *
+                    الاسم الكامل / الاسم الأدبي *
                   </label>
                   <input
                     type="text"
@@ -463,7 +393,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1.5">التخصصات (اختر واحد أو أكثر):</label>
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1.5">التخصصات والاهتمامات (اختر واحد أو أكثر):</label>
                   <div className="flex flex-wrap gap-1.5">
                     {WRITER_SPECIALTY_PRESETS.map((spec) => (
                       <button
@@ -504,48 +434,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </div>
             )}
 
-            {mode === 'register' && role === 'advertiser' && (
-              <div className="space-y-3.5 p-4 rounded-2xl bg-cyan-50/40 dark:bg-cyan-950/20 border border-cyan-200/60 dark:border-cyan-900/40">
-                <div className="flex items-center gap-1.5 text-xs font-bold text-cyan-800 dark:text-cyan-300">
-                  <Building className="w-4 h-4 text-cyan-600" />
-                  <span>بيانات الشركة:</span>
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">اسم الشركة / العلامة التجارية *</label>
-                  <input
-                    type="text"
-                    value={companyName}
-                    onChange={(e) => setCompanyName(e.target.value)}
-                    placeholder="مثال: شركة أفق السحابية"
-                    className="w-full px-3.5 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs outline-hidden focus:border-cyan-500"
-                    required
-                  />
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">مجال العمل</label>
-                    <input
-                      type="text"
-                      value={companyIndustry}
-                      onChange={(e) => setCompanyIndustry(e.target.value)}
-                      placeholder="مثال: تعليم، كتب، برمجيات"
-                      className="w-full px-3.5 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs outline-hidden focus:border-cyan-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">رابط الموقع</label>
-                    <input
-                      type="url"
-                      value={companyWebsite}
-                      onChange={(e) => setCompanyWebsite(e.target.value)}
-                      placeholder="https://company.com"
-                      className="w-full px-3.5 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs outline-hidden focus:border-cyan-500"
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">البريد الإلكتروني</label>
               <input
@@ -553,7 +441,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="name@example.com"
-                className="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs sm:text-sm outline-hidden focus:border-brand-500"
+                className="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs sm:text-sm outline-hidden focus:border-teal-500"
                 required
               />
             </div>
@@ -566,7 +454,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
                 minLength={6}
-                className="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs sm:text-sm outline-hidden focus:border-brand-500"
+                className="w-full px-4 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs sm:text-sm outline-hidden focus:border-teal-500"
                 required
               />
               {mode === 'register' && (
@@ -577,7 +465,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <button
               type="submit"
               disabled={isLoading}
-              className={`w-full py-3.5 rounded-2xl text-white font-extrabold text-xs sm:text-sm shadow-md active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-60 ${submitButtonColor}`}
+              className="w-full py-3.5 rounded-2xl text-white font-extrabold text-xs sm:text-sm shadow-md active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-60 bg-teal-600 hover:bg-teal-700 shadow-teal-500/20"
             >
               {isLoading ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -586,7 +474,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <span>
                     {mode === 'login'
                       ? 'تسجيل الدخول'
-                      : `إنشاء الحساب والبدء كـ (${role === 'writer' ? 'كاتب' : 'قارئ ومُعلن'})`}
+                      : 'إنشاء الحساب والبدء (كاتب ومؤلف)'}
                   </span>
                   <ArrowRight className="w-4 h-4" />
                 </>
@@ -600,14 +488,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             {mode === 'login' ? (
               <span>
                 ليس لديك حساب بعد؟{' '}
-                <button type="button" onClick={() => setMode('register')} className="font-bold text-brand-600 dark:text-brand-400 hover:underline">
+                <button type="button" onClick={() => setMode('register')} className="font-bold text-teal-600 dark:text-teal-400 hover:underline">
                   إنشاء حساب جديد
                 </button>
               </span>
             ) : (
               <span>
                 لديك حساب بالفعل؟{' '}
-                <button type="button" onClick={() => setMode('login')} className="font-bold text-brand-600 dark:text-brand-400 hover:underline">
+                <button type="button" onClick={() => setMode('login')} className="font-bold text-teal-600 dark:text-teal-400 hover:underline">
                   تسجيل الدخول
                 </button>
               </span>

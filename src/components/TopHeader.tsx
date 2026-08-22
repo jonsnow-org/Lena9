@@ -32,6 +32,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   currentUser,
   onOpenDrawer,
   onOpenAuth,
+  onOpenLanding,
   language = 'ar'
 }) => {
   const isUserLoggedIn = Boolean(currentUser && currentUser.id && currentUser.id !== 'guest');
@@ -56,7 +57,23 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           </button>
 
           <div
-            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+            id="header-brand-logo"
+            role="button"
+            tabIndex={0}
+            onClick={() => {
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+              if (onOpenLanding) {
+                onOpenLanding();
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                if (onOpenLanding) onOpenLanding();
+              }
+            }}
+            title="الرئيسية — الصعود لأعلى الصفحة"
+            aria-label="الرئيسية — الصعود لأعلى الصفحة"
             className="flex items-center gap-2 cursor-pointer select-none active:opacity-80 transition-opacity"
           >
             <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-2xl bg-gradient-to-tr from-brand-600 via-brand-600 to-brand-700 text-white flex items-center justify-center font-black text-base shadow-md shadow-brand-600/20 ring-2 ring-brand-500/30">

@@ -63,6 +63,7 @@ import { AiAssistantModal } from './components/AiAssistantModal';
 import { DirectMessagesModal } from './components/DirectMessagesModal';
 import { NotificationsModal } from './components/NotificationsModal';
 import { BetaTesting20Modal } from './components/BetaTesting20Modal';
+import { ImageStudioModal } from './components/ImageStudioModal';
 import { AuthModal } from './components/AuthModal';
 import { DrawerMenu } from './components/DrawerMenu';
 import { SubscriptionModal } from './components/SubscriptionModal';
@@ -154,7 +155,8 @@ import {
   ensureGuestIdentity,
   updateUserRoleInFirestore,
   updateWalletBalanceInFirestore,
-  recordEarningInFirestore
+  recordEarningInFirestore,
+  handleEmailVerificationFromUrl
 } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import {
@@ -392,6 +394,9 @@ export function App() {
   const [isDirectMessagesOpen, setIsDirectMessagesOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isBeta20Open, setIsBeta20Open] = useState(false);
+  const [isImageStudioOpen, setIsImageStudioOpen] = useState(false);
+  const [imageStudioPrompt, setImageStudioPrompt] = useState('');
+  const [imageStudioSelectCallback, setImageStudioSelectCallback] = useState<((url: string) => void) | null>(null);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isNewCampaignOpen, setIsNewCampaignOpen] = useState(false);
   // Which internal tab the AdminDashboard shows — lifted here so the
@@ -584,11 +589,15 @@ export function App() {
     return () => unsubscribeAuth();
   }, []);
 
-  // العودة من بوابة الدفع الآلية (Stripe Checkout / ربط حساب السحب) —
-  // تُعيد الصفحة المستخدم بمعامل استعلام في الرابط. الرصيد نفسه يصل عبر
-  // Firestore (مستمع subscribeToUsers الحي) بعد أن يعالج الخادم حدث
-  // Webhook فعلياً، فهذا فقط تنبيه فوري + تنظيف الرابط.
+  // معالجة روابط تأكيد البريد الإلكتروني والعودة من بوابات الدفع
   useEffect(() => {
+    // التحقق من كود تأكيد البريد إذا فُتح الرابط مباشرة في التطبيق
+    handleEmailVerificationFromUrl().then((res) => {
+      if (res.handled && res.message) {
+        alert(res.message);
+      }
+    });
+
     const params = new URLSearchParams(window.location.search);
     const payment = params.get('payment');
     const payoutConnect = params.get('payoutConnect');
@@ -3030,13 +3039,32 @@ export function App() {
         <SiteFooter onOpenLegal={(sec) => setLegalSection(sec)} />
       </main>
 
-      {/* زر عائم للصعود للأعلى عند التمرير لأسفل */}
-      {showScrollTop && (
+      {/* زر عائم لكتابة مقال جديد (ابدأ الكتابة) — في الجهة اليسرى (يُخفى أثناء قراءة مقال لتجنب تضارب الواجهات) */}
+      {!readingArticle && !isArticleEditorOpen && currentUser.id !== 'guest' && (
+        <button
+          id="btn-floating-write"
+          type="button"
+          onClick={() => {
+            setEditingArticle(null);
+            setIsArticleEditorOpen(true);
+          }}
+          aria-label="ابدأ الكتابة"
+          title="ابدأ الكتابة"
+          className="fixed bottom-20 left-4 sm:bottom-24 sm:left-6 z-40 p-3.5 rounded-full bg-teal-600 hover:bg-teal-700 text-white shadow-xl shadow-teal-600/30 transition-all duration-300 transform hover:scale-110 active:scale-95 flex items-center justify-center cursor-pointer border border-white/20 backdrop-blur-sm"
+        >
+          <PenTool className="w-5 h-5" />
+        </button>
+      )}
+
+      {/* زر عائم للصعود للأعلى عند التمرير لأسفل — في الجهة المقابلة (اليمنى) */}
+      {!readingArticle && !isArticleEditorOpen && showScrollTop && (
         <button
           id="btn-scroll-to-top"
+          type="button"
           onClick={scrollToTop}
           aria-label="العودة لأعلى الصفحة"
-          className="fixed bottom-20 left-4 sm:bottom-24 sm:left-6 z-40 p-3 rounded-full bg-teal-600 hover:bg-teal-700 text-white shadow-xl shadow-teal-600/30 transition-all duration-300 transform hover:scale-110 active:scale-95 flex items-center justify-center cursor-pointer border border-white/20 backdrop-blur-sm"
+          title="العودة لأعلى الصفحة"
+          className="fixed bottom-20 right-4 sm:bottom-24 sm:right-6 z-40 p-3 rounded-full bg-teal-600 hover:bg-teal-700 text-white shadow-xl shadow-teal-600/30 transition-all duration-300 transform hover:scale-110 active:scale-95 flex items-center justify-center cursor-pointer border border-white/20 backdrop-blur-sm"
         >
           <ChevronUp className="w-5 h-5" />
         </button>
@@ -3092,6 +3120,11 @@ export function App() {
         onStartWriting={() => {
           setEditingArticle(null);
           setIsArticleEditorOpen(true);
+        }}
+        onOpenImageStudio={() => {
+          setImageStudioPrompt('');
+          setImageStudioSelectCallback(null);
+          setIsImageStudioOpen(true);
         }}
         onLogout={handleLogout}
         theme={theme}
@@ -3200,6 +3233,44 @@ export function App() {
         onOpenAuth={() => setIsAuthOpen(true)}
         onOpenSubscription={() => setIsSubscriptionOpen(true)}
         onConsumeAiQuota={handleConsumeAiQuota}
+        onOpenImageStudio={(suggestedPrompt, onSelect) => {
+          setImageStudioPrompt(suggestedPrompt || '');
+          setImageStudioSelectCallback(() => onSelect || null);
+          setIsImageStudioOpen(true);
+        }}
+      />
+
+      {/* AI Image Generation Studio Modal */}
+      <ImageStudioModal
+        isOpen={isImageStudioOpen}
+        onClose={() => {
+          setIsImageStudioOpen(false);
+          setImageStudioSelectCallback(null);
+        }}
+        currentUser={currentUser}
+        initialPrompt={imageStudioPrompt}
+        onSelectImage={(url) => {
+          if (imageStudioSelectCallback) {
+            imageStudioSelectCallback(url);
+          }
+        }}
+        onOpenWallet={() => {
+          setIsImageStudioOpen(false);
+          setIsWalletOpen(true);
+        }}
+        onOpenAuth={() => {
+          setIsImageStudioOpen(false);
+          setIsAuthOpen(true);
+        }}
+        onBalanceUpdated={(newBal) => {
+          setUsers((prev) =>
+            prev.map((u) =>
+              u.id === currentUser.id
+                ? { ...u, walletBalance: newBal, availableBalance: newBal }
+                : u
+            )
+          );
+        }}
       />
 
       {/* Wallet Modal */}

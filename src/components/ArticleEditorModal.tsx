@@ -43,6 +43,7 @@ interface ArticleEditorModalProps {
   onOpenAuth: () => void;
   onOpenSubscription: () => void;
   onConsumeAiQuota: () => boolean;
+  onOpenImageStudio?: (suggestedPrompt?: string, onSelectCallback?: (url: string) => void) => void;
 }
 
 const COVER_IMAGE_PRESETS = [
@@ -76,7 +77,8 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
   currentUser,
   onOpenAuth,
   onOpenSubscription,
-  onConsumeAiQuota
+  onConsumeAiQuota,
+  onOpenImageStudio
 }) => {
   const draftKey = 'literium_article_editor_draft';
 
@@ -717,13 +719,34 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
               </div>
 
               {/* Cover Image Upload & Presets */}
-              <div className="space-y-2 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+              <div className="space-y-3 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-200 dark:border-slate-700/60">
+                  <span className="text-xs font-bold text-slate-800 dark:text-slate-200">صورة غلاف المقال</span>
+                  {onOpenImageStudio && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const promptSuggestion = title
+                          ? `غلاف مقال أدبي وفكري بعنوان "${title}" في تصنيف (${category})`
+                          : `غلاف مقال فكري وأدبي رصين بألوان دافئة`;
+                        onOpenImageStudio(promptSuggestion, (generatedUrl) => {
+                          setFeaturedImage(generatedUrl);
+                        });
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-brand-600 to-cyan-600 hover:from-brand-500 hover:to-cyan-500 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                      <span>توليد غلاف ذكي بالذكاء الاصطناعي (Gemini)</span>
+                    </button>
+                  )}
+                </div>
+
                 <MediaUploadInput
                   kind="image"
                   purpose="article"
                   value={featuredImage}
                   onChange={setFeaturedImage}
-                  label="صورة غلاف المقال"
+                  label="اختيار أو رفع صورة الغلاف"
                 />
 
                 {/* رفع فيديو حقيقي للمقال — بلا حد لمدة الفيديو */}

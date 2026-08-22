@@ -205,10 +205,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           )}
         </div>
 
-        {/* Small helper line: writers/advertisers pick their track inside the same form */}
+        {/* Small helper line: unified account description */}
         {!isUserLoggedIn && (
           <p className="mt-4 text-xs text-slate-500">
-            كاتب أو معلن؟ تقدر تختار نوع حسابك من نفس نموذج التسجيل — أو مرّر للأسفل للتفاصيل.
+            حساب واحد يمنحك القراءة الحرة، نشر المقالات، وإطلاق الإعلانات فور التسجيل.
           </p>
         )}
 

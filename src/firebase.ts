@@ -11,6 +11,7 @@ import {
   signInAnonymously,
   updateProfile,
   sendEmailVerification,
+  applyActionCode,
   signOut as fbSignOut,
   onAuthStateChanged,
   setPersistence,
@@ -619,6 +620,45 @@ export async function resendVerificationEmail(): Promise<boolean> {
     console.error('تعذّر إعادة إرسال رابط تحقق البريد:', error);
     return false;
   }
+}
+
+/**
+ * يتحقق من حالة تأكيد البريد الإلكتروني للمستخدم الحالي عبر إعادة تحميل حسابه
+ * من خوادم Firebase Auth مباشرة لتحديث حقل emailVerified.
+ */
+export async function checkAndReloadEmailVerification(): Promise<boolean> {
+  if (!auth.currentUser) return false;
+  try {
+    await auth.currentUser.reload();
+    return Boolean(auth.currentUser.emailVerified);
+  } catch (error) {
+    console.warn('تعذر تحديث حالة تأكيد البريد:', error);
+    return Boolean(auth.currentUser?.emailVerified);
+  }
+}
+
+/**
+ * يعالج رابط التحقق عند فتحه مباشرة في التطبيق إذا احتوى على كود التحقق oobCode.
+ */
+export async function handleEmailVerificationFromUrl(): Promise<{ handled: boolean; success: boolean; message?: string }> {
+  if (typeof window === 'undefined') return { handled: false, success: false };
+  try {
+    const urlParams = new URLSearchParams(window.location.search);
+    const mode = urlParams.get('mode');
+    const oobCode = urlParams.get('oobCode');
+
+    if (mode === 'verifyEmail' && oobCode) {
+      await applyActionCode(auth, oobCode);
+      if (auth.currentUser) {
+        await auth.currentUser.reload();
+      }
+      return { handled: true, success: true, message: 'تم تأكيد بريدك الإلكتروني بنجاح!' };
+    }
+  } catch (error: any) {
+    console.error('فشل تفعيل كود تأكيد البريد الإلكتروني:', error);
+    return { handled: true, success: false, message: 'رابط التحقق غير صالح أو انتهت صلاحيته.' };
+  }
+  return { handled: false, success: false };
 }
 
 export async function logOut(): Promise<void> {

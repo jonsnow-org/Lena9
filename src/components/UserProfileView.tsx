@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   User as UserIcon,
   Rocket,
@@ -29,6 +29,7 @@ import {
   Calendar,
   Layers,
   ChevronRight,
+  ChevronLeft,
   TrendingUp,
   RefreshCw,
   ExternalLink,
@@ -43,20 +44,25 @@ import {
   Share2,
   FileText,
   AlertCircle,
+  ShieldAlert,
   Building,
   Target,
-  MousePointerClick
+  MousePointerClick,
+  Activity,
+  Radio,
+  UserPlus
 } from 'lucide-react';
 import { User, Article, UserRole, AdCampaign, LanguageCode, ArticlePromotion } from '../types';
 import { SocialLinksEditor } from './SocialLinksEditor';
 import { EditProfileModal } from './EditProfileModal';
 import { AdSlot } from './AdSlot';
-import { auth, resendVerificationEmail } from '../firebase';
+import { auth, resendVerificationEmail, checkAndReloadEmailVerification, OWNER_ADMIN_EMAIL } from '../firebase';
 import { MailWarning } from 'lucide-react';
 import { getCreatorEligibility } from '../utils/creatorEligibility';
 import { CreatorEligibilityCard } from './CreatorEligibilityCard';
 import { REVENUE_SHARES } from '../constants/revenueShares';
 import { MIN_PAYOUT_USD, EARNINGS_HOLD_DAYS } from '../constants/payoutRules';
+import { calculatePlatformTrafficStats } from '../utils/trafficTracker';
 import {
   getRemainingAiUses,
   formatAiExpiryDate,
@@ -89,14 +95,13 @@ interface UserProfileViewProps {
   language: LanguageCode;
   onToggleLanguage: () => void;
   onLogout: () => void;
+  users?: User[];
   // Lets a parent (the bottom nav) pick which writer sub-tab shows —
   // optional, falls back to internal state so this still works standalone.
   initialWriterTab?: 'articles' | 'stats_earnings' | 'literary_profile' | 'ai_tools';
   onWriterTabChange?: (tab: 'articles' | 'stats_earnings' | 'literary_profile' | 'ai_tools') => void;
-  // فتح لوحة تحكم المالك/الأدمن — مخصص فقط لدور admin (كان مفقوداً تماماً
-  // من قبل، فتظهر صفحة "ملفي" لصاحب المنصة فارغة إلا من زر تسجيل الخروج).
-  // tab اختياري: يفتح اللوحة مباشرة على تبويب محدد بدل النظرة العامة دائماً.
-  onNavigateToAdmin?: (tab?: 'overview' | 'fraud' | 'campaigns' | 'moderation' | 'users' | 'promotions' | 'money' | 'accounting' | 'settings') => void;
+  // فتح لوحة تحكم المالك/الأدمن — مخصص فقط لدور admin
+  onNavigateToAdmin?: (tab?: 'overview' | 'analytics' | 'fraud' | 'campaigns' | 'moderation' | 'users' | 'promotions' | 'money' | 'accounting' | 'settings') => void;
   /** عدد الكتّاب الذين يتابعهم هذا المستخدم فعلياً (followedWriterIds.length)
    *  — بخلاف currentUser.followingCount المخزَّن الذي لا يُحدَّث أبداً. */
   followingCount?: number;
@@ -165,18 +170,55 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   const [writerArticleSubTab, setWriterArticleSubTab] = useState<'published' | 'drafts'>('published');
   const [advertiserTab, setAdvertiserTab] = useState<'campaigns' | 'performance' | 'create_ad' | 'billing'>('campaigns');
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
-  const [verifyEmailStatus, setVerifyEmailStatus] = useState<'idle' | 'sending' | 'sent'>('idle');
+  const [verifyEmailStatus, setVerifyEmailStatus] = useState<'idle' | 'sending' | 'sent' | 'checking' | 'verified'>('idle');
+  const [isEmailVerified, setIsEmailVerified] = useState<boolean>(auth.currentUser?.emailVerified ?? false);
 
-  // auth.currentUser.emailVerified حقل من Firebase Auth نفسه، وليس من مستند
-  // Firestore — لذا لا يظهر في كائن currentUser (من نوع User) ويُقرأ مباشرة
-  // من هنا. غير ذي معنى لحساب الزائر (لا بريد له أصلاً).
+  // استبعاد مالك التطبيق (الأدمن) وحسابات الزوار من متطلبات تأكيد البريد
+  const isOwnerOrAdmin = currentUser.role === 'admin' || currentUser.email === OWNER_ADMIN_EMAIL;
+
+  useEffect(() => {
+    let isMounted = true;
+    const verifyCurrentStatus = async () => {
+      if (auth.currentUser && currentUser.id !== 'guest' && !isOwnerOrAdmin) {
+        const verified = await checkAndReloadEmailVerification();
+        if (isMounted) {
+          setIsEmailVerified(verified);
+          if (verified) {
+            setVerifyEmailStatus('verified');
+          }
+        }
+      }
+    };
+
+    verifyCurrentStatus();
+
+    const onFocus = () => {
+      verifyCurrentStatus();
+    };
+    window.addEventListener('focus', onFocus);
+    return () => {
+      isMounted = false;
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [currentUser.id, isOwnerOrAdmin]);
+
   const needsEmailVerification =
-    currentUser.id !== 'guest' && !!auth.currentUser?.email && auth.currentUser?.emailVerified === false;
+    currentUser.id !== 'guest' &&
+    !isOwnerOrAdmin &&
+    !!auth.currentUser?.email &&
+    !isEmailVerified;
 
   const handleResendVerification = async () => {
     setVerifyEmailStatus('sending');
     const ok = await resendVerificationEmail();
     setVerifyEmailStatus(ok ? 'sent' : 'idle');
+  };
+
+  const handleCheckVerification = async () => {
+    setVerifyEmailStatus('checking');
+    const verified = await checkAndReloadEmailVerification();
+    setIsEmailVerified(verified);
+    setVerifyEmailStatus(verified ? 'verified' : 'idle');
   };
 
   // Drafts stored locally
@@ -233,25 +275,6 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
 
   return (
     <div className="space-y-6 animate-android-in pb-24 max-w-6xl mx-auto">
-      {/* زر كتابة مقال جديد — أيقونة قلم مجرَّدة بلا صندوق أو خلفية، أعلى
-          يسار الملف الشخصي. الكتابة متاحة لأي حساب مسجَّل من البداية،
-          فيظهر لأي مستخدم غير زائر بغض النظر عن دوره. كان هذا سابقاً زراً
-          عائماً داخل الشريط السفلي لدور الكاتب فقط، فكرّر الوصول لنفس
-          الوظيفة الموجودة أصلاً هنا؛ نقله هنا وحّد نقطة الدخول. */}
-      {currentUser.id !== 'guest' && (
-        <div className="flex justify-[left]">
-          <button
-            type="button"
-            onClick={onOpenArticleEditor}
-            title="كتابة مقال جديد"
-            aria-label="كتابة مقال جديد"
-            className="text-slate-500 hover:text-brand-600 dark:text-slate-400 dark:hover:text-brand-400 active:scale-90 transition-all p-1"
-          >
-            <PenTool className="w-6 h-6" strokeWidth={2} />
-          </button>
-        </div>
-      )}
-
       {/* Top Main Identity Banner Card */}
       <div className="rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-5 sm:p-7 shadow-sm relative overflow-hidden">
         {/* Ambient Gradient Glow depending on role */}
@@ -342,21 +365,35 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
               </p>
 
               {needsEmailVerification && (
-                <div className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-700 dark:text-amber-400">
-                  <MailWarning className="w-3.5 h-3.5 shrink-0" />
-                  <span className="text-[11px] font-bold">
-                    {verifyEmailStatus === 'sent' ? 'تم إرسال رابط تحقق جديد إلى بريدك.' : 'لم يتم تأكيد بريدك الإلكتروني بعد.'}
+                <div className="flex flex-wrap items-center gap-2.5 px-3.5 py-2.5 rounded-2xl bg-amber-500/10 border border-amber-500/25 text-amber-800 dark:text-amber-300">
+                  <MailWarning className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                  <span className="text-xs font-semibold">
+                    {verifyEmailStatus === 'sent'
+                      ? 'تم إرسال رابط تحقق جديد إلى بريدك الإلكتروني بنجاح.'
+                      : 'لم يتم تأكيد بريدك الإلكتروني بعد.'}
                   </span>
-                  {verifyEmailStatus !== 'sent' && (
+                  <div className="flex items-center gap-2 ms-auto">
+                    {verifyEmailStatus !== 'sent' && (
+                      <button
+                        type="button"
+                        onClick={handleResendVerification}
+                        disabled={verifyEmailStatus === 'sending'}
+                        className="text-xs font-bold text-amber-700 dark:text-amber-400 underline hover:text-amber-800 dark:hover:text-amber-200 transition-colors disabled:opacity-60"
+                      >
+                        {verifyEmailStatus === 'sending' ? 'جارٍ الإرسال...' : 'إعادة إرسال الرابط'}
+                      </button>
+                    )}
                     <button
                       type="button"
-                      onClick={handleResendVerification}
-                      disabled={verifyEmailStatus === 'sending'}
-                      className="text-[11px] font-extrabold underline disabled:opacity-60"
+                      onClick={handleCheckVerification}
+                      disabled={verifyEmailStatus === 'checking'}
+                      className="inline-flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-900 dark:text-amber-200 transition-colors disabled:opacity-60"
+                      title="فحص حالة التأكيد بعد الضغط على الرابط في بريدك"
                     >
-                      {verifyEmailStatus === 'sending' ? 'جارٍ الإرسال...' : 'إعادة إرسال رابط التحقق'}
+                      <RefreshCw className={`w-3 h-3 ${verifyEmailStatus === 'checking' ? 'animate-spin' : ''}`} />
+                      <span>{verifyEmailStatus === 'checking' ? 'جارٍ الفحص...' : 'فحص الحالة'}</span>
                     </button>
-                  )}
+                  </div>
                 </div>
               )}
 
@@ -943,7 +980,10 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                 </div>
 
                 <button
+                  type="button"
                   onClick={onOpenArticleEditor}
+                  title="إنشاء مسودة مقال جديد"
+                  aria-label="إنشاء مسودة مقال جديد"
                   className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm active:scale-95 transition-all"
                 >
                   <Plus className="w-4 h-4" />
@@ -1482,68 +1522,294 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
             </div>
           </div>
 
-          {/* خانات أدوات الإدارة المجمَّعة — بدل تناثر روابط الاختصار
-              السابقة عبر القائمة الجانبية والشريط السفلي وهذه الصفحة معاً
-              (وهو ما كان يخلق التكرار الحقيقي)، أصبح هذا المكان الوحيد
-              لروابط الوصول السريع المباشر لتبويب محدد داخل لوحة الإدارة،
-              مجمَّعة في 4 خانات باسم يدل على وظيفتها، كل خانة تحمل شارة
-              عدد المعلَّق فيها إن وُجد. */}
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              type="button"
-              onClick={() => onNavigateToAdmin?.('users')}
-              className="relative p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center hover:border-blue-400 active:scale-95 transition-all"
-            >
-              {pendingKycCount > 0 && (
-                <span className="absolute top-2 end-2 min-w-5 h-5 px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center">
-                  {pendingKycCount}
-                </span>
-              )}
-              <Users className="w-5 h-5 text-blue-500 mx-auto mb-1.5" />
-              <span className="text-xs font-bold text-slate-700 dark:text-slate-200">أدوات المستخدمين</span>
-            </button>
+          {/* أقسام الإدارة المتخصصة — توزيع حقيقي للمهام والوظائف في أقسام منفصلة حسب الاختصاص */}
+          <div className="space-y-3">
+            <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 px-1">
+              أقسام الإدارة والتحكم المتخصصة:
+            </h4>
 
-            <button
-              type="button"
-              onClick={() => onNavigateToAdmin?.('campaigns')}
-              className="relative p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center hover:border-cyan-400 active:scale-95 transition-all"
-            >
-              {pendingCampaignsCount > 0 && (
-                <span className="absolute top-2 end-2 min-w-5 h-5 px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center">
-                  {pendingCampaignsCount}
-                </span>
-              )}
-              <Megaphone className="w-5 h-5 text-cyan-500 mx-auto mb-1.5" />
-              <span className="text-xs font-bold text-slate-700 dark:text-slate-200">أدوات الإعلانات</span>
-            </button>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {/* 1. قسم الشؤون المالية */}
+              <div className="p-4 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-col justify-between hover:border-amber-500/40 transition-all shadow-xs group">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-amber-500/10 dark:bg-amber-500/20 text-amber-500 flex items-center justify-center">
+                        <DollarSign className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h5 className="font-extrabold text-sm text-slate-900 dark:text-white">القسم المالي والحسابات</h5>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400">سحوبات، إيداعات، تحرير الأرباح، وتدقيق المبيعات</p>
+                      </div>
+                    </div>
+                    {pendingMoneyCount > 0 && (
+                      <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-bold font-mono">
+                        {pendingMoneyCount} معلق
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400 space-y-1 pt-1 border-t border-slate-100 dark:border-slate-800">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                      <span>مراجعة طلبات سحب الكُتّاب وتأكيد الحوالات</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                      <span>اعتماد شحن محافظ المعلنين والمستخدمين</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                      <span>تحرير أرباح الـ 30 يوماً وتوزيع حصص المقالات</span>
+                    </div>
+                  </div>
+                </div>
 
-            <button
-              type="button"
-              onClick={() => onNavigateToAdmin?.('money')}
-              className="relative p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center hover:border-amber-400 active:scale-95 transition-all"
-            >
-              {pendingMoneyCount > 0 && (
-                <span className="absolute top-2 end-2 min-w-5 h-5 px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center">
-                  {pendingMoneyCount}
-                </span>
-              )}
-              <DollarSign className="w-5 h-5 text-amber-500 mx-auto mb-1.5" />
-              <span className="text-xs font-bold text-slate-700 dark:text-slate-200">أدوات الدفع</span>
-            </button>
+                <button
+                  type="button"
+                  onClick={() => onNavigateToAdmin?.('money')}
+                  className="mt-3.5 w-full py-2 px-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-700 dark:text-amber-300 font-bold text-xs flex items-center justify-center gap-2 border border-amber-200/60 dark:border-amber-800/60 transition-all active:scale-98"
+                >
+                  <span>دخول القسم المالي والحسابات</span>
+                  <ChevronLeft className="w-4 h-4 rtl:rotate-0 ltr:rotate-180" />
+                </button>
+              </div>
 
-            <button
-              type="button"
-              onClick={() => onNavigateToAdmin?.('fraud')}
-              className="relative p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center hover:border-emerald-400 active:scale-95 transition-all"
-            >
-              {pendingFraudCount > 0 && (
-                <span className="absolute top-2 end-2 min-w-5 h-5 px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center">
-                  {pendingFraudCount}
-                </span>
-              )}
-              <ShieldCheck className="w-5 h-5 text-emerald-500 mx-auto mb-1.5" />
-              <span className="text-xs font-bold text-slate-700 dark:text-slate-200">الأمان ومكافحة الاحتيال</span>
-            </button>
+              {/* 2. قسم الإعلانات والترويج */}
+              <div className="p-4 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-col justify-between hover:border-cyan-500/40 transition-all shadow-xs group">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-cyan-500/10 dark:bg-cyan-500/20 text-cyan-500 flex items-center justify-center">
+                        <Megaphone className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h5 className="font-extrabold text-sm text-slate-900 dark:text-white">قسم الإعلانات والترويج</h5>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400">حملات المعلنين، ترويج المقالات، وشبكات الإعلان</p>
+                      </div>
+                    </div>
+                    {pendingCampaignsCount > 0 && (
+                      <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-bold font-mono">
+                        {pendingCampaignsCount} معلق
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400 space-y-1 pt-1 border-t border-slate-100 dark:border-slate-800">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+                      <span>اعتماد وتفعيل حملات المعلنين (CPC / CPM)</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+                      <span>مراجعة طلبات ترويج المقالات للكُتّاب</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+                      <span>ربط شبكات PropellerAds و Adsterra</span>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => onNavigateToAdmin?.('campaigns')}
+                  className="mt-3.5 w-full py-2 px-3 rounded-xl bg-cyan-50 dark:bg-cyan-950/40 hover:bg-cyan-100 dark:hover:bg-cyan-900/60 text-cyan-700 dark:text-cyan-300 font-bold text-xs flex items-center justify-center gap-2 border border-cyan-200/60 dark:border-cyan-800/60 transition-all active:scale-98"
+                >
+                  <span>دخول قسم الإعلانات والترويج</span>
+                  <ChevronLeft className="w-4 h-4 rtl:rotate-0 ltr:rotate-180" />
+                </button>
+              </div>
+
+              {/* 3. قسم المستخدمين والتوثيق */}
+              <div className="p-4 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-col justify-between hover:border-blue-500/40 transition-all shadow-xs group">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-blue-500/10 dark:bg-blue-500/20 text-blue-500 flex items-center justify-center">
+                        <Users className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h5 className="font-extrabold text-sm text-slate-900 dark:text-white">قسم المستخدمين وتوثيق KYC</h5>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400">سجل الأعضاء، تدقيق الهويات، وتعديل الصلاحيات</p>
+                      </div>
+                    </div>
+                    {pendingKycCount > 0 && (
+                      <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-bold font-mono">
+                        {pendingKycCount} بانتظار KYC
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400 space-y-1 pt-1 border-t border-slate-100 dark:border-slate-800">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+                      <span>تدقيق واعتماد بطاقات الهوية الرسمية (KYC)</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+                      <span>تعديل الرتب والصلاحيات والشارات الموثقة</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+                      <span>تعديل الأرصدة يدوياً وإرسال التعميمات الجماعية</span>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => onNavigateToAdmin?.('users')}
+                  className="mt-3.5 w-full py-2 px-3 rounded-xl bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-bold text-xs flex items-center justify-center gap-2 border border-blue-200/60 dark:border-blue-800/60 transition-all active:scale-98"
+                >
+                  <span>دخول قسم المستخدمين وKYC</span>
+                  <ChevronLeft className="w-4 h-4 rtl:rotate-0 ltr:rotate-180" />
+                </button>
+              </div>
+
+              {/* 4. قسم حوكمة المحتوى والمقالات */}
+              <div className="p-4 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-col justify-between hover:border-emerald-500/40 transition-all shadow-xs group">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-emerald-500/10 dark:bg-emerald-500/20 text-emerald-500 flex items-center justify-center">
+                        <FileText className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h5 className="font-extrabold text-sm text-slate-900 dark:text-white">قسم المحتوى والمقالات</h5>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400">حوكمة النشر، تدقيق المقالات، والأرشفة الفورية</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400 space-y-1 pt-1 border-t border-slate-100 dark:border-slate-800">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                      <span>معاينة وتدقيق مقالات الكُتّاب المنشورة</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                      <span>أرشفة وحجب المقالات المخالفة لمعايير المنصة</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                      <span>متابعة المقالات الحصرية المدفوعة والمجانية</span>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => onNavigateToAdmin?.('moderation')}
+                  className="mt-3.5 w-full py-2 px-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-bold text-xs flex items-center justify-center gap-2 border border-emerald-200/60 dark:border-emerald-800/60 transition-all active:scale-98"
+                >
+                  <span>دخول قسم حوكمة المحتوى</span>
+                  <ChevronLeft className="w-4 h-4 rtl:rotate-0 ltr:rotate-180" />
+                </button>
+              </div>
+
+              {/* 5. مركز مكافحة الاحتيال والأمان */}
+              <div className="p-4 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-col justify-between hover:border-rose-500/40 transition-all shadow-xs group">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-rose-500/10 dark:bg-rose-500/20 text-rose-500 flex items-center justify-center">
+                        <ShieldAlert className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h5 className="font-extrabold text-sm text-slate-900 dark:text-white">مركز مكافحة الاحتيال والأمان</h5>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400">رصد النقر الذاتي، البوتات، وحظر المعتدين</p>
+                      </div>
+                    </div>
+                    {pendingFraudCount > 0 && (
+                      <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-bold font-mono">
+                        {pendingFraudCount} إنذار
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400 space-y-1 pt-1 border-t border-slate-100 dark:border-slate-800">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
+                      <span>كشف وحجب النقر الذاتي على إعلانات الكاتب</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
+                      <span>حماية أموال المعلنين وعوائد المنصة</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
+                      <span>حظر حسابات المخالفين وعناوين IP المشبوهة</span>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => onNavigateToAdmin?.('fraud')}
+                  className="mt-3.5 w-full py-2 px-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 font-bold text-xs flex items-center justify-center gap-2 border border-rose-200/60 dark:border-rose-800/60 transition-all active:scale-98"
+                >
+                  <span>دخول مركز مكافحة الاحتيال</span>
+                  <ChevronLeft className="w-4 h-4 rtl:rotate-0 ltr:rotate-180" />
+                </button>
+              </div>
+
+              {/* 6. إعدادات المنظومة والمظهر */}
+              <div className="p-4 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-col justify-between hover:border-purple-500/40 transition-all shadow-xs group">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-purple-500/10 dark:bg-purple-500/20 text-purple-500 flex items-center justify-center">
+                        <Settings className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h5 className="font-extrabold text-sm text-slate-900 dark:text-white">إعدادات المنظومة والمظهر</h5>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400">السمات البصرية، خلفيات القالب، ونسب الأرباح</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400 space-y-1 pt-1 border-t border-slate-100 dark:border-slate-800">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
+                      <span>تخصيص ألوان وسمة المنصة الرئيسية</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
+                      <span>تغيير خلفيات القالب وتأثيرات الشاشة</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
+                      <span>الاطلاع على مصفوفة تقاسم العوائد المالية</span>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => onNavigateToAdmin?.('settings')}
+                  className="mt-3.5 w-full py-2 px-3 rounded-xl bg-purple-50 dark:bg-purple-950/40 hover:bg-purple-100 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 font-bold text-xs flex items-center justify-center gap-2 border border-purple-200/60 dark:border-purple-800/60 transition-all active:scale-98"
+                >
+                  <span>دخول إعدادات المنظومة</span>
+                  <ChevronLeft className="w-4 h-4 rtl:rotate-0 ltr:rotate-180" />
+                </button>
+              </div>
+            </div>
+
+            {/* زر النظرة العامة والتقارير الشاملة */}
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => onNavigateToAdmin?.('overview')}
+                className="w-full p-4 rounded-2xl bg-slate-900 border border-slate-800 hover:border-brand-500/50 text-white font-bold text-xs flex items-center justify-between transition-all group"
+              >
+                <div className="flex items-center gap-3">
+                  <TrendingUp className="w-5 h-5 text-brand-400" />
+                  <div className="text-start">
+                    <div className="font-extrabold text-sm text-white">مركز التقارير والنظرة العامة (Executive Overview)</div>
+                    <div className="text-[11px] text-slate-400">الملخص التنفيذي لجميع أنشطة المنصة والمؤشرات المالية في شاشة واحدة</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 text-brand-400 text-xs">
+                  <span>فتح التقرير العام</span>
+                  <ChevronLeft className="w-4 h-4 rtl:rotate-0 ltr:rotate-180" />
+                </div>
+              </button>
+            </div>
           </div>
         </div>
       )}

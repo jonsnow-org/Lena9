@@ -7,7 +7,9 @@ import {
   PlusCircle,
   Megaphone,
   User as UserIcon,
-  LayoutDashboard
+  LayoutDashboard,
+  DollarSign,
+  Users
 } from 'lucide-react';
 import { User, UserRole } from '../types';
 import { getTranslator } from '../data/translations';
@@ -24,7 +26,7 @@ interface BottomNavProps {
   unreadCount?: number;
   unreadMessagesCount?: number;
   adminActiveTab?: string;
-  onAdminNavigate?: (tab: 'overview' | 'fraud' | 'campaigns' | 'moderation' | 'users' | 'settings') => void;
+  onAdminNavigate?: (tab: 'overview' | 'fraud' | 'campaigns' | 'moderation' | 'users' | 'settings' | 'money' | 'accounting' | 'promotions') => void;
   writerActiveTab?: string;
   onWriterNavigate?: (tab: 'articles' | 'stats_earnings') => void;
   /** دالة الترجمة الحالية — اختيارية بافتراضي عربي حتى لا يتعطل أي استدعاء
@@ -511,7 +513,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
     );
   }
 
-  // 4. ADMIN ROLE: الرئيسية · لوحة الإدارة (مدخل وحيد لكل تبويبات الإدارة) · رسائل · إشعارات · ملفي
+  // 4. ADMIN ROLE: الرئيسية · المالية · الإعلانات · المستخدمين · ملفي ومراكز الإدارة
   return (
     <nav
       id="bottom-nav-admin"
@@ -543,104 +545,97 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           </span>
         </button>
 
-        {/* 2. لوحة الإدارة */}
+        {/* 2. المالية والحسابات */}
         <button
-          id="nav-admin-overview"
+          id="nav-admin-money"
           type="button"
           onClick={() => {
             onChangeTab('admin');
-            onAdminNavigate?.('overview');
+            onAdminNavigate?.('money');
           }}
           className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group"
         >
           <div
             className={`p-1.5 rounded-xl transition-all ${
-              activeTab === 'admin' && (adminActiveTab === 'overview' || !adminActiveTab)
-                ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
+              activeTab === 'admin' && (adminActiveTab === 'money' || adminActiveTab === 'accounting')
+                ? 'bg-amber-50 text-amber-700 border border-amber-300 dark:bg-amber-600/30 dark:text-amber-300 dark:border-amber-500/40 scale-105'
                 : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
             }`}
           >
-            <LayoutDashboard className="w-5 h-5" />
+            <DollarSign className="w-5 h-5" />
           </div>
           <span
             className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-              activeTab === 'admin' && (adminActiveTab === 'overview' || !adminActiveTab)
-                ? 'text-brand-700 dark:text-brand-300 font-extrabold'
+              activeTab === 'admin' && (adminActiveTab === 'money' || adminActiveTab === 'accounting')
+                ? 'text-amber-700 dark:text-amber-300 font-extrabold'
                 : 'text-slate-500 dark:text-slate-400'
             }`}
           >
-            {t('adminPanel')}
+            المالية
           </span>
         </button>
 
-        {/* أزرار "المستخدمون" و"الحملات" أُزيلا من هنا عمداً — كانا يكرران
-            تماماً تبويبي "المستخدمون" و"الحملات" الموجودين أصلاً داخل شريط
-            تبويبات لوحة الإدارة نفسها (AdminDashboard)، فيصبح "لوحة الإدارة"
-            المدخل الوحيد لكل تبويبات الإدارة، ومن داخلها يختار الأدمن أي
-            تبويب يريد من شريطها الخاص — مدخل واحد فقط لكل وجهة، بلا تكرار. */}
-
-        {/* 3. رسائل — كانت غائبة تماماً عن حساب الأدمن رغم توفرها لكل بقية
-            الأدوار، فلا توجد أي وسيلة للأدمن لإرسال أو استقبال رسالة مباشرة. */}
+        {/* 3. الإعلانات والترويج */}
         <button
-          id="nav-admin-messages"
+          id="nav-admin-campaigns"
           type="button"
-          onClick={onOpenMessages}
-          className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group relative"
+          onClick={() => {
+            onChangeTab('admin');
+            onAdminNavigate?.('campaigns');
+          }}
+          className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group"
         >
           <div
-            className={`p-1.5 rounded-xl transition-all relative ${
-              activeTab === 'messages'
-                ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
+            className={`p-1.5 rounded-xl transition-all ${
+              activeTab === 'admin' && (adminActiveTab === 'campaigns' || adminActiveTab === 'promotions')
+                ? 'bg-cyan-50 text-cyan-700 border border-cyan-300 dark:bg-cyan-600/30 dark:text-cyan-300 dark:border-cyan-500/40 scale-105'
                 : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
             }`}
           >
-            <MessageSquare className="w-5 h-5" />
-            {unreadMessagesCount > 0 && (
-              <span className="absolute -top-1 -end-1 w-4 h-4 bg-teal-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center ring-2 ring-white dark:ring-slate-950">
-                {unreadMessagesCount}
-              </span>
-            )}
+            <Megaphone className="w-5 h-5" />
           </div>
           <span
             className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-              activeTab === 'messages' ? 'text-brand-700 dark:text-brand-300 font-extrabold' : 'text-slate-500 dark:text-slate-400'
+              activeTab === 'admin' && (adminActiveTab === 'campaigns' || adminActiveTab === 'promotions')
+                ? 'text-cyan-700 dark:text-cyan-300 font-extrabold'
+                : 'text-slate-500 dark:text-slate-400'
             }`}
           >
-            {t('messages')}
+            الإعلانات
           </span>
         </button>
 
-        {/* 4. إشعارات */}
+        {/* 4. المستخدمين وKYC */}
         <button
-          id="nav-admin-notifications"
+          id="nav-admin-users"
           type="button"
-          onClick={onOpenNotifications}
-          className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group relative"
+          onClick={() => {
+            onChangeTab('admin');
+            onAdminNavigate?.('users');
+          }}
+          className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group"
         >
           <div
-            className={`p-1.5 rounded-xl transition-all relative ${
-              activeTab === 'notifications'
-                ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
+            className={`p-1.5 rounded-xl transition-all ${
+              activeTab === 'admin' && adminActiveTab === 'users'
+                ? 'bg-blue-50 text-blue-700 border border-blue-300 dark:bg-blue-600/30 dark:text-blue-300 dark:border-blue-500/40 scale-105'
                 : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
             }`}
           >
-            <Bell className="w-5 h-5" />
-            {unreadCount > 0 && (
-              <span className="absolute -top-1 -end-1 w-4 h-4 bg-brand-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center ring-2 ring-white dark:ring-slate-950 animate-pulse">
-                {unreadCount > 9 ? '9+' : unreadCount}
-              </span>
-            )}
+            <Users className="w-5 h-5" />
           </div>
           <span
             className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-              activeTab === 'notifications' ? 'text-brand-700 dark:text-brand-300 font-extrabold' : 'text-slate-500 dark:text-slate-400'
+              activeTab === 'admin' && adminActiveTab === 'users'
+                ? 'text-blue-700 dark:text-blue-300 font-extrabold'
+                : 'text-slate-500 dark:text-slate-400'
             }`}
           >
-            {t('notifications')}
+            المستخدمين
           </span>
         </button>
 
-        {/* 5. ملفي */}
+        {/* 5. ملفي ومراكز الإدارة */}
         <button
           id="nav-admin-profile"
           type="button"

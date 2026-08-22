@@ -15,7 +15,9 @@ import {
   BookOpen,
   CheckCircle2,
   ChevronLeft,
-  Bookmark
+  Bookmark,
+  Wand2,
+  Palette
 } from 'lucide-react';
 import { User, LanguageCode, UserRole } from '../types';
 import { getRemainingAiUses } from '../utils/aiQuota';
@@ -56,6 +58,8 @@ interface DrawerMenuProps {
   /** يفتح محرر مقال جديد مباشرة — نقطة دخول موحّدة للكتابة لأي حساب
    *  مسجَّل، بغضّ النظر عن الدور المسجَّل أو شخصية التنقل الحالية. */
   onStartWriting?: () => void;
+  /** يفتح استوديو توليد الصور بالذكاء الاصطناعي */
+  onOpenImageStudio?: () => void;
 }
 
 export const DrawerMenu: React.FC<DrawerMenuProps> = ({
@@ -82,6 +86,7 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
   onOpenLogin,
   navPersona,
   onStartWriting,
+  onOpenImageStudio,
   isMonetizationEligible = false
 }) => {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -221,26 +226,6 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
                 زر "المحفظة والأرباح" العام أدناه بالضبط (كلاهما onOpenWallet).
                 لم يبق شيء غير مكرر يستحق قسماً خاصاً هنا لأي دور. */}
             <div className="space-y-1">
-
-              {/* الكتابة متاحة لأي حساب مسجَّل من البداية (دون احتساب أرباح
-                  حتى تحقيق شروط منشئ المحتوى) — من له أدوات الكاتب أعلاه
-                  أصلاً يصل للكتابة من هناك، فلا داعي لتكرار الزر هنا. */}
-              {currentUser.id !== 'guest' && persona !== 'writer' && onStartWriting && (
-                <button
-                  onClick={() => {
-                    onStartWriting();
-                    onClose();
-                  }}
-                  className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <PenTool className="w-4 h-4 text-teal-400" />
-                    <span>ابدأ كتابة مقال جديد</span>
-                  </div>
-                  <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
-                </button>
-              )}
-
               {/* استكشاف: مخفي عن الأدمن (له مركز قيادة كامل) وعن القارئ
                   تحديداً (له زر "استكشاف" مباشر في الشريط السفلي أصلاً —
                   نفس الوجهة بالضبط، فتكراره هنا لا معنى له). يبقى ظاهراً
@@ -355,6 +340,31 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
                   <span>السياسات والشروط ومكافحة الاحتيال</span>
                 </div>
                 <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
+              </button>
+
+              {/* استوديو توليد الصور الذكية */}
+              <button
+                onClick={() => {
+                  if (onOpenImageStudio) onOpenImageStudio();
+                  onClose();
+                }}
+                className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-100 bg-gradient-to-r from-brand-950/60 via-slate-900 to-cyan-950/40 border border-cyan-500/30 hover:border-cyan-400 hover:shadow-md hover:shadow-cyan-500/10 transition-all"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="p-1.5 rounded-xl bg-gradient-to-br from-brand-500 to-cyan-500 text-white">
+                    <Wand2 className="w-3.5 h-3.5" />
+                  </div>
+                  <div className="text-start">
+                    <div className="flex items-center gap-1.5">
+                      <span>استوديو توليد الصور (Gemini)</span>
+                      <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-cyan-500/20 text-cyan-300 font-black border border-cyan-500/40">
+                        AI
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 font-normal">أغلفة مقالات ولوحات فنية ذكية</p>
+                  </div>
+                </div>
+                <ChevronLeft className="w-4 h-4 text-cyan-400 rtl:rotate-0 ltr:rotate-180" />
               </button>
 
               {/* روابط الصفحات القانونية الكاملة (شرط AdSense) */}

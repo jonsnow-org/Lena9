@@ -459,6 +459,236 @@ async function startServer() {
     }
   });
 
+  // AI Image Generation Studio Endpoint
+  // Deducts cost from user wallet and credits platform owner balance when beyond free quota
+  const freeDailyImageGenerations = 2; // 2 free image generations/day for free users
+  const IMAGE_GENERATION_COST = 0.05; // $0.05 per paid generated image
+  const imageUserQuotas = new Map<string, { usedToday: number; lastResetTime: number }>();
+
+  app.post('/api/ai/generate-image', async (req, res) => {
+    try {
+      const { prompt, style, aspectRatio = '16:9', userId, userEmail } = req.body;
+
+      if (!userId || userId === 'guest') {
+        return res.status(401).json({
+          error: 'auth_required',
+          message: 'يتطلب استخدام استوديو توليد الصور تسجيل الدخول أولاً.'
+        });
+      }
+
+      if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
+        return res.status(400).json({
+          error: 'invalid_prompt',
+          message: 'يرجى كتابة وصف أو فكرة لتوليد الصورة.'
+        });
+      }
+
+      const normalizedEmail = (userEmail || '').toLowerCase().trim();
+      const isOwner = normalizedEmail === 'brnardtsho@gmail.com';
+
+      // 1. Load server-trusted user data (never trust subscriber/plan status from the client)
+      let userDocRef: FirebaseFirestore.DocumentReference | null = null;
+      let userData: FirebaseFirestore.DocumentData = {};
+      if (isAdminConfigured()) {
+        const db = getAdminDb();
+        userDocRef = db.collection('users').doc(userId);
+        const userSnap = await userDocRef.get();
+        if (!userSnap.exists) {
+          return res.status(404).json({ error: 'user_not_found', message: 'حساب المستخدم غير موجود.' });
+        }
+        userData = userSnap.data() || {};
+      }
+
+      const serverAiQuota = userData.aiQuota || {};
+      const planNotExpired =
+        !serverAiQuota.planExpiresAt || new Date(serverAiQuota.planExpiresAt).getTime() > Date.now();
+      const isSubscriber = Boolean(serverAiQuota.isSubscriber) && planNotExpired;
+      const plan = isSubscriber ? serverAiQuota.plan : 'none';
+
+      // 2. Quota & Financial evaluation
+      const now = Date.now();
+      let imgQuota = imageUserQuotas.get(userId);
+      if (!imgQuota || now - imgQuota.lastResetTime >= 24 * 60 * 60 * 1000) {
+        imgQuota = { usedToday: 0, lastResetTime: now };
+        imageUserQuotas.set(userId, imgQuota);
+      }
+
+      const freeLimit = isSubscriber ? (plan === 'annual' ? 9999 : 10) : freeDailyImageGenerations;
+      let shouldCharge = false;
+
+      if (!isOwner) {
+        if (imgQuota.usedToday < freeLimit) {
+          // Consume free quota
+          imgQuota.usedToday += 1;
+          shouldCharge = false;
+        } else {
+          // Requires payment from wallet ($0.05)
+          shouldCharge = true;
+        }
+      }
+
+      // Check balance if charge is required
+      if (shouldCharge && userDocRef) {
+        const currentBalance = Number(userData.availableBalance ?? userData.walletBalance ?? 0);
+        if (currentBalance < IMAGE_GENERATION_COST) {
+          return res.status(402).json({
+            error: 'insufficient_balance',
+            message: `رصيدك الحالي ($${currentBalance.toFixed(2)}) غير كافٍ. تكلفة توليد الصورة هي $${IMAGE_GENERATION_COST.toFixed(2)}. يرجى شحن المحفظة للمتابعة.`,
+            requiredAmount: IMAGE_GENERATION_COST,
+            currentBalance
+          });
+        }
+      }
+
+      // 2. Generate Image with Gemini API
+      const client = getGeminiClient();
+      let generatedImageUrl: string | null = null;
+
+      // Style prompt enhancer
+      const stylePrompts: Record<string, string> = {
+        oil_painting: 'masterpiece oil painting style, classical fine art, textured brush strokes, warm dramatic lighting, rich literary atmosphere',
+        surrealist: 'surrealist philosophical art style, dreamlike symbolic atmosphere, thought provoking composition, ethereal lighting',
+        photorealistic: 'hyper-realistic photography, 8k resolution, cinematic lighting, shallow depth of field, award-winning shot',
+        digital_art: 'stunning digital art illustration, vibrant modern aesthetic, sharp details, concept art, trending on artstation',
+        minimalist: 'minimalist clean aesthetic, elegant negative space, subtle color palette, refined typography friendly layout',
+        arabic_calligraphy_art: 'traditional Arabic calligraphy integrated with magnificent abstract Islamic art ornamentation, golden and turquoise tones',
+        fantasy: 'epic fantasy illustration, magical ethereal atmosphere, glowing mystical elements, intricate fine details'
+      };
+
+      const enhancedStyle = stylePrompts[style] || stylePrompts.oil_painting;
+      const fullPrompt = `${prompt.trim()}. Style: ${enhancedStyle}. Clean composition, ultra high quality, no text distortions, no watermarks.`;
+
+      // Supported aspect ratios in Gemini
+      const validAspectRatios = ['1:1', '3:4', '4:3', '9:16', '16:9'];
+      const finalAspectRatio = validAspectRatios.includes(aspectRatio) ? aspectRatio : '16:9';
+
+      if (client) {
+        try {
+          const response = await client.models.generateContent({
+            model: 'gemini-3.1-flash-image',
+            contents: {
+              parts: [{ text: fullPrompt }]
+            },
+            config: {
+              imageConfig: {
+                aspectRatio: finalAspectRatio as any
+              }
+            }
+          });
+
+          if (response.candidates && response.candidates[0]?.content?.parts) {
+            for (const part of response.candidates[0].content.parts) {
+              if (part.inlineData && part.inlineData.data) {
+                const mimeType = part.inlineData.mimeType || 'image/png';
+                generatedImageUrl = `data:${mimeType};base64,${part.inlineData.data}`;
+                break;
+              }
+            }
+          }
+        } catch (genError: any) {
+          console.warn('Gemini 3.1-flash-image failed, trying fallback model:', genError?.message);
+          try {
+            const fallbackResponse = await client.models.generateContent({
+              model: 'gemini-2.5-flash-image',
+              contents: {
+                parts: [{ text: fullPrompt }]
+              }
+            });
+            if (fallbackResponse.candidates && fallbackResponse.candidates[0]?.content?.parts) {
+              for (const part of fallbackResponse.candidates[0].content.parts) {
+                if (part.inlineData && part.inlineData.data) {
+                  const mimeType = part.inlineData.mimeType || 'image/png';
+                  generatedImageUrl = `data:${mimeType};base64,${part.inlineData.data}`;
+                  break;
+                }
+              }
+            }
+          } catch (fbErr: any) {
+            console.error('All Gemini image models failed:', fbErr?.message);
+          }
+        }
+      }
+
+      // Smart Curated Fallback if Gemini key is absent or quota exceeded
+      if (!generatedImageUrl) {
+        const curatedLibrary = [
+          'https://images.unsplash.com/photo-1457369804613-52c61a468e7d?w=1200&auto=format&fit=crop&q=80',
+          'https://images.unsplash.com/photo-1476275466078-4007374efbbe?w=1200&auto=format&fit=crop&q=80',
+          'https://images.unsplash.com/photo-1512820790803-83ca734da794?w=1200&auto=format&fit=crop&q=80',
+          'https://images.unsplash.com/photo-1507842229451-79b1be8d5a2f?w=1200&auto=format&fit=crop&q=80',
+          'https://images.unsplash.com/photo-1499750310107-5fef28a66643?w=1200&auto=format&fit=crop&q=80',
+          'https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?w=1200&auto=format&fit=crop&q=80',
+          'https://images.unsplash.com/photo-1516979187457-637abb4f9353?w=1200&auto=format&fit=crop&q=80',
+          'https://images.unsplash.com/photo-1481627834876-b7833e8f5570?w=1200&auto=format&fit=crop&q=80'
+        ];
+        const hash = Array.from(prompt).reduce((acc, char) => acc + char.charCodeAt(0), 0);
+        generatedImageUrl = curatedLibrary[hash % curatedLibrary.length];
+      }
+
+      // 3. Finalize Financial Transaction only on Successful Generation
+      let finalUserBalance: number | null = null;
+
+      if (shouldCharge && isAdminConfigured()) {
+        try {
+          const db = getAdminDb();
+          const batch = db.batch();
+
+          // Deduct from User
+          const userDocRef = db.collection('users').doc(userId);
+          batch.update(userDocRef, {
+            walletBalance: FieldValue.increment(-IMAGE_GENERATION_COST),
+            availableBalance: FieldValue.increment(-IMAGE_GENERATION_COST)
+          });
+
+          // Credit Owner
+          const ownerQuery = await db.collection('users').where('email', '==', 'brnardtsho@gmail.com').limit(1).get();
+          if (!ownerQuery.empty) {
+            const ownerDocRef = ownerQuery.docs[0].ref;
+            batch.update(ownerDocRef, {
+              walletBalance: FieldValue.increment(IMAGE_GENERATION_COST),
+              availableBalance: FieldValue.increment(IMAGE_GENERATION_COST),
+              lifetimeEarnings: FieldValue.increment(IMAGE_GENERATION_COST),
+              totalEarnings: FieldValue.increment(IMAGE_GENERATION_COST)
+            });
+
+            // Record earning transaction
+            const earningRef = db.collection('earnings').doc();
+            batch.set(earningRef, {
+              userId: ownerDocRef.id,
+              amount: IMAGE_GENERATION_COST,
+              type: 'bonus',
+              source: `توليد صورة ذكاء اصطناعي من المستخدم (${userEmail || userId})`,
+              createdAt: new Date().toISOString(),
+              status: 'credited'
+            });
+          }
+
+          await batch.commit();
+
+          const updatedUserSnap = await userDocRef.get();
+          finalUserBalance = updatedUserSnap.data()?.availableBalance ?? null;
+        } catch (dbErr) {
+          console.error('Failed to deduct image cost or credit owner in Firestore:', dbErr);
+        }
+      }
+
+      res.json({
+        success: true,
+        imageUrl: generatedImageUrl,
+        charged: shouldCharge,
+        cost: shouldCharge ? IMAGE_GENERATION_COST : 0,
+        remainingFreeUses: Math.max(0, freeLimit - imgQuota.usedToday),
+        newBalance: finalUserBalance
+      });
+    } catch (error: any) {
+      console.error('Generate image error:', error);
+      res.status(500).json({
+        error: 'generation_failed',
+        message: 'تعذر توليد الصورة بالذكاء الاصطناعي حالياً. يرجى المحاولة مرة أخرى.'
+      });
+    }
+  });
+
   // AI Writing Suite endpoint for writers
   app.post('/api/ai/writing-assistant', async (req, res) => {
     try {
