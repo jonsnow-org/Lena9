@@ -300,6 +300,13 @@ async function startServer() {
   // يثبت وحده أن الحساب قادر على استقبال أموال حقيقية — ذاك يحتاج
   // تحويلاً تجريبياً فعلياً من طرف آخر. عند التأكد أن هذا مفيد فعلاً،
   // يجب إضافة التحقق من توقيع Wise قبل أي منطق مالي حقيقي هنا.
+  //
+  // رد بسيط على GET/HEAD أيضاً — بعض الخدمات تتحقق من صلاحية الرابط
+  // بطلب GET قبل قبوله كـwebhook حتى لو كانت الأحداث الفعلية تصل عبر POST.
+  app.get('/api/wise/webhook', (req, res) => {
+    res.status(200).json({ ok: true });
+  });
+
   app.post('/api/wise/webhook', async (req, res) => {
     try {
       const db = getAdminDb();
