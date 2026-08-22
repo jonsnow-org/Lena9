@@ -293,35 +293,6 @@ async function startServer() {
 
   app.use(express.json());
 
-  // ------------------------------------------------------------------
-  // نقطة استقبال تجريبية لـ Wise Webhooks — لا تحدّث أي رصيد بعد، فقط
-  // تسجّل كل ما يصل في Firestore (مجموعة wiseWebhookEvents) لنراقب هل
-  // يصل أي حدث فعلي إليها أم لا. هذا اختبار توصيل الأنابيب فقط، ولا
-  // يثبت وحده أن الحساب قادر على استقبال أموال حقيقية — ذاك يحتاج
-  // تحويلاً تجريبياً فعلياً من طرف آخر. عند التأكد أن هذا مفيد فعلاً،
-  // يجب إضافة التحقق من توقيع Wise قبل أي منطق مالي حقيقي هنا.
-  //
-  // رد بسيط على GET/HEAD أيضاً — بعض الخدمات تتحقق من صلاحية الرابط
-  // بطلب GET قبل قبوله كـwebhook حتى لو كانت الأحداث الفعلية تصل عبر POST.
-  app.get('/api/wise/webhook', (req, res) => {
-    res.status(200).json({ ok: true });
-  });
-
-  app.post('/api/wise/webhook', async (req, res) => {
-    try {
-      const db = getAdminDb();
-      await db.collection('wiseWebhookEvents').add({
-        body: req.body,
-        receivedAt: new Date().toISOString()
-      });
-      console.log('Wise webhook received:', JSON.stringify(req.body));
-      res.json({ received: true });
-    } catch (err: any) {
-      console.error('Wise webhook error:', err?.message || err);
-      res.status(500).json({ error: 'webhook_error' });
-    }
-  });
-
   // Health check API
   app.get('/api/health', (req, res) => {
     res.json({
