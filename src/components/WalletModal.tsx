@@ -50,6 +50,12 @@ interface WalletModalProps {
 // (رقم زائد) يُنفَّذ مباشرة بلا أي فرصة للتراجع.
 const LARGE_WITHDRAW_CONFIRM_THRESHOLD = 500;
 
+// إيداع يدوي عبر Wise — لا يوجد لحساب المالك خيار "استلام" آلي مفعّل في
+// تركيا (تأكد ذلك تجريبياً)، لذا هذا مسار يدوي بحت: يحوّل المستخدم بنفسه
+// عبر Wise إلى هذا البريد، ثم يُنشأ طلب إيداع pending يعتمده المالك يدوياً
+// بعد التحقق من وصول المبلغ فعلياً في حسابه.
+const WISE_DEPOSIT_EMAIL = 'mohamedalrshyd@gmail.com';
+
 export const WalletModal: React.FC<WalletModalProps> = ({
   isOpen,
   onClose,
@@ -80,6 +86,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
   // Deposit state
   const [depositAmount, setDepositAmount] = useState<number>(MIN_DEPOSIT_USD);
   const [depositSuccess, setDepositSuccess] = useState(false);
+  const [wiseEmailCopied, setWiseEmailCopied] = useState(false);
 
   // Withdraw state
   const [withdrawAmount, setWithdrawAmount] = useState<number>(Math.min(balance, MIN_PAYOUT_USD));
@@ -182,11 +189,19 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     }
   };
 
-  // طرق الإيداع اليدوي (PayPal / USDT يدوي / تحويل بنكي) قيد التطوير ولم
-  // يعد لها زر إرسال — هذا يبقى فقط ليمنع أي إرسال ضمني للنموذج (مثلاً عبر
-  // Enter داخل حقل المبلغ) من إنشاء طلب إيداع وهمي بلا وجهة تحويل حقيقية.
+  // طرق الإيداع اليدوي المتبقية (PayPal / USDT يدوي / تحويل بنكي) قيد
+  // التطوير ولم يعد لها زر إرسال ضمن هذا النموذج — هذا يبقى فقط ليمنع أي
+  // إرسال ضمني (مثلاً عبر Enter داخل حقل المبلغ) من إنشاء طلب بلا وجهة
+  // تحويل حقيقية. إيداع Wise له زر مستقل خاص به (handleWiseDeposit) لأنه
+  // الطريقة اليدوية الوحيدة المكتملة فعلياً حالياً.
   const handleDepositSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+  };
+
+  const handleWiseDeposit = () => {
+    if (!depositAmount || depositAmount < MIN_DEPOSIT_USD) return;
+    onDeposit(Number(depositAmount), 'wise', `Wise → ${WISE_DEPOSIT_EMAIL}`);
+    setDepositSuccess(true);
     setTimeout(() => {
       setDepositSuccess(false);
       setActiveTab('overview');
@@ -451,12 +466,49 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                     </div>
                   )}
 
-                  {/* طرق الإيداع اليدوي (PayPal / USDT يدوي / تحويل بنكي) ما زالت
-                      قيد التطوير — لا تعرض للمستخدم أي بيانات حساب فعلية
-                      يُحوّل إليها، ما كان يسمح بإرسال طلب إيداع بلا أي وجهة
-                      حقيقية. تُعرض هنا فقط لإعلام المستخدم أنها قادمة قريباً،
-                      ومعطّلة تماماً حتى تُستكمل ببيانات حساب حقيقية وشاشة
-                      اعتماد إدارية مخصصة لها. */}
+                  {/* إيداع يدوي عبر Wise — لا يوجد ربط آلي (لا API ولا webhook
+                      يُطلق حدث إيداع فعلي، لأن استقبال الأموال في تركيا معطّل
+                      من Wise نفسها)، لذا هذا تحويل يدوي بحت: يحوّل المستخدم
+                      بنفسه ثم يُنشئ طلب إيداع pending يعتمده المالك يدوياً
+                      بعد التحقق من وصول المبلغ فعلياً. */}
+                  <div className="p-4 rounded-2xl bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 space-y-2.5">
+                    <div className="flex items-center gap-2 text-indigo-800 dark:text-indigo-300 text-xs font-bold">
+                      <Building2 className="w-4 h-4" />
+                      <span>تحويل يدوي عبر Wise — يُعتمد الرصيد بعد تأكيد الوصول</span>
+                    </div>
+                    <p className="text-[11px] text-indigo-700 dark:text-indigo-400 leading-relaxed">
+                      حوّل {depositAmount}$ عبر Wise إلى البريد الإلكتروني التالي، ثم اضغط الزر بالأسفل لإنشاء طلب إيداع. سيُضاف المبلغ إلى رصيدك بعد أن يتحقق فريق المنصة يدوياً من وصوله.
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-800 text-[11px] font-bold text-indigo-900 dark:text-indigo-200 truncate">
+                        {WISE_DEPOSIT_EMAIL}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard?.writeText(WISE_DEPOSIT_EMAIL);
+                          setWiseEmailCopied(true);
+                          setTimeout(() => setWiseEmailCopied(false), 1500);
+                        }}
+                        className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold shrink-0"
+                      >
+                        {wiseEmailCopied ? 'تم النسخ' : 'نسخ'}
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleWiseDeposit}
+                      className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-sm shadow-md transition-all"
+                    >
+                      حوّلت المبلغ — سجّل طلب الإيداع
+                    </button>
+                  </div>
+
+                  {/* طرق الإيداع اليدوي الأخرى (PayPal / USDT يدوي / تحويل بنكي)
+                      ما زالت قيد التطوير — لا تعرض للمستخدم أي بيانات حساب
+                      فعلية يُحوّل إليها، ما كان يسمح بإرسال طلب إيداع بلا أي
+                      وجهة حقيقية. تُعرض هنا فقط لإعلام المستخدم أنها قادمة
+                      قريباً، ومعطّلة تماماً حتى تُستكمل ببيانات حساب حقيقية. */}
                   <div>
                     <label className="block text-xs font-bold text-slate-900 dark:text-slate-200 mb-2">
                       طرق إيداع إضافية:
