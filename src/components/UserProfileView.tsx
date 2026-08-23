@@ -62,7 +62,6 @@ import { getCreatorEligibility } from '../utils/creatorEligibility';
 import { CreatorEligibilityCard } from './CreatorEligibilityCard';
 import { REVENUE_SHARES } from '../constants/revenueShares';
 import { MIN_PAYOUT_USD, EARNINGS_HOLD_DAYS } from '../constants/payoutRules';
-import { calculatePlatformTrafficStats } from '../utils/trafficTracker';
 import {
   getRemainingAiUses,
   formatAiExpiryDate,
@@ -1801,6 +1800,8 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   users={users}
                   articles={safeArticles}
                   campaigns={safeCampaigns}
+                  depositRequests={depositRequests}
+                  payoutRequests={payoutRequests}
                   onSelectUser={onSelectUser}
                   onSelectArticle={onSelectArticle}
                 />

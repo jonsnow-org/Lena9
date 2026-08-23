@@ -1,10 +1,9 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   Activity,
   Users,
   Eye,
   UserPlus,
-  Clock,
   Smartphone,
   Monitor,
   Tablet,
@@ -13,28 +12,24 @@ import {
   TrendingUp,
   FileText,
   Megaphone,
-  ShieldCheck,
   RefreshCw,
   Search,
-  Filter,
   ArrowUpRight,
-  Sparkles,
+  ArrowDownRight,
   Lock,
-  Compass,
-  Radio
+  Radio,
+  AlertTriangle,
+  PenSquare
 } from 'lucide-react';
 import { User, Article, AdCampaign } from '../../types';
-import {
-  calculatePlatformTrafficStats,
-  getVisitLogs,
-  TrafficStats,
-  VisitLogEntry
-} from '../../utils/trafficTracker';
+import { fetchAnalyticsSummary, AnalyticsSummary } from '../../services/analyticsApi';
 
 interface AdminAnalyticsTabProps {
   users: User[];
   articles: Article[];
   campaigns: AdCampaign[];
+  depositRequests?: any[];
+  payoutRequests?: any[];
   onSelectUser?: (user: User) => void;
   onSelectArticle?: (article: Article) => void;
 }
@@ -43,30 +38,41 @@ export const AdminAnalyticsTab: React.FC<AdminAnalyticsTabProps> = ({
   users,
   articles,
   campaigns,
+  depositRequests = [],
+  payoutRequests = [],
   onSelectUser,
   onSelectArticle
 }) => {
-  const [timeRange, setTimeRange] = useState<'24h' | 'today' | '7d' | 'all'>('24h');
   const [activeSubTab, setActiveSubTab] = useState<'overview' | 'visitors_stream' | 'signups_log' | 'content_ads'>('overview');
   const [searchQuery, setSearchQuery] = useState('');
-  const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
-  const [stats, setStats] = useState<TrafficStats>(() =>
-    calculatePlatformTrafficStats(articles, users, campaigns)
-  );
+  const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
 
-  // Auto refresh or manual refresh
-  const refreshStats = () => {
-    setStats(calculatePlatformTrafficStats(articles, users, campaigns));
-    setLastRefreshed(new Date());
-  };
+  const loadSummary = useCallback(async () => {
+    setIsLoading(true);
+    setLoadError(null);
+    try {
+      const data = await fetchAnalyticsSummary();
+      setSummary(data);
+      setLastRefreshed(new Date());
+    } catch (err: any) {
+      setLoadError(err?.message || 'تعذر تحميل الإحصائيات الحقيقية من الخادم.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
+  // تحميل عند الفتح + تحديث دوري كل 30 ثانية (بيانات حقيقية من السيرفر،
+  // وليس أرقاماً وهمية مولَّدة محلياً).
   useEffect(() => {
-    refreshStats();
-    const interval = setInterval(refreshStats, 10000); // 10s live pulse
+    loadSummary();
+    const interval = setInterval(loadSummary, 30000);
     return () => clearInterval(interval);
-  }, [articles, users, campaigns]);
+  }, [loadSummary]);
 
-  // Registered Users sorted by creation time
+  // Registered Users sorted by creation time — بيانات حقيقية من Firestore مباشرة.
   const recentSignups = useMemo(() => {
     return [...users]
       .filter((u) => u.id !== 'guest')
@@ -77,7 +83,6 @@ export const AdminAnalyticsTab: React.FC<AdminAnalyticsTabProps> = ({
       });
   }, [users]);
 
-  // Filtered Signups
   const filteredSignups = useMemo(() => {
     if (!searchQuery.trim()) return recentSignups;
     const q = searchQuery.toLowerCase();
@@ -90,33 +95,58 @@ export const AdminAnalyticsTab: React.FC<AdminAnalyticsTabProps> = ({
     );
   }, [recentSignups, searchQuery]);
 
-  // Filtered Visits Stream
   const filteredVisits = useMemo(() => {
-    const logs = stats.recentVisits;
+    const logs = summary?.recentVisits || [];
     if (!searchQuery.trim()) return logs;
     const q = searchQuery.toLowerCase();
     return logs.filter(
-      (l) =>
-        l.pageTitle.toLowerCase().includes(q) ||
-        l.path.toLowerCase().includes(q) ||
-        l.ipPlaceholder.toLowerCase().includes(q) ||
-        (l.userName && l.userName.toLowerCase().includes(q)) ||
-        l.referrer.toLowerCase().includes(q)
+      (l) => l.pageTitle.toLowerCase().includes(q) || l.path.toLowerCase().includes(q)
     );
-  }, [stats.recentVisits, searchQuery]);
+  }, [summary, searchQuery]);
 
-  // Roles breakdown
+  // Roles breakdown — من users الحقيقية القادمة من Firestore.
   const readersCount = users.filter((u) => u.role === 'reader' && u.id !== 'guest').length;
   const writersCount = users.filter((u) => u.role === 'writer').length;
   const advertisersCount = users.filter((u) => u.role === 'advertiser').length;
-  const adminsCount = users.filter((u) => u.role === 'admin').length;
   const verifiedCount = users.filter((u) => u.isVerified).length;
+  const registeredUsersCount = users.filter((u) => u.id !== 'guest').length;
 
-  // Format time ago helper
+  const now = Date.now();
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const startOfTodayMs = startOfToday.getTime();
+  const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
+
+  const signupsToday = users.filter((u) => {
+    if (u.id === 'guest' || !u.createdAt) return false;
+    const t = new Date(u.createdAt).getTime();
+    return !isNaN(t) && t >= startOfTodayMs;
+  }).length;
+
+  const signupsThisWeek = users.filter((u) => {
+    if (u.id === 'guest' || !u.createdAt) return false;
+    const t = new Date(u.createdAt).getTime();
+    return !isNaN(t) && t >= sevenDaysAgo;
+  }).length;
+
+  // عدد الكُتّاب الفعليين الذين نشروا مقالاً واحداً على الأقل (وليس فقط
+  // من اختار دور "كاتب" دون أن ينشر شيئاً).
+  const publishingWritersCount = useMemo(() => {
+    return new Set(articles.filter((a) => a.writerId).map((a) => a.writerId)).size;
+  }, [articles]);
+
+  const lockedArticlesCount = articles.filter((a) => a.isLocked).length;
+  const totalArticleViews = articles.reduce((acc, a) => acc + (a.viewsCount || 0), 0);
+  const activeCampaignsCount = campaigns.filter((c) => c.status === 'active').length;
+
+  const approvedDepositsCount = depositRequests.filter((r) => r.status === 'approved').length;
+  const pendingDepositsCount = depositRequests.filter((r) => r.status === 'pending').length;
+  const paidWithdrawalsCount = payoutRequests.filter((r) => r.status === 'paid').length;
+  const pendingWithdrawalsCount = payoutRequests.filter((r) => r.status === 'pending').length;
+
   const formatTimeAgo = (isoString: string) => {
     try {
-      const now = Date.now();
-      const diff = now - new Date(isoString).getTime();
+      const diff = Date.now() - new Date(isoString).getTime();
       const mins = Math.floor(diff / 60000);
       if (mins < 1) return 'الآن';
       if (mins < 60) return `منذ ${mins} دقيقة`;
@@ -144,34 +174,41 @@ export const AdminAnalyticsTab: React.FC<AdminAnalyticsTabProps> = ({
               </h3>
               <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                <span>مباشر (Live)</span>
+                <span>بيانات حقيقية من الخادم</span>
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
-              رصد دقيق لعدد الزوار في آخر 24 ساعة، المسجلين الجدد، حركة المشاهدات، والإعلانات النشطة.
+              كل رقم هنا مسجَّل فعلياً في قاعدة البيانات عند كل زيارة وكل تسجيل — لا توجد أرقام تقديرية.
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2 self-stretch md:self-auto justify-between md:justify-end">
           <span className="text-[11px] text-slate-500 font-mono">
-            آخر تحديث: {lastRefreshed.toLocaleTimeString()}
+            {lastRefreshed ? `آخر تحديث: ${lastRefreshed.toLocaleTimeString()}` : '...'}
           </span>
           <button
             type="button"
-            onClick={refreshStats}
-            className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-all flex items-center gap-1 text-xs font-bold"
+            onClick={loadSummary}
+            disabled={isLoading}
+            className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-all flex items-center gap-1 text-xs font-bold disabled:opacity-50"
             title="تحديث فوري للبيانات"
           >
-            <RefreshCw className="w-4 h-4" />
+            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
             <span className="hidden sm:inline">تحديث</span>
           </button>
         </div>
       </div>
 
-      {/* 2. Top Super-Metrics Grid */}
+      {loadError && (
+        <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          <span>{loadError}</span>
+        </div>
+      )}
+
+      {/* 2. Top Super-Metrics Grid — زوار وصفحات حقيقية من الخادم */}
       <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-        {/* الزوار في 24 ساعة */}
         <div className="p-4 rounded-3xl bg-slate-900 border border-emerald-500/30 relative overflow-hidden group hover:border-emerald-500/60 transition-all">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-400">الزوار (آخر 24 ساعة)</span>
@@ -180,18 +217,15 @@ export const AdminAnalyticsTab: React.FC<AdminAnalyticsTabProps> = ({
             </div>
           </div>
           <div className="mt-2 text-2xl sm:text-3xl font-black text-white font-mono flex items-baseline gap-2">
-            <span>{stats.visitorsLast24Hours.toLocaleString()}</span>
+            <span>{isLoading && !summary ? '…' : (summary?.visitorsLast24h ?? 0).toLocaleString()}</span>
             <span className="text-xs font-sans font-bold text-emerald-400">زائر</span>
           </div>
           <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">
-            <span>المشاهدات: <strong className="text-slate-200 font-mono">{stats.pageViewsLast24Hours}</strong></span>
-            <span className="text-emerald-400 font-bold flex items-center gap-0.5">
-              <TrendingUp className="w-3 h-3" /> نشط
-            </span>
+            <span>المشاهدات: <strong className="text-slate-200 font-mono">{summary?.pageViewsLast24h ?? 0}</strong></span>
+            <span>اليوم: <strong className="text-emerald-300 font-mono">{summary?.visitorsToday ?? 0}</strong></span>
           </div>
         </div>
 
-        {/* إجمالي الزوار والمشاهدات */}
         <div className="p-4 rounded-3xl bg-slate-900 border border-slate-800 hover:border-slate-700 transition-all">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-400">إجمالي الزوار التراكمي</span>
@@ -200,15 +234,14 @@ export const AdminAnalyticsTab: React.FC<AdminAnalyticsTabProps> = ({
             </div>
           </div>
           <div className="mt-2 text-2xl sm:text-3xl font-black text-white font-mono flex items-baseline gap-2">
-            <span>{stats.totalUniqueVisitors.toLocaleString()}</span>
+            <span>{isLoading && !summary ? '…' : (summary?.totalVisitors ?? 0).toLocaleString()}</span>
             <span className="text-xs font-sans font-bold text-teal-400">فريد</span>
           </div>
           <div className="mt-2 text-[11px] text-slate-400">
-            إجمالي المشاهدات: <strong className="text-slate-200 font-mono">{stats.totalPageViews.toLocaleString()}</strong>
+            إجمالي المشاهدات: <strong className="text-slate-200 font-mono">{(summary?.totalPageViews ?? 0).toLocaleString()}</strong>
           </div>
         </div>
 
-        {/* المستخدمين المسجلين */}
         <div className="p-4 rounded-3xl bg-slate-900 border border-blue-500/30 hover:border-blue-500/60 transition-all">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-400">إجمالي المسجلين</span>
@@ -217,16 +250,15 @@ export const AdminAnalyticsTab: React.FC<AdminAnalyticsTabProps> = ({
             </div>
           </div>
           <div className="mt-2 text-2xl sm:text-3xl font-black text-white font-mono flex items-baseline gap-2">
-            <span>{stats.registeredUsersCount.toLocaleString()}</span>
+            <span>{registeredUsersCount.toLocaleString()}</span>
             <span className="text-xs font-sans font-bold text-blue-400">عضو</span>
           </div>
           <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">
-            <span>اليوم: <strong className="text-emerald-400 font-mono">+{stats.signupsToday}</strong></span>
-            <span>هذا الأسبوع: <strong className="text-blue-300 font-mono">+{stats.signupsThisWeek}</strong></span>
+            <span>اليوم: <strong className="text-emerald-400 font-mono">+{signupsToday}</strong></span>
+            <span>هذا الأسبوع: <strong className="text-blue-300 font-mono">+{signupsThisWeek}</strong></span>
           </div>
         </div>
 
-        {/* الإعلانات والمحتوى النشط */}
         <div className="p-4 rounded-3xl bg-slate-900 border border-amber-500/30 hover:border-amber-500/60 transition-all">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-400">الإعلانات والمقالات</span>
@@ -235,12 +267,69 @@ export const AdminAnalyticsTab: React.FC<AdminAnalyticsTabProps> = ({
             </div>
           </div>
           <div className="mt-2 text-2xl sm:text-3xl font-black text-white font-mono flex items-baseline gap-2">
-            <span>{stats.activeCampaignsCount}</span>
-            <span className="text-xs font-sans font-bold text-amber-400">إعلان نشط</span>
+            <span>{activeCampaignsCount}</span>
+            <span className="text-xs font-sans font-bold text-amber-400">بنر نشط</span>
           </div>
           <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">
-            <span>المقالات: <strong className="text-slate-200 font-mono">{stats.totalArticlesCount}</strong></span>
-            <span>قراءات المقالات: <strong className="text-amber-300 font-mono">{stats.totalArticleViews.toLocaleString()}</strong></span>
+            <span>إجمالي البنرات: <strong className="text-slate-200 font-mono">{campaigns.length}</strong></span>
+            <span>المقالات: <strong className="text-amber-300 font-mono">{articles.length}</strong></span>
+          </div>
+        </div>
+      </div>
+
+      {/* 2b. Money-Ops & Publishing Grid — إحصاءات العمليات المالية والنشر */}
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+        <div className="p-4 rounded-3xl bg-slate-900 border border-slate-800">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-slate-400">عمليات الإيداع</span>
+            <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400">
+              <ArrowDownRight className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="mt-2 text-2xl font-black text-white font-mono">{depositRequests.length}</div>
+          <div className="mt-1.5 text-[11px] text-slate-400">
+            مقبولة: <strong className="text-emerald-400 font-mono">{approvedDepositsCount}</strong>
+            {' • '}قيد الانتظار: <strong className="text-amber-400 font-mono">{pendingDepositsCount}</strong>
+          </div>
+        </div>
+
+        <div className="p-4 rounded-3xl bg-slate-900 border border-slate-800">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-slate-400">عمليات السحب</span>
+            <div className="p-2 rounded-xl bg-rose-500/10 text-rose-400">
+              <ArrowUpRight className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="mt-2 text-2xl font-black text-white font-mono">{payoutRequests.length}</div>
+          <div className="mt-1.5 text-[11px] text-slate-400">
+            مدفوعة: <strong className="text-emerald-400 font-mono">{paidWithdrawalsCount}</strong>
+            {' • '}قيد الانتظار: <strong className="text-amber-400 font-mono">{pendingWithdrawalsCount}</strong>
+          </div>
+        </div>
+
+        <div className="p-4 rounded-3xl bg-slate-900 border border-slate-800">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-slate-400">الكُتّاب الناشرون</span>
+            <div className="p-2 rounded-xl bg-purple-500/10 text-purple-400">
+              <PenSquare className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="mt-2 text-2xl font-black text-white font-mono">{publishingWritersCount}</div>
+          <div className="mt-1.5 text-[11px] text-slate-400">
+            من إجمالي <strong className="text-purple-300 font-mono">{writersCount}</strong> حساب بدور كاتب
+          </div>
+        </div>
+
+        <div className="p-4 rounded-3xl bg-slate-900 border border-slate-800">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-slate-400">المقالات الحصرية المدفوعة</span>
+            <div className="p-2 rounded-xl bg-amber-500/10 text-amber-400">
+              <Lock className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="mt-2 text-2xl font-black text-white font-mono">{lockedArticlesCount}</div>
+          <div className="mt-1.5 text-[11px] text-slate-400">
+            من إجمالي <strong className="text-amber-300 font-mono">{articles.length}</strong> مقال
           </div>
         </div>
       </div>
@@ -249,7 +338,7 @@ export const AdminAnalyticsTab: React.FC<AdminAnalyticsTabProps> = ({
       <div className="flex items-center gap-2 p-1.5 bg-slate-900 rounded-2xl border border-slate-800 overflow-x-auto no-scrollbar">
         {[
           { id: 'overview', label: 'الرسوم والمؤشرات البصرية', icon: TrendingUp },
-          { id: 'visitors_stream', label: 'سجل الزيارات المباشر (Traffic Log)', icon: Eye, count: stats.recentVisits.length },
+          { id: 'visitors_stream', label: 'سجل الزيارات الحقيقي', icon: Eye, count: summary?.recentVisits?.length || 0 },
           { id: 'signups_log', label: 'سجل المسجلين والاشتراكات', icon: UserPlus, count: users.length - 1 },
           { id: 'content_ads', label: 'أداء المقالات والإعلانات', icon: FileText }
         ].map((tab) => {
@@ -293,7 +382,7 @@ export const AdminAnalyticsTab: React.FC<AdminAnalyticsTabProps> = ({
                   حركة الزيارات والمشاهدات على مدار الـ 24 ساعة الماضية
                 </h4>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  توزيع تدفق الزوار والمشاهدات خلال فترات اليوم بالساعة.
+                  توزيع تدفق الزوار والمشاهدات الحقيقية خلال فترات اليوم (كل عمود = ساعتان).
                 </p>
               </div>
 
@@ -307,50 +396,52 @@ export const AdminAnalyticsTab: React.FC<AdminAnalyticsTabProps> = ({
               </div>
             </div>
 
-            {/* Visual Bars Container */}
-            <div className="pt-6 pb-2">
-              <div className="h-44 flex items-end justify-between gap-1.5 sm:gap-2 px-1 border-b border-slate-800">
-                {stats.hourlyTraffic.map((item, idx) => {
-                  const maxView = Math.max(...stats.hourlyTraffic.map((h) => h.views), 20);
-                  const viewHeight = Math.max(Math.round((item.views / maxView) * 100), 8);
-                  const visitorHeight = Math.max(Math.round((item.visitors / maxView) * 100), 5);
-
-                  return (
-                    <div key={idx} className="flex-1 flex flex-col items-center gap-1.5 group relative">
-                      {/* Hover Tooltip */}
-                      <div className="absolute -top-10 bg-slate-950 text-white text-[10px] px-2 py-1 rounded-lg border border-slate-700 shadow-xl pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-20 whitespace-nowrap">
-                        {item.hour}: {item.views} مشاهدة ({item.visitors} زائر)
-                      </div>
-
-                      {/* Dual Bars */}
-                      <div className="w-full flex items-end justify-center gap-0.5 sm:gap-1 h-36">
-                        <div
-                          style={{ height: `${viewHeight}%` }}
-                          className="w-1/2 rounded-t-sm bg-gradient-to-t from-emerald-600 to-emerald-400 group-hover:brightness-125 transition-all"
-                        />
-                        <div
-                          style={{ height: `${visitorHeight}%` }}
-                          className="w-1/2 rounded-t-sm bg-gradient-to-t from-teal-600 to-teal-300 group-hover:brightness-125 transition-all"
-                        />
-                      </div>
-
-                      <span className="text-[9px] sm:text-[10px] text-slate-500 font-mono truncate w-full text-center">
-                        {item.hour}
-                      </span>
-                    </div>
-                  );
-                })}
+            {!summary || summary.hourlyTraffic.every((h) => h.views === 0) ? (
+              <div className="py-10 text-center text-xs text-slate-500">
+                {isLoading ? 'جارٍ تحميل حركة الزيارات...' : 'لا توجد زيارات مسجَّلة بعد خلال آخر 24 ساعة.'}
               </div>
-            </div>
+            ) : (
+              <div className="pt-6 pb-2">
+                <div className="h-44 flex items-end justify-between gap-1.5 sm:gap-2 px-1 border-b border-slate-800">
+                  {summary.hourlyTraffic.map((item, idx) => {
+                    const maxView = Math.max(...summary.hourlyTraffic.map((h) => h.views), 1);
+                    const viewHeight = Math.max(Math.round((item.views / maxView) * 100), item.views > 0 ? 8 : 2);
+                    const visitorHeight = Math.max(Math.round((item.visitors / maxView) * 100), item.visitors > 0 ? 5 : 2);
+
+                    return (
+                      <div key={idx} className="flex-1 flex flex-col items-center gap-1.5 group relative">
+                        <div className="absolute -top-10 bg-slate-950 text-white text-[10px] px-2 py-1 rounded-lg border border-slate-700 shadow-xl pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-20 whitespace-nowrap">
+                          {item.hour}: {item.views} مشاهدة ({item.visitors} زائر)
+                        </div>
+
+                        <div className="w-full flex items-end justify-center gap-0.5 sm:gap-1 h-36">
+                          <div
+                            style={{ height: `${viewHeight}%` }}
+                            className="w-1/2 rounded-t-sm bg-gradient-to-t from-emerald-600 to-emerald-400 group-hover:brightness-125 transition-all"
+                          />
+                          <div
+                            style={{ height: `${visitorHeight}%` }}
+                            className="w-1/2 rounded-t-sm bg-gradient-to-t from-teal-600 to-teal-300 group-hover:brightness-125 transition-all"
+                          />
+                        </div>
+
+                        <span className="text-[9px] sm:text-[10px] text-slate-500 font-mono truncate w-full text-center">
+                          {item.hour}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Devices & User Composition */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Device Usage */}
             <div className="p-5 rounded-3xl bg-slate-900 border border-slate-800 space-y-4">
               <h4 className="font-bold text-white text-sm flex items-center gap-2">
                 <Smartphone className="w-4 h-4 text-blue-400" />
-                توزيع الأجهزة والمتصفحات
+                توزيع الأجهزة (آخر 24 ساعة)
               </h4>
 
               <div className="space-y-3">
@@ -359,11 +450,11 @@ export const AdminAnalyticsTab: React.FC<AdminAnalyticsTabProps> = ({
                     <span className="text-slate-300 flex items-center gap-1.5">
                       <Smartphone className="w-3.5 h-3.5 text-blue-400" /> الجوال (Mobile)
                     </span>
-                    <span className="font-mono font-bold text-white">{stats.deviceBreakdown.mobile}%</span>
+                    <span className="font-mono font-bold text-white">{summary?.deviceBreakdown.mobile ?? 0}%</span>
                   </div>
                   <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
                     <div
-                      style={{ width: `${stats.deviceBreakdown.mobile}%` }}
+                      style={{ width: `${summary?.deviceBreakdown.mobile ?? 0}%` }}
                       className="h-full bg-blue-500 rounded-full"
                     />
                   </div>
@@ -374,11 +465,11 @@ export const AdminAnalyticsTab: React.FC<AdminAnalyticsTabProps> = ({
                     <span className="text-slate-300 flex items-center gap-1.5">
                       <Monitor className="w-3.5 h-3.5 text-purple-400" /> الكمبيوتر (Desktop)
                     </span>
-                    <span className="font-mono font-bold text-white">{stats.deviceBreakdown.desktop}%</span>
+                    <span className="font-mono font-bold text-white">{summary?.deviceBreakdown.desktop ?? 0}%</span>
                   </div>
                   <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
                     <div
-                      style={{ width: `${stats.deviceBreakdown.desktop}%` }}
+                      style={{ width: `${summary?.deviceBreakdown.desktop ?? 0}%` }}
                       className="h-full bg-purple-500 rounded-full"
                     />
                   </div>
@@ -389,11 +480,11 @@ export const AdminAnalyticsTab: React.FC<AdminAnalyticsTabProps> = ({
                     <span className="text-slate-300 flex items-center gap-1.5">
                       <Tablet className="w-3.5 h-3.5 text-amber-400" /> الأجهزة اللوحية (Tablet)
                     </span>
-                    <span className="font-mono font-bold text-white">{stats.deviceBreakdown.tablet}%</span>
+                    <span className="font-mono font-bold text-white">{summary?.deviceBreakdown.tablet ?? 0}%</span>
                   </div>
                   <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
                     <div
-                      style={{ width: `${stats.deviceBreakdown.tablet}%` }}
+                      style={{ width: `${summary?.deviceBreakdown.tablet ?? 0}%` }}
                       className="h-full bg-amber-500 rounded-full"
                     />
                   </div>
@@ -401,7 +492,6 @@ export const AdminAnalyticsTab: React.FC<AdminAnalyticsTabProps> = ({
               </div>
             </div>
 
-            {/* Users Breakdown */}
             <div className="p-5 rounded-3xl bg-slate-900 border border-slate-800 space-y-4">
               <h4 className="font-bold text-white text-sm flex items-center gap-2">
                 <Users className="w-4 h-4 text-emerald-400" />
@@ -434,7 +524,7 @@ export const AdminAnalyticsTab: React.FC<AdminAnalyticsTabProps> = ({
         </div>
       )}
 
-      {/* 5. Tab 2: Live Visitors Stream */}
+      {/* 5. Tab 2: Real Visitors Stream */}
       {activeSubTab === 'visitors_stream' && (
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
@@ -442,7 +532,7 @@ export const AdminAnalyticsTab: React.FC<AdminAnalyticsTabProps> = ({
               <Search className="w-4 h-4 text-slate-400 absolute right-3.5 top-2.5" />
               <input
                 type="text"
-                placeholder="البحث في الصفحة، عنوان IP، أو اسم الزائر..."
+                placeholder="البحث في الصفحة أو المسار..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full bg-slate-900 border border-slate-800 rounded-xl pr-10 pl-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
@@ -453,11 +543,16 @@ export const AdminAnalyticsTab: React.FC<AdminAnalyticsTabProps> = ({
           <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 text-xs text-slate-400 flex items-center gap-2">
             <Radio className="w-4 h-4 text-emerald-400 animate-pulse" />
             <span>
-              يتم تسجيل كل انتقال بين الصفحات والمقالات لحظياً مع تفاصيل الجهاز والوقت وعنوان الشبكة.
+              كل صف هنا زيارة حقيقية سُجِّلت في قاعدة البيانات لحظة حدوثها (دون تخزين عنوان IP حفاظاً على الخصوصية).
             </span>
           </div>
 
           <div className="space-y-2">
+            {filteredVisits.length === 0 && (
+              <div className="py-8 text-center text-xs text-slate-500">
+                {isLoading ? 'جارٍ التحميل...' : 'لا توجد زيارات مطابقة بعد.'}
+              </div>
+            )}
             {filteredVisits.map((visit) => (
               <div
                 key={visit.id}
@@ -472,27 +567,17 @@ export const AdminAnalyticsTab: React.FC<AdminAnalyticsTabProps> = ({
                           : 'bg-slate-800 text-slate-400'
                       }`}
                     >
-                      {visit.isRegistered ? `عضو مسجل (${visit.userRole || 'عضو'})` : 'زائر مجهول'}
+                      {visit.isRegistered ? 'عضو مسجل' : 'زائر غير مسجل'}
                     </span>
 
                     <span className="font-bold text-xs text-white truncate max-w-xs sm:max-w-md">
-                      {visit.pageTitle}
+                      {visit.pageTitle || visit.path}
                     </span>
                   </div>
 
-                  <div className="text-[11px] text-slate-400 font-mono flex items-center gap-2.5 flex-wrap">
-                    <span>المسار: {visit.path}</span>
-                    <span>•</span>
-                    <span>IP: {visit.ipPlaceholder}</span>
-                    <span>•</span>
-                    <span>المصدر: {visit.referrer}</span>
+                  <div className="text-[11px] text-slate-400 font-mono">
+                    المسار: {visit.path}
                   </div>
-
-                  {visit.userName && (
-                    <div className="text-[11px] text-emerald-300">
-                      اسم المستخدم: <strong>{visit.userName}</strong>
-                    </div>
-                  )}
                 </div>
 
                 <div className="flex sm:flex-col items-center sm:items-end justify-between text-[11px] text-slate-400 shrink-0">
@@ -600,24 +685,24 @@ export const AdminAnalyticsTab: React.FC<AdminAnalyticsTabProps> = ({
               <div className="text-xs text-slate-400">إجمالي المقالات المنشورة</div>
               <div className="text-2xl font-black text-white font-mono mt-1">{articles.length}</div>
               <div className="text-[11px] text-emerald-400 mt-1">
-                {stats.lockedArticlesCount} مقال حصري مدفوع
+                {lockedArticlesCount} مقال حصري مدفوع
               </div>
             </div>
 
             <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800">
               <div className="text-xs text-slate-400">إجمالي قراءات المقالات</div>
               <div className="text-2xl font-black text-emerald-400 font-mono mt-1">
-                {stats.totalArticleViews.toLocaleString()}
+                {totalArticleViews.toLocaleString()}
               </div>
               <div className="text-[11px] text-slate-400 mt-1">
-                متوسط: {Math.round(stats.totalArticleViews / Math.max(articles.length, 1))} قراءة لكل مقال
+                متوسط: {Math.round(totalArticleViews / Math.max(articles.length, 1))} قراءة لكل مقال
               </div>
             </div>
 
             <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800">
               <div className="text-xs text-slate-400">الحملات الإعلانية النشطة</div>
               <div className="text-2xl font-black text-amber-400 font-mono mt-1">
-                {stats.activeCampaignsCount}
+                {activeCampaignsCount}
               </div>
               <div className="text-[11px] text-slate-400 mt-1">
                 من إجمالي {campaigns.length} حملة

@@ -144,6 +144,7 @@ import {
   EarningRecord
 } from './services/firestoreService';
 import { unlockArticle as requestArticleUnlock, fundCampaign } from './services/paymentsApi';
+import { trackVisit } from './services/analyticsApi';
 import {
   auth,
   fetchUserFromFirestore,
@@ -427,6 +428,14 @@ export function App() {
   }, [users, currentUserId]);
 
   const isAuthenticated = currentUser.id !== 'guest';
+
+  // تسجيل زيارات حقيقية لكل تنقّل فعلي بين الأقسام الرئيسية (وليس بيانات
+  // وهمية محلية) — يغذي قسم "إحصاءات عامة" في لوحة الأدمن. لا يوقف أي شيء
+  // إن فشل (fire-and-forget داخل trackVisit نفسها).
+  useEffect(() => {
+    trackVisit(`/${activeTab}`, `Literium - ${activeTab}`, isAuthenticated ? currentUser.id : undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, isAuthenticated]);
 
   // مقالات أعجب بها المستخدم الحالي فعلياً (من مجموعة likes في Firestore) —
   // سواء كان حساباً حقيقياً مسجّلاً أو زائراً معرَّفاً بهوية مجهولة.

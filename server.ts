@@ -879,6 +879,178 @@ async function startServer() {
     }
   });
 
+  // ------------------------------------------------------------------
+  // إحصائيات زوار حقيقية — كانت شاشة "التحليلات والزوار" بالكامل مبنية
+  // على بيانات وهمية مولَّدة محلياً في متصفح كل أدمن على حدة (utils/
+  // trafficTracker.ts، سجلات بأسماء عشوائية وأرقام أساس ثابتة)، لا تُسجَّل
+  // فيها أي زيارة حقيقية من أي مستخدم فعلياً. هذا يستبدلها ببيانات حقيقية:
+  // كل تحميل حقيقي للتطبيق يُسجَّل هنا في Firestore عبر /track-visit، وتُقرأ
+  // الإحصائيات المجمَّعة من نفس البيانات عبر /summary.
+  //
+  // pageViews: مستند واحد لكل تحميل صفحة فعلي (لا يحتاج توكن — الزوار غير
+  // المسجَّلين يجب أن يُحتسبوا أيضاً).
+  // visitorSessions: مستند واحد لكل معرّف زائر فريد (يُخزَّن في localStorage
+  // المتصفح ليبقى ثابتاً)، يُستخدم لعدّ "الزوار الفريدين" الحقيقي.
+  app.post('/api/analytics/track-visit', async (req, res) => {
+    if (!isAdminConfigured()) {
+      return res.status(503).json({ error: 'not_configured' });
+    }
+    try {
+      const { sessionId, path: visitPath, pageTitle, device, browser, userId } = req.body;
+      if (!sessionId || typeof sessionId !== 'string' || sessionId.length > 100) {
+        return res.status(400).json({ error: 'invalid_session' });
+      }
+      if (!visitPath || typeof visitPath !== 'string' || visitPath.length > 300) {
+        return res.status(400).json({ error: 'invalid_path' });
+      }
+
+      const db = getAdminDb();
+      const now = new Date().toISOString();
+      const isRegistered = Boolean(userId) && userId !== 'guest';
+
+      const pageViewRef = db.collection('pageViews').doc();
+      const sessionRef = db.collection('visitorSessions').doc(sessionId);
+
+      const sessionSnap = await sessionRef.get();
+
+      const batch = db.batch();
+      batch.set(pageViewRef, {
+        sessionId,
+        path: visitPath,
+        pageTitle: typeof pageTitle === 'string' ? pageTitle.slice(0, 200) : '',
+        device: device === 'mobile' || device === 'tablet' ? device : 'desktop',
+        browser: typeof browser === 'string' ? browser.slice(0, 50) : 'Unknown',
+        isRegistered,
+        userId: isRegistered ? String(userId) : null,
+        timestamp: now
+      });
+      batch.set(
+        sessionRef,
+        {
+          lastSeenAt: now,
+          visitCount: FieldValue.increment(1),
+          isRegistered,
+          ...(isRegistered ? { userId: String(userId) } : {}),
+          ...(sessionSnap.exists ? {} : { firstSeenAt: now })
+        },
+        { merge: true }
+      );
+      await batch.commit();
+
+      res.json({ ok: true });
+    } catch (err: any) {
+      // تتبع الزيارات لا يجب أن يُفشل أي شيء آخر في الواجهة — يكفي تسجيل
+      // الخطأ في السيرفر بصمت.
+      console.error('Track visit error:', err?.message || err);
+      res.status(500).json({ error: 'track_failed' });
+    }
+  });
+
+  app.get('/api/analytics/summary', async (req, res) => {
+    if (!isAdminConfigured()) {
+      return res.status(503).json({ error: 'not_configured', message: 'الخدمة غير مهيأة على الخادم حالياً.' });
+    }
+    try {
+      const { uid } = await verifyRequestAuth(req.headers.authorization);
+      const db = getAdminDb();
+
+      const callerSnap = await db.collection('users').doc(uid).get();
+      const callerData = callerSnap.exists ? callerSnap.data()! : {};
+      const isAdminCaller =
+        callerData.role === 'admin' ||
+        String(callerData.email || '').toLowerCase() === 'brnardtsho@gmail.com';
+      if (!isAdminCaller) {
+        return res.status(403).json({ error: 'forbidden', message: 'هذه البيانات مخصصة لإدارة المنصة فقط.' });
+      }
+
+      const now = Date.now();
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+      const startOfTodayIso = startOfToday.toISOString();
+      const last24hIso = new Date(now - 24 * 60 * 60 * 1000).toISOString();
+
+      const [
+        totalVisitorsCount,
+        visitorsTodayCount,
+        visitorsLast24hCount,
+        totalPageViewsCount,
+        pageViewsTodayCount,
+        pageViewsLast24hSnap,
+        recentVisitsSnap
+      ] = await Promise.all([
+        db.collection('visitorSessions').count().get(),
+        db.collection('visitorSessions').where('lastSeenAt', '>=', startOfTodayIso).count().get(),
+        db.collection('visitorSessions').where('lastSeenAt', '>=', last24hIso).count().get(),
+        db.collection('pageViews').count().get(),
+        db.collection('pageViews').where('timestamp', '>=', startOfTodayIso).count().get(),
+        db.collection('pageViews').where('timestamp', '>=', last24hIso).get(),
+        db.collection('pageViews').orderBy('timestamp', 'desc').limit(30).get()
+      ]);
+
+      // توزيع الأجهزة وحركة الساعات مبنيان من نفس عيّنة آخر 24 ساعة —
+      // كافية إحصائياً ولا تحتاج تنزيل كامل تاريخ المشاهدات.
+      const last24hDocs = pageViewsLast24hSnap.docs.map((d) => d.data());
+      const deviceCounts = { mobile: 0, desktop: 0, tablet: 0 };
+      last24hDocs.forEach((d: any) => {
+        const dev = d.device === 'mobile' || d.device === 'tablet' ? d.device : 'desktop';
+        deviceCounts[dev as 'mobile' | 'desktop' | 'tablet']++;
+      });
+      const totalDeviceSamples = Math.max(last24hDocs.length, 1);
+      const deviceBreakdown = {
+        mobile: Math.round((deviceCounts.mobile / totalDeviceSamples) * 100),
+        desktop: Math.round((deviceCounts.desktop / totalDeviceSamples) * 100),
+        tablet: Math.round((deviceCounts.tablet / totalDeviceSamples) * 100)
+      };
+
+      const hourlyBuckets: { hour: string; views: number; visitors: number }[] = [];
+      for (let i = 11; i >= 0; i--) {
+        const bucketStart = now - (i + 1) * 2 * 60 * 60 * 1000;
+        const bucketEnd = now - i * 2 * 60 * 60 * 1000;
+        const bucketDocs = last24hDocs.filter((d: any) => {
+          const t = new Date(d.timestamp).getTime();
+          return t >= bucketStart && t < bucketEnd;
+        });
+        const uniqueSessions = new Set(bucketDocs.map((d: any) => d.sessionId));
+        hourlyBuckets.push({
+          hour: new Date(bucketEnd).toLocaleTimeString('ar', { hour: '2-digit', minute: '2-digit' }),
+          views: bucketDocs.length,
+          visitors: uniqueSessions.size
+        });
+      }
+
+      const recentVisits = recentVisitsSnap.docs.map((d) => {
+        const v = d.data() as any;
+        return {
+          id: d.id,
+          path: v.path,
+          pageTitle: v.pageTitle,
+          isRegistered: v.isRegistered,
+          device: v.device,
+          browser: v.browser,
+          timestamp: v.timestamp
+        };
+      });
+
+      res.json({
+        totalVisitors: totalVisitorsCount.data().count,
+        visitorsToday: visitorsTodayCount.data().count,
+        visitorsLast24h: visitorsLast24hCount.data().count,
+        totalPageViews: totalPageViewsCount.data().count,
+        pageViewsToday: pageViewsTodayCount.data().count,
+        pageViewsLast24h: last24hDocs.length,
+        deviceBreakdown,
+        hourlyTraffic: hourlyBuckets,
+        recentVisits
+      });
+    } catch (err: any) {
+      if (err?.message === 'missing_auth_token') {
+        return res.status(401).json({ error: 'auth_required', message: 'يتطلب الاطلاع على الإحصائيات تسجيل الدخول أولاً.' });
+      }
+      console.error('Analytics summary error:', err?.message || err);
+      res.status(500).json({ error: 'summary_failed', message: 'تعذر تحميل الإحصائيات. حاول مجدداً.' });
+    }
+  });
+
   // AI Writing Suite endpoint for writers
   app.post('/api/ai/writing-assistant', async (req, res) => {
     try {
