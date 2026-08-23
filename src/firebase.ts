@@ -230,7 +230,12 @@ export async function fetchUserFromFirestore(uid: string): Promise<User | null> 
     return {
       id: snap.id,
       email: data.email || auth.currentUser?.email || '',
-      fullName: data.displayName || data.name || data.fullName || 'مستخدم ليتيريوم',
+      // ⚠️ كان الترتيب معكوساً: يقرأ displayName/name (يُكتبان مرة واحدة
+      // فقط عند إنشاء الحساب من اسم جوجل) قبل fullName الفعلي (الحقل الذي
+      // يكتبه EditProfileModal فعلياً)، فيبدو للمستخدم أن تعديل اسمه لا
+      // يُحفَظ أبداً — يظهر مؤقتاً في نفس الجلسة (حالة محلية متفائلة) ثم
+      // يعود للاسم القديم بعد أي إعادة تسجيل دخول تُعيد قراءة المستند.
+      fullName: data.fullName || data.displayName || data.name || 'مستخدم ليتيريوم',
       username: data.username || (data.email ? data.email.split('@')[0] : `user_${uid.slice(0, 5)}`),
       avatarUrl: data.avatarUrl || data.photoURL || data.photoUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300',
       coverUrl: data.coverUrl || 'https://images.unsplash.com/photo-1457369804613-52c61a468e7d?w=1200',
@@ -413,7 +418,7 @@ export async function createOrUpdateUserDoc(
       return {
         id: uid,
         email: currentData.email || fbUser.email || '',
-        fullName: currentData.displayName || currentData.name || currentData.fullName || fbUser.displayName || 'مستخدم ليتيريوم',
+        fullName: currentData.fullName || currentData.displayName || currentData.name || fbUser.displayName || 'مستخدم ليتيريوم',
         username: currentData.username || (currentData.email ? currentData.email.split('@')[0] : `user_${uid.slice(0, 5)}`),
         avatarUrl: currentData.avatarUrl || currentData.photoURL || fbUser.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300',
         coverUrl: currentData.coverUrl || 'https://images.unsplash.com/photo-1457369804613-52c61a468e7d?w=1200',

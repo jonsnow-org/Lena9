@@ -101,3 +101,29 @@ export async function fetchAnalyticsSummary(): Promise<AnalyticsSummary> {
   if (!res.ok) throw new Error(data?.message || 'تعذر تحميل الإحصائيات.');
   return data;
 }
+
+export interface ResetStatsResult {
+  pageViewsDeleted: number;
+  sessionsDeleted: number;
+  rejectedDepositsDeleted: number;
+  rejectedPayoutsDeleted: number;
+  rejectedPurchasesDeleted: number;
+}
+
+/**
+ * تصفير سجلات الزيارات/المشاهدات وطلبات الإيداع والسحب وشراء المقالات
+ * *المرفوضة فقط* — لا تمسّ أي عملية مالية حقيقية تمّت فعلاً (رصيد، أرباح،
+ * طلبات مقبولة أو مدفوعة). للأدمن فقط، ويتحقق منها السيرفر عبر التوكن.
+ */
+export async function resetAnalyticsStats(): Promise<ResetStatsResult> {
+  const user = auth.currentUser;
+  if (!user) throw new Error('يجب تسجيل الدخول أولاً.');
+  const token = await user.getIdToken();
+  const res = await fetch('/api/analytics/reset', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.message || 'تعذر تصفير الإحصائيات.');
+  return data;
+}

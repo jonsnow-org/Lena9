@@ -17,7 +17,8 @@ import {
   ChevronLeft,
   Bookmark,
   Wand2,
-  Palette
+  Palette,
+  MessageSquare
 } from 'lucide-react';
 import { User, LanguageCode, UserRole } from '../types';
 import { getRemainingAiUses } from '../utils/aiQuota';
@@ -60,6 +61,9 @@ interface DrawerMenuProps {
   onStartWriting?: () => void;
   /** يفتح استوديو توليد الصور بالذكاء الاصطناعي */
   onOpenImageStudio?: () => void;
+  /** عدد الرسائل غير المقروءة — لعرض شارة على زر الرسائل هنا (مطلوب
+   *  خصوصاً للأدمن الذي لا يملك زر رسائل في الشريط السفلي أصلاً). */
+  unreadMessagesCount?: number;
 }
 
 export const DrawerMenu: React.FC<DrawerMenuProps> = ({
@@ -84,6 +88,7 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
   onSelectFollowedWriter,
   onNavigateTab,
   onOpenLogin,
+  unreadMessagesCount = 0,
   navPersona,
   onStartWriting,
   onOpenImageStudio,
@@ -303,6 +308,32 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
                   <span className="text-[11px] text-emerald-400 font-mono font-bold">
                     ${(currentUser.availableBalance ?? currentUser.walletBalance ?? 0).toFixed(2)}
                   </span>
+                </button>
+              )}
+
+              {/* رسائل — مخصص للأدمن تحديداً هنا لأن شريطه السفلي (5 أزرار:
+                  الرئيسية/المالية/الإعلانات/المستخدمين/ملفي) لا يضم مدخلاً
+                  للرسائل أصلاً، بخلاف بقية الأدوار التي لديها زر رسائل في
+                  الشريط السفلي فعلاً (فتكراره هنا لها زائد عن الحاجة). */}
+              {currentUser.id !== 'guest' && persona === 'admin' && (
+                <button
+                  onClick={() => {
+                    onNavigateTab?.('messages');
+                    onClose();
+                  }}
+                  className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <MessageSquare className="w-4 h-4 text-brand-400" />
+                    <span>الرسائل</span>
+                  </div>
+                  {unreadMessagesCount > 0 ? (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 font-bold border border-rose-500/30 font-mono">
+                      {unreadMessagesCount > 9 ? '9+' : unreadMessagesCount}
+                    </span>
+                  ) : (
+                    <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
+                  )}
                 </button>
               )}
 

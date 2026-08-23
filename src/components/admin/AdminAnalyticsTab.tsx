@@ -19,10 +19,11 @@ import {
   Lock,
   Radio,
   AlertTriangle,
-  PenSquare
+  PenSquare,
+  Trash2
 } from 'lucide-react';
 import { User, Article, AdCampaign } from '../../types';
-import { fetchAnalyticsSummary, AnalyticsSummary } from '../../services/analyticsApi';
+import { fetchAnalyticsSummary, resetAnalyticsStats, AnalyticsSummary } from '../../services/analyticsApi';
 
 interface AdminAnalyticsTabProps {
   users: User[];
@@ -49,6 +50,8 @@ export const AdminAnalyticsTab: React.FC<AdminAnalyticsTabProps> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
+  const [isResetting, setIsResetting] = useState(false);
+  const [resetInfo, setResetInfo] = useState<string | null>(null);
 
   const loadSummary = useCallback(async () => {
     setIsLoading(true);
@@ -71,6 +74,28 @@ export const AdminAnalyticsTab: React.FC<AdminAnalyticsTabProps> = ({
     const interval = setInterval(loadSummary, 30000);
     return () => clearInterval(interval);
   }, [loadSummary]);
+
+  const handleResetStats = async () => {
+    const confirmed = window.confirm(
+      'سيتم حذف سجلات الزيارات والمشاهدات نهائياً، بالإضافة إلى طلبات الإيداع والسحب وشراء المقالات المرفوضة فقط.\n\nلن يُمَس أي رصيد أو ربح أو عملية مالية مقبولة/مدفوعة فعلياً — هذا الإجراء لا رجعة فيه للسجلات المحذوفة. هل تريد المتابعة؟'
+    );
+    if (!confirmed) return;
+
+    setIsResetting(true);
+    setResetInfo(null);
+    setLoadError(null);
+    try {
+      const result = await resetAnalyticsStats();
+      setResetInfo(
+        `تم الحذف: ${result.pageViewsDeleted} مشاهدة، ${result.sessionsDeleted} جلسة زائر، ${result.rejectedDepositsDeleted} طلب إيداع مرفوض، ${result.rejectedPayoutsDeleted} طلب سحب مرفوض، ${result.rejectedPurchasesDeleted} طلب شراء مرفوض.`
+      );
+      await loadSummary();
+    } catch (err: any) {
+      setLoadError(err?.message || 'تعذر تصفير الإحصائيات.');
+    } finally {
+      setIsResetting(false);
+    }
+  };
 
   // Registered Users sorted by creation time — بيانات حقيقية من Firestore مباشرة.
   const recentSignups = useMemo(() => {
@@ -197,8 +222,25 @@ export const AdminAnalyticsTab: React.FC<AdminAnalyticsTabProps> = ({
             <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
             <span className="hidden sm:inline">تحديث</span>
           </button>
+          <button
+            type="button"
+            onClick={handleResetStats}
+            disabled={isResetting}
+            className="p-2 rounded-xl bg-rose-950/50 hover:bg-rose-900/60 text-rose-300 hover:text-rose-200 border border-rose-500/20 transition-all flex items-center gap-1 text-xs font-bold disabled:opacity-50"
+            title="تصفير سجلات الزيارات والعمليات غير الناجحة فقط — لا يمس أي رصيد أو ربح حقيقي"
+          >
+            <Trash2 className={`w-4 h-4 ${isResetting ? 'animate-pulse' : ''}`} />
+            <span className="hidden sm:inline">تصفير الإحصاءات</span>
+          </button>
         </div>
       </div>
+
+      {resetInfo && (
+        <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
+          <Trash2 className="w-4 h-4 shrink-0" />
+          <span>{resetInfo}</span>
+        </div>
+      )}
 
       {loadError && (
         <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs flex items-center gap-2">

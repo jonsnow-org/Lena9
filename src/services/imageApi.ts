@@ -11,6 +11,9 @@ export interface GenerateImageParams {
 export interface GenerateImageResult {
   success: boolean;
   imageUrl?: string;
+  /** false يعني أن الناتج صورة بديلة من مكتبة ثابتة (تعذّر الاتصال
+   *  الحقيقي بـ Gemini) — لم يُخصَم أي مبلغ ولم تُستهلَك أي حصة في هذه الحالة. */
+  isAiGenerated?: boolean;
   charged?: boolean;
   cost?: number;
   remainingFreeUses?: number;
@@ -41,18 +44,14 @@ export async function requestAiImageGeneration(
       headers['Authorization'] = `Bearer ${token}`;
     }
 
+    // ملاحظة: لا يُرسَل userId/userEmail بعد الآن — السيرفر يشتق هوية
+    // المستخدم من توكن Firebase الحقيقي في الترويسة فقط (verifyRequestAuth)،
+    // فلا حاجة ولا معنى لإرسالها من العميل (كانت تُقرأ سابقاً كمصدر موثوق
+    // خطأً، ما يسمح بانتحال أي حساب).
     const res = await fetch('/api/ai/generate-image', {
       method: 'POST',
       headers,
-      body: JSON.stringify({
-        prompt,
-        style,
-        aspectRatio,
-        userId: user.id,
-        userEmail: user.email,
-        isSubscriber: user.aiQuota?.isSubscriber ?? false,
-        plan: user.aiQuota?.plan ?? 'none'
-      })
+      body: JSON.stringify({ prompt, style, aspectRatio })
     });
 
     const data = await res.json();

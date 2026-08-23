@@ -11,7 +11,8 @@ import {
   AlertTriangle,
   RefreshCw,
   Search,
-  Filter
+  Filter,
+  History
 } from 'lucide-react';
 import { User, AdCampaign } from '../../types';
 import { evaluateAdEventBatch, calculateEventCost } from '../../utils/fraudFilters';
@@ -34,7 +35,9 @@ interface AdminFinanceTabProps {
     releasableAt: string;
     description?: string;
   }[];
-  initialSubTab?: 'payouts' | 'deposits' | 'releasable' | 'locked_sales' | 'ad_accounting';
+  /** سجلّ تدقيق كل تعديل رصيد يدوي — يجيب على "من أين جاء هذا الرصيد؟". */
+  manualBalanceAdjustments?: any[];
+  initialSubTab?: 'payouts' | 'deposits' | 'releasable' | 'locked_sales' | 'ad_accounting' | 'audit_log';
   onUpdateMoneyRequest?: (
     collectionName: 'depositRequests' | 'payoutRequests',
     requestId: string,
@@ -54,6 +57,7 @@ export const AdminFinanceTab: React.FC<AdminFinanceTabProps> = ({
   purchaseRequests = [],
   adEvents = [],
   earningsRecords = [],
+  manualBalanceAdjustments = [],
   initialSubTab = 'payouts',
   onUpdateMoneyRequest,
   onUpdatePurchaseRequest,
@@ -62,7 +66,7 @@ export const AdminFinanceTab: React.FC<AdminFinanceTabProps> = ({
   onOpenAdjustBalance
 }) => {
   const [subTab, setSubTab] = useState<
-    'payouts' | 'deposits' | 'releasable' | 'locked_sales' | 'ad_accounting'
+    'payouts' | 'deposits' | 'releasable' | 'locked_sales' | 'ad_accounting' | 'audit_log'
   >(initialSubTab);
 
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'paid' | 'rejected'>('all');
@@ -176,6 +180,12 @@ export const AdminFinanceTab: React.FC<AdminFinanceTabProps> = ({
               label: 'احتساب عوائد الإعلانات',
               icon: BadgePercent,
               badge: unprocessedEvents.length
+            },
+            {
+              id: 'audit_log',
+              label: 'سجل تعديلات الرصيد',
+              icon: History,
+              badge: manualBalanceAdjustments.length
             }
           ].map((tab) => {
             const Icon = tab.icon;
@@ -621,6 +631,80 @@ export const AdminFinanceTab: React.FC<AdminFinanceTabProps> = ({
             >
               احتساب الأحداث الصالحة وإيداع الأرباح للكتّاب الآن
             </button>
+          )}
+        </div>
+      )}
+
+      {/* 6. MANUAL BALANCE ADJUSTMENTS AUDIT LOG — يجيب صراحة على "من أين
+          جاء هذا الرصيد؟" لأي حساب (بما فيه حساب المالك نفسه): كل رصيد لم
+          يأتِ من إيداع أو ربح حقيقي مُسجَّل هنا كتعديل يدوي من أدمن محدَّد،
+          بسبب مذكور، وتاريخ دقيق. */}
+      {subTab === 'audit_log' && (
+        <div className="space-y-4">
+          <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800">
+            <h4 className="font-black text-white text-sm">سجل تعديلات الرصيد اليدوية ({manualBalanceAdjustments.length})</h4>
+            <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+              أي رصيد في حساب مستخدم (بما فيه حساب المالك) لا يقابله إيداع حقيقي أو ربح فعلي من مبيعات/إعلانات، فمصدره على الأرجح أحد التعديلات المسجَّلة هنا — من عدّله، لمن، كم، ولماذا.
+            </p>
+          </div>
+
+          {manualBalanceAdjustments.length === 0 ? (
+            <div className="p-10 rounded-2xl bg-slate-900 border border-slate-800 text-center text-sm text-slate-400">
+              لا توجد أي تعديلات رصيد يدوية مسجَّلة — كل الأرصدة الحالية جاءت من إيداعات أو أرباح حقيقية فقط.
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {manualBalanceAdjustments.map((adj: any) => {
+                const target = users.find((u) => u.id === adj.userId);
+                const adjuster = users.find((u) => u.id === adj.adjustedBy);
+                return (
+                  <div
+                    key={adj.id}
+                    className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col sm:flex-row sm:items-center gap-3 justify-between hover:border-slate-700 transition-colors"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap mb-1">
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-mono">
+                          {adj.field === 'walletBalance'
+                            ? 'رصيد المحفظة'
+                            : adj.field === 'availableBalance'
+                            ? 'الرصيد القابل للسحب'
+                            : adj.field === 'pendingEarnings'
+                            ? 'أرباح مجمَّدة'
+                            : adj.field === 'lifetimeEarnings'
+                            ? 'إجمالي الأرباح'
+                            : adj.field}
+                        </span>
+                        {adj.createdAt && (
+                          <span className="text-[11px] text-slate-500">
+                            {new Date(adj.createdAt).toLocaleString('ar-EG')}
+                          </span>
+                        )}
+                      </div>
+                      <div className="font-bold text-sm text-white truncate">
+                        الحساب: {target ? target.fullName : adj.userId}
+                        {target && <span className="text-slate-400 text-xs font-mono ms-2">(@{target.username})</span>}
+                      </div>
+                      <div className="text-xs text-slate-400 mt-0.5">
+                        عدَّله: {adjuster ? adjuster.fullName : adj.adjustedBy || 'غير معروف'}
+                      </div>
+                      {adj.reason && (
+                        <div className="text-xs text-brand-300 mt-1">السبب: {adj.reason}</div>
+                      )}
+                    </div>
+
+                    <div className="text-end shrink-0">
+                      <div className={`font-black font-mono text-base ${adj.amount >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {adj.amount >= 0 ? '+' : ''}${Number(adj.amount || 0).toFixed(2)}
+                      </div>
+                      <div className="text-[10px] text-slate-400">
+                        الرصيد الجديد: ${Number(adj.newValue || 0).toFixed(2)}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
       )}

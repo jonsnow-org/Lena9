@@ -163,6 +163,9 @@ interface UserProfileViewProps {
     releasableAt: string;
     description?: string;
   }[];
+  /** سجلّ تدقيق كل تعديل رصيد يدوي قام به أي أدمن — يجيب على "من أين جاء
+   *  هذا الرصيد؟" لأي حساب بدل أن يبقى الرقم بلا مصدر ظاهر في الواجهة. */
+  manualBalanceAdjustments?: any[];
   onUpdateUserRole?: (userId: string, newRole: User['role']) => void;
   onToggleUserVerified?: (userId: string) => void;
   onApproveKyc?: (userId: string) => void;
@@ -241,6 +244,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   purchaseRequests = [],
   adEvents = [],
   earningsRecords = [],
+  manualBalanceAdjustments = [],
   onUpdateUserRole,
   onToggleUserVerified,
   onApproveKyc,
@@ -616,11 +620,12 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                 </div>
               )}
 
-              {/* متابعون / يتابع — كانا غائبين تماماً عن صفحة ملف الكاتب
-                  الشخصي رغم توفرهما في صفحة أي كاتب آخر يزوره. عدّادان
-                  حقيقيان من مجموعة follows الفعلية، وليسا زرّي فتح قائمة
-                  كاملة بعد (تلك ميزة أوسع لم تُبنَ لها واجهة مستقلة بعد). */}
-              {currentUser.role === 'writer' && (
+              {/* متابعون / يتابع — كانا يظهران للكاتب فقط رغم أن نظام
+                  المتابعة الموحّد يسمح لأي حساب مسجَّل (بما فيه الأدمن)
+                  بأن يُتابَع أو يتابع غيره. عدّادان حقيقيان من مجموعة
+                  follows الفعلية، وليسا زرّي فتح قائمة كاملة بعد (تلك ميزة
+                  أوسع لم تُبنَ لها واجهة مستقلة بعد). */}
+              {currentUser.id !== 'guest' && (
                 <div className="flex items-center justify-center sm:justify-start gap-4 pt-1">
                   <div className="text-center sm:text-start">
                     <span className="block text-sm font-black text-slate-900 dark:text-white">{realFollowersCount.toLocaleString('ar-EG')}</span>
@@ -1816,6 +1821,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   purchaseRequests={purchaseRequests}
                   adEvents={adEvents}
                   earningsRecords={earningsRecords}
+                  manualBalanceAdjustments={manualBalanceAdjustments}
                   initialSubTab={financeSubTab}
                   onUpdateMoneyRequest={onUpdateMoneyRequest}
                   onUpdatePurchaseRequest={onUpdatePurchaseRequest}

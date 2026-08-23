@@ -138,6 +138,7 @@ import {
   syncArticleRatingSummary,
   setArticleReactionInFirestore,
   subscribeToAllEarningsAdmin,
+  subscribeToManualBalanceAdjustments,
   markEarningReleasedInFirestore,
   updateUserAiQuotaInFirestore,
   adminReleaseEarnings,
@@ -276,6 +277,7 @@ export function App() {
   // سجلات الأرباح الفردية (لكل مقال/حملة)، تحمل موعد استحقاق التحرير بعد
   // 30 يوماً من التجميد — تُقرأ فقط لحساب الأدمن (القواعد تمنع غيره).
   const [earningsRecords, setEarningsRecords] = useState<EarningRecord[]>([]);
+  const [manualBalanceAdjustments, setManualBalanceAdjustments] = useState<any[]>([]);
 
   // هوية "الدخول المجهول" الخاصة بالزائر الحالي (إن وُجدت) — تُستخدم فقط
   // للسماح للزوار بالإعجاب الحقيقي دون تسجيل دخول فعلي. لا علاقة لها
@@ -483,6 +485,7 @@ export function App() {
     let unsubFraud = () => {};
     let unsubEarnings = () => {};
     let unsubAllEarnings = () => {};
+    let unsubManualAdjustments = () => {};
 
     if (currentUserId) {
       unsubFraud = subscribeToFraudFlags((flags) => {
@@ -506,6 +509,10 @@ export function App() {
         setEarningsRecords,
         (e) => console.error('Admin earnings subscription error:', e)
       );
+      unsubManualAdjustments = subscribeToManualBalanceAdjustments(
+        setManualBalanceAdjustments,
+        (e) => console.error('Manual balance adjustments subscription error:', e)
+      );
     }
 
     return () => {
@@ -515,6 +522,7 @@ export function App() {
       unsubFraud();
       unsubEarnings();
       unsubAllEarnings();
+      unsubManualAdjustments();
     };
   }, [currentUserId, currentUser?.role]);
 
@@ -2604,6 +2612,7 @@ export function App() {
             purchaseRequests={purchaseRequests}
             adEvents={adEvents}
             earningsRecords={earningsRecords}
+            manualBalanceAdjustments={manualBalanceAdjustments}
             onProcessAdEvents={handleProcessAdEvents}
             onUpdatePurchaseRequest={handleUpdatePurchaseRequest}
             onUpdateMoneyRequest={handleUpdateMoneyRequest}
@@ -2792,6 +2801,7 @@ export function App() {
             purchaseRequests={purchaseRequests}
             adEvents={adEvents}
             earningsRecords={earningsRecords}
+            manualBalanceAdjustments={manualBalanceAdjustments}
             onProcessAdEvents={handleProcessAdEvents}
             onUpdatePurchaseRequest={handleUpdatePurchaseRequest}
             onUpdateMoneyRequest={handleUpdateMoneyRequest}
@@ -3277,6 +3287,7 @@ export function App() {
           setImageStudioSelectCallback(null);
           setIsImageStudioOpen(true);
         }}
+        unreadMessagesCount={unreadMessagesCount}
         onLogout={handleLogout}
         theme={theme}
         onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
@@ -3332,6 +3343,9 @@ export function App() {
               break;
             case 'saved':
               setActiveTab('profile');
+              break;
+            case 'messages':
+              setActiveTab('messages');
               break;
             default:
               setActiveTab('feed');

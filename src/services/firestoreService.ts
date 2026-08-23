@@ -318,7 +318,7 @@ export function subscribeToUsers(
         list.push({
           id: docSnap.id,
           email: data.email || '',
-          fullName: data.displayName || data.name || data.fullName || 'مستخدم ليتيريوم',
+          fullName: data.fullName || data.displayName || data.name || 'مستخدم ليتيريوم',
           username: data.username || (data.email ? data.email.split('@')[0] : `user_${docSnap.id.slice(0, 5)}`),
           avatarUrl: data.avatarUrl || data.photoURL || data.photoUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300',
           coverUrl: data.coverUrl || 'https://images.unsplash.com/photo-1457369804613-52c61a468e7d?w=1200',
@@ -1706,6 +1706,31 @@ export function subscribeToAllEarningsAdmin(
     },
     (error) => {
       handleFirestoreError(error, OperationType.LIST, 'earnings');
+      if (onError) onError(error);
+    }
+  );
+}
+
+/**
+ * سجلّ تدقيق كل تعديل رصيد يدوي قام به أي أدمن — يجيب فعلياً على سؤال "من
+ * أين جاء هذا الرصيد؟" لأي حساب (بما فيه حساب المالك نفسه) بدل أن يبقى
+ * الرصيد رقماً غامضاً بلا مصدر ظاهر في الواجهة. تُقرأ من مجموعة transactions
+ * نفسها المستخدمة لكل الحركات المالية، مُصفّاة على type == 'manual_adjustment'.
+ */
+export function subscribeToManualBalanceAdjustments(
+  onAdjustments: (records: any[]) => void,
+  onError?: (err: any) => void
+) {
+  return onSnapshot(
+    query(collection(db, 'transactions'), where('type', '==', 'manual_adjustment')),
+    (snapshot) => {
+      const list: any[] = [];
+      snapshot.forEach((d) => list.push({ id: d.id, ...d.data() }));
+      list.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+      onAdjustments(list);
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'transactions');
       if (onError) onError(error);
     }
   );

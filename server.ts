@@ -435,20 +435,25 @@ async function startServer() {
 
   // AI Image Generation Studio Endpoint
   // Deducts cost from user wallet and credits platform owner balance when beyond free quota
-  const freeDailyImageGenerations = 2; // 2 free image generations/day for free users
+  const FREE_LIFETIME_IMAGE_GENERATIONS = 3; // أول 3 صور مجانية مدى الحياة (وليس يومياً) لكل مستخدم غير مشترك
   const IMAGE_GENERATION_COST = 0.05; // $0.05 per paid generated image
-  const imageUserQuotas = new Map<string, { usedToday: number; lastResetTime: number }>();
+  // حصة المشتركين اليومية (خطط الذكاء الاصطناعي المدفوعة) — لا تزال في
+  // الذاكرة لأنها مكافأة إضافية فوق الحصة المجانية الأساسية، وميزة الاشتراك
+  // نفسها ليست موضع الشكوى الحالية.
+  const subscriberDailyImageQuotas = new Map<string, { usedToday: number; lastResetTime: number }>();
 
   app.post('/api/ai/generate-image', async (req, res) => {
+    if (!isAdminConfigured()) {
+      return res.status(503).json({ error: 'not_configured', message: 'الخدمة غير مهيأة على الخادم حالياً.' });
+    }
     try {
-      const { prompt, style, aspectRatio = '16:9', userId, userEmail } = req.body;
-
-      if (!userId || userId === 'guest') {
-        return res.status(401).json({
-          error: 'auth_required',
-          message: 'يتطلب استخدام استوديو توليد الصور تسجيل الدخول أولاً.'
-        });
-      }
+      // ⚠️ كان هذا المسار يثق بـ userId/userEmail القادمين مباشرة من جسم
+      // الطلب دون أي تحقق — أي طرف يستطيع انتحال أي مستخدم (بما فيه المالك
+      // نفسه عبر إرسال بريده الإلكتروني) للحصول على توليد مجاني غير محدود،
+      // أو التسبب بخصم من محفظة مستخدم آخر. الآن يُشتق uid/email من توكن
+      // Firebase الحقيقي المُرسَل فعلياً من العميل (imageApi.ts يرسله أصلاً).
+      const { uid, email } = await verifyRequestAuth(req.headers.authorization);
+      const { prompt, style, aspectRatio = '16:9' } = req.body;
 
       if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
         return res.status(400).json({
@@ -457,21 +462,17 @@ async function startServer() {
         });
       }
 
-      const normalizedEmail = (userEmail || '').toLowerCase().trim();
+      const normalizedEmail = (email || '').toLowerCase().trim();
       const isOwner = normalizedEmail === 'brnardtsho@gmail.com';
 
       // 1. Load server-trusted user data (never trust subscriber/plan status from the client)
-      let userDocRef: FirebaseFirestore.DocumentReference | null = null;
-      let userData: FirebaseFirestore.DocumentData = {};
-      if (isAdminConfigured()) {
-        const db = getAdminDb();
-        userDocRef = db.collection('users').doc(userId);
-        const userSnap = await userDocRef.get();
-        if (!userSnap.exists) {
-          return res.status(404).json({ error: 'user_not_found', message: 'حساب المستخدم غير موجود.' });
-        }
-        userData = userSnap.data() || {};
+      const db = getAdminDb();
+      const userDocRef = db.collection('users').doc(uid);
+      const userSnap = await userDocRef.get();
+      if (!userSnap.exists) {
+        return res.status(404).json({ error: 'user_not_found', message: 'حساب المستخدم غير موجود.' });
       }
+      const userData = userSnap.data() || {};
 
       const serverAiQuota = userData.aiQuota || {};
       const planNotExpired =
@@ -480,29 +481,39 @@ async function startServer() {
       const plan = isSubscriber ? serverAiQuota.plan : 'none';
 
       // 2. Quota & Financial evaluation
-      const now = Date.now();
-      let imgQuota = imageUserQuotas.get(userId);
-      if (!imgQuota || now - imgQuota.lastResetTime >= 24 * 60 * 60 * 1000) {
-        imgQuota = { usedToday: 0, lastResetTime: now };
-        imageUserQuotas.set(userId, imgQuota);
-      }
-
-      const freeLimit = isSubscriber ? (plan === 'annual' ? 9999 : 10) : freeDailyImageGenerations;
+      // المستخدم غير المشترك: 3 صور مجانية مدى الحياة (محسوبة من مستند
+      // Firestore الدائم، وليس من ذاكرة السيرفر المؤقتة التي كانت تُصفَّر
+      // مع كل إعادة تشغيل للخادم فتمنح صوراً مجانية غير محدودة فعلياً).
+      const freeUsedTotal = Number(userData.freeImagesUsedTotal ?? 0);
       let shouldCharge = false;
+      let willConsumeFreeLifetime = false;
+      let willConsumeSubscriberDaily = false;
 
       if (!isOwner) {
-        if (imgQuota.usedToday < freeLimit) {
-          // Consume free quota
-          imgQuota.usedToday += 1;
-          shouldCharge = false;
+        if (isSubscriber) {
+          const now = Date.now();
+          let subQuota = subscriberDailyImageQuotas.get(uid);
+          if (!subQuota || now - subQuota.lastResetTime >= 24 * 60 * 60 * 1000) {
+            subQuota = { usedToday: 0, lastResetTime: now };
+            subscriberDailyImageQuotas.set(uid, subQuota);
+          }
+          const subscriberDailyLimit = plan === 'annual' ? 9999 : 10;
+          if (subQuota.usedToday < subscriberDailyLimit) {
+            willConsumeSubscriberDaily = true;
+          } else if (freeUsedTotal < FREE_LIFETIME_IMAGE_GENERATIONS) {
+            willConsumeFreeLifetime = true;
+          } else {
+            shouldCharge = true;
+          }
+        } else if (freeUsedTotal < FREE_LIFETIME_IMAGE_GENERATIONS) {
+          willConsumeFreeLifetime = true;
         } else {
-          // Requires payment from wallet ($0.05)
           shouldCharge = true;
         }
       }
 
       // Check balance if charge is required
-      if (shouldCharge && userDocRef) {
+      if (shouldCharge) {
         const currentBalance = Number(userData.availableBalance ?? userData.walletBalance ?? 0);
         if (currentBalance < IMAGE_GENERATION_COST) {
           return res.status(402).json({
@@ -583,8 +594,16 @@ async function startServer() {
         }
       }
 
-      // Smart Curated Fallback if Gemini key is absent or quota exceeded
-      if (!generatedImageUrl) {
+      // ⚠️ كانت الصورة الاحتياطية (عند فشل Gemini أو غياب المفتاح) تُستهلَك
+      // من حصة المستخدم المجانية أو تُخصَم من محفظته بنفس سعر الصورة
+      // الحقيقية رغم أنها مجرد إحدى 8 صور مخزون ثابتة تتكرر لآلاف الأوصاف
+      // المختلفة دون أي علاقة بالطلب — وهذا بالضبط ما يجعل "توليد الصور
+      // رديء" وغير عادل مالياً. الآن: لا خصم مالي ولا استهلاك حصة إطلاقاً
+      // إن لم يكن الناتج صورة ذكاء اصطناعي حقيقية من Gemini، ويُصرَّح بذلك
+      // صراحة للعميل عبر isAiGenerated بدل التظاهر بأنها ناتج ذكاء اصطناعي.
+      const isAiGenerated = generatedImageUrl !== null;
+
+      if (!isAiGenerated) {
         const curatedLibrary = [
           'https://images.unsplash.com/photo-1457369804613-52c61a468e7d?w=1200&auto=format&fit=crop&q=80',
           'https://images.unsplash.com/photo-1476275466078-4007374efbbe?w=1200&auto=format&fit=crop&q=80',
@@ -597,18 +616,33 @@ async function startServer() {
         ];
         const hash = Array.from(prompt).reduce((acc, char) => acc + char.charCodeAt(0), 0);
         generatedImageUrl = curatedLibrary[hash % curatedLibrary.length];
+
+        return res.json({
+          success: true,
+          imageUrl: generatedImageUrl,
+          isAiGenerated: false,
+          charged: false,
+          cost: 0,
+          remainingFreeUses: Math.max(0, FREE_LIFETIME_IMAGE_GENERATIONS - freeUsedTotal),
+          newBalance: null,
+          message: 'تعذّر الاتصال بمولّد الذكاء الاصطناعي حالياً، فتم عرض صورة بديلة مؤقتة من المكتبة — لم يُخصَم أي مبلغ ولم تُستهلَك حصتك المجانية.'
+        });
       }
 
-      // 3. Finalize Financial Transaction only on Successful Generation
+      // 3. Finalize Quota Consumption & Financial Transaction — فقط عند نجاح
+      // توليد صورة ذكاء اصطناعي حقيقية.
       let finalUserBalance: number | null = null;
 
-      if (shouldCharge && isAdminConfigured()) {
+      if (willConsumeSubscriberDaily) {
+        const subQuota = subscriberDailyImageQuotas.get(uid);
+        if (subQuota) subQuota.usedToday += 1;
+      } else if (willConsumeFreeLifetime) {
+        await userDocRef.update({ freeImagesUsedTotal: FieldValue.increment(1) });
+      } else if (shouldCharge) {
         try {
-          const db = getAdminDb();
           const batch = db.batch();
 
           // Deduct from User
-          const userDocRef = db.collection('users').doc(userId);
           batch.update(userDocRef, {
             walletBalance: FieldValue.increment(-IMAGE_GENERATION_COST),
             availableBalance: FieldValue.increment(-IMAGE_GENERATION_COST)
@@ -631,7 +665,7 @@ async function startServer() {
               userId: ownerDocRef.id,
               amount: IMAGE_GENERATION_COST,
               type: 'bonus',
-              source: `توليد صورة ذكاء اصطناعي من المستخدم (${userEmail || userId})`,
+              source: `توليد صورة ذكاء اصطناعي من المستخدم (${normalizedEmail || uid})`,
               createdAt: new Date().toISOString(),
               status: 'credited'
             });
@@ -646,16 +680,25 @@ async function startServer() {
         }
       }
 
+      const newFreeUsedTotal = willConsumeFreeLifetime ? freeUsedTotal + 1 : freeUsedTotal;
+
       res.json({
         success: true,
         imageUrl: generatedImageUrl,
+        isAiGenerated: true,
         charged: shouldCharge,
         cost: shouldCharge ? IMAGE_GENERATION_COST : 0,
-        remainingFreeUses: Math.max(0, freeLimit - imgQuota.usedToday),
+        remainingFreeUses: Math.max(0, FREE_LIFETIME_IMAGE_GENERATIONS - newFreeUsedTotal),
         newBalance: finalUserBalance
       });
-    } catch (error: any) {
-      console.error('Generate image error:', error);
+    } catch (err: any) {
+      if (err?.message === 'missing_auth_token') {
+        return res.status(401).json({
+          error: 'auth_required',
+          message: 'يتطلب استخدام استوديو توليد الصور تسجيل الدخول أولاً.'
+        });
+      }
+      console.error('Generate image error:', err?.message || err);
       res.status(500).json({
         error: 'generation_failed',
         message: 'تعذر توليد الصورة بالذكاء الاصطناعي حالياً. يرجى المحاولة مرة أخرى.'
@@ -1048,6 +1091,70 @@ async function startServer() {
       }
       console.error('Analytics summary error:', err?.message || err);
       res.status(500).json({ error: 'summary_failed', message: 'تعذر تحميل الإحصائيات. حاول مجدداً.' });
+    }
+  });
+
+  // تصفير الإحصائيات غير المالية (الزيارات وسجلات المشاهدات، وطلبات
+  // الإيداع/السحب/شراء المقالات المرفوضة فقط) — لا يمسّ إطلاقاً أي رقم
+  // يمثّل عملية مالية حقيقية تمّت فعلاً (المقبولة/المدفوعة، أو أي رصيد أو
+  // سجل أرباح). يحذف المستندات على دفعات لتفادي حد الـ 500 عملية لكل batch.
+  async function deleteAllDocsInBatches(
+    db: FirebaseFirestore.Firestore,
+    query: FirebaseFirestore.Query
+  ): Promise<number> {
+    let totalDeleted = 0;
+    while (true) {
+      const snap = await query.limit(400).get();
+      if (snap.empty) break;
+      const batch = db.batch();
+      snap.docs.forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+      totalDeleted += snap.size;
+      if (snap.size < 400) break;
+    }
+    return totalDeleted;
+  }
+
+  app.post('/api/analytics/reset', async (req, res) => {
+    if (!isAdminConfigured()) {
+      return res.status(503).json({ error: 'not_configured', message: 'الخدمة غير مهيأة على الخادم حالياً.' });
+    }
+    try {
+      const { uid } = await verifyRequestAuth(req.headers.authorization);
+      const db = getAdminDb();
+
+      const callerSnap = await db.collection('users').doc(uid).get();
+      const callerData = callerSnap.exists ? callerSnap.data()! : {};
+      const isAdminCaller =
+        callerData.role === 'admin' ||
+        String(callerData.email || '').toLowerCase() === 'brnardtsho@gmail.com';
+      if (!isAdminCaller) {
+        return res.status(403).json({ error: 'forbidden', message: 'هذا الإجراء مخصص لإدارة المنصة فقط.' });
+      }
+
+      const [pageViewsDeleted, sessionsDeleted, rejectedDepositsDeleted, rejectedPayoutsDeleted, rejectedPurchasesDeleted] =
+        await Promise.all([
+          deleteAllDocsInBatches(db, db.collection('pageViews')),
+          deleteAllDocsInBatches(db, db.collection('visitorSessions')),
+          deleteAllDocsInBatches(db, db.collection('depositRequests').where('status', '==', 'rejected')),
+          deleteAllDocsInBatches(db, db.collection('payoutRequests').where('status', '==', 'rejected')),
+          deleteAllDocsInBatches(db, db.collection('purchaseRequests').where('status', '==', 'rejected'))
+        ]);
+
+      res.json({
+        success: true,
+        pageViewsDeleted,
+        sessionsDeleted,
+        rejectedDepositsDeleted,
+        rejectedPayoutsDeleted,
+        rejectedPurchasesDeleted
+      });
+    } catch (err: any) {
+      if (err?.message === 'missing_auth_token') {
+        return res.status(401).json({ error: 'auth_required', message: 'يتطلب هذا الإجراء تسجيل الدخول أولاً.' });
+      }
+      console.error('Analytics reset error:', err?.message || err);
+      res.status(500).json({ error: 'reset_failed', message: 'تعذر تصفير الإحصائيات. حاول مجدداً.' });
     }
   });
 

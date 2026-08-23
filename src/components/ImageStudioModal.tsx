@@ -119,7 +119,13 @@ export const ImageStudioModal: React.FC<ImageStudioModalProps> = ({
           setFreeQuotaRemaining(result.remainingFreeUses);
         }
 
-        if (result.charged && result.cost) {
+        if (result.isAiGenerated === false) {
+          // فشل الاتصال الحقيقي بمولّد الذكاء الاصطناعي على الخادم — صورة
+          // بديلة من مكتبة ثابتة، لم يُخصَم أي مبلغ ولم تُستهلَك أي حصة.
+          setErrorMessage(
+            result.message || 'تعذّر الاتصال بمولّد الذكاء الاصطناعي، فتم عرض صورة بديلة مؤقتة. لم يُخصَم أي مبلغ.'
+          );
+        } else if (result.charged && result.cost) {
           setSuccessInfo(`تم توليد الصورة وخصم $${result.cost.toFixed(2)} بنجاح وتم إيداعها في رصيد المنصة.`);
           if (typeof result.newBalance === 'number' && onBalanceUpdated) {
             onBalanceUpdated(result.newBalance);
@@ -199,7 +205,7 @@ export const ImageStudioModal: React.FC<ImageStudioModalProps> = ({
                   <span className="font-mono font-bold text-emerald-400">${walletBalance.toFixed(2)}</span>
                   <span className="text-slate-500">|</span>
                   <span className="text-cyan-300">
-                    {freeQuotaRemaining !== null ? `${freeQuotaRemaining} مجانية متبقية` : '2 مجانية يومياً'}
+                    {freeQuotaRemaining !== null ? `${freeQuotaRemaining} مجانية متبقية` : '3 صور مجانية'}
                   </span>
                 </div>
               )}
@@ -381,7 +387,7 @@ export const ImageStudioModal: React.FC<ImageStudioModalProps> = ({
               </button>
 
               <div className="text-[10px] text-slate-500 text-center">
-                * الاستخدام بعد نفاد الحصة اليومية يخصم 0.05$ فقط لكل صورة تودع مباشرة لصالح إدارة المنصة.
+                * أول 3 صور مجانية لحسابك، وبعدها يُخصَم 0.05$ فقط لكل صورة من رصيد محفظتك.
               </div>
             </div>
 
