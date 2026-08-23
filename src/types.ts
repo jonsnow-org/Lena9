@@ -298,6 +298,9 @@ export interface AdCampaign {
   conversionsCount: number;
   totalSpent: number;
   totalBudget: number;
+  /** الميزانية التي طلبها المعلن عند الإنشاء — تصبح totalBudget فور
+   *  التمويل الفوري عبر /api/campaigns/fund (تبقى 0 حتى يتم التمويل). */
+  requestedBudget?: number;
   cpcRate?: number;
   cpmRate?: number;
   fixedRate?: number;

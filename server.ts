@@ -787,6 +787,98 @@ async function startServer() {
     }
   });
 
+  // تمويل/تفعيل حملة إعلانية — فوري بدل انتظار اعتماد الأدمن اليدوي الذي
+  // لم يعد له مسار فعلي أصلاً (الحملة كانت تُنشأ بحالة 'draft' بينما لوحة
+  // التحكم تعرض فقط حملات بحالة 'pending' لاعتمادها — لا تطابق أبداً، فتبقى
+  // كل حملة عالقة للأبد بميزانية صفر). يخصم المعلن نفسه (وليس الأدمن)
+  // ميزانيته المطلوبة فوراً عند التفعيل، بنفس نمط فتح المقالات المقفلة.
+  app.post('/api/campaigns/fund', async (req, res) => {
+    if (!isAdminConfigured()) {
+      return res.status(503).json({ error: 'not_configured', message: 'الخدمة غير مهيأة على الخادم حالياً.' });
+    }
+    try {
+      const { uid } = await verifyRequestAuth(req.headers.authorization);
+      const { campaignId } = req.body;
+      if (!campaignId || typeof campaignId !== 'string') {
+        return res.status(400).json({ error: 'invalid_campaign', message: 'معرّف الحملة غير صالح.' });
+      }
+
+      const db = getAdminDb();
+      const campaignRef = db.collection('campaigns').doc(campaignId);
+      const campaignSnap = await campaignRef.get();
+      if (!campaignSnap.exists) {
+        return res.status(404).json({ error: 'campaign_not_found', message: 'الحملة غير موجودة.' });
+      }
+      const campaign = campaignSnap.data()!;
+
+      if (campaign.advertiserId !== uid) {
+        return res.status(403).json({ error: 'forbidden', message: 'لا يمكنك تمويل حملة إعلانية لا تملكها.' });
+      }
+      if (campaign.status !== 'pending' || Number(campaign.totalBudget) > 0) {
+        return res.json({ success: true, alreadyFunded: true, budget: 0, newBalance: null });
+      }
+
+      const requestedBudget = Number(campaign.requestedBudget) || 0;
+      if (requestedBudget <= 0) {
+        return res.status(400).json({ error: 'invalid_budget', message: 'ميزانية الحملة غير صالحة.' });
+      }
+
+      const advertiserRef = db.collection('users').doc(uid);
+
+      try {
+        await db.runTransaction(async (tx) => {
+          const [advertiserSnap, campaignRaceCheck] = await Promise.all([
+            tx.get(advertiserRef),
+            tx.get(campaignRef)
+          ]);
+          if (!advertiserSnap.exists) throw new Error('advertiser_not_found');
+          const raceData = campaignRaceCheck.data();
+          if (raceData?.status !== 'pending' || Number(raceData?.totalBudget) > 0) return; // مُمَوَّلة للتو ضمن طلب متزامن آخر
+
+          const advertiserData = advertiserSnap.data()!;
+          const currentBalance = Number(advertiserData.availableBalance ?? advertiserData.walletBalance ?? 0);
+          if (currentBalance < requestedBudget) {
+            throw new Error('insufficient_balance');
+          }
+
+          const durationHours = Number(campaign.durationHours) || 168;
+          const startDate = new Date();
+          const endDate = new Date(startDate.getTime() + durationHours * 60 * 60 * 1000);
+
+          tx.update(advertiserRef, {
+            walletBalance: FieldValue.increment(-requestedBudget),
+            availableBalance: FieldValue.increment(-requestedBudget)
+          });
+          tx.update(campaignRef, {
+            status: 'active',
+            totalBudget: requestedBudget,
+            startDate: startDate.toISOString().split('T')[0],
+            endDate: endDate.toISOString().split('T')[0]
+          });
+        });
+      } catch (txErr: any) {
+        if (txErr?.message === 'insufficient_balance') {
+          return res.status(402).json({
+            error: 'insufficient_balance',
+            message: `رصيدك الحالي غير كافٍ لتمويل هذه الحملة. الميزانية المطلوبة $${requestedBudget.toFixed(2)}.`
+          });
+        }
+        throw txErr;
+      }
+
+      const updatedSnap = await advertiserRef.get();
+      const newBalance = updatedSnap.data()?.availableBalance ?? null;
+
+      res.json({ success: true, alreadyFunded: false, budget: requestedBudget, newBalance });
+    } catch (err: any) {
+      if (err?.message === 'missing_auth_token') {
+        return res.status(401).json({ error: 'auth_required', message: 'يتطلب إطلاق حملة إعلانية تسجيل الدخول أولاً.' });
+      }
+      console.error('Campaign funding error:', err?.message || err);
+      res.status(500).json({ error: 'funding_failed', message: 'تعذر تمويل الحملة. حاول مجدداً.' });
+    }
+  });
+
   // AI Writing Suite endpoint for writers
   app.post('/api/ai/writing-assistant', async (req, res) => {
     try {

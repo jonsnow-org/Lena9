@@ -126,3 +126,26 @@ export async function unlockArticle(articleId: string): Promise<UnlockArticleRes
   if (!res.ok) throw new Error(data?.message || 'تعذر إتمام عملية الشراء.');
   return data;
 }
+
+export interface FundCampaignResult {
+  success: boolean;
+  alreadyFunded: boolean;
+  budget: number;
+  newBalance: number | null;
+}
+
+/**
+ * تمويل/تفعيل حملة إعلانية فور إنشائها — يخصم المعلن نفسه ميزانيتها
+ * المطلوبة فوراً (بدل انتظار اعتماد يدوي من الأدمن لم يعد له مسار فعلي).
+ */
+export async function fundCampaign(campaignId: string): Promise<FundCampaignResult> {
+  const headers = await authHeaders();
+  const res = await fetch('/api/campaigns/fund', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ campaignId })
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.message || 'تعذر تمويل الحملة.');
+  return data;
+}

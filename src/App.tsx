@@ -144,7 +144,7 @@ import {
   adminReleaseEarnings,
   EarningRecord
 } from './services/firestoreService';
-import { unlockArticle as requestArticleUnlock } from './services/paymentsApi';
+import { unlockArticle as requestArticleUnlock, fundCampaign } from './services/paymentsApi';
 import {
   auth,
   fetchUserFromFirestore,
@@ -2133,11 +2133,14 @@ export function App() {
 
   // Advertiser Create Campaign
   /**
-   * إنشاء حملة إعلانية.
+   * إنشاء حملة إعلانية — فورية التمويل.
    *
-   * ⚠️ تغيير جوهري: كانت الحملة تُنشأ بحالة active وتُخصم تكلفتها من
-   * الرصيد في المتصفح مباشرة. قواعد أمان Firestore ترفض ذلك: الحملة يجب
-   * أن تبدأ بميزانية صفر وحالة draft، والاعتماد والخصم من الأدمن حصراً.
+   * كانت تُنشأ بحالة 'draft' بلا أي مسار فعلي لاعتمادها لاحقاً (لوحة
+   * التحكم لا تعرض للاعتماد إلا حملات بحالة 'pending'، فتبقى كل حملة
+   * عالقة للأبد بميزانية صفر — خلل حقيقي مكتشف). الآن: تُنشأ بحالة
+   * 'pending' (تطابق النوع المُعرَّف فعلياً)، ثم تُموَّل فوراً عبر
+   * /api/campaigns/fund الذي يخصم المعلن نفسه ويُفعِّلها ضمن معاملة واحدة
+   * ذرية — بنفس نمط فتح المقالات المقفلة، بدل انتظار اعتماد يدوي.
    */
   const handleCreateCampaign = async (campData: Partial<AdCampaign>) => {
     if (!requireAuth()) return;
@@ -2169,7 +2172,7 @@ export function App() {
       placementType: campData.placementType || 'platform',
       adText: campData.adText || '',
       // كل ما يلي إلزامي بصفر حسب قواعد الأمان
-      status: 'draft',
+      status: 'pending',
       totalBudget: 0,
       totalSpent: 0,
       impressionsCount: 0,
@@ -2201,13 +2204,16 @@ export function App() {
     });
 
     try {
-      await saveCampaignToFirestore(newCamp);
-      alert(
-        'تم حفظ الحملة كمسودة. ستُراجع وتُفعّل من إدارة المنصة بعد التحقق من رصيدك خلال 24 إلى 48 ساعة.'
-      );
-    } catch (err) {
-      console.error('تعذر حفظ الحملة:', err);
-      alert('تعذر حفظ الحملة. تحقق من اتصالك ثم حاول مجدداً.');
+      const campaignId = await saveCampaignToFirestore(newCamp);
+      const result = await fundCampaign(campaignId);
+      if (result.alreadyFunded) {
+        alert('تم إنشاء الحملة.');
+      } else {
+        alert(`تم إطلاق حملتك الإعلانية فوراً! خُصم $${result.budget.toFixed(2)} من رصيدك.`);
+      }
+    } catch (err: any) {
+      console.error('تعذر حفظ/تمويل الحملة:', err);
+      alert(err?.message || 'تعذر حفظ الحملة. تحقق من اتصالك ثم حاول مجدداً.');
     }
   };
 

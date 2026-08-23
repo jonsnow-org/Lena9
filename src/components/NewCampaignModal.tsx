@@ -151,10 +151,10 @@ export const NewCampaignModal: React.FC<NewCampaignModalProps> = ({
         durationHours: pricingModel === 'fixed' ? durationHours : undefined,
         cpcRate: pricingModel === 'cpc' ? cpcRate : undefined,
         cpmRate: pricingModel === 'cpm' ? cpmRate : undefined,
-        // ⚠️ قواعد أمان Firestore تفرض أن تبدأ كل الحقول المالية والعدادات
-        // بصفر، وأن تكون الحالة draft. المعلن لا يستطيع تفعيل حملته بنفسه
-        // ولا تحديد ميزانيتها — الاعتماد وتحديد الميزانية من الأدمن بعد
-        // التحقق من رصيد المحفظة.
+        // القيم أدناه غير مؤثرة فعلياً — handleCreateCampaign في App.tsx
+        // يبني الحملة من الصفر بحالة 'pending' وميزانية صفر دائماً، ثم
+        // يموّلها فوراً من محفظة المعلن نفسه عبر /api/campaigns/fund بعد
+        // الحفظ مباشرة (بلا اعتماد إداري يدوي).
         requestedBudget: estimatedCost,
         totalBudget: 0,
         totalSpent: 0,
@@ -164,7 +164,7 @@ export const NewCampaignModal: React.FC<NewCampaignModalProps> = ({
         validClicksCount: 0,
         conversionsCount: 0,
         blockedFraudClicks: 0,
-        status: 'draft',
+        status: 'pending',
         targetCategories: targetCategory === 'all' ? ['all'] : [targetCategory],
         fraudBlockedCount: 0
       });

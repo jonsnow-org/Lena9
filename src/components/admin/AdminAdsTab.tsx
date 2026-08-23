@@ -53,7 +53,7 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
     if (campaignFilter !== 'all' && camp.status !== campaignFilter) return false;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      const matchTitle = camp.title?.toLowerCase().includes(q);
+      const matchTitle = camp.campaignName?.toLowerCase().includes(q);
       const matchDesc = camp.description?.toLowerCase().includes(q);
       if (!matchTitle && !matchDesc) return false;
     }
@@ -174,7 +174,7 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {filteredCampaigns.map((camp) => {
                 const adv = users.find((u) => u.id === camp.advertiserId);
-                const isPlatformAd = camp.isPlatformAd || !camp.advertiserId;
+                const isPlatformAd = !camp.advertiserId;
 
                 return (
                   <div
@@ -199,7 +199,7 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
                               {camp.status === 'active'
                                 ? 'نشطة ✓'
                                 : camp.status === 'pending'
-                                ? 'بانتظار الاعتماد ⏳'
+                                ? 'بانتظار تمويل المعلن ⏳'
                                 : camp.status === 'paused'
                                 ? 'متوقفة مؤقتاً'
                                 : 'مرفوضة ✗'}
@@ -214,7 +214,7 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
                               </span>
                             )}
                           </div>
-                          <h4 className="font-bold text-sm text-white mt-1 line-clamp-1">{camp.title}</h4>
+                          <h4 className="font-bold text-sm text-white mt-1 line-clamp-1">{camp.campaignName}</h4>
                         </div>
                       </div>
 
@@ -222,7 +222,7 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
                         <div className="rounded-xl overflow-hidden h-28 bg-slate-950 border border-slate-800">
                           <img
                             src={camp.imageUrl}
-                            alt={camp.title}
+                            alt={camp.campaignName}
                             referrerPolicy="no-referrer"
                             className="w-full h-full object-cover"
                           />
@@ -236,15 +236,17 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
                       <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800/80 grid grid-cols-3 gap-2 text-center text-xs font-mono">
                         <div>
                           <div className="text-[10px] text-slate-500">الميزانية</div>
-                          <div className="font-bold text-white">${camp.budget}</div>
+                          <div className="font-bold text-white">
+                            ${camp.status === 'pending' ? camp.requestedBudget || 0 : camp.totalBudget}
+                          </div>
                         </div>
                         <div>
                           <div className="text-[10px] text-slate-500">الظهور</div>
-                          <div className="font-bold text-blue-400">{camp.impressions || 0}</div>
+                          <div className="font-bold text-blue-400">{camp.impressionsCount || 0}</div>
                         </div>
                         <div>
                           <div className="text-[10px] text-slate-500">النقرات</div>
-                          <div className="font-bold text-emerald-400">{camp.clicks || 0}</div>
+                          <div className="font-bold text-emerald-400">{camp.clicksCount || 0}</div>
                         </div>
                       </div>
                     </div>
@@ -252,13 +254,18 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
                     {/* Actions */}
                     {onUpdateCampaignStatus && (
                       <div className="flex items-center gap-2 pt-2 border-t border-slate-800/60">
-                        {camp.status !== 'active' && (
+                        {camp.status === 'pending' && (
+                          <p className="flex-1 text-[11px] text-amber-400 leading-relaxed">
+                            الحملة بانتظار أن يموّلها المعلن نفسه من محفظته — لا يمكن تفعيلها إدارياً بلا رصيد حقيقي مخصوم.
+                          </p>
+                        )}
+                        {camp.status === 'paused' && (
                           <button
                             onClick={() => onUpdateCampaignStatus(camp.id, 'active')}
                             className="flex-1 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-colors flex items-center justify-center gap-1"
                           >
                             <Play className="w-3 h-3" />
-                            <span>تفعيل / موافقة</span>
+                            <span>استئناف</span>
                           </button>
                         )}
                         {camp.status === 'active' && (
@@ -328,7 +335,7 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
                         {promo.articleTitle || promo.articleId}
                       </h5>
                       <div className="text-xs text-slate-400 mt-0.5">
-                        الكاتب: {writer ? writer.fullName : promo.writerId} • الميزانية: ${promo.budget} • الهدف: {promo.goal}
+                        الكاتب: {writer ? writer.fullName : promo.writerId} • التكلفة: ${promo.cost} • {promo.pricingModel === 'cpc' ? 'الدفع لكل نقرة' : 'سعر ثابت'}
                       </div>
                     </div>
 

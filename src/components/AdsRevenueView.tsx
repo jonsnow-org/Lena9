@@ -53,18 +53,17 @@ export const AdsRevenueView: React.FC<AdsRevenueViewProps> = ({
     if (!newTitle.trim()) return;
 
     onCreateCampaign({
-      title: newTitle,
-      targetUrl: newUrl || 'https://literium.app',
-      budget: parseFloat(newBudget) || 50,
+      campaignName: newTitle,
+      destinationUrl: newUrl || 'https://literium.app',
+      requestedBudget: parseFloat(newBudget) || 50,
       cpcRate: 0.25,
-      placement: 'in_feed',
-      status: 'active'
-    });
+      placementType: 'platform',
+      pricingModel: 'cpc'
+    } as any);
 
     setNewTitle('');
     setNewUrl('');
     setIsCreatingModalOpen(false);
-    alert('تم إطلاق حملتك الإعلانية بنجاح!');
   };
 
   return (
@@ -259,13 +258,17 @@ export const AdsRevenueView: React.FC<AdsRevenueViewProps> = ({
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <span className="inline-block px-2 py-0.5 rounded-md bg-teal-50 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 text-[10px] font-bold mb-1">
-                    {camp.placement === 'in_feed' ? 'إعلان داخل الخلاصة' : 'بانر في أسفل المقال'}
+                    {camp.placementType === 'writer'
+                      ? 'إعلان في صفحة كاتب'
+                      : camp.placementType === 'category_sponsor'
+                      ? 'رعاية قسم'
+                      : 'إعلان عام في المنصة'}
                   </span>
                   <h4 className="font-bold text-sm text-slate-900 dark:text-white">
-                    {camp.title}
+                    {camp.campaignName}
                   </h4>
                   <p className="text-xs text-slate-400 truncate max-w-xs mt-0.5">
-                    {camp.targetUrl}
+                    {camp.destinationUrl}
                   </p>
                 </div>
 
@@ -273,10 +276,18 @@ export const AdsRevenueView: React.FC<AdsRevenueViewProps> = ({
                   className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${
                     camp.status === 'active'
                       ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600'
+                      : camp.status === 'pending'
+                      ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-600'
                       : 'bg-slate-100 text-slate-500'
                   }`}
                 >
-                  {camp.status === 'active' ? 'نشط' : 'متوقف'}
+                  {camp.status === 'active'
+                    ? 'نشط'
+                    : camp.status === 'pending'
+                    ? 'بانتظار التمويل'
+                    : camp.status === 'rejected'
+                    ? 'مرفوض'
+                    : 'متوقف'}
                 </span>
               </div>
 
@@ -296,7 +307,7 @@ export const AdsRevenueView: React.FC<AdsRevenueViewProps> = ({
                 <div>
                   <span className="text-slate-400 text-[10px] block">الميزانية المصروفة</span>
                   <span className="font-bold text-teal-600 dark:text-teal-400">
-                    {camp.totalSpent.toFixed(2)}$ / {camp.budget}$
+                    {camp.totalSpent.toFixed(2)}$ / {camp.totalBudget}$
                   </span>
                 </div>
               </div>

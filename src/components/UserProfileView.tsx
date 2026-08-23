@@ -155,9 +155,10 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   const safeArticles = Array.isArray(articles) ? articles : [];
   const safeBookmarkedIds = Array.isArray(bookmarkedArticleIds) ? bookmarkedArticleIds : [];
   const safeCampaigns = Array.isArray(campaigns) ? campaigns : [];
-  // حملات بحالة "مسودة" بانتظار اعتماد الأدمن — نفس التعريف المستخدم في
-  // صندوق "حملات بانتظار الاعتماد" داخل AdminDashboard.
-  const pendingCampaignsCount = safeCampaigns.filter((c: any) => c.status === 'draft').length;
+  // حملات بحالة "pending" — تُموَّل تلقائياً فور إنشائها الآن، فهذا العدد
+  // يعكس فعلياً حملات فشل تمويلها (رصيد المعلن غير كافٍ وقت الإنشاء) لا
+  // حملات بانتظار اعتماد يدوي.
+  const pendingCampaignsCount = safeCampaigns.filter((c) => c.status === 'pending').length;
 
   // Common Active Tab state
   const [readerTab, setReaderTab] = useState<'bookmarks' | 'history' | 'campaigns' | 'following' | 'quota_wallet' | 'settings'>('bookmarks');
