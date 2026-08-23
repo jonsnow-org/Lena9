@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import multer from 'multer';
 import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
@@ -1625,8 +1626,67 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+
+    const escapeHtmlAttr = (s: string) =>
+      String(s || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+
+    // إدراج وسوم Open Graph/Twitter Card الخاصة بالمقال قبل إرسال index.html
+    // — بدون هذا، أي رابط مقال يُشارَك على X/فيسبوك/واتساب يظهر كرابط
+    // عادي بلا عنوان أو صورة أو وصف، لأن الروبوتات التي تبني معاينة
+    // المشاركة لا تُنفِّذ جافاسكربت React أصلاً، فترى فقط وسوم <head>
+    // الثابتة العامة لكل الموقع الموجودة في index.html الخام.
+    app.get('*', async (req, res) => {
+      const indexPath = path.join(distPath, 'index.html');
+      try {
+        const articleId = typeof req.query.article === 'string' ? req.query.article : null;
+        if (articleId && isAdminConfigured()) {
+          const db = getAdminDb();
+          const snap = await db.collection('articles').doc(articleId).get();
+          if (snap.exists) {
+            const art = snap.data() || {};
+            const title = escapeHtmlAttr(art.title || 'LITERIUM');
+            const rawDescription = String(art.description || '').replace(/\s+/g, ' ').trim();
+            const description = escapeHtmlAttr(
+              rawDescription.length > 200 ? rawDescription.slice(0, 197) + '...' : rawDescription
+            );
+            const image = typeof art.featuredImage === 'string' && art.featuredImage.startsWith('http')
+              ? art.featuredImage
+              : null;
+            const pageUrl = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
+
+            let html = fs.readFileSync(indexPath, 'utf-8');
+            html = html.replace(/<title>[\s\S]*?<\/title>/, `<title>${title} | LITERIUM</title>`);
+            html = html.replace(/<meta name="description"[^>]*>/, `<meta name="description" content="${description}" />`);
+
+            const ogTags = `
+    <meta property="og:type" content="article" />
+    <meta property="og:site_name" content="LITERIUM" />
+    <meta property="og:title" content="${title}" />
+    <meta property="og:description" content="${description}" />
+    <meta property="og:url" content="${escapeHtmlAttr(pageUrl)}" />
+    ${image ? `<meta property="og:image" content="${escapeHtmlAttr(image)}" />` : ''}
+    <meta name="twitter:card" content="${image ? 'summary_large_image' : 'summary'}" />
+    <meta name="twitter:title" content="${title}" />
+    <meta name="twitter:description" content="${description}" />
+    ${image ? `<meta name="twitter:image" content="${escapeHtmlAttr(image)}" />` : ''}
+  </head>`;
+            html = html.replace('</head>', ogTags);
+
+            res.set('Content-Type', 'text/html; charset=utf-8');
+            return res.send(html);
+          }
+        }
+      } catch (err: any) {
+        console.error('OG tag injection error:', err?.message || err);
+        // يتابع للأسفل ويُرسِل index.html الافتراضي — فشل هذا التحسين لا
+        // يجب أن يمنع تحميل الموقع نفسه أبداً.
+      }
+      res.sendFile(indexPath);
     });
   }
 

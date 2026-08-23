@@ -364,6 +364,9 @@ export function App() {
 
   // Active Selected Entity States
   const [readingArticle, setReadingArticle] = useState<Article | null>(null);
+  // يمنع فتح رابط المقال المُشارَك أكثر من مرة (مثلاً بعد إغلاق المستخدم
+  // للمقال يدوياً ثم تحديث قائمة articles لأي سبب آخر).
+  const sharedArticleLinkHandledRef = useRef(false);
   // معرّفات المقالات التي سُجِّلت مشاهدتها فعلياً بهذه الجلسة، لمنع احتساب
   // مشاهدة مكرَّرة لو أغلق القارئ المقال وأعاد فتحه مرات عدة بنفس الزيارة.
   const viewedArticleIdsRef = useRef<Set<string>>(new Set());
@@ -646,6 +649,28 @@ export function App() {
     const newSearch = params.toString();
     window.history.replaceState({}, '', window.location.pathname + (newSearch ? `?${newSearch}` : ''));
   }, []);
+
+  // فتح المقال تلقائياً عند الدخول من رابط مُشارَك (?article=ID، يُنشئه
+  // getShareUrl في ArticleReader.tsx عند نسخ/مشاركة الرابط) — كان هذا
+  // الرابط يُشارَك فعلياً لكن لا شيء يقرأ هذا المعامل عند فتح الصفحة، فيصل
+  // الزائر إلى الخلاصة العادية بدل المقال المقصود.
+  useEffect(() => {
+    if (sharedArticleLinkHandledRef.current) return;
+    if (articles.length === 0) return;
+    const params = new URLSearchParams(window.location.search);
+    const articleId = params.get('article');
+    if (!articleId) {
+      sharedArticleLinkHandledRef.current = true;
+      return;
+    }
+    const target = articles.find((a) => a.id === articleId);
+    if (target) {
+      setReadingArticle(target);
+      sharedArticleLinkHandledRef.current = true;
+    }
+    // إن لم يُوجَد المقال بعد (القائمة لا تزال جزئية)، تبقى المحاولة
+    // متاحة عند التحديث التالي لـ articles بدل الاستسلام فوراً.
+  }, [articles]);
 
   // الاستماع لطلبات الترويج.
   // قواعد الأمان تسمح للكاتب بقراءة طلباته فقط، وللأدمن بقراءة الكل،
