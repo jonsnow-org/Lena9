@@ -8,8 +8,7 @@ import {
   Megaphone,
   User as UserIcon,
   LayoutDashboard,
-  DollarSign,
-  Users
+  DollarSign
 } from 'lucide-react';
 import { User, UserRole } from '../types';
 import { getTranslator } from '../data/translations';
@@ -605,33 +604,26 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           </span>
         </button>
 
-        {/* 4. المستخدمين وKYC */}
+        {/* 4. رسائل — كانت غائبة تماماً عن شريط الأدمن السفلي (بخلاف بقية
+            الأدوار)، وضعت مؤقتاً في القائمة الجانبية ثم نُقلت إلى هنا بناءً
+            على طلب صريح ليتطابق مكانها مع بقية الأدوار. إدارة المستخدمين
+            انتقلت إلى القائمة الجانبية بدلاً منها. */}
         <button
-          id="nav-admin-users"
+          id="nav-admin-messages"
           type="button"
-          onClick={() => {
-            onChangeTab('profile');
-            onAdminNavigate?.('users');
-          }}
-          className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group"
+          onClick={onOpenMessages}
+          className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group relative"
         >
-          <div
-            className={`p-1.5 rounded-xl transition-all ${
-              activeTab === 'profile' && adminActiveTab === 'users'
-                ? 'bg-blue-50 text-blue-700 border border-blue-300 dark:bg-blue-600/30 dark:text-blue-300 dark:border-blue-500/40 scale-105'
-                : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
-            }`}
-          >
-            <Users className="w-5 h-5" />
+          <div className="p-1.5 rounded-xl transition-all relative text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200">
+            <MessageSquare className="w-5 h-5" />
+            {unreadMessagesCount > 0 && (
+              <span className="absolute -top-1 -end-1 min-w-[16px] h-4 px-1 rounded-full bg-rose-500 text-white text-[9px] font-bold flex items-center justify-center">
+                {unreadMessagesCount > 9 ? '9+' : unreadMessagesCount}
+              </span>
+            )}
           </div>
-          <span
-            className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-              activeTab === 'profile' && adminActiveTab === 'users'
-                ? 'text-blue-700 dark:text-blue-300 font-extrabold'
-                : 'text-slate-500 dark:text-slate-400'
-            }`}
-          >
-            المستخدمين
+          <span className="text-[10px] sm:text-[11px] font-bold mt-0.5 text-slate-500 dark:text-slate-400">
+            رسائل
           </span>
         </button>
 

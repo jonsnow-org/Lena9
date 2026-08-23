@@ -1,5 +1,5 @@
 import React from 'react';
-import { Menu, LogIn } from 'lucide-react';
+import { Menu, LogIn, Bell } from 'lucide-react';
 import { User, UserRole, LanguageCode } from '../types';
 import { getTranslator } from '../data/translations';
 import { LiveClock, LiveStatusDot } from './LiveClock';
@@ -31,8 +31,10 @@ interface TopHeaderProps {
 export const TopHeader: React.FC<TopHeaderProps> = ({
   currentUser,
   onOpenDrawer,
+  onOpenNotifications,
   onOpenAuth,
   onOpenLanding,
+  unreadNotifsCount = 0,
   language = 'ar'
 }) => {
   const isUserLoggedIn = Boolean(currentUser && currentUser.id && currentUser.id !== 'guest');
@@ -84,6 +86,27 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             </span>
           </div>
         </div>
+
+        {/* Middle: زر الإشعارات — للأدمن تحديداً هنا (بقية الأدوار لديها
+            زر إشعارات في الشريط السفلي أصلاً، فتكراره هنا لها زائد عن
+            الحاجة). كان في القائمة الجانبية، وهي مكان "مخفي" يحتاج نقرتين
+            للوصول إليه، فنُقل إلى الشريط العلوي مباشرةً بين الشعار والساعة. */}
+        {isUserLoggedIn && currentUser?.role === 'admin' && onOpenNotifications && (
+          <button
+            id="header-notifications-button"
+            type="button"
+            onClick={onOpenNotifications}
+            className="relative w-10 h-10 rounded-2xl flex items-center justify-center text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-900 active:scale-95 transition-all touch-manipulation border border-slate-200 dark:border-brand-500/20 shadow-2xs shrink-0"
+            title="الإشعارات"
+          >
+            <Bell className="w-5 h-5 stroke-[2.2]" />
+            {unreadNotifsCount > 0 && (
+              <span className="absolute -top-1 -end-1 min-w-[16px] h-4 px-1 rounded-full bg-rose-500 text-white text-[9px] font-bold flex items-center justify-center">
+                {unreadNotifsCount > 9 ? '9+' : unreadNotifsCount}
+              </span>
+            )}
+          </button>
+        )}
 
         {/* End / Right: ساعة تركيا/سوريا الحيّة + نقطة "الموقع يعمل" + تسجيل
             الدخول للزائر فقط */}

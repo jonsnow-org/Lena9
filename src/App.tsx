@@ -3322,9 +3322,6 @@ export function App() {
           setImageStudioSelectCallback(null);
           setIsImageStudioOpen(true);
         }}
-        unreadMessagesCount={unreadMessagesCount}
-        onOpenNotifications={() => setIsNotificationsOpen(true)}
-        unreadNotificationsCount={unreadNotifsCount}
         onLogout={handleLogout}
         theme={theme}
         onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
