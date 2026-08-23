@@ -18,7 +18,8 @@ import {
   Bookmark,
   Wand2,
   Palette,
-  MessageSquare
+  MessageSquare,
+  Bell
 } from 'lucide-react';
 import { User, LanguageCode, UserRole } from '../types';
 import { getRemainingAiUses } from '../utils/aiQuota';
@@ -64,6 +65,11 @@ interface DrawerMenuProps {
   /** عدد الرسائل غير المقروءة — لعرض شارة على زر الرسائل هنا (مطلوب
    *  خصوصاً للأدمن الذي لا يملك زر رسائل في الشريط السفلي أصلاً). */
   unreadMessagesCount?: number;
+  /** يفتح نافذة الإشعارات (نفس NotificationsModal المستخدمة لبقية
+   *  الأدوار عبر زر الشريط السفلي — الأدمن لا يملك ذلك الزر أصلاً). */
+  onOpenNotifications?: () => void;
+  /** عدد الإشعارات غير المقروءة — لعرض شارة على زر الإشعارات هنا. */
+  unreadNotificationsCount?: number;
 }
 
 export const DrawerMenu: React.FC<DrawerMenuProps> = ({
@@ -89,6 +95,8 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
   onNavigateTab,
   onOpenLogin,
   unreadMessagesCount = 0,
+  onOpenNotifications,
+  unreadNotificationsCount = 0,
   navPersona,
   onStartWriting,
   onOpenImageStudio,
@@ -308,6 +316,33 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
                   <span className="text-[11px] text-emerald-400 font-mono font-bold">
                     ${(currentUser.availableBalance ?? currentUser.walletBalance ?? 0).toFixed(2)}
                   </span>
+                </button>
+              )}
+
+              {/* إشعارات — نفس السبب: شريط الأدمن السفلي لا يضم زر إشعارات
+                  أصلاً (بخلاف بقية الأدوار)، وTopHeader لا يعرض جرساً فعلياً
+                  (onOpenNotifications كان مُمرَّراً له بلا أي استخدام داخلي
+                  منذ دمج القائمة الجانبية). تفتح نفس NotificationsModal
+                  المستخدمة للجميع، بكل خيارات القراءة والحذف والمسح فيها. */}
+              {currentUser.id !== 'guest' && persona === 'admin' && onOpenNotifications && (
+                <button
+                  onClick={() => {
+                    onOpenNotifications();
+                    onClose();
+                  }}
+                  className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <Bell className="w-4 h-4 text-brand-400" />
+                    <span>الإشعارات</span>
+                  </div>
+                  {unreadNotificationsCount > 0 ? (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 font-bold border border-rose-500/30 font-mono">
+                      {unreadNotificationsCount > 9 ? '9+' : unreadNotificationsCount}
+                    </span>
+                  ) : (
+                    <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
+                  )}
                 </button>
               )}
 

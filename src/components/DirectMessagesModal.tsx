@@ -6,7 +6,8 @@ import {
   User as UserIcon,
   CheckCheck,
   ArrowRight,
-  Sparkles
+  Sparkles,
+  Trash2
 } from 'lucide-react';
 import { Conversation, DirectMessage, User } from '../types';
 
@@ -17,6 +18,12 @@ interface DirectMessagesModalProps {
   conversations: Conversation[];
   messages: DirectMessage[];
   onSendMessage: (recipientId: string, content: string) => void;
+  /** حذف رسالة واحدة — يظهر زرها فقط لصاحب الرسالة أو للأدمن، مطابقةً
+   *  لقواعد الأمان (allow delete على مجموعة messages). */
+  onDeleteMessage?: (messageId: string) => void;
+  /** حذف محادثة كاملة (المستند وكل رسائلها) — للأدمن فقط، مطابقةً لقواعد
+   *  الأمان (allow delete على مجموعة conversations مقصور على isAdmin()). */
+  onDeleteConversation?: (conversationId: string, partnerId: string) => void;
   activeChatPartner?: User | null;
   /** يُستدعى عند فتح محادثة (من القائمة أو من activeChatPartner) — نقطة
    *  واحدة لتعليم رسائل هذه المحادثة كمقروءة بدل ترك عدّاد الرسائل غير
@@ -31,6 +38,8 @@ export const DirectMessagesModal: React.FC<DirectMessagesModalProps> = ({
   conversations,
   messages,
   onSendMessage,
+  onDeleteMessage,
+  onDeleteConversation,
   activeChatPartner,
   onOpenConversation
 }) => {
@@ -102,12 +111,32 @@ export const DirectMessagesModal: React.FC<DirectMessagesModalProps> = ({
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-1.5">
+            {selectedPartner && currentUser.role === 'admin' && onDeleteConversation && (
+              <button
+                onClick={() => {
+                  const conv = conversations.find((c) => c.partnerId === selectedPartner.id);
+                  if (!conv) return;
+                  const confirmed = window.confirm(
+                    `سيتم حذف محادثتك مع ${selectedPartner.fullName} بكل رسائلها نهائياً. هل تريد المتابعة؟`
+                  );
+                  if (!confirmed) return;
+                  onDeleteConversation(conv.id, selectedPartner.id);
+                  setSelectedPartner(null);
+                }}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
+                title="حذف المحادثة بكل رسائلها"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Body Split */}
@@ -192,11 +221,23 @@ export const DirectMessagesModal: React.FC<DirectMessagesModalProps> = ({
                 <div className="flex-1 overflow-y-auto p-4 space-y-3">
                   {currentChatMessages.map((msg) => {
                     const isMe = msg.senderId === currentUser.id;
+                    const canDelete = Boolean(onDeleteMessage) && (isMe || currentUser.role === 'admin');
                     return (
                       <div
                         key={msg.id}
-                        className={`flex ${isMe ? 'justify-start' : 'justify-end'}`}
+                        className={`flex items-center gap-1.5 group ${isMe ? 'justify-start' : 'justify-end'}`}
                       >
+                        {isMe && canDelete && (
+                          <button
+                            onClick={() => {
+                              if (window.confirm('حذف هذه الرسالة نهائياً؟')) onDeleteMessage!(msg.id);
+                            }}
+                            className="opacity-0 group-hover:opacity-100 p-1 rounded-lg text-slate-400 hover:text-rose-500 transition-opacity"
+                            title="حذف الرسالة"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                         <div
                           className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-xs sm:text-sm leading-relaxed ${
                             isMe
@@ -213,6 +254,17 @@ export const DirectMessagesModal: React.FC<DirectMessagesModalProps> = ({
                             {msg.createdAt}
                           </span>
                         </div>
+                        {!isMe && canDelete && (
+                          <button
+                            onClick={() => {
+                              if (window.confirm('حذف هذه الرسالة نهائياً؟')) onDeleteMessage!(msg.id);
+                            }}
+                            className="opacity-0 group-hover:opacity-100 p-1 rounded-lg text-slate-400 hover:text-rose-500 transition-opacity"
+                            title="حذف الرسالة (صلاحية أدمن)"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     );
                   })}

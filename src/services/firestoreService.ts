@@ -1045,6 +1045,45 @@ export async function markConversationMessagesRead(currentUserId: string, otherU
   }
 }
 
+/**
+ * حذف رسالة واحدة — يسمح بها فقط مُرسِل الرسالة أو الأدمن (حسب قواعد
+ * الأمان). كانت هذه الوظيفة غائبة تماماً عن الواجهة رغم أن قواعد الأمان
+ * تدعمها منذ البداية (allow delete على مجموعة messages).
+ */
+export async function deleteMessageInFirestore(messageId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'messages', messageId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `messages/${messageId}`);
+    throw error;
+  }
+}
+
+/**
+ * حذف محادثة كاملة (مستند المحادثة + كل رسائلها) — للأدمن فقط (قواعد
+ * الأمان تقصر حذف مستند conversations على isAdmin()، بخلاف حذف رسالة
+ * فردية المتاح لصاحبها أيضاً). يُمرَّر معرّفات الرسائل من الحالة المحلية
+ * أصلاً (مُصفّاة سلفاً) لتفادي استعلام إضافي.
+ */
+export async function deleteConversationInFirestore(
+  conversationId: string,
+  messageIds: string[]
+): Promise<void> {
+  try {
+    const CHUNK_SIZE = 400;
+    for (let i = 0; i < messageIds.length; i += CHUNK_SIZE) {
+      const chunk = messageIds.slice(i, i + CHUNK_SIZE);
+      const batch = writeBatch(db);
+      chunk.forEach((id) => batch.delete(doc(db, 'messages', id)));
+      await batch.commit();
+    }
+    await deleteDoc(doc(db, 'conversations', conversationId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `conversations/${conversationId}`);
+    throw error;
+  }
+}
+
 // -------------------------------------------------------------------
 // القالب اللوني العام وخلفية التطبيق (settings/theme)
 // -------------------------------------------------------------------

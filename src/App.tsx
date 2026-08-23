@@ -139,6 +139,8 @@ import {
   setArticleReactionInFirestore,
   subscribeToAllEarningsAdmin,
   subscribeToManualBalanceAdjustments,
+  deleteMessageInFirestore,
+  deleteConversationInFirestore,
   markEarningReleasedInFirestore,
   updateUserAiQuotaInFirestore,
   adminReleaseEarnings,
@@ -2309,6 +2311,39 @@ export function App() {
     }
   };
 
+  // حذف رسالة واحدة — متاح لصاحب الرسالة نفسه أو الأدمن (تطابق قواعد
+  // الأمان تماماً)، كانت الوظيفة غائبة تماماً عن الواجهة رغم دعمها في
+  // Firestore منذ البداية.
+  const handleDeleteMessage = async (messageId: string) => {
+    try {
+      await deleteMessageInFirestore(messageId);
+      setMessages((prev) => prev.filter((m) => m.id !== messageId));
+    } catch (err) {
+      console.error('تعذر حذف الرسالة:', err);
+      alert('تعذر حذف الرسالة. حاول مجدداً.');
+    }
+  };
+
+  // حذف محادثة كاملة — للأدمن فقط (قواعد الأمان تقصر حذف مستند المحادثة
+  // على isAdmin()، بخلاف حذف رسالة فردية المتاح لصاحبها أيضاً).
+  const handleDeleteConversation = async (conversationId: string, partnerId: string) => {
+    try {
+      const messageIds = messages
+        .filter(
+          (m) =>
+            (m.senderId === currentUserId && m.recipientId === partnerId) ||
+            (m.senderId === partnerId && m.recipientId === currentUserId)
+        )
+        .map((m) => m.id);
+      await deleteConversationInFirestore(conversationId, messageIds);
+      setMessages((prev) => prev.filter((m) => !messageIds.includes(m.id)));
+      setRawConversations((prev) => prev.filter((c) => c.id !== conversationId));
+    } catch (err) {
+      console.error('تعذر حذف المحادثة:', err);
+      alert('تعذر حذف المحادثة. حاول مجدداً.');
+    }
+  };
+
   // Kept for any future "upgrade my account" flow, but hardened: this can
   // never assign 'admin' — that only happens via the owner-email bootstrap
   // in firebase.ts, enforced server-side by firestore.rules.
@@ -3288,6 +3323,8 @@ export function App() {
           setIsImageStudioOpen(true);
         }}
         unreadMessagesCount={unreadMessagesCount}
+        onOpenNotifications={() => setIsNotificationsOpen(true)}
+        unreadNotificationsCount={unreadNotifsCount}
         onLogout={handleLogout}
         theme={theme}
         onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
@@ -3345,7 +3382,11 @@ export function App() {
               setActiveTab('profile');
               break;
             case 'messages':
-              setActiveTab('messages');
+              // الرسائل ليست تبويباً في activeTab أصلاً — إنها نافذة منبثقة
+              // مستقلة (DirectMessagesModal) تُفتَح عبر isDirectMessagesOpen،
+              // تماماً كما يفعل زر الرسائل في الشريط السفلي (onOpenMessages).
+              // ضبط activeTab إلى 'messages' هنا كان لا يفتح شيئاً فعلياً.
+              setIsDirectMessagesOpen(true);
               break;
             default:
               setActiveTab('feed');
@@ -3511,6 +3552,8 @@ export function App() {
         conversations={conversations}
         messages={messages}
         onSendMessage={handleSendMessage}
+        onDeleteMessage={handleDeleteMessage}
+        onDeleteConversation={handleDeleteConversation}
         activeChatPartner={activeChatPartner}
         onOpenConversation={(partnerId) => {
           markConversationMessagesRead(currentUser.id, partnerId).catch((err) =>
