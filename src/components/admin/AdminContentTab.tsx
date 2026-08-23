@@ -44,8 +44,8 @@ export const AdminContentTab: React.FC<AdminContentTabProps> = ({
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       const matchTitle = art.title?.toLowerCase().includes(q);
-      const matchAuthor = art.authorName?.toLowerCase().includes(q);
-      const matchExcerpt = art.excerpt?.toLowerCase().includes(q);
+      const matchAuthor = art.writerName?.toLowerCase().includes(q);
+      const matchExcerpt = art.description?.toLowerCase().includes(q);
       if (!matchTitle && !matchAuthor && !matchExcerpt) return false;
     }
 
@@ -135,7 +135,7 @@ export const AdminContentTab: React.FC<AdminContentTabProps> = ({
       ) : (
         <div className="space-y-3">
           {filteredArticles.map((art) => {
-            const author = users.find((u) => u.id === art.authorId);
+            const author = users.find((u) => u.id === art.writerId);
             const isArchived = art.status === 'archived';
 
             return (
@@ -162,7 +162,7 @@ export const AdminContentTab: React.FC<AdminContentTabProps> = ({
                       {art.isLocked ? (
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
                           <Lock className="w-3 h-3" />
-                          <span>حصري (${art.price})</span>
+                          <span>حصري (${art.lockedPrice})</span>
                         </span>
                       ) : (
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300">
@@ -188,7 +188,7 @@ export const AdminContentTab: React.FC<AdminContentTabProps> = ({
                     <h4 className="font-bold text-sm text-white line-clamp-1">{art.title}</h4>
 
                     <div className="text-xs text-slate-400 flex items-center gap-3">
-                      <span>الكاتب: {author ? author.fullName : art.authorName}</span>
+                      <span>الكاتب: {author ? author.fullName : art.writerName}</span>
                       <span>•</span>
                       <span>{art.viewsCount || 0} مشاهدة</span>
                       <span>•</span>

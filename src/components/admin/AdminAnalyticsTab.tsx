@@ -644,12 +644,12 @@ export const AdminAnalyticsTab: React.FC<AdminAnalyticsTabProps> = ({
                     <div className="min-w-0">
                       <div className="font-bold text-xs text-white truncate">{art.title}</div>
                       <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
-                        <span>الكاتب: {art.author.fullName}</span>
+                        <span>الكاتب: {art.writerName}</span>
                         <span>•</span>
                         <span>{art.category}</span>
                         {art.isLocked && (
                           <span className="text-amber-400 font-bold flex items-center gap-0.5">
-                            <Lock className="w-3 h-3" /> حصري ${art.price}
+                            <Lock className="w-3 h-3" /> حصري ${art.lockedPrice}
                           </span>
                         )}
                       </div>

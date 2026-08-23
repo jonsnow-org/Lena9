@@ -228,7 +228,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     promotions.filter((p) => p.status === 'pending').length;
 
   const pendingKycCount = users.filter((u) => u.kycDetails?.status === 'pending').length;
-  const pendingFraudCount = fraudFlags.filter((f) => f.status === 'pending' || !f.status).length;
+  const pendingFraudCount = fraudFlags.filter((f) => f.status === 'flagged' || f.status === 'auto_blocked').length;
 
   // Main Navigation Tabs Definition (Clean 7 Super-Sections)
   const navTabs = [

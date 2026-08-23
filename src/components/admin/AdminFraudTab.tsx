@@ -29,7 +29,7 @@ export const AdminFraudTab: React.FC<AdminFraudTabProps> = ({
   totalBlockedFraudRevenue
 }) => {
   const [severityFilter, setSeverityFilter] = useState<'all' | 'critical' | 'high' | 'medium' | 'low'>('all');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'reviewed' | 'dismissed'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'flagged' | 'auto_blocked' | 'reviewed' | 'dismissed'>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
   const filteredFlags = fraudFlags.filter((flag) => {
@@ -84,13 +84,13 @@ export const AdminFraudTab: React.FC<AdminFraudTabProps> = ({
         </div>
         <div className="p-4 rounded-2xl bg-slate-900 border border-amber-500/30">
           <div className="text-2xl font-black text-amber-400 font-mono">
-            {fraudFlags.filter((f) => f.status === 'pending' || !f.status).length}
+            {fraudFlags.filter((f) => f.status === 'flagged' || f.status === 'auto_blocked').length}
           </div>
           <div className="text-xs text-slate-400 mt-1">بانتظار المراجعة</div>
         </div>
         <div className="p-4 rounded-2xl bg-slate-900 border border-emerald-500/30">
           <div className="text-2xl font-black text-emerald-400 font-mono">
-            {fraudFlags.filter((f) => f.status === 'reviewed' || f.status === 'resolved').length}
+            {fraudFlags.filter((f) => f.status === 'reviewed').length}
           </div>
           <div className="text-xs text-slate-400 mt-1">تمت المراجعة والتحييد</div>
         </div>
@@ -144,7 +144,7 @@ export const AdminFraudTab: React.FC<AdminFraudTabProps> = ({
         <div className="space-y-3">
           {filteredFlags.map((flag) => {
             const suspectUser = flag.userId ? users.find((u) => u.id === flag.userId) : null;
-            const isResolved = flag.status === 'reviewed' || flag.status === 'resolved';
+            const isResolved = flag.status === 'reviewed';
 
             return (
               <div

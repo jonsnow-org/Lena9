@@ -59,7 +59,7 @@ export const AdminOverviewTab: React.FC<AdminOverviewTabProps> = ({
   const pendingDeposits = depositRequests.filter((r: any) => r.status === 'pending');
   const pendingPurchases = purchaseRequests.filter((r: any) => r.status === 'pending');
   const pendingKycUsers = users.filter((u) => u.kycDetails?.status === 'pending');
-  const pendingCampaigns = campaigns.filter((c) => c.status === 'pending' || (c as any).status === 'draft');
+  const pendingCampaigns = campaigns.filter((c) => c.status === 'pending');
   const pendingPromotions = promotions.filter((p) => p.status === 'pending');
   const unprocessedEvents = adEvents.filter((e: any) => !e.processed);
 
