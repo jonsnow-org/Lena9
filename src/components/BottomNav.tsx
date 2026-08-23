@@ -550,14 +550,14 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           id="nav-admin-money"
           type="button"
           onClick={() => {
-            onChangeTab('admin');
+            onChangeTab('profile');
             onAdminNavigate?.('money');
           }}
           className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group"
         >
           <div
             className={`p-1.5 rounded-xl transition-all ${
-              activeTab === 'admin' && (adminActiveTab === 'money' || adminActiveTab === 'accounting')
+              activeTab === 'profile' && (adminActiveTab === 'money' || adminActiveTab === 'accounting')
                 ? 'bg-amber-50 text-amber-700 border border-amber-300 dark:bg-amber-600/30 dark:text-amber-300 dark:border-amber-500/40 scale-105'
                 : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
             }`}
@@ -566,7 +566,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           </div>
           <span
             className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-              activeTab === 'admin' && (adminActiveTab === 'money' || adminActiveTab === 'accounting')
+              activeTab === 'profile' && (adminActiveTab === 'money' || adminActiveTab === 'accounting')
                 ? 'text-amber-700 dark:text-amber-300 font-extrabold'
                 : 'text-slate-500 dark:text-slate-400'
             }`}
@@ -580,14 +580,14 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           id="nav-admin-campaigns"
           type="button"
           onClick={() => {
-            onChangeTab('admin');
+            onChangeTab('profile');
             onAdminNavigate?.('campaigns');
           }}
           className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group"
         >
           <div
             className={`p-1.5 rounded-xl transition-all ${
-              activeTab === 'admin' && (adminActiveTab === 'campaigns' || adminActiveTab === 'promotions')
+              activeTab === 'profile' && (adminActiveTab === 'campaigns' || adminActiveTab === 'promotions')
                 ? 'bg-cyan-50 text-cyan-700 border border-cyan-300 dark:bg-cyan-600/30 dark:text-cyan-300 dark:border-cyan-500/40 scale-105'
                 : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
             }`}
@@ -596,7 +596,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           </div>
           <span
             className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-              activeTab === 'admin' && (adminActiveTab === 'campaigns' || adminActiveTab === 'promotions')
+              activeTab === 'profile' && (adminActiveTab === 'campaigns' || adminActiveTab === 'promotions')
                 ? 'text-cyan-700 dark:text-cyan-300 font-extrabold'
                 : 'text-slate-500 dark:text-slate-400'
             }`}
@@ -610,14 +610,14 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           id="nav-admin-users"
           type="button"
           onClick={() => {
-            onChangeTab('admin');
+            onChangeTab('profile');
             onAdminNavigate?.('users');
           }}
           className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group"
         >
           <div
             className={`p-1.5 rounded-xl transition-all ${
-              activeTab === 'admin' && adminActiveTab === 'users'
+              activeTab === 'profile' && adminActiveTab === 'users'
                 ? 'bg-blue-50 text-blue-700 border border-blue-300 dark:bg-blue-600/30 dark:text-blue-300 dark:border-blue-500/40 scale-105'
                 : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
             }`}
@@ -626,7 +626,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           </div>
           <span
             className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-              activeTab === 'admin' && adminActiveTab === 'users'
+              activeTab === 'profile' && adminActiveTab === 'users'
                 ? 'text-blue-700 dark:text-blue-300 font-extrabold'
                 : 'text-slate-500 dark:text-slate-400'
             }`}

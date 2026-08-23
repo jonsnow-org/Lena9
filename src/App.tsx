@@ -51,7 +51,6 @@ import { TrendingArticlesSection } from './components/TrendingArticlesSection';
 import { SmartAdBanner } from './components/SmartAdBanner';
 import { ArticleReader } from './components/ArticleReader';
 import { ArticleEditorModal } from './components/ArticleEditorModal';
-import { AdminDashboard } from './components/AdminDashboard';
 import { AdvertiserDashboard } from './components/AdvertiserDashboard';
 import { WriterProfileView } from './components/WriterProfileView';
 import { ExploreView } from './components/ExploreView';
@@ -349,7 +348,7 @@ export function App() {
   });
 
   // Navigation & View States
-  const [activeTab, setActiveTab] = useState<'feed' | 'explore' | 'action' | 'ads' | 'profile' | 'dashboard' | 'messages' | 'admin'>('feed');
+  const [activeTab, setActiveTab] = useState<'feed' | 'explore' | 'action' | 'ads' | 'profile' | 'dashboard' | 'messages'>('feed');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -406,12 +405,15 @@ export function App() {
   const [imageStudioSelectCallback, setImageStudioSelectCallback] = useState<((url: string) => void) | null>(null);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isNewCampaignOpen, setIsNewCampaignOpen] = useState(false);
-  // Which internal tab the AdminDashboard shows — lifted here so the
-  // bottom nav's admin buttons (overview/fraud/campaigns/moderation/users)
-  // can actually control it; AdminDashboard has its own separate tab
-  // system from the top-level `activeTab` above.
+  // Which admin section UserProfileView shows — lifted here so the bottom
+  // nav's admin buttons (money/campaigns/users) and the drawer menu can
+  // pick a specific section directly, same lifting pattern as
+  // writerActiveTab below. Used to control a separate AdminDashboard
+  // screen; that component is gone now (its tab content was moved inline
+  // into UserProfileView's own admin section) so this now targets the
+  // 'profile' tab with a pre-selected section instead.
   const [adminActiveTab, setAdminActiveTab] = useState<
-    'overview' | 'fraud' | 'campaigns' | 'moderation' | 'users' | 'promotions' | 'money' | 'accounting' | 'settings'
+    'overview' | 'analytics' | 'fraud' | 'campaigns' | 'moderation' | 'users' | 'promotions' | 'money' | 'accounting' | 'settings'
   >('overview');
   // Same lifting pattern for the writer's profile sub-tabs (مقالاتي /
   // الأرباح), which live inside UserProfileView's own tab system.
@@ -575,7 +577,7 @@ export function App() {
             localStorage.setItem('literium_has_seen_landing', 'true');
             setShowLandingPage(false);
             setIsAuthOpen(false);
-            setActiveTab(user.role === 'admin' ? 'admin' : user.role === 'writer' ? 'profile' : 'feed');
+            setActiveTab(user.role === 'admin' || user.role === 'writer' ? 'profile' : 'feed');
           }
         } catch (authDocError) {
           console.error('Error synchronizing authenticated user with Firestore:', authDocError);
@@ -2421,7 +2423,7 @@ export function App() {
             // refreshing while browsing as a guest would skip the landing
             // page (and its login options) on every future visit, trapping
             // the person in guest mode until they found the logout button.
-            setActiveTab(currentUser.role === 'admin' ? 'admin' : currentUser.role === 'writer' ? 'profile' : 'feed');
+            setActiveTab(currentUser.role === 'admin' || currentUser.role === 'writer' ? 'profile' : 'feed');
           }}
           onOpenRegister={(role) => {
             // فتح شاشة الدخول/التسجيل يعني نية واضحة وصريحة من المستخدم
@@ -2586,90 +2588,17 @@ export function App() {
             language={language}
             onToggleLanguage={() => setLanguage(LANGUAGE_CYCLE[(LANGUAGE_CYCLE.indexOf(language) + 1) % LANGUAGE_CYCLE.length])}
             onLogout={handleLogout}
-            onNavigateToAdmin={(tab) => {
-              setActiveTab('admin');
-              setAdminActiveTab(tab || 'overview');
-            }}
-          />
-        ) : activeTab === 'explore' ? (
-          <ExploreView
-            articles={articles}
-            writers={users}
-            onSelectArticle={(art) => setReadingArticle(art)}
-            onSelectWriter={(w) => setViewingWriterProfile(w)}
-            onFollowWriter={handleToggleFollow}
-            followedWriterIds={followedWriterIds}
-            onToggleBookmark={handleToggleBookmark}
-            bookmarkedArticleIds={bookmarkedArticleIds}
-          />
-        ) : (activeTab === 'articles' || activeTab === 'saved') && currentUser.id !== 'guest' ? (
-          <UserProfileView
-            currentUser={currentUser}
-            articles={articles}
-            bookmarkedArticleIds={bookmarkedArticleIds}
-            followingCount={followedWriterIds.length}
-            followersCount={followsData.filter((f) => f.followingId === currentUser.id).length}
-            campaigns={campaigns}
-            initialWriterTab="articles"
-            onWriterTabChange={setWriterActiveTab}
-            onOpenNewCampaign={() => setIsNewCampaignOpen(true)}
-            onSelectArticle={(art) => setReadingArticle(art)}
-            onOpenWallet={() => setIsWalletOpen(true)}
-            onOpenKyc={() => setIsKycOpen(true)}
-            onOpenBeta20={() => setIsBeta20Open(true)}
-            onOpenPolicies={() => setLegalSection('privacy')}
-            onOpenArticleEditor={(art) => {
-              setEditingArticle(art || null);
-              setIsArticleEditorOpen(true);
-            }}
-            onEditArticle={(art) => {
-              setEditingArticle(art);
-              setIsArticleEditorOpen(true);
-            }}
-            onDeleteArticle={handleDeleteArticle}
-            onPromoteArticle={(art) => setPromotingArticle(art)}
-            promotions={promotions}
-            onSaveSocialLinks={handleSaveSocialLinks}
-            onSaveProfile={handleSaveProfile}
-            pendingKycCount={pendingKycCount}
-            pendingMoneyCount={pendingMoneyCount}
-            pendingFraudCount={pendingFraudCount}
-            onOpenSubscription={() => setIsSubscriptionOpen(true)}
-            onSwitchUserRole={handleSwitchRole}
-            theme={theme}
-            onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-            language={language}
-            onToggleLanguage={() => setLanguage(LANGUAGE_CYCLE[(LANGUAGE_CYCLE.indexOf(language) + 1) % LANGUAGE_CYCLE.length])}
-            onLogout={handleLogout}
-          />
-        ) : activeTab === 'campaigns' && currentUser.id !== 'guest' ? (
-          <AdvertiserDashboard
-            campaigns={campaigns.filter((c) => c.advertiserId === currentUser.id)}
-            onOpenNewCampaign={() => setIsNewCampaignOpen(true)}
-            onToggleCampaignStatus={handleToggleCampaignStatus}
-            advertiserBalance={currentUser.walletBalance || 0}
-            onOpenDeposit={() => setIsWalletOpen(true)}
-            activeUsersCount={Math.max(users.length, 1)}
-          />
-        ) : (activeTab === 'admin' || activeTab.startsWith('admin_')) && currentUser.role === 'admin' ? (
-          <AdminDashboard
-            currentUser={currentUser}
             users={users}
-            articles={articles}
-            campaigns={campaigns}
             fraudFlags={fraudFlags}
-            promotions={promotions}
-            onSaveSocialLinks={handleSaveSocialLinks}
-            onUpdatePromotionStatus={handleUpdatePromotionStatus}
             depositRequests={depositRequests}
             payoutRequests={payoutRequests}
-            onUpdateMoneyRequest={handleUpdateMoneyRequest}
             purchaseRequests={purchaseRequests}
             adEvents={adEvents}
+            earningsRecords={earningsRecords}
             onProcessAdEvents={handleProcessAdEvents}
             onUpdatePurchaseRequest={handleUpdatePurchaseRequest}
-            activeTab={adminActiveTab}
-            onActiveTabChange={setAdminActiveTab}
+            onUpdateMoneyRequest={handleUpdateMoneyRequest}
+            onUpdatePromotionStatus={handleUpdatePromotionStatus}
             onBroadcastMessage={(text) =>
               broadcastMessageToAllUsers(
                 currentUser.id,
@@ -2738,10 +2667,9 @@ export function App() {
               );
               await resolveFraudFlagInFirestore(flagId, action);
             }}
-            /* تعديل رصيد مستخدم يدوياً من الأدمن — كانت هذه الأداة موعودة في
-               نصوص عدة تبويبات ("عدّل رصيد المستخدم يدوياً من تبويب
-               المستخدمين") دون أن تُبنى فعلياً. amount هنا فرق يُضاف لقيمة
-               الحقل الحالية (موجب = إضافة، سالب = خصم)، وليس رقماً مطلقاً. */
+            /* تعديل رصيد مستخدم يدوياً من الأدمن — amount هنا فرق يُضاف
+               لقيمة الحقل الحالية (موجب = إضافة، سالب = خصم)، وليس رقماً
+               مطلقاً. */
             onAdjustBalance={async (userId, field, amount, reason) => {
               const target = users.find((u) => u.id === userId);
               if (!target) return;
@@ -2766,7 +2694,6 @@ export function App() {
                 alert('تعذر حفظ تعديل الرصيد. حاول مجدداً.');
               }
             }}
-            earningsRecords={earningsRecords}
             onReleaseEarning={async (earning) => {
               const targetUser = users.find((u) => u.id === earning.userId);
               if (!targetUser) {
@@ -2786,7 +2713,6 @@ export function App() {
                 alert('تعذر تحرير هذا الربح. تحقق من اتصالك ثم حاول مجدداً.');
               }
             }}
-            onSelectArticle={(art) => setReadingArticle(art)}
             onSelectUser={(u) => setViewingWriterProfile(u)}
             followersCountByUserId={followersCountByUserId}
             currentThemePreset={themePreset}
@@ -2797,6 +2723,201 @@ export function App() {
             onTogglePlatformAds={handleTogglePlatformAds}
             externalAdsConfig={externalAdsConfig}
             onSaveExternalAdsConfig={handleSaveExternalAdsConfig}
+            initialAdminSection={adminActiveTab}
+            onAdminSectionChange={setAdminActiveTab}
+          />
+        ) : activeTab === 'explore' ? (
+          <ExploreView
+            articles={articles}
+            writers={users}
+            onSelectArticle={(art) => setReadingArticle(art)}
+            onSelectWriter={(w) => setViewingWriterProfile(w)}
+            onFollowWriter={handleToggleFollow}
+            followedWriterIds={followedWriterIds}
+            onToggleBookmark={handleToggleBookmark}
+            bookmarkedArticleIds={bookmarkedArticleIds}
+          />
+        ) : (activeTab === 'articles' || activeTab === 'saved') && currentUser.id !== 'guest' ? (
+          <UserProfileView
+            currentUser={currentUser}
+            articles={articles}
+            bookmarkedArticleIds={bookmarkedArticleIds}
+            followingCount={followedWriterIds.length}
+            followersCount={followsData.filter((f) => f.followingId === currentUser.id).length}
+            campaigns={campaigns}
+            initialWriterTab="articles"
+            onWriterTabChange={setWriterActiveTab}
+            onOpenNewCampaign={() => setIsNewCampaignOpen(true)}
+            onSelectArticle={(art) => setReadingArticle(art)}
+            onOpenWallet={() => setIsWalletOpen(true)}
+            onOpenKyc={() => setIsKycOpen(true)}
+            onOpenBeta20={() => setIsBeta20Open(true)}
+            onOpenPolicies={() => setLegalSection('privacy')}
+            onOpenArticleEditor={(art) => {
+              setEditingArticle(art || null);
+              setIsArticleEditorOpen(true);
+            }}
+            onEditArticle={(art) => {
+              setEditingArticle(art);
+              setIsArticleEditorOpen(true);
+            }}
+            onDeleteArticle={handleDeleteArticle}
+            onPromoteArticle={(art) => setPromotingArticle(art)}
+            promotions={promotions}
+            onSaveSocialLinks={handleSaveSocialLinks}
+            onSaveProfile={handleSaveProfile}
+            pendingKycCount={pendingKycCount}
+            pendingMoneyCount={pendingMoneyCount}
+            pendingFraudCount={pendingFraudCount}
+            onOpenSubscription={() => setIsSubscriptionOpen(true)}
+            onSwitchUserRole={handleSwitchRole}
+            theme={theme}
+            onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            language={language}
+            onToggleLanguage={() => setLanguage(LANGUAGE_CYCLE[(LANGUAGE_CYCLE.indexOf(language) + 1) % LANGUAGE_CYCLE.length])}
+            onLogout={handleLogout}
+            users={users}
+            fraudFlags={fraudFlags}
+            depositRequests={depositRequests}
+            payoutRequests={payoutRequests}
+            purchaseRequests={purchaseRequests}
+            adEvents={adEvents}
+            earningsRecords={earningsRecords}
+            onProcessAdEvents={handleProcessAdEvents}
+            onUpdatePurchaseRequest={handleUpdatePurchaseRequest}
+            onUpdateMoneyRequest={handleUpdateMoneyRequest}
+            onUpdatePromotionStatus={handleUpdatePromotionStatus}
+            onBroadcastMessage={(text) =>
+              broadcastMessageToAllUsers(
+                currentUser.id,
+                users.map((u) => u.id),
+                text
+              )
+            }
+            onUpdateUserRole={async (userId, newRole) => {
+              setUsers((prev) =>
+                prev.map((u) => (u.id === userId ? { ...u, role: newRole } : u))
+              );
+              await updateUserRoleInFirestore(userId, newRole);
+            }}
+            onToggleUserVerified={async (userId) => {
+              const target = users.find((u) => u.id === userId);
+              const nextVerified = !(target?.isVerified);
+              setUsers((prev) =>
+                prev.map((u) => (u.id === userId ? { ...u, isVerified: nextVerified } : u))
+              );
+              await setUserVerifiedInFirestore(userId, nextVerified);
+            }}
+            onApproveKyc={async (userId) => {
+              setUsers((prev) =>
+                prev.map((u) =>
+                  u.id === userId
+                    ? {
+                        ...u,
+                        isKycVerified: true,
+                        kycDetails: u.kycDetails ? { ...u.kycDetails, status: 'verified' } : undefined
+                      }
+                    : u
+                )
+              );
+              await setUserKycApprovedInFirestore(userId);
+            }}
+            onBanUser={async (userId) => {
+              const target = users.find((u) => u.id === userId);
+              const nextBanned = !(target?.isBanned);
+              setUsers((prev) =>
+                prev.map((u) => (u.id === userId ? { ...u, isBanned: nextBanned } : u))
+              );
+              await setUserBannedInFirestore(userId, nextBanned);
+            }}
+            onUpdateCampaignStatus={async (campaignId, status) => {
+              setCampaigns((prev) =>
+                prev.map((c) => (c.id === campaignId ? { ...c, status } : c))
+              );
+              await setCampaignStatusInFirestore(campaignId, status);
+            }}
+            onUpdateArticleStatus={async (articleId, status) => {
+              setArticles((prev) =>
+                prev.map((a) => (a.id === articleId ? { ...a, status } : a))
+              );
+              await setArticleStatusInFirestore(articleId, status);
+            }}
+            onResolveFraudFlag={async (flagId, action) => {
+              setFraudFlags((prev) =>
+                prev.map((f) =>
+                  f.id === flagId
+                    ? {
+                        ...f,
+                        status: action === 'resolved' ? 'reviewed' : 'dismissed'
+                      }
+                    : f
+                )
+              );
+              await resolveFraudFlagInFirestore(flagId, action);
+            }}
+            onAdjustBalance={async (userId, field, amount, reason) => {
+              const target = users.find((u) => u.id === userId);
+              if (!target) return;
+              const current = Number((target as any)[field] ?? 0);
+              const next = Number((current + amount).toFixed(2));
+              setUsers((prev) =>
+                prev.map((u) => (u.id === userId ? ({ ...u, [field]: next } as any) : u))
+              );
+              try {
+                await adminAdjustUserBalance(userId, { [field]: next } as any);
+                await logManualBalanceAdjustment({
+                  userId,
+                  field,
+                  amount,
+                  newValue: next,
+                  reason,
+                  adjustedBy: currentUser.id
+                });
+              } catch (err) {
+                console.error('تعذر حفظ تعديل الرصيد:', err);
+                alert('تعذر حفظ تعديل الرصيد. حاول مجدداً.');
+              }
+            }}
+            onReleaseEarning={async (earning) => {
+              const targetUser = users.find((u) => u.id === earning.userId);
+              if (!targetUser) {
+                alert('تعذر إيجاد بيانات هذا المستخدم لتحرير أرباحه.');
+                return;
+              }
+              const currentPending = (targetUser as any).pendingEarnings || 0;
+              const currentAvailable = (targetUser as any).availableBalance || 0;
+              try {
+                await adminReleaseEarnings(earning.userId, currentPending, currentAvailable, earning.amount);
+                await markEarningReleasedInFirestore(earning.id);
+                setEarningsRecords((prev) =>
+                  prev.map((e) => (e.id === earning.id ? { ...e, status: 'released' } : e))
+                );
+              } catch (err) {
+                console.error('تعذر تحرير الربح:', err);
+                alert('تعذر تحرير هذا الربح. تحقق من اتصالك ثم حاول مجدداً.');
+              }
+            }}
+            onSelectUser={(u) => setViewingWriterProfile(u)}
+            followersCountByUserId={followersCountByUserId}
+            currentThemePreset={themePreset}
+            onChangeThemePreset={handleChangeThemePreset}
+            currentBackgroundPreset={backgroundPreset}
+            onChangeBackgroundPreset={handleChangeBackgroundPreset}
+            platformAdsEnabled={platformAdsEnabled}
+            onTogglePlatformAds={handleTogglePlatformAds}
+            externalAdsConfig={externalAdsConfig}
+            onSaveExternalAdsConfig={handleSaveExternalAdsConfig}
+            initialAdminSection={adminActiveTab}
+            onAdminSectionChange={setAdminActiveTab}
+          />
+        ) : activeTab === 'campaigns' && currentUser.id !== 'guest' ? (
+          <AdvertiserDashboard
+            campaigns={campaigns.filter((c) => c.advertiserId === currentUser.id)}
+            onOpenNewCampaign={() => setIsNewCampaignOpen(true)}
+            onToggleCampaignStatus={handleToggleCampaignStatus}
+            advertiserBalance={currentUser.walletBalance || 0}
+            onOpenDeposit={() => setIsWalletOpen(true)}
+            activeUsersCount={Math.max(users.length, 1)}
           />
         ) : (
           /* Main Feed View: Available to all users/roles when on 'feed' */
@@ -3166,23 +3287,23 @@ export function App() {
           switch (tab) {
             case 'admin_overview':
               setAdminActiveTab('overview');
-              setActiveTab('admin');
+              setActiveTab('profile');
               break;
             case 'admin_fraud':
               setAdminActiveTab('fraud');
-              setActiveTab('admin');
+              setActiveTab('profile');
               break;
             case 'admin_users':
               setAdminActiveTab('users');
-              setActiveTab('admin');
+              setActiveTab('profile');
               break;
             case 'admin_campaigns':
               setAdminActiveTab('campaigns');
-              setActiveTab('admin');
+              setActiveTab('profile');
               break;
             case 'admin_money':
               setAdminActiveTab('money');
-              setActiveTab('admin');
+              setActiveTab('profile');
               break;
             case 'writer_hub':
               setActiveTab('profile');

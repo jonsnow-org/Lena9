@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   User as UserIcon,
   Rocket,
@@ -52,7 +52,7 @@ import {
   Radio,
   UserPlus
 } from 'lucide-react';
-import { User, Article, UserRole, AdCampaign, LanguageCode, ArticlePromotion } from '../types';
+import { User, Article, UserRole, AdCampaign, LanguageCode, ArticlePromotion, FraudFlag } from '../types';
 import { SocialLinksEditor } from './SocialLinksEditor';
 import { EditProfileModal } from './EditProfileModal';
 import { AdSlot } from './AdSlot';
@@ -69,6 +69,31 @@ import {
   getDaysRemaining,
   getPlanMeta
 } from '../utils/aiQuota';
+import { ThemePresetKey } from '../constants/themePresets';
+import { BackgroundPresetKey } from '../constants/backgroundPresets';
+import { ExternalAdsConfig } from '../utils/externalAdsStore';
+import { AdminOverviewTab } from './admin/AdminOverviewTab';
+import { AdminFinanceTab } from './admin/AdminFinanceTab';
+import { AdminAdsTab } from './admin/AdminAdsTab';
+import { AdminContentTab } from './admin/AdminContentTab';
+import { AdminUsersTab } from './admin/AdminUsersTab';
+import { AdminFraudTab } from './admin/AdminFraudTab';
+import { AdminSettingsTab } from './admin/AdminSettingsTab';
+import { AdminAnalyticsTab } from './admin/AdminAnalyticsTab';
+import { BalanceAdjustModal, AdjustableBalanceField } from './admin/BalanceAdjustModal';
+import { KycReviewModal } from './admin/KycReviewModal';
+
+type AdminSection =
+  | 'overview'
+  | 'analytics'
+  | 'fraud'
+  | 'campaigns'
+  | 'moderation'
+  | 'users'
+  | 'promotions'
+  | 'money'
+  | 'accounting'
+  | 'settings';
 
 interface UserProfileViewProps {
   currentUser: User;
@@ -100,8 +125,6 @@ interface UserProfileViewProps {
   // optional, falls back to internal state so this still works standalone.
   initialWriterTab?: 'articles' | 'stats_earnings' | 'literary_profile' | 'ai_tools';
   onWriterTabChange?: (tab: 'articles' | 'stats_earnings' | 'literary_profile' | 'ai_tools') => void;
-  // فتح لوحة تحكم المالك/الأدمن — مخصص فقط لدور admin
-  onNavigateToAdmin?: (tab?: 'overview' | 'analytics' | 'fraud' | 'campaigns' | 'moderation' | 'users' | 'promotions' | 'money' | 'accounting' | 'settings') => void;
   /** عدد الكتّاب الذين يتابعهم هذا المستخدم فعلياً (followedWriterIds.length)
    *  — بخلاف currentUser.followingCount المخزَّن الذي لا يُحدَّث أبداً. */
   followingCount?: number;
@@ -116,6 +139,68 @@ interface UserProfileViewProps {
   pendingKycCount?: number;
   pendingMoneyCount?: number;
   pendingFraudCount?: number;
+
+  // ===================================================================
+  // أقسام الإدارة (دور admin فقط) — كانت هذه كلها مبنية داخل مكوّن منفصل
+  // AdminDashboard.tsx يُفتح كشاشة مستقلة عن الملف الشخصي (مركز واحد
+  // يُعاد الوصول إليه من عدة نقاط دخول). حُذف ذلك المكوّن نهائياً، ونُقل
+  // محتوى تبويباته الفعلي إلى قسم "أقسام الإدارة" أسفل هذه الصفحة مباشرة،
+  // بنفس تجميع الأقسام المتشابهة (مثلاً القسم المالي يضم أيضاً محاسبة
+  // الإعلانات، وقسم الإعلانات يضم أيضاً طلبات ترويج المقالات) — حتى لا
+  // يبقى أي مكوّن "لوحة مركزية" منفصل يمكن أن يُعاد إدخاله لاحقاً بالخطأ
+  // (كما حدث فعلياً أكثر من مرة عبر استيراد نسخ من AI Studio).
+  fraudFlags?: FraudFlag[];
+  depositRequests?: any[];
+  payoutRequests?: any[];
+  purchaseRequests?: any[];
+  adEvents?: any[];
+  earningsRecords?: {
+    id: string;
+    userId: string;
+    amount: number;
+    source: string;
+    status: string;
+    createdAt: string;
+    releasableAt: string;
+    description?: string;
+  }[];
+  onUpdateUserRole?: (userId: string, newRole: User['role']) => void;
+  onToggleUserVerified?: (userId: string) => void;
+  onApproveKyc?: (userId: string) => void;
+  onBanUser?: (userId: string) => void;
+  onUpdateCampaignStatus?: (campaignId: string, status: AdCampaign['status']) => void;
+  onUpdateArticleStatus?: (articleId: string, status: Article['status']) => void;
+  onResolveFraudFlag?: (flagId: string, action: 'resolved' | 'dismissed') => void;
+  onSelectUser?: (user: User) => void;
+  onUpdatePromotionStatus?: (promotionId: string, status: 'approved' | 'rejected') => void;
+  onProcessAdEvents?: () => void;
+  onAdjustBalance?: (
+    userId: string,
+    field: AdjustableBalanceField,
+    amount: number,
+    reason: string
+  ) => void;
+  onUpdatePurchaseRequest?: (requestId: string, status: 'approved' | 'rejected') => void;
+  onUpdateMoneyRequest?: (
+    collectionName: 'depositRequests' | 'payoutRequests',
+    requestId: string,
+    status: 'approved' | 'rejected' | 'paid'
+  ) => void;
+  onReleaseEarning?: (earning: { id: string; userId: string; amount: number }) => void;
+  currentThemePreset?: ThemePresetKey;
+  onChangeThemePreset?: (preset: ThemePresetKey) => void;
+  currentBackgroundPreset?: BackgroundPresetKey;
+  onChangeBackgroundPreset?: (preset: BackgroundPresetKey) => void;
+  platformAdsEnabled?: boolean;
+  onTogglePlatformAds?: (enabled: boolean) => void;
+  externalAdsConfig?: ExternalAdsConfig;
+  onSaveExternalAdsConfig?: (config: ExternalAdsConfig) => void;
+  followersCountByUserId?: Record<string, number>;
+  onBroadcastMessage?: (text: string) => Promise<{ sent: number; failed: number }>;
+  // نفس نمط initialWriterTab/onWriterTabChange أعلاه، لكن لأقسام الإدارة —
+  // يتحكم بها الشريط السفلي أو القائمة الجانبية لفتح قسم إداري محدد مباشرة.
+  initialAdminSection?: AdminSection;
+  onAdminSectionChange?: (section: AdminSection) => void;
 }
 
 export const UserProfileView: React.FC<UserProfileViewProps> = ({
@@ -143,14 +228,46 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   language,
   onToggleLanguage,
   onLogout,
+  users = [],
   initialWriterTab,
   onWriterTabChange,
-  onNavigateToAdmin,
   followingCount,
   followersCount,
   pendingKycCount = 0,
   pendingMoneyCount = 0,
-  pendingFraudCount = 0
+  pendingFraudCount = 0,
+  fraudFlags = [],
+  depositRequests = [],
+  payoutRequests = [],
+  purchaseRequests = [],
+  adEvents = [],
+  earningsRecords = [],
+  onUpdateUserRole,
+  onToggleUserVerified,
+  onApproveKyc,
+  onBanUser,
+  onUpdateCampaignStatus,
+  onUpdateArticleStatus,
+  onResolveFraudFlag,
+  onSelectUser,
+  onUpdatePromotionStatus,
+  onProcessAdEvents,
+  onAdjustBalance,
+  onUpdatePurchaseRequest,
+  onUpdateMoneyRequest,
+  onReleaseEarning,
+  currentThemePreset,
+  onChangeThemePreset,
+  currentBackgroundPreset,
+  onChangeBackgroundPreset,
+  platformAdsEnabled,
+  onTogglePlatformAds,
+  externalAdsConfig,
+  onSaveExternalAdsConfig,
+  followersCountByUserId,
+  onBroadcastMessage,
+  initialAdminSection,
+  onAdminSectionChange
 }) => {
   const safeArticles = Array.isArray(articles) ? articles : [];
   const safeBookmarkedIds = Array.isArray(bookmarkedArticleIds) ? bookmarkedArticleIds : [];
@@ -168,6 +285,90 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   // otherwise this screen manages its own tab like before.
   const writerTab = initialWriterTab ?? internalWriterTab;
   const setWriterTab = onWriterTabChange ?? setInternalWriterTab;
+
+  // نفس نمط writerTab أعلاه، لأقسام الإدارة (دور admin) — كانت تُتحكَّم من
+  // مكوّن AdminDashboard.tsx المنفصل والمحذوف الآن؛ منطقه (الحالة، الطي
+  // بين money/accounting وcampaigns/promotions، حساب المقاييس) منقول هنا
+  // بالكامل بلا تغيير وظيفي.
+  const [internalAdminSection, setInternalAdminSection] = useState<AdminSection>('overview');
+  const adminSection = initialAdminSection ?? internalAdminSection;
+  const setAdminSection = onAdminSectionChange ?? setInternalAdminSection;
+  const [selectedUserForBalance, setSelectedUserForBalance] = useState<User | null>(null);
+  const [selectedUserForKyc, setSelectedUserForKyc] = useState<User | null>(null);
+  const [financeSubTab, setFinanceSubTab] = useState<
+    'payouts' | 'deposits' | 'releasable' | 'locked_sales' | 'ad_accounting'
+  >('payouts');
+  const [adsSubTab, setAdsSubTab] = useState<'ad_campaigns' | 'promotions' | 'external_networks'>(
+    'ad_campaigns'
+  );
+
+  const handleAdminNavigate = (tab: string, subTab?: string) => {
+    if (tab === 'money') {
+      if (subTab) setFinanceSubTab(subTab as any);
+      setAdminSection('money');
+    } else if (tab === 'accounting') {
+      setFinanceSubTab('ad_accounting');
+      setAdminSection('money');
+    } else if (tab === 'campaigns') {
+      if (subTab) setAdsSubTab(subTab as any);
+      setAdminSection('campaigns');
+    } else if (tab === 'promotions') {
+      setAdsSubTab('promotions');
+      setAdminSection('campaigns');
+    } else {
+      setAdminSection(tab as AdminSection);
+    }
+  };
+
+  const effectiveAdminSection = useMemo(() => {
+    if (adminSection === 'accounting') return 'money';
+    if (adminSection === 'promotions') return 'campaigns';
+    return adminSection;
+  }, [adminSection]);
+
+  const adminMetrics = useMemo(() => {
+    const totalPlatformAdRevenue = safeCampaigns
+      .filter((c) => c.placementType === 'platform' || c.type === 'fixed')
+      .reduce((acc, c) => acc + (c.totalSpent || 0), 0);
+
+    const totalWriterAdRevenue = safeCampaigns
+      .filter((c) => c.placementType === 'writer' || c.type === 'cpm' || c.type === 'cpc')
+      .reduce((acc, c) => acc + (c.totalSpent || 0), 0);
+
+    const platformAdSenseCut = totalWriterAdRevenue * REVENUE_SHARES.IN_ARTICLE_ADS.PLATFORM;
+    const writersAdSenseCut = totalWriterAdRevenue * REVENUE_SHARES.IN_ARTICLE_ADS.WRITER;
+
+    const totalLockedArticlesSales = safeArticles
+      .filter((a) => a.isLocked)
+      .reduce((acc, a) => acc + (a.revenueFromSales || 0), 0);
+
+    const platformSalesCut = totalLockedArticlesSales * REVENUE_SHARES.LOCKED_ARTICLES.PLATFORM;
+    const writersSalesCut = totalLockedArticlesSales * REVENUE_SHARES.LOCKED_ARTICLES.WRITER;
+
+    const netPlatformRevenue = totalPlatformAdRevenue + platformAdSenseCut + platformSalesCut;
+
+    const totalBlockedFraudRevenue = fraudFlags.reduce(
+      (acc, f) => acc + (f.revenueBlocked || 0),
+      0
+    );
+
+    return {
+      totalPlatformAdRevenue,
+      totalWriterAdRevenue,
+      platformAdSenseCut,
+      writersAdSenseCut,
+      totalLockedArticlesSales,
+      platformSalesCut,
+      writersSalesCut,
+      netPlatformRevenue,
+      totalBlockedFraudRevenue
+    };
+  }, [safeCampaigns, safeArticles, fraudFlags]);
+
+  const pendingAdsCount =
+    safeCampaigns.filter((c) => c.status === 'pending').length +
+    promotions.filter((p) => p.status === 'pending').length;
+
   const [writerArticleSubTab, setWriterArticleSubTab] = useState<'published' | 'drafts'>('published');
   const [advertiserTab, setAdvertiserTab] = useState<'campaigns' | 'performance' | 'create_ad' | 'billing'>('campaigns');
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
@@ -1523,295 +1724,180 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
             </div>
           </div>
 
-          {/* أقسام الإدارة المتخصصة — توزيع حقيقي للمهام والوظائف في أقسام منفصلة حسب الاختصاص */}
-          <div className="space-y-3">
+          {/* أقسام الإدارة المتخصصة — كل قسم هنا يعرض محتواه الفعلي مباشرة
+              (وليس رابطاً لشاشة أخرى)، مجمَّعة حسب الاختصاص: القسم المالي
+              يضم أيضاً محاسبة الإعلانات، وقسم الإعلانات يضم أيضاً طلبات
+              ترويج المقالات — تماماً كما كانت مجمَّعة داخل AdminDashboard
+              المحذوف، لكن بلا شاشة منفصلة له. */}
+          <div className="space-y-4">
             <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 px-1">
               أقسام الإدارة والتحكم المتخصصة:
             </h4>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {/* 1. قسم الشؤون المالية */}
-              <div className="p-4 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-col justify-between hover:border-amber-500/40 transition-all shadow-xs group">
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-9 h-9 rounded-xl bg-amber-500/10 dark:bg-amber-500/20 text-amber-500 flex items-center justify-center">
-                        <DollarSign className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h5 className="font-extrabold text-sm text-slate-900 dark:text-white">القسم المالي والحسابات</h5>
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400">سحوبات، إيداعات، تحرير الأرباح، وتدقيق المبيعات</p>
-                      </div>
-                    </div>
-                    {pendingMoneyCount > 0 && (
-                      <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-bold font-mono">
-                        {pendingMoneyCount} معلق
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-[11px] text-slate-500 dark:text-slate-400 space-y-1 pt-1 border-t border-slate-100 dark:border-slate-800">
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                      <span>مراجعة طلبات سحب الكُتّاب وتأكيد الحوالات</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                      <span>اعتماد شحن محافظ المعلنين والمستخدمين</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                      <span>تحرير أرباح الـ 30 يوماً وتوزيع حصص المقالات</span>
-                    </div>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => onNavigateToAdmin?.('money')}
-                  className="mt-3.5 w-full py-2 px-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-700 dark:text-amber-300 font-bold text-xs flex items-center justify-center gap-2 border border-amber-200/60 dark:border-amber-800/60 transition-all active:scale-98"
-                >
-                  <span>دخول القسم المالي والحسابات</span>
-                  <ChevronLeft className="w-4 h-4 rtl:rotate-0 ltr:rotate-180" />
-                </button>
-              </div>
-
-              {/* 2. قسم الإعلانات والترويج */}
-              <div className="p-4 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-col justify-between hover:border-cyan-500/40 transition-all shadow-xs group">
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-9 h-9 rounded-xl bg-cyan-500/10 dark:bg-cyan-500/20 text-cyan-500 flex items-center justify-center">
-                        <Megaphone className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h5 className="font-extrabold text-sm text-slate-900 dark:text-white">قسم الإعلانات والترويج</h5>
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400">حملات المعلنين، ترويج المقالات، وشبكات الإعلان</p>
-                      </div>
-                    </div>
-                    {pendingCampaignsCount > 0 && (
-                      <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-bold font-mono">
-                        {pendingCampaignsCount} معلق
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-[11px] text-slate-500 dark:text-slate-400 space-y-1 pt-1 border-t border-slate-100 dark:border-slate-800">
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
-                      <span>اعتماد وتفعيل حملات المعلنين (CPC / CPM)</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
-                      <span>مراجعة طلبات ترويج المقالات للكُتّاب</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
-                      <span>ربط شبكات PropellerAds و Adsterra</span>
-                    </div>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => onNavigateToAdmin?.('campaigns')}
-                  className="mt-3.5 w-full py-2 px-3 rounded-xl bg-cyan-50 dark:bg-cyan-950/40 hover:bg-cyan-100 dark:hover:bg-cyan-900/60 text-cyan-700 dark:text-cyan-300 font-bold text-xs flex items-center justify-center gap-2 border border-cyan-200/60 dark:border-cyan-800/60 transition-all active:scale-98"
-                >
-                  <span>دخول قسم الإعلانات والترويج</span>
-                  <ChevronLeft className="w-4 h-4 rtl:rotate-0 ltr:rotate-180" />
-                </button>
-              </div>
-
-              {/* 3. قسم المستخدمين والتوثيق */}
-              <div className="p-4 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-col justify-between hover:border-blue-500/40 transition-all shadow-xs group">
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-9 h-9 rounded-xl bg-blue-500/10 dark:bg-blue-500/20 text-blue-500 flex items-center justify-center">
-                        <Users className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h5 className="font-extrabold text-sm text-slate-900 dark:text-white">قسم المستخدمين وتوثيق KYC</h5>
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400">سجل الأعضاء، تدقيق الهويات، وتعديل الصلاحيات</p>
-                      </div>
-                    </div>
-                    {pendingKycCount > 0 && (
-                      <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-bold font-mono">
-                        {pendingKycCount} بانتظار KYC
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-[11px] text-slate-500 dark:text-slate-400 space-y-1 pt-1 border-t border-slate-100 dark:border-slate-800">
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
-                      <span>تدقيق واعتماد بطاقات الهوية الرسمية (KYC)</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
-                      <span>تعديل الرتب والصلاحيات والشارات الموثقة</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
-                      <span>تعديل الأرصدة يدوياً وإرسال التعميمات الجماعية</span>
-                    </div>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => onNavigateToAdmin?.('users')}
-                  className="mt-3.5 w-full py-2 px-3 rounded-xl bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-bold text-xs flex items-center justify-center gap-2 border border-blue-200/60 dark:border-blue-800/60 transition-all active:scale-98"
-                >
-                  <span>دخول قسم المستخدمين وKYC</span>
-                  <ChevronLeft className="w-4 h-4 rtl:rotate-0 ltr:rotate-180" />
-                </button>
-              </div>
-
-              {/* 4. قسم حوكمة المحتوى والمقالات */}
-              <div className="p-4 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-col justify-between hover:border-emerald-500/40 transition-all shadow-xs group">
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-9 h-9 rounded-xl bg-emerald-500/10 dark:bg-emerald-500/20 text-emerald-500 flex items-center justify-center">
-                        <FileText className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h5 className="font-extrabold text-sm text-slate-900 dark:text-white">قسم المحتوى والمقالات</h5>
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400">حوكمة النشر، تدقيق المقالات، والأرشفة الفورية</p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="text-[11px] text-slate-500 dark:text-slate-400 space-y-1 pt-1 border-t border-slate-100 dark:border-slate-800">
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                      <span>معاينة وتدقيق مقالات الكُتّاب المنشورة</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                      <span>أرشفة وحجب المقالات المخالفة لمعايير المنصة</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                      <span>متابعة المقالات الحصرية المدفوعة والمجانية</span>
-                    </div>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => onNavigateToAdmin?.('moderation')}
-                  className="mt-3.5 w-full py-2 px-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-bold text-xs flex items-center justify-center gap-2 border border-emerald-200/60 dark:border-emerald-800/60 transition-all active:scale-98"
-                >
-                  <span>دخول قسم حوكمة المحتوى</span>
-                  <ChevronLeft className="w-4 h-4 rtl:rotate-0 ltr:rotate-180" />
-                </button>
-              </div>
-
-              {/* 5. مركز مكافحة الاحتيال والأمان */}
-              <div className="p-4 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-col justify-between hover:border-rose-500/40 transition-all shadow-xs group">
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-9 h-9 rounded-xl bg-rose-500/10 dark:bg-rose-500/20 text-rose-500 flex items-center justify-center">
-                        <ShieldAlert className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h5 className="font-extrabold text-sm text-slate-900 dark:text-white">مركز مكافحة الاحتيال والأمان</h5>
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400">رصد النقر الذاتي، البوتات، وحظر المعتدين</p>
-                      </div>
-                    </div>
-                    {pendingFraudCount > 0 && (
-                      <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-bold font-mono">
-                        {pendingFraudCount} إنذار
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-[11px] text-slate-500 dark:text-slate-400 space-y-1 pt-1 border-t border-slate-100 dark:border-slate-800">
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
-                      <span>كشف وحجب النقر الذاتي على إعلانات الكاتب</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
-                      <span>حماية أموال المعلنين وعوائد المنصة</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
-                      <span>حظر حسابات المخالفين وعناوين IP المشبوهة</span>
-                    </div>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => onNavigateToAdmin?.('fraud')}
-                  className="mt-3.5 w-full py-2 px-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 font-bold text-xs flex items-center justify-center gap-2 border border-rose-200/60 dark:border-rose-800/60 transition-all active:scale-98"
-                >
-                  <span>دخول مركز مكافحة الاحتيال</span>
-                  <ChevronLeft className="w-4 h-4 rtl:rotate-0 ltr:rotate-180" />
-                </button>
-              </div>
-
-              {/* 6. إعدادات المنظومة والمظهر */}
-              <div className="p-4 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-col justify-between hover:border-purple-500/40 transition-all shadow-xs group">
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-9 h-9 rounded-xl bg-purple-500/10 dark:bg-purple-500/20 text-purple-500 flex items-center justify-center">
-                        <Settings className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h5 className="font-extrabold text-sm text-slate-900 dark:text-white">إعدادات المنظومة والمظهر</h5>
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400">السمات البصرية، خلفيات القالب، ونسب الأرباح</p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="text-[11px] text-slate-500 dark:text-slate-400 space-y-1 pt-1 border-t border-slate-100 dark:border-slate-800">
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
-                      <span>تخصيص ألوان وسمة المنصة الرئيسية</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
-                      <span>تغيير خلفيات القالب وتأثيرات الشاشة</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
-                      <span>الاطلاع على مصفوفة تقاسم العوائد المالية</span>
-                    </div>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => onNavigateToAdmin?.('settings')}
-                  className="mt-3.5 w-full py-2 px-3 rounded-xl bg-purple-50 dark:bg-purple-950/40 hover:bg-purple-100 dark:hover:bg-purple-900/60 text-purple-700 dark:text-purple-300 font-bold text-xs flex items-center justify-center gap-2 border border-purple-200/60 dark:border-purple-800/60 transition-all active:scale-98"
-                >
-                  <span>دخول إعدادات المنظومة</span>
-                  <ChevronLeft className="w-4 h-4 rtl:rotate-0 ltr:rotate-180" />
-                </button>
+            {/* شريط تبويبات الأقسام */}
+            <div className="overflow-x-auto no-scrollbar -mx-1 px-1">
+              <div className="flex items-center gap-1.5 p-1 bg-slate-900 rounded-2xl border border-slate-800 min-w-max">
+                {[
+                  { id: 'overview' as const, label: 'نظرة عامة', icon: TrendingUp, badge: 0 },
+                  { id: 'analytics' as const, label: 'الإحصائيات والزوار', icon: Activity, badge: 0 },
+                  { id: 'money' as const, label: 'العمليات المالية', icon: DollarSign, badge: pendingMoneyCount },
+                  { id: 'campaigns' as const, label: 'الإعلانات والترويج', icon: Megaphone, badge: pendingAdsCount },
+                  { id: 'moderation' as const, label: 'المحتوى والمقالات', icon: FileText, badge: 0 },
+                  { id: 'users' as const, label: 'المستخدمون وKYC', icon: Users, badge: pendingKycCount },
+                  { id: 'fraud' as const, label: 'مكافحة الاحتيال', icon: ShieldAlert, badge: pendingFraudCount },
+                  { id: 'settings' as const, label: 'إعدادات المنظومة', icon: Settings, badge: 0 }
+                ].map((tab) => {
+                  const Icon = tab.icon;
+                  const isActive = effectiveAdminSection === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => handleAdminNavigate(tab.id)}
+                      className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold transition-all whitespace-nowrap ${
+                        isActive
+                          ? 'bg-brand-600 text-white shadow-md shadow-brand-600/25'
+                          : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                      }`}
+                    >
+                      <Icon className="w-3.5 h-3.5" />
+                      <span>{tab.label}</span>
+                      {tab.badge > 0 && (
+                        <span
+                          className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-black ${
+                            isActive ? 'bg-white/20 text-white' : 'bg-amber-500 text-slate-950'
+                          }`}
+                        >
+                          {tab.badge}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
-            {/* زر النظرة العامة والتقارير الشاملة */}
-            <div className="pt-2">
-              <button
-                type="button"
-                onClick={() => onNavigateToAdmin?.('overview')}
-                className="w-full p-4 rounded-2xl bg-slate-900 border border-slate-800 hover:border-brand-500/50 text-white font-bold text-xs flex items-center justify-between transition-all group"
-              >
-                <div className="flex items-center gap-3">
-                  <TrendingUp className="w-5 h-5 text-brand-400" />
-                  <div className="text-start">
-                    <div className="font-extrabold text-sm text-white">مركز التقارير والنظرة العامة (Executive Overview)</div>
-                    <div className="text-[11px] text-slate-400">الملخص التنفيذي لجميع أنشطة المنصة والمؤشرات المالية في شاشة واحدة</div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1 text-brand-400 text-xs">
-                  <span>فتح التقرير العام</span>
-                  <ChevronLeft className="w-4 h-4 rtl:rotate-0 ltr:rotate-180" />
-                </div>
-              </button>
+            {/* محتوى القسم النشط */}
+            <div className="rounded-3xl bg-slate-950 border border-slate-800 p-3 sm:p-4">
+              {effectiveAdminSection === 'overview' && (
+                <AdminOverviewTab
+                  currentUser={currentUser}
+                  users={users}
+                  articles={safeArticles}
+                  campaigns={safeCampaigns}
+                  fraudFlags={fraudFlags}
+                  promotions={promotions}
+                  depositRequests={depositRequests}
+                  payoutRequests={payoutRequests}
+                  purchaseRequests={purchaseRequests}
+                  adEvents={adEvents}
+                  onNavigateTab={handleAdminNavigate}
+                  metrics={adminMetrics}
+                />
+              )}
+
+              {effectiveAdminSection === 'analytics' && (
+                <AdminAnalyticsTab
+                  users={users}
+                  articles={safeArticles}
+                  campaigns={safeCampaigns}
+                  onSelectUser={onSelectUser}
+                  onSelectArticle={onSelectArticle}
+                />
+              )}
+
+              {effectiveAdminSection === 'money' && (
+                <AdminFinanceTab
+                  users={users}
+                  campaigns={safeCampaigns}
+                  depositRequests={depositRequests}
+                  payoutRequests={payoutRequests}
+                  purchaseRequests={purchaseRequests}
+                  adEvents={adEvents}
+                  earningsRecords={earningsRecords}
+                  initialSubTab={financeSubTab}
+                  onUpdateMoneyRequest={onUpdateMoneyRequest}
+                  onUpdatePurchaseRequest={onUpdatePurchaseRequest}
+                  onReleaseEarning={onReleaseEarning}
+                  onProcessAdEvents={onProcessAdEvents}
+                  onOpenAdjustBalance={(u) => setSelectedUserForBalance(u)}
+                />
+              )}
+
+              {effectiveAdminSection === 'campaigns' && (
+                <AdminAdsTab
+                  campaigns={safeCampaigns}
+                  promotions={promotions}
+                  users={users}
+                  platformAdsEnabled={platformAdsEnabled}
+                  onTogglePlatformAds={onTogglePlatformAds}
+                  externalAdsConfig={externalAdsConfig}
+                  onSaveExternalAdsConfig={onSaveExternalAdsConfig}
+                  onUpdateCampaignStatus={onUpdateCampaignStatus}
+                  onUpdatePromotionStatus={onUpdatePromotionStatus}
+                  initialSubTab={adsSubTab}
+                />
+              )}
+
+              {effectiveAdminSection === 'moderation' && (
+                <AdminContentTab
+                  articles={safeArticles}
+                  users={users}
+                  onSelectArticle={onSelectArticle}
+                  onUpdateArticleStatus={onUpdateArticleStatus}
+                />
+              )}
+
+              {effectiveAdminSection === 'users' && (
+                <AdminUsersTab
+                  users={users}
+                  currentUser={currentUser}
+                  onUpdateUserRole={onUpdateUserRole}
+                  onToggleUserVerified={onToggleUserVerified}
+                  onApproveKyc={onApproveKyc}
+                  onBanUser={onBanUser}
+                  onSelectUser={onSelectUser}
+                  onBroadcastMessage={onBroadcastMessage}
+                  onOpenAdjustBalance={(u) => setSelectedUserForBalance(u)}
+                  onOpenKycReview={(u) => setSelectedUserForKyc(u)}
+                />
+              )}
+
+              {effectiveAdminSection === 'fraud' && (
+                <AdminFraudTab
+                  fraudFlags={fraudFlags}
+                  users={users}
+                  onResolveFraudFlag={onResolveFraudFlag}
+                  onBanUser={onBanUser}
+                  totalBlockedFraudRevenue={adminMetrics.totalBlockedFraudRevenue}
+                />
+              )}
+
+              {effectiveAdminSection === 'settings' && (
+                <AdminSettingsTab
+                  currentThemePreset={currentThemePreset}
+                  onChangeThemePreset={onChangeThemePreset}
+                  currentBackgroundPreset={currentBackgroundPreset}
+                  onChangeBackgroundPreset={onChangeBackgroundPreset}
+                />
+              )}
             </div>
           </div>
+
+          {/* تعديل رصيد مستخدم يدوياً / مراجعة KYC — نفس المودالين اللذين
+              كانا يُفتحان من داخل AdminDashboard المحذوف. */}
+          <BalanceAdjustModal
+            isOpen={Boolean(selectedUserForBalance)}
+            user={selectedUserForBalance}
+            onClose={() => setSelectedUserForBalance(null)}
+            onAdjustBalance={onAdjustBalance}
+          />
+          <KycReviewModal
+            isOpen={Boolean(selectedUserForKyc)}
+            user={selectedUserForKyc}
+            onClose={() => setSelectedUserForKyc(null)}
+            onApproveKyc={onApproveKyc}
+          />
         </div>
       )}
 
