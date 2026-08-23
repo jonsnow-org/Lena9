@@ -183,6 +183,15 @@ service cloud.firestore {
       );
     }
 
+    match /articlePurchases/{purchaseId} {
+      allow read: if isSignedIn() && (
+        resource.data.buyerId == request.auth.uid
+        || resource.data.writerId == request.auth.uid
+        || isAdmin()
+      );
+      allow create, update, delete: if isAdmin();
+    }
+
     match /purchaseRequests/{requestId} {
       allow read: if isSignedIn() && (
         resource.data.userId == request.auth.uid

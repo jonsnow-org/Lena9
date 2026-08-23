@@ -103,3 +103,26 @@ export async function createAutomatedPayout(amount: number): Promise<{ ok: boole
   if (!res.ok) throw new Error(data?.message || 'تعذر تنفيذ عملية السحب.');
   return data;
 }
+
+export interface UnlockArticleResult {
+  success: boolean;
+  alreadyUnlocked: boolean;
+  price: number;
+  newBalance: number | null;
+}
+
+/**
+ * شراء/فتح مقال مقفول — فوري: يتحقق السيرفر من الرصيد ويخصمه مباشرة
+ * (بدل إنشاء طلب pending ينتظر اعتماد المالك يدوياً).
+ */
+export async function unlockArticle(articleId: string): Promise<UnlockArticleResult> {
+  const headers = await authHeaders();
+  const res = await fetch('/api/articles/unlock', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ articleId })
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.message || 'تعذر إتمام عملية الشراء.');
+  return data;
+}

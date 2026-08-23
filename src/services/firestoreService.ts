@@ -1429,6 +1429,32 @@ export function subscribeToArticleLikes(
   );
 }
 
+// -------------------------------------------------------------------
+// مقالات مقفولة اشتراها المستخدم الحالي فعلياً — تُكتب فقط من السيرفر
+// (نقطة /api/articles/unlock عبر Admin SDK) بعد خصم الرصيد فوراً، ولذلك
+// يُستعلَم عنها هنا مقتصرة على buyerId الحالي فقط (بيانات مالية، ليست
+// عامة كالإعجابات).
+// -------------------------------------------------------------------
+
+export function subscribeToArticlePurchases(
+  buyerId: string,
+  onPurchases: (articleIds: string[]) => void,
+  onError?: (err: any) => void
+) {
+  return onSnapshot(
+    query(collection(db, 'articlePurchases'), where('buyerId', '==', buyerId)),
+    (snapshot) => {
+      const ids: string[] = [];
+      snapshot.forEach((d) => ids.push((d.data() as any).articleId));
+      onPurchases(ids);
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'articlePurchases');
+      if (onError) onError(error);
+    }
+  );
+}
+
 export async function likeArticleInFirestore(articleId: string, userId: string): Promise<void> {
   try {
     await setDoc(doc(db, 'likes', `${articleId}_${userId}`), {

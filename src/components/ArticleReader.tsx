@@ -49,6 +49,7 @@ interface ArticleReaderProps {
   onFollowWriter: (writerId: string) => void;
   isFollowingWriter: boolean;
   onUnlockArticle: (article: Article) => void;
+  isUnlockedByCurrentUser?: boolean;
   comments: Comment[];
   onAddComment: (articleId: string, content: string, parentCommentId?: string) => void;
   onLikeComment: (commentId: string) => void;
@@ -73,6 +74,7 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
   onFollowWriter,
   isFollowingWriter,
   onUnlockArticle,
+  isUnlockedByCurrentUser = false,
   comments,
   onAddComment,
   onLikeComment,
@@ -112,7 +114,7 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
   const [audioRate, setAudioRate] = useState(1.0);
   const [showAudioControls, setShowAudioControls] = useState(false);
 
-  const isLocked = article.isLocked && !article.isUnlockedByCurrentUser;
+  const isLocked = article.isLocked && !isUnlockedByCurrentUser;
 
   // استئناف القراءة تلقائياً وبهدوء من آخر موضع محفوظ (بدل بانر يسأل
   // المستخدم عن نسبة مئوية قد لا تُطابق الموضع الفعلي بدقة، لأن ارتفاع

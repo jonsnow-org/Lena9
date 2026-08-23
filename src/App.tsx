@@ -124,6 +124,7 @@ import {
   addReplyToCommentInFirestore,
   toggleCommentLikeInFirestore,
   subscribeToArticleLikes,
+  subscribeToArticlePurchases,
   likeArticleInFirestore,
   unlikeArticleInFirestore,
   createNotificationInFirestore,
@@ -143,6 +144,7 @@ import {
   adminReleaseEarnings,
   EarningRecord
 } from './services/firestoreService';
+import { unlockArticle as requestArticleUnlock } from './services/paymentsApi';
 import {
   auth,
   fetchUserFromFirestore,
@@ -260,6 +262,11 @@ export function App() {
   // إعجابات المقالات الحقيقية: كل عنصر = مقال أعجب به مستخدم معيّن فعلياً،
   // تُستخدم لمعرفة ما إذا كان المستخدم الحالي قد أعجب بمقال بعينه أم لا.
   const [articleLikes, setArticleLikes] = useState<{ id: string; articleId: string; userId: string }[]>([]);
+
+  // معرّفات المقالات المقفولة التي اشتراها المستخدم الحالي فعلياً (يخصمها
+  // السيرفر فوراً عبر /api/articles/unlock) — تُستخدم لإظهار المحتوى
+  // مفتوحاً دون طلب دفع مكرر.
+  const [unlockedArticleIds, setUnlockedArticleIds] = useState<string[]>([]);
 
   // تقييمات المقالات الحقيقية (1-5 نجوم) لكل مستخدم على كل مقال.
   const [articleRatings, setArticleRatings] = useState<
@@ -1018,6 +1025,20 @@ export function App() {
     return () => unsub();
   }, [currentUserId]);
 
+  // الاستماع للمقالات المقفولة التي اشتراها المستخدم الحالي فعلياً فقط
+  useEffect(() => {
+    if (!currentUserId) {
+      setUnlockedArticleIds([]);
+      return;
+    }
+    const unsub = subscribeToArticlePurchases(
+      currentUserId,
+      setUnlockedArticleIds,
+      (e) => console.error('Article purchases subscription error:', e)
+    );
+    return () => unsub();
+  }, [currentUserId]);
+
   // الاستماع للمحادثات والرسائل الخاصة بالمستخدم الحالي فقط
   useEffect(() => {
     if (!currentUserId) {
@@ -1558,13 +1579,13 @@ export function App() {
    * كما صُحّحت النسب لتقرأ من المصدر المركزي بدلاً من أرقام مكتوبة يدوياً.
    */
   /**
-   * شراء مقال مقفول.
+   * شراء مقال مقفول — فوري.
    *
-   * ⚠️ تغيير جوهري: كان هذا يخصم ويضيف الأرباح في المتصفح مباشرة، وهو
-   * ما ترفضه قواعد أمان Firestore ويمكن تزويره من أدوات المطوّر.
-   *
-   * الآن: يُنشأ طلب شراء بحالة pending، ويعتمده المالك من لوحة الإدارة
-   * فيُخصم من محفظة القارئ وتُضاف حصة الكاتب إلى أرباحه المجمّدة.
+   * كان هذا يُنشئ طلب شراء pending ينتظر اعتماداً يدوياً من المالك خلال
+   * 24-48 ساعة (لأن قواعد أمان Firestore تمنع خصم الرصيد مباشرة من
+   * المتصفح). الآن /api/articles/unlock على الخادم يتحقق من هوية المشتري
+   * عبر توكن Firebase الحقيقي، ويخصم الرصيد ويفتح المقال فوراً ضمن معاملة
+   * Firestore ذرية واحدة — بنفس نمط خصم توليد الصور بالذكاء الاصطناعي.
    */
   const handleUnlockArticle = async (article: Article) => {
     if (!requireAuth()) return;
@@ -1581,19 +1602,13 @@ export function App() {
     }
 
     try {
-      await createPurchaseRequest({
-        buyerId: currentUser.id,
-        articleId: article.id,
-        articleTitle: article.title,
-        writerId: article.writerId,
-        price
-      });
-      alert(
-        'تم إرسال طلب الشراء. سيُفتح المقال فور اعتماد الطلب من إدارة المنصة خلال 24 إلى 48 ساعة.'
-      );
-    } catch (err) {
-      console.error('تعذر إنشاء طلب الشراء:', err);
-      alert('تعذر إتمام عملية الشراء. تحقق من اتصالك ثم حاول مجدداً.');
+      const result = await requestArticleUnlock(article.id);
+      if (!result.alreadyUnlocked) {
+        alert(`تم فتح المقال بنجاح! خُصم $${result.price.toFixed(2)} من رصيدك.`);
+      }
+    } catch (err: any) {
+      console.error('تعذر إتمام شراء المقال:', err);
+      alert(err?.message || 'تعذر إتمام عملية الشراء. تحقق من اتصالك ثم حاول مجدداً.');
     }
   };
 
@@ -3201,6 +3216,7 @@ export function App() {
           onFollowWriter={handleToggleFollow}
           isFollowingWriter={followedWriterIds.includes(readingArticle.writerId)}
           onUnlockArticle={handleUnlockArticle}
+          isUnlockedByCurrentUser={unlockedArticleIds.includes(readingArticle.id)}
           comments={comments.filter((c) => c.articleId === readingArticle.id)}
           onAddComment={handleAddComment}
           onLikeComment={handleLikeComment}

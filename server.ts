@@ -31,6 +31,9 @@ import {
   createNowPaymentsInvoice,
   verifyNowPaymentsIpnSignature
 } from './server/nowPayments';
+import { isEligibleForMonetization } from './src/utils/creatorEligibility';
+import { REVENUE_SHARES } from './src/constants/revenueShares';
+import type { User, Article } from './src/types';
 
 dotenv.config();
 
@@ -657,6 +660,130 @@ async function startServer() {
         error: 'generation_failed',
         message: 'تعذر توليد الصورة بالذكاء الاصطناعي حالياً. يرجى المحاولة مرة أخرى.'
       });
+    }
+  });
+
+  // إلغاء قفل مقال مدفوع — فوري بدل انتظار اعتماد الأدمن اليدوي (24-48
+  // ساعة كما كان). يتحقق من هوية المشتري عبر توكن Firebase (لا يثق بأي
+  // userId من جسم الطلب)، ويخصم/يودع في معاملة Firestore واحدة ذرية، بنفس
+  // منطق الأهلية لاحتساب أرباح الكاتب (متابعون + مشاهدات + عمر الحساب +
+  // عدد المقالات + KYC) الذي كان يُطبَّق يدوياً في handleUpdatePurchaseRequest.
+  app.post('/api/articles/unlock', async (req, res) => {
+    if (!isAdminConfigured()) {
+      return res.status(503).json({ error: 'not_configured', message: 'الخدمة غير مهيأة على الخادم حالياً.' });
+    }
+    try {
+      const { uid } = await verifyRequestAuth(req.headers.authorization);
+      const { articleId } = req.body;
+      if (!articleId || typeof articleId !== 'string') {
+        return res.status(400).json({ error: 'invalid_article', message: 'معرّف المقال غير صالح.' });
+      }
+
+      const db = getAdminDb();
+      const articleRef = db.collection('articles').doc(articleId);
+      const articleSnap = await articleRef.get();
+      if (!articleSnap.exists) {
+        return res.status(404).json({ error: 'article_not_found', message: 'المقال غير موجود.' });
+      }
+      const article = articleSnap.data() as Article;
+
+      if (!article.isLocked) {
+        return res.json({ success: true, alreadyUnlocked: true, price: 0, newBalance: null });
+      }
+      const writerId = article.writerId;
+      if (writerId === uid) {
+        return res.json({ success: true, alreadyUnlocked: true, price: 0, newBalance: null });
+      }
+
+      const purchaseRef = db.collection('articlePurchases').doc(`${uid}_${articleId}`);
+      const existingPurchase = await purchaseRef.get();
+      if (existingPurchase.exists) {
+        return res.json({ success: true, alreadyUnlocked: true, price: 0, newBalance: null });
+      }
+
+      const price = Number(article.lockedPrice) || 2.99;
+
+      const writerSnap = await db.collection('users').doc(writerId).get();
+      let writerEligible = false;
+      if (writerSnap.exists) {
+        const writerData = writerSnap.data() as User;
+        if (writerData.role === 'admin') {
+          writerEligible = true;
+        } else {
+          const [publishedSnap, followsSnap] = await Promise.all([
+            db.collection('articles').where('writerId', '==', writerId).where('status', '==', 'published').get(),
+            db.collection('follows').where('followingId', '==', writerId).get()
+          ]);
+          const published = publishedSnap.docs.map((d) => d.data() as Article);
+          writerEligible = isEligibleForMonetization(writerData, published, followsSnap.size);
+        }
+      }
+
+      const buyerRef = db.collection('users').doc(uid);
+
+      try {
+        await db.runTransaction(async (tx) => {
+          const [buyerSnap, purchaseRaceCheck] = await Promise.all([tx.get(buyerRef), tx.get(purchaseRef)]);
+          if (purchaseRaceCheck.exists) return; // اشتُري للتو ضمن طلب متزامن آخر
+          if (!buyerSnap.exists) throw new Error('buyer_not_found');
+
+          const buyerData = buyerSnap.data()!;
+          const currentBalance = Number(buyerData.availableBalance ?? buyerData.walletBalance ?? 0);
+          if (currentBalance < price) {
+            throw new Error('insufficient_balance');
+          }
+
+          tx.update(buyerRef, {
+            walletBalance: FieldValue.increment(-price),
+            availableBalance: FieldValue.increment(-price)
+          });
+          tx.set(purchaseRef, {
+            buyerId: uid,
+            articleId,
+            writerId,
+            price,
+            purchasedAt: new Date().toISOString()
+          });
+
+          if (writerEligible) {
+            const share = Number((price * REVENUE_SHARES.LOCKED_ARTICLES.WRITER).toFixed(2));
+            const writerRef = db.collection('users').doc(writerId);
+            tx.update(writerRef, {
+              pendingEarnings: FieldValue.increment(share),
+              lifetimeEarnings: FieldValue.increment(share)
+            });
+            const earningRef = db.collection('earnings').doc();
+            tx.set(earningRef, {
+              userId: writerId,
+              amount: share,
+              source: `مبيعات مقال: ${article.title || articleId}`,
+              articleId,
+              status: 'pending_hold',
+              createdAt: new Date().toISOString(),
+              releasableAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+            });
+          }
+        });
+      } catch (txErr: any) {
+        if (txErr?.message === 'insufficient_balance') {
+          return res.status(402).json({
+            error: 'insufficient_balance',
+            message: `رصيدك الحالي غير كافٍ لشراء هذا المقال. تكلفته $${price.toFixed(2)}.`
+          });
+        }
+        throw txErr;
+      }
+
+      const updatedBuyerSnap = await buyerRef.get();
+      const newBalance = updatedBuyerSnap.data()?.availableBalance ?? null;
+
+      res.json({ success: true, alreadyUnlocked: false, price, newBalance });
+    } catch (err: any) {
+      if (err?.message === 'missing_auth_token') {
+        return res.status(401).json({ error: 'auth_required', message: 'يتطلب شراء المقالات المقفلة تسجيل الدخول أولاً.' });
+      }
+      console.error('Article unlock error:', err?.message || err);
+      res.status(500).json({ error: 'unlock_failed', message: 'تعذر إتمام عملية الشراء. حاول مجدداً.' });
     }
   });
 
