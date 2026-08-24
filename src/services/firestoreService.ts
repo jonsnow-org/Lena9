@@ -1184,22 +1184,30 @@ export function subscribeToMessages(
   );
 }
 
-/** يُعلِّم كل رسائل محادثة معيّنة الواردة من الطرف الآخر كمقروءة — يُستدعى
- *  عند فتح المستخدم لهذه المحادثة، بدل ترك عدّاد "غير مقروء" عالقاً على 0
- *  دائماً أو غير دقيق. */
-export async function markConversationMessagesRead(currentUserId: string, otherUserId: string): Promise<void> {
-  if (!currentUserId || !otherUserId) return;
+/**
+ * يُعلِّم رسائل بعينها (بمعرّفاتها) كمقروءة — يُستدعى عند فتح المستخدم
+ * لمحادثة، بدل ترك عدّاد "غير مقروء" عالقاً.
+ *
+ * ⚠️ كانت هذه الوظيفة سابقاً تُنفّذ استعلام list كامل (where conversationId
+ * + senderId + isRead) بلا أي شرط على participants — ونجحت فقط لحساب
+ * الأدمن لأن isAdmin() لا يعتمد على بيانات المستند المُستعلَم عنه فيتجاوز
+ * قيد Firestore الخاص باستعلامات list (يجب أن يكون شرط القاعدة "قابلاً
+ * للإثبات" من شروط where نفسها، وإلا يُرفض الاستعلام كاملاً بصلاحيات
+ * مرفوضة) — بينما فرع الشرط الوحيد المتاح لأي مستخدم عادي
+ * (auth.uid in resource.data.participants) لا يمكن إثباته من هذا
+ * الاستعلام لخلوه من أي شرط participants، فيُرفض الاستعلام بالكامل صامتاً
+ * (يُلتقَط الخطأ ويُطبَع فقط)، فتبقى كل الرسائل غير مقروءة فعلياً في
+ * Firestore رغم اختفاء الشارة محلياً — لتعود فور أي تحديث للصفحة.
+ * الحل: تحديث كل رسالة بمعرّفها مباشرة (مأخوذة من قائمة messages
+ * المُشترَك بها أصلاً عبر subscribeToMessages التي تستخدم بالفعل
+ * participants array-contains بشكل صحيح) بدل استعلام list جديد — تحديث
+ * مستند بمعرّفه المباشر لا يخضع لقيد "قابلية إثبات list" إطلاقاً.
+ */
+export async function markMessagesReadByIds(messageIds: string[]): Promise<void> {
+  const ids = messageIds.filter(Boolean);
+  if (ids.length === 0) return;
   try {
-    const convId = conversationIdFor(currentUserId, otherUserId);
-    const q = query(
-      collection(db, 'messages'),
-      where('conversationId', '==', convId),
-      where('senderId', '==', otherUserId),
-      where('isRead', '==', false)
-    );
-    const snap = await getDocs(q);
-    if (snap.empty) return;
-    await Promise.all(snap.docs.map((d) => updateDoc(d.ref, { isRead: true })));
+    await Promise.all(ids.map((id) => updateDoc(doc(db, 'messages', id), { isRead: true })));
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, 'messages');
   }

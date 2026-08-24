@@ -113,7 +113,7 @@ import {
   broadcastMessageToAllUsers,
   subscribeToConversations,
   subscribeToMessages,
-  markConversationMessagesRead,
+  markMessagesReadByIds,
   logAdEvent,
   createPurchaseRequest,
   updateUserSocialLinks,
@@ -4283,17 +4283,21 @@ export function App() {
         onSetTyping={handleSetTyping}
         activeChatPartner={activeChatPartner}
         onOpenConversation={(partnerId) => {
-          // تحديث محلي فوري أولاً — لا ننتظر جولة Firestore كاملة (قراءة
-          // ثم كتابة دفعية) قبل اختفاء الشارة، فيبقى المستخدم يرى "غير
-          // مقروء" لثوانٍ رغم أنه يقرأ الرسالة أمامه فعلياً على شبكة بطيئة.
+          // معرّفات الرسائل غير المقروءة الواردة من هذا الطرف — من القائمة
+          // المُشترَك بها أصلاً محلياً، بدل استعلام Firestore جديد (كان
+          // مرفوضاً بصلاحيات لأي حساب غير أدمن — انظر شرح markMessagesReadByIds).
+          const unreadIds = messages
+            .filter((m) => m.senderId === partnerId && m.recipientId === currentUser.id && !m.isRead)
+            .map((m) => m.id);
+          if (unreadIds.length === 0) return;
+
+          // تحديث محلي فوري أولاً — لا ننتظر جولة Firestore كاملة قبل
+          // اختفاء الشارة، فيبقى المستخدم يرى "غير مقروء" لثوانٍ رغم أنه
+          // يقرأ الرسالة أمامه فعلياً على شبكة بطيئة.
           setMessages((prev) =>
-            prev.map((m) =>
-              m.senderId === partnerId && m.recipientId === currentUser.id && !m.isRead
-                ? { ...m, isRead: true }
-                : m
-            )
+            prev.map((m) => (unreadIds.includes(m.id) ? { ...m, isRead: true } : m))
           );
-          markConversationMessagesRead(currentUser.id, partnerId).catch((err) =>
+          markMessagesReadByIds(unreadIds).catch((err) =>
             console.error('تعذر تعليم الرسائل كمقروءة:', err)
           );
         }}

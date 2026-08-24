@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { Article, User } from '../types';
 import { formatDateTimeAr } from '../utils/dateFormat';
+import { normalizeArabicSearch } from '../utils/arabicSearch';
 
 interface ExploreViewProps {
   articles: Article[];
@@ -61,14 +62,17 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
       count: `${count} مقال`
     }));
 
+  // تطبيع عربي حقيقي قبل المطابقة — بدونه يفشل بحث المقالات لأي فرق شكلي
+  // شائع (أ/إ/آ/ا، ى/ي، ة/ه، تشكيل، مسافات زائدة).
+  const normalizedQuery = normalizeArabicSearch(exploreQuery);
+
   const filteredArticles = articles.filter((art) => {
-    const q = exploreQuery.toLowerCase().trim();
     const matchSearch =
-      !q ||
-      art.title.toLowerCase().includes(q) ||
-      art.description.toLowerCase().includes(q) ||
-      art.writerName.toLowerCase().includes(q) ||
-      (art.tags && art.tags.some((t) => t.toLowerCase().includes(q)));
+      !normalizedQuery ||
+      normalizeArabicSearch(art.title).includes(normalizedQuery) ||
+      normalizeArabicSearch(art.description).includes(normalizedQuery) ||
+      normalizeArabicSearch(art.writerName).includes(normalizedQuery) ||
+      (art.tags && art.tags.some((t) => normalizeArabicSearch(t).includes(normalizedQuery)));
 
     if (!matchSearch) return false;
 
@@ -78,6 +82,18 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
     if (activeFilter === 'locked') return art.isLocked;
     return true;
   });
+
+  // نتائج بحث حسابات الكُتّاب مباشرة بالاسم/المعرّف — كانت هذه القائمة
+  // (قسم "كُتّاب موصى بمتابعتهم" أدناه) تعرض كل الكُتّاب دائماً بلا أي
+  // علاقة بنص البحث إطلاقاً، فيبدو البحث عن شخص بعينه معطَّلاً كلياً رغم
+  // وجود حسابه فعلاً.
+  const filteredWriters = normalizedQuery
+    ? writers.filter(
+        (w) =>
+          normalizeArabicSearch(w.username || '').includes(normalizedQuery) ||
+          normalizeArabicSearch(w.fullName || '').includes(normalizedQuery)
+      )
+    : writers;
 
   return (
     <div className="space-y-6 animate-android-in pb-12">
@@ -138,18 +154,18 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
           <div className="flex items-center gap-2">
             <Users className="w-4 h-4 text-teal-600" />
             <h3 className="font-black text-sm sm:text-base text-slate-900 dark:text-white">
-              كُتّاب موصى بمتابعتهم
+              {normalizedQuery ? 'نتائج البحث عن كُتّاب' : 'كُتّاب موصى بمتابعتهم'}
             </h3>
           </div>
           <span className="text-xs text-teal-600 dark:text-teal-400 font-bold">
-            {writers.length} كاتب
+            {filteredWriters.length} كاتب
           </span>
         </div>
 
         {/* Horizontal scrollable writers list */}
-        {writers.length > 0 ? (
+        {filteredWriters.length > 0 ? (
           <div className="flex items-center gap-3 overflow-x-auto pb-2 scrollbar-none">
-            {writers.map((writer) => {
+            {filteredWriters.map((writer) => {
               const isFollowing = followedWriterIds.includes(writer.id);
               return (
                 <div
@@ -199,7 +215,9 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
             })}
           </div>
         ) : (
-          <p className="text-xs text-slate-400 py-3 text-center">لا يوجد كُتّاب متاحون حالياً.</p>
+          <p className="text-xs text-slate-400 py-3 text-center">
+            {normalizedQuery ? 'لا يوجد كاتب يطابق بحثك.' : 'لا يوجد كُتّاب متاحون حالياً.'}
+          </p>
         )}
       </div>
 
