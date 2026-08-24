@@ -2,6 +2,13 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AdCampaign } from '../types';
 import { logAdEvent } from '../services/firestoreService';
 import { getPlatformAdsEnabled, subscribePlatformAdsEnabled } from '../utils/platformAdsStore';
+import {
+  subscribeExternalAdsConfig,
+  getExternalAdsConfig,
+  pickActiveExternalNetwork,
+  ExternalAdNetworkConfig
+} from '../utils/externalAdsStore';
+import { ExternalAdScript } from './ExternalAdScript';
 import { claimAdSlotIndex, MAX_ADS_PER_PAGE } from './AdSlot';
 
 interface AdTickerBarProps {
@@ -16,15 +23,22 @@ interface AdTickerBarProps {
 /**
  * شريط إعلاني صغير متقلّب — بديل خفيف عن بطاقة <AdSlot> الكاملة للأماكن
  * التي يجب أن يبقى فيها الإعلان في الخلفية تماماً (مثل قائمة المحادثات):
- * سطر واحد رفيع يتنقّل تلقائياً بين كل الحملات النشطة (لا يعرض حملة واحدة
- * ثابتة)، بنفس نمط أشرطة الإعلانات الصغيرة المعروفة على الإنترنت التي لا
- * تُزعج تجربة المستخدم. يحترم نفس الحد الأقصى للصفحة (claimAdSlotIndex)
- * المستخدم في <AdSlot> حتى لا يتجاوز الموقع 3 وحدات إعلانية/صفحة إجمالاً.
+ * سطر واحد رفيع يتنقّل تلقائياً بين كل الحملات النشطة، بنفس نمط أشرطة
+ * الإعلانات الصغيرة المعروفة على الإنترنت. يحترم نفس الحد الأقصى للصفحة
+ * (claimAdSlotIndex) المستخدم في <AdSlot> حتى لا يتجاوز الموقع 3 وحدات/صفحة.
+ *
+ * نفس تسلسل أولوية <AdSlot> بالضبط: حملة معلن داخلية نشطة أولاً، وإن لم
+ * توجد فشبكة خارجية احتياطية (PropellerAds/Monetag أو Adsterra) إن
+ * فُعِّلت من لوحة الإدارة — بلا هذا الفرع كان الشريط يبقى فارغاً بالكامل
+ * لأي موقع ليس له معلنون داخليون بعد، حتى لو كانت الشبكة الخارجية مفعَّلة
+ * وتعمل في بقية الصفحة.
  */
 export const AdTickerBar: React.FC<AdTickerBarProps> = ({ campaigns = [], slotId, viewerId = null, rotateMs = 5000 }) => {
   const [slotIndex] = useState<number>(() => claimAdSlotIndex());
   const [platformAdsEnabled, setPlatformAdsEnabled] = useState(getPlatformAdsEnabled());
+  const [externalAdsConfig, setExternalAdsConfig] = useState(getExternalAdsConfig());
   useEffect(() => subscribePlatformAdsEnabled(setPlatformAdsEnabled), []);
+  useEffect(() => subscribeExternalAdsConfig(setExternalAdsConfig), []);
 
   const active = useMemo(
     () =>
@@ -58,7 +72,23 @@ export const AdTickerBar: React.FC<AdTickerBarProps> = ({ campaigns = [], slotId
     logAdEvent({ campaignId: campaign.id, slotId, viewerId, eventType: 'impression' }).catch(() => {});
   }, [campaign, slotId, viewerId]);
 
+  // الطبقة الاحتياطية: لا حملة داخلية، لكن شبكة خارجية مفعَّلة (مثل
+  // Monetag المُدرَجة تحت خانة PropellerAds في لوحة الإدارة).
+  const externalNetwork: ExternalAdNetworkConfig | null = useMemo(() => {
+    if (campaign || !platformAdsEnabled) return null;
+    return pickActiveExternalNetwork(externalAdsConfig);
+  }, [campaign, platformAdsEnabled, externalAdsConfig]);
+
   if (slotIndex >= MAX_ADS_PER_PAGE) return null;
+
+  if (!campaign && externalNetwork) {
+    return (
+      <div className="w-full rounded-xl overflow-hidden border border-slate-200/70 dark:border-slate-700/50 bg-slate-50 dark:bg-slate-800/60">
+        <ExternalAdScript snippet={externalNetwork.snippet} className="w-full flex justify-center" />
+      </div>
+    );
+  }
+
   if (!campaign) return null;
 
   const handleClick = () => {
