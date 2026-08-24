@@ -31,6 +31,7 @@ import {
   AppNotification,
   Conversation,
   DirectMessage,
+  MessageReport,
   ArticleCategory,
   LanguageCode,
   UserRole,
@@ -160,6 +161,12 @@ import {
   subscribeToManualBalanceAdjustments,
   deleteMessageInFirestore,
   deleteConversationInFirestore,
+  hideConversationForMe,
+  toggleBlockUser,
+  toggleMuteUser,
+  updateMyPresence,
+  setTypingState,
+  submitUserReport,
   markEarningReleasedInFirestore,
   updateUserAiQuotaInFirestore,
   adminReleaseEarnings,
@@ -319,7 +326,14 @@ export function App() {
   // كانت تصل بالفعل undefined لكل محادثة (طابق conversations/{id} الفعلي
   // في Firestore لا يخزّن سوى participants/lastMessage/lastMessageAt).
   const [rawConversations, setRawConversations] = useState<
-    { id: string; participantIds: string[]; lastMessage: string; lastMessageAt: string }[]
+    {
+      id: string;
+      participantIds: string[];
+      lastMessage: string;
+      lastMessageAt: string;
+      typing?: Record<string, string | null>;
+      hiddenFor?: string[];
+    }[]
   >(() => {
     const saved = localStorage.getItem('literium_conversations');
     return saved ? JSON.parse(saved) : [];
@@ -349,7 +363,9 @@ export function App() {
           partnerRole: partner?.role || 'reader',
           lastMessage: c.lastMessage,
           lastMessageTime: c.lastMessageAt,
-          unreadCount: 0
+          unreadCount: 0,
+          partnerTypingAt: c.typing?.[partnerId] || undefined,
+          isHiddenForMe: Boolean(currentUserId && c.hiddenFor?.includes(currentUserId))
         };
       }),
     [rawConversations, users, currentUserId]
@@ -443,6 +459,10 @@ export function App() {
   const [imageStudioSelectCallback, setImageStudioSelectCallback] = useState<((url: string) => void) | null>(null);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isNewCampaignOpen, setIsNewCampaignOpen] = useState(false);
+  // زر الرجوع الفعلي (أو زر الجوال) على المستوى الجذر: ضغطة واحدة تُغلق
+  // أعلى نافذة/طبقة مفتوحة إن وُجدت، وإلا (لا شيء مفتوح) تُظهر تلميح تأكيد
+  // الخروج، وضغطة ثانية خلال 2.5 ثانية تسمح بالخروج الفعلي من التطبيق.
+  const [showExitToast, setShowExitToast] = useState(false);
   // Which admin section UserProfileView shows — lifted here so the bottom
   // nav's admin buttons (money/campaigns/users) and the drawer menu can
   // pick a specific section directly, same lifting pattern as
@@ -1165,7 +1185,9 @@ export function App() {
             id: c.id,
             participantIds: c.participants || [],
             lastMessage: c.lastMessage || '',
-            lastMessageAt: c.lastMessageAt || ''
+            lastMessageAt: c.lastMessageAt || '',
+            typing: c.typing || {},
+            hiddenFor: c.hiddenFor || []
           }))
         );
       },
@@ -1182,6 +1204,8 @@ export function App() {
             senderAvatar: '',
             recipientId: (m.participants || []).find((p: string) => p !== m.senderId) || '',
             content: m.text || '',
+            mediaUrl: m.mediaUrl,
+            mediaType: m.mediaType,
             createdAt: m.createdAt || '',
             isRead: Boolean(m.isRead)
           })) as any
@@ -1192,6 +1216,39 @@ export function App() {
     return () => {
       unsubConvs();
       unsubMsgs();
+    };
+  }, [currentUserId]);
+
+  // نبضة حضور دورية (متصل/غير متصل) — تُكتب فقط من الجلسة/المتصفح الحالي،
+  // وتُقرأ من أي طرف آخر عبر presence.lastHeartbeatAt (حديث = متصل الآن).
+  // إخفاء التبويب أو إغلاق النافذة يكتب 'offline' فوراً (خير جهد؛ الحد
+  // الفاصل 60 ثانية في واجهة المحادثة يغطي حالة الإغلاق المفاجئ الذي لا
+  // يُطلق أي حدث أصلاً).
+  useEffect(() => {
+    if (!currentUserId) return;
+    let cancelled = false;
+    const heartbeat = () => {
+      if (!cancelled && document.visibilityState === 'visible') {
+        updateMyPresence(currentUserId, 'online').catch(() => {});
+      }
+    };
+    heartbeat();
+    const interval = window.setInterval(heartbeat, 25000);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') heartbeat();
+      else updateMyPresence(currentUserId, 'offline').catch(() => {});
+    };
+    const handleBeforeUnload = () => {
+      updateMyPresence(currentUserId, 'offline').catch(() => {});
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      updateMyPresence(currentUserId, 'offline').catch(() => {});
     };
   }, [currentUserId]);
 
@@ -2594,10 +2651,14 @@ export function App() {
   // Send Direct Message
   // إرسال رسالة عبر Firestore.
   // حقل participants إلزامي في المستندين — بدونه ترفض قواعد الأمان العملية.
-  const handleSendMessage = async (recipientId: string, content: string) => {
+  const handleSendMessage = async (
+    recipientId: string,
+    content: string,
+    media?: { url?: string; type: 'image' | 'video' | 'sticker' }
+  ) => {
     if (!requireAuth()) return;
     if (recipientId === currentUserId) return;
-    if (!content.trim()) return;
+    if (!content.trim() && !media) return;
 
     try {
       const convId = await ensureConversation(currentUserId, recipientId);
@@ -2605,12 +2666,65 @@ export function App() {
         conversationId: convId,
         senderId: currentUserId,
         participants: [currentUserId, recipientId],
-        text: content.trim()
+        text: content.trim(),
+        mediaUrl: media?.url,
+        mediaType: media?.type
       });
     } catch (err) {
       console.error('تعذر إرسال الرسالة:', err);
       alert('تعذر إرسال الرسالة. تحقق من اتصالك ثم حاول مجدداً.');
     }
+  };
+
+  // إغلاق محادثة من قائمتي فقط (بلا حذف فعلي) — متاح لأي مستخدم، بخلاف
+  // الحذف النهائي المقصور على الأدمن أعلاه.
+  const handleHideConversation = async (conversationId: string) => {
+    try {
+      await hideConversationForMe(conversationId, currentUserId);
+    } catch (err) {
+      console.error('تعذر إغلاق المحادثة:', err);
+    }
+  };
+
+  const handleToggleBlockUser = async (targetId: string, block: boolean) => {
+    try {
+      await toggleBlockUser(currentUserId, targetId, block);
+    } catch (err) {
+      console.error('تعذر تحديث حالة الحظر:', err);
+      alert('تعذر تنفيذ العملية. حاول مجدداً.');
+    }
+  };
+
+  const handleToggleMuteUser = async (targetId: string, mute: boolean) => {
+    try {
+      await toggleMuteUser(currentUserId, targetId, mute);
+    } catch (err) {
+      console.error('تعذر تحديث حالة الكتم:', err);
+    }
+  };
+
+  const handleReportUser = async (
+    targetId: string,
+    conversationId: string | undefined,
+    reason: MessageReport['reason'],
+    details: string
+  ) => {
+    try {
+      await submitUserReport({
+        reporterId: currentUserId,
+        reportedUserId: targetId,
+        conversationId,
+        reason,
+        details
+      });
+    } catch (err) {
+      console.error('تعذر إرسال البلاغ:', err);
+      alert('تعذر إرسال البلاغ. حاول مجدداً.');
+    }
+  };
+
+  const handleSetTyping = (conversationId: string, isTyping: boolean) => {
+    setTypingState(conversationId, currentUserId, isTyping).catch(() => {});
   };
 
   // حذف رسالة واحدة — متاح لصاحب الرسالة نفسه أو الأدمن (تطابق قواعد
@@ -2758,6 +2872,123 @@ export function App() {
   // وسم حالة واحد فقط يُستخدم في كل مكان (الملف الشخصي + القائمة الجانبية)
   // بدل أوسمة متضاربة لكل صفحة على حدة.
   const memberStatusLabel = getMemberStatusLabel(currentUser.role, currentUserIsMonetizationEligible);
+
+  // زر الرجوع الفعلي (فيزيائي على الجوال أو زر متصفح): ضغطة واحدة تُغلق
+  // أعلى طبقة/نافذة مفتوحة حالياً إن وُجدت (نفس منطق "رجوع" المعتاد في كل
+  // تطبيق)، وإن لم يكن هناك شيء مفتوح تظهر تلميح "اضغط رجوع مرة أخرى
+  // للخروج"، وضغطة ثانية خلال 2.5 ثانية تسمح للتنقّل الفعلي بالمتابعة
+  // (خروج من التطبيق/المتصفح). القراءة من مرجع (ref) مُحدَّث في كل رسم بدل
+  // استخدامه كاعتماديات useEffect تتجنّب دفع مدخل تاريخي جديد (pushState)
+  // عند كل تغيّر حالة، وتُبقي مستمع popstate واحداً طوال عمر الصفحة.
+  const closeTopmostOverlayRef = useRef<() => boolean>(() => false);
+  closeTopmostOverlayRef.current = () => {
+    if (readingArticle) {
+      setReadingArticle(null);
+      return true;
+    }
+    if (editingArticle || isArticleEditorOpen) {
+      setEditingArticle(null);
+      setIsArticleEditorOpen(false);
+      return true;
+    }
+    if (viewingWriterProfile) {
+      setViewingWriterProfile(null);
+      return true;
+    }
+    if (isImageStudioOpen) {
+      setIsImageStudioOpen(false);
+      return true;
+    }
+    if (isDirectMessagesOpen) {
+      setIsDirectMessagesOpen(false);
+      return true;
+    }
+    if (isAiAssistantOpen) {
+      setIsAiAssistantOpen(false);
+      return true;
+    }
+    if (isNotificationsOpen) {
+      setIsNotificationsOpen(false);
+      return true;
+    }
+    if (followListModal) {
+      setFollowListModal(null);
+      return true;
+    }
+    if (promotingArticle) {
+      setPromotingArticle(null);
+      return true;
+    }
+    if (moneyModalMode) {
+      setMoneyModalMode(null);
+      return true;
+    }
+    if (isWalletOpen) {
+      setIsWalletOpen(false);
+      return true;
+    }
+    if (isSubscriptionOpen) {
+      setIsSubscriptionOpen(false);
+      return true;
+    }
+    if (isKycOpen) {
+      setIsKycOpen(false);
+      return true;
+    }
+    if (isNewCampaignOpen) {
+      setIsNewCampaignOpen(false);
+      return true;
+    }
+    if (legalSection) {
+      setLegalSection(null);
+      return true;
+    }
+    if (isAuthOpen) {
+      setIsAuthOpen(false);
+      return true;
+    }
+    if (isDrawerOpen) {
+      setIsDrawerOpen(false);
+      return true;
+    }
+    return false;
+  };
+
+  useEffect(() => {
+    window.history.pushState({ literiumBackGuard: true }, '');
+    let exitArmed = false;
+    let exitTimer: number | null = null;
+
+    const handlePopState = () => {
+      const closedSomething = closeTopmostOverlayRef.current();
+      if (closedSomething) {
+        // أعد نصب الحاجز حتى تُعترَض الضغطة التالية أيضاً
+        window.history.pushState({ literiumBackGuard: true }, '');
+        return;
+      }
+      if (exitArmed) {
+        // ضغطة ثانية خلال المهلة: لا نعيد نصب الحاجز، فيكمل المتصفح
+        // تنقّله الطبيعي فعلياً (خروج/رجوع لصفحة سابقة حقيقية)
+        exitArmed = false;
+        if (exitTimer) window.clearTimeout(exitTimer);
+        setShowExitToast(false);
+        return;
+      }
+      exitArmed = true;
+      setShowExitToast(true);
+      window.history.pushState({ literiumBackGuard: true }, '');
+      exitTimer = window.setTimeout(() => {
+        exitArmed = false;
+        setShowExitToast(false);
+      }, 2500);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      if (exitTimer) window.clearTimeout(exitTimer);
+    };
+  }, []);
 
   // Show Landing Page for new visitors or when explicitly opened
   if (showLandingPage) {
@@ -3632,6 +3863,16 @@ export function App() {
         </button>
       )}
 
+      {/* تلميح "اضغط رجوع مرة أخرى للخروج" — يظهر لثانيتين ونصف فقط عند أول
+          ضغطة رجوع لا يوجد بعدها أي نافذة/طبقة لإغلاقها. */}
+      {showExitToast && (
+        <div className="fixed bottom-20 sm:bottom-24 inset-x-0 z-[60] flex justify-center pointer-events-none px-4">
+          <div className="px-4 py-2.5 rounded-full bg-slate-900/95 dark:bg-slate-800/95 text-white text-xs font-bold shadow-2xl animate-fade-in">
+            اضغط رجوع مرة أخرى للخروج
+          </div>
+        </div>
+      )}
+
       {/* Bottom Navigation Bar */}
       <BottomNav
         activeTab={activeTab}
@@ -3910,16 +4151,26 @@ export function App() {
         isOpen={isDirectMessagesOpen}
         onClose={() => setIsDirectMessagesOpen(false)}
         currentUser={currentUser}
+        users={users}
         conversations={conversations}
         messages={messages}
         onSendMessage={handleSendMessage}
         onDeleteMessage={handleDeleteMessage}
         onDeleteConversation={handleDeleteConversation}
+        onHideConversation={handleHideConversation}
+        onToggleBlock={handleToggleBlockUser}
+        onToggleMute={handleToggleMuteUser}
+        onReportUser={handleReportUser}
+        onSetTyping={handleSetTyping}
         activeChatPartner={activeChatPartner}
         onOpenConversation={(partnerId) => {
           markConversationMessagesRead(currentUser.id, partnerId).catch((err) =>
             console.error('تعذر تعليم الرسائل كمقروءة:', err)
           );
+        }}
+        onOpenProfile={(userId) => {
+          const u = users.find((usr) => usr.id === userId);
+          if (u) setViewingWriterProfile(u);
         }}
       />
 

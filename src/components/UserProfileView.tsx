@@ -82,6 +82,7 @@ import { AdminUsersTab } from './admin/AdminUsersTab';
 import { AdminFraudTab } from './admin/AdminFraudTab';
 import { AdminSettingsTab } from './admin/AdminSettingsTab';
 import { AdminAnalyticsTab } from './admin/AdminAnalyticsTab';
+import { AdminChatsTab } from './admin/AdminChatsTab';
 import { BalanceAdjustModal, AdjustableBalanceField } from './admin/BalanceAdjustModal';
 import { KycReviewModal } from './admin/KycReviewModal';
 
@@ -91,6 +92,7 @@ type AdminSection =
   | 'fraud'
   | 'campaigns'
   | 'moderation'
+  | 'chats'
   | 'users'
   | 'promotions'
   | 'money'
@@ -1498,6 +1500,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   { id: 'money' as const, label: 'العمليات المالية', icon: DollarSign, badge: pendingMoneyCount },
                   { id: 'campaigns' as const, label: 'الإعلانات والترويج', icon: Megaphone, badge: pendingAdsCount },
                   { id: 'moderation' as const, label: 'المحتوى والمقالات', icon: FileText, badge: 0 },
+                  { id: 'chats' as const, label: 'مراقبة المحادثات', icon: Eye, badge: 0 },
                   { id: 'users' as const, label: 'المستخدمون وKYC', icon: Users, badge: pendingKycCount },
                   { id: 'fraud' as const, label: 'مكافحة الاحتيال', icon: ShieldAlert, badge: pendingFraudCount },
                   { id: 'settings' as const, label: 'إعدادات المنظومة', icon: Settings, badge: 0 }
@@ -1605,6 +1608,8 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   onUpdateArticleStatus={onUpdateArticleStatus}
                 />
               )}
+
+              {effectiveAdminSection === 'chats' && <AdminChatsTab users={users} />}
 
               {effectiveAdminSection === 'users' && (
                 <AdminUsersTab

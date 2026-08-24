@@ -890,24 +890,33 @@ export async function sendMessageToFirestore(msg: {
   senderId: string;
   participants: string[];
   text: string;
+  mediaUrl?: string;
+  mediaType?: 'image' | 'video' | 'sticker';
 }): Promise<void> {
   try {
+    const recipientId = msg.participants.find((p) => p !== msg.senderId) || '';
     await addDoc(collection(db, 'messages'), {
       conversationId: msg.conversationId,
       senderId: msg.senderId,
       participants: msg.participants,
       text: msg.text,
+      ...(msg.mediaUrl ? { mediaUrl: msg.mediaUrl } : {}),
+      ...(msg.mediaType ? { mediaType: msg.mediaType } : {}),
       isRead: false,
       createdAt: new Date().toISOString()
     });
 
-    // تحديث ملخص المحادثة
+    // تحديث ملخص المحادثة + إعادة إظهارها تلقائياً لدى المستلم لو كان قد
+    // أغلقها سابقاً (hiddenFor)، ومسح مؤشر "يكتب الآن" لصاحب الرسالة نفسه
+    // فور إرسال رسالته الفعلية.
     await setDoc(
       doc(db, 'conversations', msg.conversationId),
       {
         participants: msg.participants,
-        lastMessage: msg.text.slice(0, 120),
-        lastMessageAt: new Date().toISOString()
+        lastMessage: msg.mediaType === 'sticker' ? '📎 ملصق' : msg.mediaType ? '📎 وسائط' : msg.text.slice(0, 120),
+        lastMessageAt: new Date().toISOString(),
+        ...(recipientId ? { hiddenFor: arrayRemove(recipientId) } : {}),
+        typing: { [msg.senderId]: null }
       },
       { merge: true }
     );
@@ -915,6 +924,145 @@ export async function sendMessageToFirestore(msg: {
     handleFirestoreError(error, OperationType.WRITE, 'messages');
     throw error;
   }
+}
+
+/** يكتب/يمسح مؤشر "يكتب الآن" لمستخدم في محادثة — يُقرَأ من كل الأطراف
+ *  عبر subscribeToConversations نفسها (لا حاجة لاشتراك منفصل)، ويُعتبر
+ *  الطرف الآخر "يكتب" فقط لو الطابع الزمني حديث (أقل من ~4 ثوانٍ) —
+ *  تفادياً لبقاء المؤشر عالقاً لو أُغلق المتصفح فجأة أثناء الكتابة. */
+export async function setTypingState(conversationId: string, userId: string, isTyping: boolean): Promise<void> {
+  try {
+    await setDoc(
+      doc(db, 'conversations', conversationId),
+      { typing: { [userId]: isTyping ? new Date().toISOString() : null } },
+      { merge: true }
+    );
+  } catch {
+    // مؤشر الكتابة غير حرج — تجاهل أي فشل بصمت دون إزعاج المستخدم
+  }
+}
+
+/** إغلاق محادثة من قائمتي فقط (بلا حذف فعلي) — يراها الطرف الآخر كما هي،
+ *  وتعود للظهور لدي تلقائياً فور وصول رسالة جديدة منه (انظر sendMessageToFirestore). */
+export async function hideConversationForMe(conversationId: string, myUserId: string): Promise<void> {
+  try {
+    await setDoc(
+      doc(db, 'conversations', conversationId),
+      { hiddenFor: arrayUnion(myUserId) },
+      { merge: true }
+    );
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'conversations');
+    throw error;
+  }
+}
+
+/** حظر/رفع حظر مستخدم — يمنعه فعلياً من إرسال أي رسالة جديدة (مفروض في
+ *  قواعد الأمان أيضاً، وليس فقط في الواجهة). */
+export async function toggleBlockUser(currentUserId: string, targetUserId: string, block: boolean): Promise<void> {
+  try {
+    await updateDoc(doc(db, 'users', currentUserId), {
+      blockedUserIds: block ? arrayUnion(targetUserId) : arrayRemove(targetUserId)
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `users/${currentUserId}`);
+    throw error;
+  }
+}
+
+/** كتم مستخدم — لا يمنع استلام رسائله، فقط يُخفي شارة غير مقروء/التنبيه محلياً. */
+export async function toggleMuteUser(currentUserId: string, targetUserId: string, mute: boolean): Promise<void> {
+  try {
+    await updateDoc(doc(db, 'users', currentUserId), {
+      mutedUserIds: mute ? arrayUnion(targetUserId) : arrayRemove(targetUserId)
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `users/${currentUserId}`);
+    throw error;
+  }
+}
+
+/** نبضة حضور دورية — تُكتب من كل جلسة/متصفح مسجَّل دخول كل ~25 ثانية طالما
+ *  التبويب مرئي، وعند الإخفاء/الإغلاق تُكتب 'offline' + lastSeenAt فوراً
+ *  (خير جهد؛ الحد الفاصل 60 ثانية على lastHeartbeatAt في الواجهة يغطي حالة
+ *  إغلاق المتصفح المفاجئ الذي لا يُطلق أي حدث). */
+export async function updateMyPresence(
+  userId: string,
+  state: 'online' | 'offline'
+): Promise<void> {
+  try {
+    const now = new Date().toISOString();
+    await updateDoc(doc(db, 'users', userId), {
+      presence: state === 'online' ? { state, lastHeartbeatAt: now } : { state, lastSeenAt: now }
+    });
+  } catch {
+    // الحضور غير حرج — لا نزعج المستخدم بخطأ لو فشلت كتابة نبضة واحدة
+  }
+}
+
+/** إرسال بلاغ إساءة/إزعاج بحق مستخدم آخر — يراجعه الأدمن فقط من لوحة التحكم. */
+export async function submitUserReport(report: {
+  reporterId: string;
+  reportedUserId: string;
+  conversationId?: string;
+  reason: 'abusive' | 'harassment' | 'spam' | 'other';
+  details?: string;
+}): Promise<void> {
+  try {
+    await addDoc(collection(db, 'reports'), {
+      ...report,
+      status: 'pending',
+      createdAt: new Date().toISOString()
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'reports');
+    throw error;
+  }
+}
+
+/** اشتراك الأدمن في كل محادثات المنصة (وليس محادثاته الشخصية فقط) — لعرضها
+ *  في جدول مراقبة الجودة. قواعد الأمان تسمح بهذا لأن isAdmin() يتجاوز شرط
+ *  participants على كل مستند تُعيده Firestore، فلا حاجة لأي فلتر إضافي. */
+export function subscribeToAllConversationsForAdmin(
+  onConversations: (conversations: any[]) => void,
+  onError?: (err: any) => void
+) {
+  const q = query(collection(db, 'conversations'), orderBy('lastMessageAt', 'desc'));
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const list: any[] = [];
+      snapshot.forEach((d) => list.push({ id: d.id, ...d.data() }));
+      onConversations(list);
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'conversations/admin');
+      if (onError) onError(error);
+    }
+  );
+}
+
+/** قراءة رسائل محادثة معيّنة بصلاحية إشراف الأدمن — للقراءة فقط، بلا أي
+ *  كتابة (لا isRead ولا typing) حتى لا يشعر أي من الطرفين بدخول الأدمن. */
+export function subscribeToConversationMessagesForAdmin(
+  conversationId: string,
+  onMessages: (messages: any[]) => void,
+  onError?: (err: any) => void
+) {
+  const q = query(collection(db, 'messages'), where('conversationId', '==', conversationId));
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const list: any[] = [];
+      snapshot.forEach((d) => list.push({ id: d.id, ...d.data() }));
+      list.sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+      onMessages(list);
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'messages/admin');
+      if (onError) onError(error);
+    }
+  );
 }
 
 /**

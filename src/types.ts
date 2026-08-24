@@ -106,6 +106,18 @@ export interface User {
   companyIndustry?: string;
   companyWebsite?: string;
   advertisingGoal?: string;
+  /** حضور المستخدم — يُكتب من نفس المتصفح فقط (نبضة دورية)، ويُشتق منها
+   *  "متصل الآن" لو كان lastHeartbeatAt حديثاً (أقل من 60 ثانية)، وإلا
+   *  فآخر ظهور فعلي هو lastSeenAt. */
+  presence?: {
+    state: 'online' | 'offline';
+    lastHeartbeatAt?: string;
+    lastSeenAt?: string;
+  };
+  /** من حظرهم هذا المستخدم — يمنعهم من مراسلته (يُفرض أيضاً في قواعد الأمان) */
+  blockedUserIds?: string[];
+  /** من كتمهم هذا المستخدم — لا يمنع الاستلام، فقط يُخفي شارة غير مقروء/التنبيه */
+  mutedUserIds?: string[];
 }
 
 export interface ReadingHistoryItem {
@@ -397,6 +409,8 @@ export interface DirectMessage {
   recipientId: string;
   content: string;
   mediaUrl?: string;
+  /** 'sticker' لملصقات ليتيريوم المخصّصة (content يحمل معرّف الملصق فقط) */
+  mediaType?: 'image' | 'video' | 'sticker';
   createdAt: string;
   isRead: boolean;
 }
@@ -410,6 +424,23 @@ export interface Conversation {
   lastMessage: string;
   lastMessageTime: string;
   unreadCount: number;
+  /** طابع "يكتب الآن" للطرف الآخر (ISO) — حديث (أقل من 4 ثوانٍ) يعني كتابة فعلية */
+  partnerTypingAt?: string;
+  /** أنا خفيت هذه المحادثة من قائمتي (إغلاق) دون حذفها فعلياً لدى الطرف الآخر */
+  isHiddenForMe?: boolean;
+}
+
+/** بلاغ إساءة/إزعاج بحق مستخدم آخر — يراجعها الأدمن فقط من لوحة التحكم. */
+export interface MessageReport {
+  id: string;
+  reporterId: string;
+  reportedUserId: string;
+  conversationId?: string;
+  messageId?: string;
+  reason: 'abusive' | 'harassment' | 'spam' | 'other';
+  details?: string;
+  status: 'pending' | 'reviewed' | 'dismissed';
+  createdAt: string;
 }
 
 export interface AppNotification {

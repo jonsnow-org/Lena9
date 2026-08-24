@@ -30,6 +30,24 @@ service cloud.firestore {
         .affectedKeys().hasAny(protectedFields);
     }
 
+    // معرّف الطرف الآخر في محادثة ثنائية من مصفوفة participants (عنصران
+    // فقط دوماً) — يُستخدم للتحقق من قوائم الحظر عند إرسال رسالة جديدة.
+    function otherParticipant(participants) {
+      return participants[0] == request.auth.uid ? participants[1] : participants[0];
+    }
+
+    // هل حظر المستلِم المرسِل؟ .get('blockedUserIds', []) إلزامي هنا: أغلب
+    // المستخدمين ليس لديهم هذا الحقل أصلاً بعد، والوصول المباشر
+    // لحقل غير موجود عبر .data.blockedUserIds يُفشل تقييم القاعدة كلها
+    // (وليس فقط هذا الشرط)، فيُرفض إرسال أي رسالة لأي مستخدم لم يحظر أحداً
+    // من قبل.
+    function isBlockedByRecipient(participants) {
+      let otherId = otherParticipant(participants);
+      return exists(/databases/$(database)/documents/users/$(otherId))
+        && request.auth.uid in
+             get(/databases/$(database)/documents/users/$(otherId)).data.get('blockedUserIds', []);
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }
@@ -309,7 +327,8 @@ service cloud.firestore {
         && (request.auth.uid in resource.data.participants || isAdmin());
       allow create: if isSignedIn()
         && request.resource.data.senderId == request.auth.uid
-        && request.auth.uid in request.resource.data.participants;
+        && request.auth.uid in request.resource.data.participants
+        && !isBlockedByRecipient(request.resource.data.participants);
       // المُرسِل يمكنه تعديل رسالته (لأي حاجة مستقبلية)، والمُستقبِل (أي
       // طرف آخر ضمن participants) يمكنه فقط تعليم الرسالة كمقروءة —
       // isRead حصراً، دون أي قدرة على تعديل نص الرسالة أو أي حقل آخر.
@@ -321,6 +340,18 @@ service cloud.firestore {
         )
       );
       allow delete: if isSignedIn() && (resource.data.senderId == request.auth.uid || isAdmin());
+    }
+
+    // بلاغات إساءة/إزعاج من مستخدم بحق مستخدم آخر (غالباً من داخل محادثة
+    // خاصة) — القراءة مقصورة على الأدمن حصراً (لا يعرف المُبلَّغ عنه ولا
+    // غيره من عداه الاطّلاع على البلاغات)، وأي مستخدم مسجَّل يمكنه إنشاء
+    // بلاغ باسمه فقط بحالة 'pending'، والأدمن وحده يراجعها/يحدّث حالتها.
+    match /reports/{reportId} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn()
+        && request.resource.data.reporterId == request.auth.uid
+        && request.resource.data.status == 'pending';
+      allow update, delete: if isAdmin();
     }
 
     match /comments/{commentId} {

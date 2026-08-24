@@ -1636,13 +1636,15 @@ async function startServer() {
         return res.status(400).json({ error: 'file_too_large', message: 'حجم الفيديو يتجاوز 50 ميغابايت.' });
       }
 
-      // فيديو المقالات ليس له حد مدة (بخلاف فيديو الإعلانات المحدود بدقيقة) —
-      // القيمة الافتراضية غير المُمرَّرة تُبقي الحد الحالي كما هو للإعلانات.
-      const purpose = req.body?.purpose === 'article' ? 'article' : 'ad';
+      // فيديو المقالات ليس له حد مدة، وفيديو رسائل المحادثة محدود بـ5 دقائق
+      // (300 ثانية) — بخلاف فيديو الإعلانات المحدود بدقيقة واحدة فقط
+      // (القيمة الافتراضية غير المُمرَّرة تُبقي حدّها كما هو).
+      const purpose = req.body?.purpose === 'article' ? 'article' : req.body?.purpose === 'message' ? 'message' : 'ad';
+      const folderName = purpose === 'article' ? 'articles' : purpose === 'message' ? 'messages' : 'ads';
       const result = await uploadMediaBuffer(file.buffer, {
-        folder: `literium/${purpose === 'article' ? 'articles' : 'ads'}/${uid}`,
+        folder: `literium/${folderName}/${uid}`,
         resourceType: isVideo ? 'video' : 'image',
-        maxDurationSeconds: purpose === 'article' ? Infinity : undefined
+        maxDurationSeconds: purpose === 'article' ? Infinity : purpose === 'message' ? 300 : undefined
       });
 
       res.json(result);
