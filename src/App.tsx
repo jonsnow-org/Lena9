@@ -2384,6 +2384,12 @@ export function App() {
 
   // Consume AI Quota with automatic modal triggers
   const handleConsumeAiQuota = (): boolean => {
+    // الزائر بلا حساب حقيقي ليس له مستند Firestore دائم لتتبّع حصته محلياً
+    // هنا، فيُسمح له بالمرور دائماً على المستوى المحلي — الحارس الفعلي
+    // لحصته اليومية هو تحقّق الخادم في /api/ai/chat (مفتاحه معرّف الزائر
+    // الثابت guestIdentityUid لكل متصفح، وليس سلسلة "guest" المشتركة بين
+    // كل الزوار، التي كانت تُفرغ حصة الجميع بمجرد استخدام أول زائر لها).
+    if (currentUser.id === 'guest') return true;
     if (!requireAuth()) return false;
     const { allowed, updatedQuota } = consumeAiUsage(currentUser.aiQuota);
     if (!allowed) {
@@ -2739,20 +2745,6 @@ export function App() {
   // الحقيقية، فتبقى شارة "الرسائل" في شريط التنقل معطَّلة رغم وجود رسائل
   // فعلية لم تُقرأ بعد.
   const unreadMessagesCount = messages.filter((m) => m.recipientId === currentUser.id && !m.isRead).length;
-
-  // شخصية شريط التنقل السفلي: تُشتق من النشاط الفعلي للحساب وليس من الدور
-  // المُسجَّل وحده — بما يتوافق مع نموذج الحساب الموحَّد (أي مستخدم مسجَّل
-  // غير الزائر يمكنه الكتابة أو إنشاء إعلان). الدور المُصرَّح به عند
-  // التسجيل يبقى أولوية أولى (تجربة متسقة لمن اختار "كاتب" صراحةً)، ثم
-  // النشاط الفعلي (مقالات منشورة أو حملات) لمن بدأ من حساب "قارئ" عام.
-  const navPersona: UserRole = useMemo(() => {
-    if (currentUser.role === 'admin') return 'admin';
-    if (currentUser.role === 'writer') return 'writer';
-    if (currentUser.role === 'advertiser') return 'advertiser';
-    if ((currentUser.articlesCount || 0) > 0) return 'writer';
-    if (campaigns.some((c) => c.advertiserId === currentUser.id)) return 'advertiser';
-    return 'reader';
-  }, [currentUser.role, currentUser.articlesCount, currentUser.id, campaigns]);
 
   // حساب أهلية احتساب الأرباح بالمتابعين الحقيقيين (من مجموعة follows
   // الفعلية)، لا بحقل currentUser.followersCount المخزَّن الذي لا يتحدّث
@@ -3650,15 +3642,12 @@ export function App() {
             setIsDirectMessagesOpen(true);
           }
         }}
-        userRole={navPersona}
+        userRole={currentUser.role}
         currentUser={currentUser}
-        onOpenCreateCampaign={() => setIsNewCampaignOpen(true)}
         onOpenNotifications={() => setIsNotificationsOpen(true)}
         onOpenMessages={() => setIsDirectMessagesOpen(true)}
         adminActiveTab={adminActiveTab}
         onAdminNavigate={setAdminActiveTab}
-        writerActiveTab={writerActiveTab}
-        onWriterNavigate={setWriterActiveTab}
         onOpenProfile={() => {
           setViewingWriterProfile(null);
           setActiveTab('profile');
@@ -3685,7 +3674,6 @@ export function App() {
           setActiveTab('profile');
         }}
         onSwitchRole={handleSwitchRole}
-        navPersona={navPersona}
         isMonetizationEligible={currentUserIsMonetizationEligible}
         memberStatusLabel={memberStatusLabel}
         onStartWriting={() => {
@@ -3904,6 +3892,7 @@ export function App() {
         onOpenAuth={() => setIsAuthOpen(true)}
         onOpenSubscription={() => setIsSubscriptionOpen(true)}
         onConsumeAiQuota={handleConsumeAiQuota}
+        guestIdentityUid={guestIdentityUid}
       />
 
       {/* AI Pro Subscription Modal */}

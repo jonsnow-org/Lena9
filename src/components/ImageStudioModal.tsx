@@ -91,11 +91,6 @@ export const ImageStudioModal: React.FC<ImageStudioModalProps> = ({
     setErrorMessage(null);
     setSuccessInfo(null);
 
-    if (isGuest) {
-      if (onOpenAuth) onOpenAuth();
-      return;
-    }
-
     if (!prompt.trim()) {
       setErrorMessage('يرجى إدخال وصف للصورة المطلوب توليدها.');
       return;
@@ -228,7 +223,7 @@ export const ImageStudioModal: React.FC<ImageStudioModalProps> = ({
             <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>يتطلب استخدام استوديو الصور تسجيل الدخول لحفظ صورك والاستفادة من الحصة المجانية.</span>
+                <span>تصفّحك حالياً كزائر — يمكنك توليد صور مجاناً الآن، لكن سجّل الدخول لحفظ سجلّ صورك وربطها بحساب دائم.</span>
               </div>
               {onOpenAuth && (
                 <button

@@ -469,9 +469,16 @@ async function startServer() {
       // 1. Load server-trusted user data (never trust subscriber/plan status from the client)
       const db = getAdminDb();
       const userDocRef = db.collection('users').doc(uid);
-      const userSnap = await userDocRef.get();
+      let userSnap = await userDocRef.get();
+      // زوار بدون تسجيل (حساب مجهول حقيقي عبر signInAnonymously) لا يملكون
+      // مستند users/{uid} إطلاقاً — كانت هذه الحالة تُرفض بـ 404 فتُغلق
+      // أداة الذكاء الاصطناعي أمامهم تماماً، رغم القرار الصريح بإتاحتها
+      // لأي زائر لجذب الاستخدام. نُنشئ مستند تتبّع حصة أدنى لهم هنا (بلا
+      // أي حقول مالية) بدل رفض الطلب، فيحصلون على نفس حصة الصور المجانية
+      // التي يحصل عليها أي قارئ غير مشترك بالضبط.
       if (!userSnap.exists) {
-        return res.status(404).json({ error: 'user_not_found', message: 'حساب المستخدم غير موجود.' });
+        await userDocRef.set({ freeImagesUsedTotal: 0, isGuestTracker: true, createdAt: new Date().toISOString() });
+        userSnap = await userDocRef.get();
       }
       const userData = userSnap.data() || {};
 

@@ -698,14 +698,11 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
               الآن الشارة بجانب الاسم أعلاه، بدل تكراره هنا بصياغة مختلفة. */}
           <div className="flex flex-col sm:items-end gap-2.5 shrink-0 w-full sm:w-auto">
             <div className="flex items-center gap-2 justify-center sm:justify-end flex-wrap">
-              {/* زر "كتابة مقال جديد" أُزيل من هنا — الكاتب لديه أصلاً زر FAB
-                  مركزي "كتابة" في الشريط السفلي يفتح نفس محرر المقال بالضبط
-                  (onOpenArticleEditor نفسها عبر onOpenWriteAction). */}
-              {/* هذا الزر يُخفى عن المعلن تحديداً — لديه أصلاً زر FAB مركزي
-                  "إنشاء حملة" في الشريط السفلي يفتح نفس النافذة بالضبط
-                  (onOpenNewCampaign نفسها). يبقى ظاهراً للقارئ فقط، الذي
-                  لا يملك أي طريق آخر لإنشاء إعلان بضغطة واحدة. */}
-              {currentUser.id !== 'guest' && currentUser.role === 'reader' && (
+              {/* متاح لأي عضو مسجَّل غير الأدمن — لا يوجد بعد الآن زر FAB
+                  مخصص لإنشاء حملة في شريط تنقّل موحّد لا يفرّق بين الأدوار،
+                  فهذا المدخل هو الطريق الوحيد لإنشاء إعلان بضغطة واحدة
+                  من صفحة الملف الشخصي لأي حساب. */}
+              {currentUser.id !== 'guest' && currentUser.role !== 'admin' && (
                 <button
                   onClick={onOpenNewCampaign || onOpenWallet}
                   className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white font-extrabold text-xs shadow-md shadow-cyan-500/20 active:scale-95 transition-all flex items-center gap-1.5"

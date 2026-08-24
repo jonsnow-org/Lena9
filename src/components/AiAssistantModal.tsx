@@ -28,6 +28,10 @@ interface AiAssistantModalProps {
   onOpenAuth: () => void;
   onOpenSubscription: () => void;
   onConsumeAiQuota: () => boolean;
+  /** معرّف الزائر الثابت لهذا المتصفح (جلسة Firebase مجهولة حقيقية) —
+   *  يُستخدم كمفتاح حصة يومية مستقل لكل زائر بدل مفتاح "guest" واحد
+   *  مشترك بين كل الزوار حول العالم. */
+  guestIdentityUid?: string;
 }
 
 interface Message {
@@ -43,7 +47,8 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
   currentUser,
   onOpenAuth,
   onOpenSubscription,
-  onConsumeAiQuota
+  onConsumeAiQuota,
+  guestIdentityUid
 }) => {
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -109,7 +114,7 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
           prompt: textToSend,
           userRole,
           language: 'ar',
-          userId: currentUser.id,
+          userId: currentUser.id !== 'guest' ? currentUser.id : guestIdentityUid || 'guest',
           isSubscriber: quotaStats?.isSubscriber,
           plan: quotaStats?.plan
         })

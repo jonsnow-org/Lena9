@@ -4,10 +4,8 @@ import {
   Compass,
   Bell,
   MessageSquare,
-  PlusCircle,
   Megaphone,
   User as UserIcon,
-  LayoutDashboard,
   DollarSign
 } from 'lucide-react';
 import { User, UserRole } from '../types';
@@ -18,7 +16,6 @@ interface BottomNavProps {
   onChangeTab: (tab: string) => void;
   userRole: UserRole;
   currentUser: User | null;
-  onOpenCreateCampaign?: () => void;
   onOpenNotifications?: () => void;
   onOpenMessages?: () => void;
   onOpenProfile: () => void;
@@ -26,19 +23,24 @@ interface BottomNavProps {
   unreadMessagesCount?: number;
   adminActiveTab?: string;
   onAdminNavigate?: (tab: 'overview' | 'fraud' | 'campaigns' | 'moderation' | 'users' | 'settings' | 'money' | 'accounting' | 'promotions') => void;
-  writerActiveTab?: string;
-  onWriterNavigate?: (tab: 'articles' | 'stats_earnings') => void;
   /** دالة الترجمة الحالية — اختيارية بافتراضي عربي حتى لا يتعطل أي استدعاء
    *  سابق لهذا المكوّن لا يمرّرها بعد. */
   t?: (key: string) => string;
 }
 
+/**
+ * شريط تنقّل موحّد واحد فقط لكل الحسابات غير الأدمن (زائر أو عضو مسجَّل
+ * بغضّ النظر عن دوره المخزَّن قارئ/كاتب/معلن) — بدل أربعة أشرطة مختلفة
+ * الأزرار والعدد كانت موجودة سابقاً حسب role، فيرى كاتب حسابَ تنقّل أقل
+ * محتوى (بلا استكشاف مثلاً) من حساب آخر مسجَّل كقارئ، رغم أن الاثنين
+ * يملكان نفس الصلاحيات بالضبط في النموذج الموحّد الحالي. شريط الأدمن
+ * وحده يبقى مختلفاً فعلياً لأن أدواته الإدارية مختلفة جوهرياً.
+ */
 export const BottomNav: React.FC<BottomNavProps> = ({
   activeTab,
   onChangeTab,
   userRole,
   currentUser,
-  onOpenCreateCampaign,
   onOpenNotifications,
   onOpenMessages,
   onOpenProfile,
@@ -48,174 +50,16 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   onAdminNavigate,
   t = getTranslator('ar')
 }) => {
-  // 1. READER ROLE: الرئيسية · استكشاف · إشعارات · رسائل · ملفي
-  if (userRole === 'reader' || !currentUser) {
+  if (userRole === 'admin') {
     return (
       <nav
-        id="bottom-nav-reader"
-        className="fixed bottom-0 inset-x-0 z-40 bg-white/95 text-slate-900 border-t border-slate-200/90 shadow-xl dark:bg-slate-950/95 dark:text-white dark:border-brand-500/20 backdrop-blur-xl transition-colors pb-safe"
-      >
-        <div className="max-w-lg mx-auto px-3 h-16 flex items-center justify-around">
-          {/* 1. الرئيسية */}
-          <button
-            id="nav-reader-feed"
-            type="button"
-            onClick={() => onChangeTab('feed')}
-            className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group"
-          >
-            <div
-              className={`p-1.5 rounded-xl transition-all ${
-                activeTab === 'feed'
-                  ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
-                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
-              }`}
-            >
-              <Home className="w-5 h-5" />
-            </div>
-            <span
-              className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'feed' ? 'text-brand-700 dark:text-brand-300 font-extrabold' : 'text-slate-500 dark:text-slate-400'
-              }`}
-            >
-              {t('home')}
-            </span>
-          </button>
-
-          {/* 2. استكشاف */}
-          <button
-            id="nav-reader-explore"
-            type="button"
-            onClick={() => onChangeTab('explore')}
-            className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group"
-          >
-            <div
-              className={`p-1.5 rounded-xl transition-all ${
-                activeTab === 'explore'
-                  ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
-                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
-              }`}
-            >
-              <Compass className="w-5 h-5" />
-            </div>
-            <span
-              className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'explore' ? 'text-brand-700 dark:text-brand-300 font-extrabold' : 'text-slate-500 dark:text-slate-400'
-              }`}
-            >
-              {t('explore')}
-            </span>
-          </button>
-
-          {/* 3. إشعارات */}
-          <button
-            id="nav-reader-notifications"
-            type="button"
-            onClick={onOpenNotifications}
-            className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group relative"
-          >
-            <div
-              className={`p-1.5 rounded-xl transition-all relative ${
-                activeTab === 'notifications'
-                  ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
-                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
-              }`}
-            >
-              <Bell className="w-5 h-5" />
-              {unreadCount > 0 && (
-                <span className="absolute -top-1 -end-1 w-4 h-4 bg-brand-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center ring-2 ring-white dark:ring-slate-950 animate-pulse">
-                  {unreadCount > 9 ? '9+' : unreadCount}
-                </span>
-              )}
-            </div>
-            <span
-              className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'notifications' ? 'text-brand-700 dark:text-brand-300 font-extrabold' : 'text-slate-500 dark:text-slate-400'
-              }`}
-            >
-              {t('notifications')}
-            </span>
-          </button>
-
-          {/* 4. رسائل — معطّل للزائر (لا حساب له لتلقي أو إرسال رسائل) */}
-          <button
-            id="nav-reader-messages"
-            type="button"
-            onClick={currentUser?.id === 'guest' ? undefined : onOpenMessages}
-            disabled={currentUser?.id === 'guest'}
-            className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group relative disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <div
-              className={`p-1.5 rounded-xl transition-all relative ${
-                activeTab === 'messages'
-                  ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
-                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
-              }`}
-            >
-              <MessageSquare className="w-5 h-5" />
-              {unreadMessagesCount > 0 && currentUser?.id !== 'guest' && (
-                <span className="absolute -top-1 -end-1 w-4 h-4 bg-teal-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center ring-2 ring-white dark:ring-slate-950">
-                  {unreadMessagesCount}
-                </span>
-              )}
-            </div>
-            <span
-              className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'messages' ? 'text-brand-700 dark:text-brand-300 font-extrabold' : 'text-slate-500 dark:text-slate-400'
-              }`}
-            >
-              {currentUser?.id === 'guest' ? 'يلزم التسجيل' : t('messages')}
-            </span>
-          </button>
-
-          {/* 5. ملفي */}
-          <button
-            id="nav-reader-profile"
-            type="button"
-            onClick={onOpenProfile}
-            className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group"
-          >
-            <div
-              className={`p-1.5 rounded-xl transition-all ${
-                activeTab === 'profile'
-                  ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
-                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
-              }`}
-            >
-              {currentUser?.avatarUrl ? (
-                <img
-                  src={currentUser.avatarUrl}
-                  alt={currentUser.fullName}
-                  referrerPolicy="no-referrer"
-                  className="w-5 h-5 rounded-full object-cover"
-                />
-              ) : (
-                <UserIcon className="w-5 h-5" />
-              )}
-            </div>
-            <span
-              className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'profile' ? 'text-brand-700 dark:text-brand-300 font-extrabold' : 'text-slate-500 dark:text-slate-400'
-              }`}
-            >
-              {t('profile')}
-            </span>
-          </button>
-        </div>
-      </nav>
-    );
-  }
-
-  // 2. ADVERTISER ROLE: الرئيسية · حملاتي · إنشاء حملة · رسائل · ملفي
-  if (userRole === 'advertiser') {
-    return (
-      <nav
-        id="bottom-nav-advertiser"
+        id="bottom-nav-admin"
         className="fixed bottom-0 inset-x-0 z-40 bg-white/95 text-slate-900 border-t border-slate-200/90 shadow-xl dark:bg-slate-950/95 dark:text-white dark:border-brand-500/20 backdrop-blur-xl transition-colors pb-safe"
       >
         <div className="max-w-lg mx-auto px-2 h-16 flex items-center justify-around">
           {/* 1. الرئيسية */}
           <button
-            id="nav-adv-feed"
+            id="nav-admin-feed"
             type="button"
             onClick={() => onChangeTab('feed')}
             className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group"
@@ -238,17 +82,50 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             </span>
           </button>
 
-          {/* 2. حملاتي */}
+          {/* 2. المالية والحسابات */}
           <button
-            id="nav-adv-campaigns"
+            id="nav-admin-money"
             type="button"
-            onClick={() => onChangeTab('campaigns')}
+            onClick={() => {
+              onChangeTab('profile');
+              onAdminNavigate?.('money');
+            }}
             className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group"
           >
             <div
               className={`p-1.5 rounded-xl transition-all ${
-                activeTab === 'campaigns'
-                  ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
+                activeTab === 'profile' && (adminActiveTab === 'money' || adminActiveTab === 'accounting')
+                  ? 'bg-amber-50 text-amber-700 border border-amber-300 dark:bg-amber-600/30 dark:text-amber-300 dark:border-amber-500/40 scale-105'
+                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
+              }`}
+            >
+              <DollarSign className="w-5 h-5" />
+            </div>
+            <span
+              className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
+                activeTab === 'profile' && (adminActiveTab === 'money' || adminActiveTab === 'accounting')
+                  ? 'text-amber-700 dark:text-amber-300 font-extrabold'
+                  : 'text-slate-500 dark:text-slate-400'
+              }`}
+            >
+              المالية
+            </span>
+          </button>
+
+          {/* 3. الإعلانات والترويج */}
+          <button
+            id="nav-admin-campaigns"
+            type="button"
+            onClick={() => {
+              onChangeTab('profile');
+              onAdminNavigate?.('campaigns');
+            }}
+            className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group"
+          >
+            <div
+              className={`p-1.5 rounded-xl transition-all ${
+                activeTab === 'profile' && (adminActiveTab === 'campaigns' || adminActiveTab === 'promotions')
+                  ? 'bg-cyan-50 text-cyan-700 border border-cyan-300 dark:bg-cyan-600/30 dark:text-cyan-300 dark:border-cyan-500/40 scale-105'
                   : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
               }`}
             >
@@ -256,90 +133,38 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             </div>
             <span
               className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'campaigns' ? 'text-brand-700 dark:text-brand-300 font-extrabold' : 'text-slate-500 dark:text-slate-400'
+                activeTab === 'profile' && (adminActiveTab === 'campaigns' || adminActiveTab === 'promotions')
+                  ? 'text-cyan-700 dark:text-cyan-300 font-extrabold'
+                  : 'text-slate-500 dark:text-slate-400'
               }`}
             >
-              {t('myCampaigns')}
+              الإعلانات
             </span>
           </button>
-
-          {/* 3. Central FAB: إنشاء حملة */}
-          <div className="flex-1 flex flex-col items-center justify-center -mt-6">
-            <button
-              id="nav-adv-fab"
-              type="button"
-              onClick={onOpenCreateCampaign}
-              className="w-13 h-13 rounded-2xl bg-gradient-to-tr from-cyan-600 via-brand-600 to-brand-600 text-white flex items-center justify-center shadow-lg shadow-cyan-600/40 active:scale-90 hover:scale-105 transition-all border-2 border-white dark:border-slate-900"
-              title={t('newCampaign')}
-            >
-              <PlusCircle className="w-6 h-6 stroke-[2.2]" />
-            </button>
-            <span className="text-[10px] font-black text-cyan-600 dark:text-cyan-300 mt-1">{t('newCampaign')}</span>
-          </div>
 
           {/* 4. رسائل */}
           <button
-            id="nav-adv-messages"
+            id="nav-admin-messages"
             type="button"
             onClick={onOpenMessages}
             className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group relative"
           >
-            <div
-              className={`p-1.5 rounded-xl transition-all relative ${
-                activeTab === 'messages'
-                  ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
-                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
-              }`}
-            >
+            <div className="p-1.5 rounded-xl transition-all relative text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200">
               <MessageSquare className="w-5 h-5" />
               {unreadMessagesCount > 0 && (
-                <span className="absolute -top-1 -end-1 w-4 h-4 bg-teal-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center ring-2 ring-white dark:ring-slate-950">
-                  {unreadMessagesCount}
+                <span className="absolute -top-1 -end-1 min-w-[16px] h-4 px-1 rounded-full bg-rose-500 text-white text-[9px] font-bold flex items-center justify-center">
+                  {unreadMessagesCount > 9 ? '9+' : unreadMessagesCount}
                 </span>
               )}
             </div>
-            <span
-              className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'messages' ? 'text-brand-700 dark:text-brand-300 font-extrabold' : 'text-slate-500 dark:text-slate-400'
-              }`}
-            >
-              {t('messages')}
+            <span className="text-[10px] sm:text-[11px] font-bold mt-0.5 text-slate-500 dark:text-slate-400">
+              رسائل
             </span>
           </button>
 
-          {/* 5. إشعارات */}
+          {/* 5. ملفي ومراكز الإدارة */}
           <button
-            id="nav-adv-notifications"
-            type="button"
-            onClick={onOpenNotifications}
-            className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group relative"
-          >
-            <div
-              className={`p-1.5 rounded-xl transition-all relative ${
-                activeTab === 'notifications'
-                  ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
-                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
-              }`}
-            >
-              <Bell className="w-5 h-5" />
-              {unreadCount > 0 && (
-                <span className="absolute -top-1 -end-1 w-4 h-4 bg-brand-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center ring-2 ring-white dark:ring-slate-950 animate-pulse">
-                  {unreadCount > 9 ? '9+' : unreadCount}
-                </span>
-              )}
-            </div>
-            <span
-              className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'notifications' ? 'text-brand-700 dark:text-brand-300 font-extrabold' : 'text-slate-500 dark:text-slate-400'
-              }`}
-            >
-              {t('notifications')}
-            </span>
-          </button>
-
-          {/* 6. ملفي */}
-          <button
-            id="nav-adv-profile"
+            id="nav-admin-profile"
             type="button"
             onClick={onOpenProfile}
             className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group"
@@ -375,153 +200,17 @@ export const BottomNav: React.FC<BottomNavProps> = ({
     );
   }
 
-  // 3. WRITER ROLE: الرئيسية · رسائل · إشعارات · ملفي
-  // "مقالاتي" و"لوحة الكاتب" أُزيلا لأنهما كانا يكرران "ملفي" (نفس المحتوى
-  // أصبح أقساماً داخل صفحة الملف الشخصي)، وزر "كتابة" العائم انتقل إلى
-  // أيقونة قلم مستقلة أعلى الملف الشخصي (انظر UserProfileView) بدل بقائه
-  // هنا مكرَّراً أيضاً.
-  if (userRole === 'writer') {
-    return (
-      <nav
-        id="bottom-nav-writer"
-        className="fixed bottom-0 inset-x-0 z-40 bg-white/95 text-slate-900 border-t border-slate-200/90 shadow-xl dark:bg-slate-950/95 dark:text-white dark:border-brand-500/20 backdrop-blur-xl transition-colors pb-safe"
-      >
-        <div className="max-w-lg mx-auto px-2 h-16 flex items-center justify-around">
-          {/* 1. الرئيسية */}
-          <button
-            id="nav-writer-feed"
-            type="button"
-            onClick={() => onChangeTab('feed')}
-            className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group"
-          >
-            <div
-              className={`p-1.5 rounded-xl transition-all ${
-                activeTab === 'feed'
-                  ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
-                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
-              }`}
-            >
-              <Home className="w-5 h-5" />
-            </div>
-            <span
-              className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'feed' ? 'text-brand-700 dark:text-brand-300 font-extrabold' : 'text-slate-500 dark:text-slate-400'
-              }`}
-            >
-              {t('home')}
-            </span>
-          </button>
-
-          {/* 2. رسائل — كانت غائبة تماماً عن حساب الكاتب رغم توفرها لكل
-              بقية الأدوار، ما كان يمنع الكاتب من الوصول لردوده إن لم يكن
-              داخل ملف مستخدم آخر بالتحديد. */}
-          <button
-            id="nav-writer-messages"
-            type="button"
-            onClick={onOpenMessages}
-            className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group relative"
-          >
-            <div
-              className={`p-1.5 rounded-xl transition-all relative ${
-                activeTab === 'messages'
-                  ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
-                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
-              }`}
-            >
-              <MessageSquare className="w-5 h-5" />
-              {unreadMessagesCount > 0 && (
-                <span className="absolute -top-1 -end-1 w-4 h-4 bg-teal-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center ring-2 ring-white dark:ring-slate-950">
-                  {unreadMessagesCount}
-                </span>
-              )}
-            </div>
-            <span
-              className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'messages' ? 'text-brand-700 dark:text-brand-300 font-extrabold' : 'text-slate-500 dark:text-slate-400'
-              }`}
-            >
-              {t('messages')}
-            </span>
-          </button>
-
-          {/* 3. إشعارات */}
-          <button
-            id="nav-writer-notifications"
-            type="button"
-            onClick={onOpenNotifications}
-            className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group relative"
-          >
-            <div
-              className={`p-1.5 rounded-xl transition-all relative ${
-                activeTab === 'notifications'
-                  ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
-                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
-              }`}
-            >
-              <Bell className="w-5 h-5" />
-              {unreadCount > 0 && (
-                <span className="absolute -top-1 -end-1 w-4 h-4 bg-brand-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center ring-2 ring-white dark:ring-slate-950 animate-pulse">
-                  {unreadCount > 9 ? '9+' : unreadCount}
-                </span>
-              )}
-            </div>
-            <span
-              className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'notifications' ? 'text-brand-700 dark:text-brand-300 font-extrabold' : 'text-slate-500 dark:text-slate-400'
-              }`}
-            >
-              {t('notifications')}
-            </span>
-          </button>
-
-          {/* 6. ملفي */}
-          <button
-            id="nav-writer-profile"
-            type="button"
-            onClick={onOpenProfile}
-            className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group"
-          >
-            <div
-              className={`p-1.5 rounded-xl transition-all ${
-                activeTab === 'profile'
-                  ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
-                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
-              }`}
-            >
-              {currentUser?.avatarUrl ? (
-                <img
-                  src={currentUser.avatarUrl}
-                  alt={currentUser.fullName}
-                  referrerPolicy="no-referrer"
-                  className="w-5 h-5 rounded-full object-cover"
-                />
-              ) : (
-                <UserIcon className="w-5 h-5" />
-              )}
-            </div>
-            <span
-              className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-                activeTab === 'profile' ? 'text-brand-700 dark:text-brand-300 font-extrabold' : 'text-slate-500 dark:text-slate-400'
-              }`}
-            >
-              {t('profile')}
-            </span>
-          </button>
-        </div>
-      </nav>
-    );
-  }
-
-  // 4. ADMIN ROLE: الرئيسية · المالية · الإعلانات · المستخدمين · ملفي ومراكز الإدارة
+  // شريط الأعضاء الموحّد: زائر أو أي عضو مسجَّل، بغضّ النظر عن دوره
+  // المخزَّن — الرئيسية · استكشاف · إشعارات · رسائل · ملفي.
   return (
     <nav
-      id="bottom-nav-admin"
+      id="bottom-nav-member"
       className="fixed bottom-0 inset-x-0 z-40 bg-white/95 text-slate-900 border-t border-slate-200/90 shadow-xl dark:bg-slate-950/95 dark:text-white dark:border-brand-500/20 backdrop-blur-xl transition-colors pb-safe"
     >
-      <div className="max-w-lg mx-auto px-2 h-16 flex items-center justify-around">
+      <div className="max-w-lg mx-auto px-3 h-16 flex items-center justify-around">
         {/* 1. الرئيسية */}
         <button
-          id="nav-admin-feed"
+          id="nav-member-feed"
           type="button"
           onClick={() => onChangeTab('feed')}
           className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group"
@@ -544,92 +233,95 @@ export const BottomNav: React.FC<BottomNavProps> = ({
           </span>
         </button>
 
-        {/* 2. المالية والحسابات */}
+        {/* 2. استكشاف */}
         <button
-          id="nav-admin-money"
+          id="nav-member-explore"
           type="button"
-          onClick={() => {
-            onChangeTab('profile');
-            onAdminNavigate?.('money');
-          }}
+          onClick={() => onChangeTab('explore')}
           className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group"
         >
           <div
             className={`p-1.5 rounded-xl transition-all ${
-              activeTab === 'profile' && (adminActiveTab === 'money' || adminActiveTab === 'accounting')
-                ? 'bg-amber-50 text-amber-700 border border-amber-300 dark:bg-amber-600/30 dark:text-amber-300 dark:border-amber-500/40 scale-105'
+              activeTab === 'explore'
+                ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
                 : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
             }`}
           >
-            <DollarSign className="w-5 h-5" />
+            <Compass className="w-5 h-5" />
           </div>
           <span
             className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-              activeTab === 'profile' && (adminActiveTab === 'money' || adminActiveTab === 'accounting')
-                ? 'text-amber-700 dark:text-amber-300 font-extrabold'
-                : 'text-slate-500 dark:text-slate-400'
+              activeTab === 'explore' ? 'text-brand-700 dark:text-brand-300 font-extrabold' : 'text-slate-500 dark:text-slate-400'
             }`}
           >
-            المالية
+            {t('explore')}
           </span>
         </button>
 
-        {/* 3. الإعلانات والترويج */}
+        {/* 3. إشعارات */}
         <button
-          id="nav-admin-campaigns"
+          id="nav-member-notifications"
           type="button"
-          onClick={() => {
-            onChangeTab('profile');
-            onAdminNavigate?.('campaigns');
-          }}
-          className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group"
-        >
-          <div
-            className={`p-1.5 rounded-xl transition-all ${
-              activeTab === 'profile' && (adminActiveTab === 'campaigns' || adminActiveTab === 'promotions')
-                ? 'bg-cyan-50 text-cyan-700 border border-cyan-300 dark:bg-cyan-600/30 dark:text-cyan-300 dark:border-cyan-500/40 scale-105'
-                : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
-            }`}
-          >
-            <Megaphone className="w-5 h-5" />
-          </div>
-          <span
-            className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
-              activeTab === 'profile' && (adminActiveTab === 'campaigns' || adminActiveTab === 'promotions')
-                ? 'text-cyan-700 dark:text-cyan-300 font-extrabold'
-                : 'text-slate-500 dark:text-slate-400'
-            }`}
-          >
-            الإعلانات
-          </span>
-        </button>
-
-        {/* 4. رسائل — كانت غائبة تماماً عن شريط الأدمن السفلي (بخلاف بقية
-            الأدوار)، وضعت مؤقتاً في القائمة الجانبية ثم نُقلت إلى هنا بناءً
-            على طلب صريح ليتطابق مكانها مع بقية الأدوار. إدارة المستخدمين
-            انتقلت إلى القائمة الجانبية بدلاً منها. */}
-        <button
-          id="nav-admin-messages"
-          type="button"
-          onClick={onOpenMessages}
+          onClick={onOpenNotifications}
           className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group relative"
         >
-          <div className="p-1.5 rounded-xl transition-all relative text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200">
-            <MessageSquare className="w-5 h-5" />
-            {unreadMessagesCount > 0 && (
-              <span className="absolute -top-1 -end-1 min-w-[16px] h-4 px-1 rounded-full bg-rose-500 text-white text-[9px] font-bold flex items-center justify-center">
-                {unreadMessagesCount > 9 ? '9+' : unreadMessagesCount}
+          <div
+            className={`p-1.5 rounded-xl transition-all relative ${
+              activeTab === 'notifications'
+                ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
+                : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
+            }`}
+          >
+            <Bell className="w-5 h-5" />
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -end-1 w-4 h-4 bg-brand-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center ring-2 ring-white dark:ring-slate-950 animate-pulse">
+                {unreadCount > 9 ? '9+' : unreadCount}
               </span>
             )}
           </div>
-          <span className="text-[10px] sm:text-[11px] font-bold mt-0.5 text-slate-500 dark:text-slate-400">
-            رسائل
+          <span
+            className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
+              activeTab === 'notifications' ? 'text-brand-700 dark:text-brand-300 font-extrabold' : 'text-slate-500 dark:text-slate-400'
+            }`}
+          >
+            {t('notifications')}
           </span>
         </button>
 
-        {/* 5. ملفي ومراكز الإدارة */}
+        {/* 4. رسائل — معطّل للزائر (لا حساب له لتلقي أو إرسال رسائل) */}
         <button
-          id="nav-admin-profile"
+          id="nav-member-messages"
+          type="button"
+          onClick={currentUser?.id === 'guest' ? undefined : onOpenMessages}
+          disabled={currentUser?.id === 'guest'}
+          className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group relative disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <div
+            className={`p-1.5 rounded-xl transition-all relative ${
+              activeTab === 'messages'
+                ? 'bg-brand-50 text-brand-700 border border-brand-200 dark:bg-brand-600/30 dark:text-brand-300 dark:border-brand-500/40 scale-105'
+                : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
+            }`}
+          >
+            <MessageSquare className="w-5 h-5" />
+            {unreadMessagesCount > 0 && currentUser?.id !== 'guest' && (
+              <span className="absolute -top-1 -end-1 w-4 h-4 bg-teal-500 text-white rounded-full text-[9px] font-bold flex items-center justify-center ring-2 ring-white dark:ring-slate-950">
+                {unreadMessagesCount}
+              </span>
+            )}
+          </div>
+          <span
+            className={`text-[10px] sm:text-[11px] font-bold mt-0.5 ${
+              activeTab === 'messages' ? 'text-brand-700 dark:text-brand-300 font-extrabold' : 'text-slate-500 dark:text-slate-400'
+            }`}
+          >
+            {currentUser?.id === 'guest' ? 'يلزم التسجيل' : t('messages')}
+          </span>
+        </button>
+
+        {/* 5. ملفي */}
+        <button
+          id="nav-member-profile"
           type="button"
           onClick={onOpenProfile}
           className="flex-1 flex flex-col items-center justify-center py-1 touch-manipulation group"

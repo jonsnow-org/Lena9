@@ -12,10 +12,8 @@ import {
   LogOut,
   PenTool,
   Megaphone,
-  BookOpen,
   CheckCircle2,
   ChevronLeft,
-  Bookmark,
   Wand2,
   Palette
 } from 'lucide-react';
@@ -55,12 +53,8 @@ interface DrawerMenuProps {
    *  في الملف الشخصي، حتى لا يظهر الحساب بلقبين مختلفين في صفحتين. إن لم
    *  يُمرَّر، يُحسب محلياً كاحتياط. */
   memberStatusLabel?: string;
-  /** شخصية التنقل المُشتقة من النشاط الفعلي (وليس الدور المُسجَّل فقط) —
-   *  نفس القيمة المستخدمة في شريط التنقل السفلي، لضمان اتساق القوائم
-   *  المعروضة هنا مع الواجهة الفعلية بدل تناقضهما. */
-  navPersona?: UserRole;
   /** يفتح محرر مقال جديد مباشرة — نقطة دخول موحّدة للكتابة لأي حساب
-   *  مسجَّل، بغضّ النظر عن الدور المسجَّل أو شخصية التنقل الحالية. */
+   *  مسجَّل، بغضّ النظر عن الدور المسجَّل. */
   onStartWriting?: () => void;
   /** يفتح استوديو توليد الصور بالذكاء الاصطناعي */
   onOpenImageStudio?: () => void;
@@ -88,7 +82,6 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
   onSelectFollowedWriter,
   onNavigateTab,
   onOpenLogin,
-  navPersona,
   onStartWriting,
   onOpenImageStudio,
   isMonetizationEligible = false,
@@ -96,9 +89,6 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
 }) => {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const quotaStats = getRemainingAiUses(currentUser.aiQuota);
-  // احتياط: إن لم يُمرَّر navPersona من الأعلى، اعتمد على الدور المُسجَّل
-  // مباشرة بدل تعطّل القائمة بأكملها.
-  const persona: UserRole = navPersona || currentUser.role;
   const t = getTranslator(currentLang);
 
   if (!isOpen) return null;
@@ -223,38 +213,14 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
                 أزرار المالية/الإعلانات/المستخدمين المختصرة بجانبه)، وشريط
                 تبويبات داخلي هناك يفتح كل قسم — لا رابط اختصار مكرر هنا. */}
 
-            {/* Role-Specific Direct Navigation Links — أُزيلت كتلتا writer
-                وadvertiser بالكامل: "استوديو الكاتب" و"مقالاتي" كانتا تكرران
-                تماماً زري "لوحة الكاتب"/"مقالاتي" في الشريط السفلي (نفس
-                activeTab النهائي)، و"لوحة الحملات الإعلانية" كانت تكرر زر
-                "حملاتي" في الشريط السفلي، و"شحن الرصيد والفوترة" كانت تكرر
-                زر "المحفظة والأرباح" العام أدناه بالضبط (كلاهما onOpenWallet).
-                لم يبق شيء غير مكرر يستحق قسماً خاصاً هنا لأي دور. */}
+            {/* Role-Specific Direct Navigation Links — لم يعد هناك تفرّع حسب
+                الدور المخزَّن هنا إطلاقاً: شريط التنقّل السفلي الموحّد يضم
+                "استكشاف" لأي عضو مسجَّل أصلاً، وقسم "مدونة" في الملف
+                الشخصي يضم اختصار "المقالات المحفوظة" لأي عضو أيضاً — فلا
+                داعٍ لتكرار أي منهما هنا. */}
             <div className="space-y-1">
-              {/* استكشاف: مخفي عن الأدمن (له مركز قيادة كامل) وعن القارئ
-                  تحديداً (له زر "استكشاف" مباشر في الشريط السفلي أصلاً —
-                  نفس الوجهة بالضبط، فتكراره هنا لا معنى له). يبقى ظاهراً
-                  للكاتب والمعلن لأن شريطهما السفلي لا يضم زر استكشاف. */}
-              {persona !== 'admin' && persona !== 'reader' && (
-                <button
-                  onClick={() => {
-                    onNavigateTab?.('explore');
-                    onClose();
-                  }}
-                  className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <BookOpen className="w-4 h-4 text-brand-400" />
-                    <span>استكشاف المقالات والكتب</span>
-                  </div>
-                  <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
-                </button>
-              )}
-
-              {/* إنشاء إعلان: متاح لأي حساب مسجَّل غير الزائر وغير الأدمن، ما
-                  عدا من لديه أصلاً زر حملات مخصص في الشريط السفلي (شخصية
-                  "معلن") تفادياً للتكرار. */}
-              {currentUser.id !== 'guest' && persona !== 'advertiser' && persona !== 'admin' && (
+              {/* إنشاء إعلان: متاح لأي عضو مسجَّل غير الأدمن، بلا استثناء. */}
+              {currentUser.id !== 'guest' && currentUser.role !== 'admin' && (
                 <button
                   onClick={() => {
                     onNavigateTab?.('campaigns');
@@ -264,29 +230,7 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
                 >
                   <div className="flex items-center gap-3">
                     <Megaphone className="w-4 h-4 text-cyan-400" />
-                    <span>إنشاء إعلان وترويج (قارئ ومُعلن)</span>
-                  </div>
-                  <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
-                </button>
-              )}
-
-              {/* المحفوظات: مخفية عن الأدمن وعن القارئ تحديداً — صفحة "ملفي"
-                  للقارئ تعرض تبويب "المقالات المحفوظة" افتراضياً من أول
-                  فتحة أصلاً (نفس الوجهة تماماً التي يصل إليها زر "ملفي" في
-                  الشريط السفلي)، فتكرار مدخل مستقل لها هنا زائد عن الحاجة.
-                  تبقى ظاهرة للكاتب والمعلن لأن ملفهما الشخصي لا يضم تبويب
-                  محفوظات مكافئاً. */}
-              {persona !== 'admin' && persona !== 'reader' && (
-                <button
-                  onClick={() => {
-                    onNavigateTab?.('saved');
-                    onClose();
-                  }}
-                  className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <Bookmark className="w-4 h-4 text-amber-400" />
-                    <span>المحفوظات وسجل القراءة</span>
+                    <span>إنشاء إعلان وترويج</span>
                   </div>
                   <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
                 </button>
@@ -314,7 +258,7 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
               {/* المستخدمين وKYC — انتقل هذا المدخل إلى هنا من الشريط السفلي
                   (الذي أصبح يضم زر الرسائل بدلاً منه ليطابق بقية الأدوار)،
                   فيبقى للأدمن نفس الوصول لإدارة المستخدمين، فقط من هنا. */}
-              {currentUser.id !== 'guest' && persona === 'admin' && (
+              {currentUser.id !== 'guest' && currentUser.role === 'admin' && (
                 <button
                   onClick={() => {
                     onNavigateTab?.('admin_users');
@@ -330,7 +274,7 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
                 </button>
               )}
 
-              {currentUser.id !== 'guest' && persona !== 'admin' && (
+              {currentUser.id !== 'guest' && currentUser.role !== 'admin' && (
                 <button
                   onClick={() => {
                     onOpenKyc();
