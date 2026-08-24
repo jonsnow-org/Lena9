@@ -22,6 +22,9 @@ interface NotificationsModalProps {
   onMarkOneAsRead: (id: string) => void;
   onDeleteOne: (id: string) => void;
   onClearAll: () => void;
+  /** الضغط على متن الإشعار (غير زر الحذف) — ينقل لوجهته الفعلية حسب
+   *  نوعه ويعلّمه كمقروء معاً، بدل الاكتفاء بتعليمه كمقروء بلا أي وجهة. */
+  onNotificationClick?: (notif: AppNotification) => void;
 }
 
 /** وقت نسبي مختصر (منذ...) بدل عرض التاريخ الخام ISO كما هو. */
@@ -46,7 +49,8 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
   onMarkAllAsRead,
   onMarkOneAsRead,
   onDeleteOne,
-  onClearAll
+  onClearAll,
+  onNotificationClick
 }) => {
   if (!isOpen) return null;
 
@@ -98,11 +102,14 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
             notifications.map((notif) => (
               <div
                 key={notif.id}
-                onClick={() => !notif.isRead && onMarkOneAsRead(notif.id)}
-                className={`flex items-start gap-3 p-3.5 rounded-2xl border transition-colors group ${
+                onClick={() => {
+                  if (!notif.isRead) onMarkOneAsRead(notif.id);
+                  onNotificationClick?.(notif);
+                }}
+                className={`flex items-start gap-3 p-3.5 rounded-2xl border transition-colors group cursor-pointer ${
                   notif.isRead
                     ? 'bg-slate-50/50 dark:bg-slate-800/40 border-slate-200/60 dark:border-slate-800'
-                    : 'bg-teal-50/70 dark:bg-teal-950/40 border-teal-200 dark:border-teal-800 cursor-pointer'
+                    : 'bg-teal-50/70 dark:bg-teal-950/40 border-teal-200 dark:border-teal-800'
                 }`}
               >
                 <div className="w-8 h-8 rounded-xl bg-white dark:bg-slate-800 shadow-2xs flex items-center justify-center shrink-0">

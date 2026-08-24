@@ -732,13 +732,6 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
         </div>
       </div>
 
-      {/* موضع reader_profile — أعلى صفحة الملف الشخصي مباشرة، ملك المنصة
-          بالكامل (100%). كان يظهر فقط داخل قسم القارئ القديم المحذوف الآن؛
-          أُعيد هنا ليبقى متاحاً لكل الحسابات المسجّلة بلا استثناء. */}
-      {currentUser.id !== 'guest' && (
-        <AdSlot slotId="reader_profile" campaigns={safeCampaigns} viewerId={currentUser.id} adFree={false} />
-      )}
-
       {/* ========================================================================= */}
       {/* 2. المدونة والتغريد — متاحة لأي حساب مسجَّل (قارئ/كاتب/معلن)، وليست
           حكراً على دور "كاتب" فقط، تماشياً مع نموذج الحساب الموحّد الذي
@@ -1108,9 +1101,14 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                       </button>
                     </div>
                   ) : (
-                    myPublishedArticles.map((art) => (
+                    myPublishedArticles.map((art, artIdx) => (
+                      <React.Fragment key={art.id}>
+                      {/* موضع reader_profile — داخل قائمة المقالات نفسها كل 6
+                          مقالات، وليس شريطاً ثابتاً أعلى الصفحة كما كان سابقاً. */}
+                      {artIdx > 0 && artIdx % 6 === 0 && (
+                        <AdSlot slotId="reader_profile" campaigns={safeCampaigns} viewerId={currentUser.id} adFree={false} />
+                      )}
                       <div
-                        key={art.id}
                         className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4"
                       >
                         <div className="flex items-center gap-3 w-full sm:w-auto">
@@ -1188,6 +1186,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                           </div>
                         </div>
                       </div>
+                      </React.Fragment>
                     ))
                   )}
                 </div>

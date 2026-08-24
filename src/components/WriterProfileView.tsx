@@ -22,7 +22,7 @@ import {
 import { User, Article, AdCampaign } from '../types';
 import { formatDateTimeAr } from '../utils/dateFormat';
 import { AdSlot } from './AdSlot';
-import { getCreatorEligibility } from '../utils/creatorEligibility';
+import { getCreatorEligibility, getMemberStatusLabel } from '../utils/creatorEligibility';
 
 interface WriterProfileViewProps {
   writer: User;
@@ -134,15 +134,16 @@ export const WriterProfileView: React.FC<WriterProfileViewProps> = ({
                       <span>KYC موثق</span>
                     </span>
                   )}
-                  {creatorEligibility.isEligible && (
-                    <span
-                      className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 border border-amber-500/20"
-                      title="منشئ محتوى موثّق — استوفى شروط الأهلية الكاملة لاحتساب الأرباح"
-                    >
-                      <Award className="w-3.5 h-3.5" />
-                      <span>منشئ محتوى موثّق</span>
-                    </span>
-                  )}
+                  {/* وسم حالة واحد — نفس منطق الملف الشخصي الموحّد بالضبط:
+                      قارئ افتراضياً، يتحوّل تلقائياً إلى كاتب عند تحقيق
+                      شروط الأهلية الكاملة، بلا وسوم وسيطة متضاربة. */}
+                  <span
+                    className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 border border-amber-500/20"
+                    title={creatorEligibility.isEligible ? 'استوفى شروط الأهلية الكاملة لاحتساب الأرباح' : undefined}
+                  >
+                    <Award className="w-3.5 h-3.5" />
+                    <span>{getMemberStatusLabel(writer.role, creatorEligibility.isEligible)}</span>
+                  </span>
                 </div>
                 <p className="text-xs sm:text-sm text-slate-400 font-medium dir-ltr text-end sm:text-start">
                   @{writer.username}

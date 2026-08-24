@@ -2765,7 +2765,7 @@ export function App() {
   );
   // وسم حالة واحد فقط يُستخدم في كل مكان (الملف الشخصي + القائمة الجانبية)
   // بدل أوسمة متضاربة لكل صفحة على حدة.
-  const memberStatusLabel = getMemberStatusLabel(currentUser.role, navPersona, currentUserIsMonetizationEligible);
+  const memberStatusLabel = getMemberStatusLabel(currentUser.role, currentUserIsMonetizationEligible);
 
   // Show Landing Page for new visitors or when explicitly opened
   if (showLandingPage) {
@@ -3983,6 +3983,26 @@ export function App() {
           clearAllNotificationsInFirestore(notifications).catch((err) =>
             console.error('تعذر مسح الإشعارات:', err)
           );
+        }}
+        onNotificationClick={(notif) => {
+          // مقال (إعجاب/تعليق/رد/مشاركة على مقال) → فتح المقال نفسه.
+          if (notif.articleId) {
+            const art = articles.find((a) => a.id === notif.articleId);
+            if (art) {
+              setIsNotificationsOpen(false);
+              setReadingArticle(art);
+              return;
+            }
+          }
+          // متابعة، أو تفاعل على تغريدة (لا صفحة مستقلة للتغريدة نفسها) →
+          // فتح الملف الشخصي لصاحب الحدث.
+          if (notif.actorId) {
+            const actor = users.find((u) => u.id === notif.actorId);
+            if (actor) {
+              setIsNotificationsOpen(false);
+              setViewingWriterProfile(actor);
+            }
+          }
         }}
       />
 
