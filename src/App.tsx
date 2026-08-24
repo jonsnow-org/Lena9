@@ -3049,6 +3049,14 @@ export function App() {
           onGoogleSignIn={(role) => handleRealGoogleSignIn(role)}
           externalError={authTriggerError}
         />
+
+        {showExitToast && (
+          <div className="fixed bottom-6 inset-x-0 z-[60] flex justify-center pointer-events-none px-4">
+            <div className="px-4 py-2.5 rounded-full bg-slate-900/95 text-white text-xs font-bold shadow-2xl animate-fade-in">
+              اضغط رجوع مرة أخرى للخروج
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -3057,11 +3065,20 @@ export function App() {
   // وبلا أي إعلانات (شرط من سياسات AdSense).
   if (legalSection) {
     return (
-      <LegalPages
-        section={legalSection}
-        onChangeSection={(sec) => setLegalSection(sec)}
-        onBack={() => setLegalSection(null)}
-      />
+      <>
+        <LegalPages
+          section={legalSection}
+          onChangeSection={(sec) => setLegalSection(sec)}
+          onBack={() => setLegalSection(null)}
+        />
+        {showExitToast && (
+          <div className="fixed bottom-6 inset-x-0 z-[60] flex justify-center pointer-events-none px-4">
+            <div className="px-4 py-2.5 rounded-full bg-slate-900/95 text-white text-xs font-bold shadow-2xl animate-fade-in">
+              اضغط رجوع مرة أخرى للخروج
+            </div>
+          </div>
+        )}
+      </>
     );
   }
 
@@ -4154,6 +4171,7 @@ export function App() {
         users={users}
         conversations={conversations}
         messages={messages}
+        campaigns={campaigns}
         onSendMessage={handleSendMessage}
         onDeleteMessage={handleDeleteMessage}
         onDeleteConversation={handleDeleteConversation}

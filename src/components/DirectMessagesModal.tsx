@@ -18,10 +18,12 @@ import {
   UserCircle2,
   LogOut
 } from 'lucide-react';
-import { Conversation, DirectMessage, MessageReport, User } from '../types';
+import { AdCampaign, Conversation, DirectMessage, MessageReport, User } from '../types';
 import { uploadAdMedia } from '../services/mediaApi';
 import { timeAgoAr } from '../utils/dateFormat';
 import { CHAT_STICKERS, ChatStickerFace, findStickerMeta } from './ChatStickers';
+import { VideoPlayer } from './VideoPlayer';
+import { AdSlot } from './AdSlot';
 
 const STANDARD_EMOJIS = [
   '😀', '😂', '🥰', '😍', '😘', '😉', '😊', '🙂', '😎', '🤩',
@@ -101,6 +103,8 @@ interface DirectMessagesModalProps {
   activeChatPartner?: User | null;
   onOpenConversation?: (partnerId: string) => void;
   onOpenProfile?: (userId: string) => void;
+  /** لعرض شريط إعلاني صغير أعلى قائمة المحادثات فقط (وليس داخل أي محادثة مفتوحة) */
+  campaigns?: AdCampaign[];
 }
 
 export const DirectMessagesModal: React.FC<DirectMessagesModalProps> = ({
@@ -120,7 +124,8 @@ export const DirectMessagesModal: React.FC<DirectMessagesModalProps> = ({
   onSetTyping,
   activeChatPartner,
   onOpenConversation,
-  onOpenProfile
+  onOpenProfile,
+  campaigns = []
 }) => {
   const [selectedPartnerId, setSelectedPartnerId] = useState<string | null>(activeChatPartner?.id || null);
   const [text, setText] = useState('');
@@ -169,6 +174,19 @@ export const DirectMessagesModal: React.FC<DirectMessagesModalProps> = ({
     });
     return counts;
   }, [messages, currentUser.id]);
+
+  // تعليم رسائل المحادثة المفتوحة كمقروءة كلما كان فيها أي شيء غير مقروء —
+  // وليس فقط لحظة الانتقال إليها. onOpenConversation وحده (عند الفتح
+  // الأول) كان يفوّت رسائل جديدة تصل لاحقاً أثناء بقاء نفس المحادثة مفتوحة
+  // بالفعل (أو عند إعادة فتح النافذة على نفس المحادثة السابقة)، فتبقى
+  // شارة "غير مقروء" عالقة رغم أن المستخدم يشاهد الرسائل فعلياً.
+  useEffect(() => {
+    if (!isOpen || !selectedPartnerId) return;
+    if ((unreadCountByPartnerId[selectedPartnerId] || 0) > 0) {
+      onOpenConversation?.(selectedPartnerId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, selectedPartnerId, unreadCountByPartnerId]);
 
   const visibleConversations = useMemo(
     () => conversations.filter((c) => !c.isHiddenForMe),
@@ -454,7 +472,7 @@ export const DirectMessagesModal: React.FC<DirectMessagesModalProps> = ({
                       className="w-full flex items-center gap-2 px-3.5 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-500 font-bold"
                     >
                       <LogOut className="w-3.5 h-3.5" />
-                      إغلاق المحادثة
+                      حذف المحادثة
                     </button>
                   </div>
                 )}
@@ -495,6 +513,12 @@ export const DirectMessagesModal: React.FC<DirectMessagesModalProps> = ({
               selectedPartner ? 'hidden sm:block' : 'block'
             }`}
           >
+            {/* شريط إعلاني صغير أعلى قائمة المحادثات فقط — لا يظهر إطلاقاً
+                داخل أي محادثة مفتوحة حتى لا يزعج تدفّق الرسائل نفسه. */}
+            <div className="px-3 pt-3">
+              <AdSlot slotId="messages_list" campaigns={campaigns} viewerId={currentUser.id} />
+            </div>
+
             {visibleConversations.length === 0 ? (
               <div className="p-8 text-center text-xs text-slate-400">لا توجد محادثات سابقة حالياً</div>
             ) : (
@@ -540,28 +564,44 @@ export const DirectMessagesModal: React.FC<DirectMessagesModalProps> = ({
                         )}
                       </div>
                     </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!window.confirm(`حذف المحادثة مع ${c.partnerName} من قائمتك؟ يمكنك استقبال رسائل جديدة منه لاحقاً بلا مشكلة.`)) return;
+                        onHideConversation?.(c.id);
+                      }}
+                      className="shrink-0 p-1.5 rounded-lg text-slate-300 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
+                      title="حذف المحادثة"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 );
               })
             )}
           </div>
 
-          {/* Active Chat Panel */}
+          {/* Active Chat Panel
+              min-w-0 إلزامي هنا: هذه اللوحة عنصر flex أفقي داخل "Body Split"،
+              وبدونها يفرض محتوى الفقاعات (نص طويل + أختام وقت) على الحاوية
+              أن تتمدد بعرضها الطبيعي (min-width: auto الافتراضي)، فتتجاوز
+              عرض الشاشة الفعلي على الجوال وتنكشف فقاعات الرسائل جزئياً خلف
+              حافة الشاشة أفقياً بدل الانضغاط ضمن العرض المتاح. */}
           <div
-            className={`flex-1 flex flex-col bg-slate-50/50 dark:bg-slate-900/50 ${
+            className={`flex-1 min-w-0 flex flex-col bg-slate-50/50 dark:bg-slate-900/50 ${
               !selectedPartner ? 'hidden sm:flex items-center justify-center' : 'flex'
             }`}
           >
             {selectedPartner ? (
               <>
-                <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                <div className="flex-1 min-w-0 overflow-y-auto p-4 space-y-3">
                   {currentChatMessages.map((msg) => {
                     const isMe = msg.senderId === currentUser.id;
                     const canDelete = Boolean(onDeleteMessage) && (isMe || currentUser.role === 'admin');
                     const sticker = msg.mediaType === 'sticker' ? findStickerMeta(msg.content) : undefined;
 
                     return (
-                      <div key={msg.id} className={`flex items-center gap-1.5 group ${isMe ? 'justify-start' : 'justify-end'}`}>
+                      <div key={msg.id} className={`flex items-center gap-1.5 group min-w-0 ${isMe ? 'justify-start' : 'justify-end'}`}>
                         {isMe && canDelete && (
                           <button
                             onClick={() => {
@@ -583,7 +623,7 @@ export const DirectMessagesModal: React.FC<DirectMessagesModalProps> = ({
                           </div>
                         ) : (
                           <div
-                            className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-xs sm:text-sm leading-relaxed ${
+                            className={`max-w-[75%] min-w-0 px-4 py-2.5 rounded-2xl text-xs sm:text-sm leading-relaxed break-words ${
                               isMe
                                 ? 'bg-teal-600 text-white rounded-te-none'
                                 : 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 rounded-ts-none shadow-2xs'
@@ -598,9 +638,9 @@ export const DirectMessagesModal: React.FC<DirectMessagesModalProps> = ({
                               />
                             )}
                             {msg.mediaType === 'video' && msg.mediaUrl && (
-                              <video src={msg.mediaUrl} controls className="rounded-xl max-w-full max-h-64 mb-1.5" />
+                              <VideoPlayer src={msg.mediaUrl} className="rounded-xl max-w-full max-h-64 mb-1.5" />
                             )}
-                            {msg.content && <p>{msg.content}</p>}
+                            {msg.content && <p className="break-words">{msg.content}</p>}
                             <span className={`block text-[9px] mt-1 text-end ${isMe ? 'text-teal-200' : 'text-slate-400'}`}>
                               {timeAgoAr(msg.createdAt)}
                             </span>

@@ -6,6 +6,7 @@ import {
   subscribeToConversationMessagesForAdmin
 } from '../../services/firestoreService';
 import { timeAgoAr } from '../../utils/dateFormat';
+import { VideoPlayer } from '../VideoPlayer';
 
 interface AdminChatsTabProps {
   users: User[];
@@ -191,7 +192,7 @@ export const AdminChatsTab: React.FC<AdminChatsTabProps> = ({ users }) => {
                             <img src={m.mediaUrl} alt="" className="rounded-lg max-h-48 mb-1" />
                           )}
                           {m.mediaType === 'video' && m.mediaUrl && (
-                            <video src={m.mediaUrl} controls className="rounded-lg max-h-48 mb-1" />
+                            <VideoPlayer src={m.mediaUrl} className="rounded-lg max-h-48 mb-1" />
                           )}
                           {m.mediaType === 'sticker' ? <span className="text-slate-400">[ملصق]</span> : m.text}
                         </div>

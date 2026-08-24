@@ -34,6 +34,7 @@ import { formatDateAr, formatDateTimeAr, timeAgoAr } from '../utils/dateFormat';
 import { SmartAdBanner } from './SmartAdBanner';
 import { AdSlot } from './AdSlot';
 import { VideoEmbed } from './VideoEmbed';
+import { VideoPlayer } from './VideoPlayer';
 import { REVENUE_SHARES } from '../constants/revenueShares';
 
 type ReaderTheme = 'default' | 'sepia' | 'charcoal';
@@ -712,12 +713,7 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
           {/* فيديو المقال: الملف المرفوع مباشرة له الأولوية على رابط التضمين */}
           {article.uploadedVideoUrl ? (
             <div className="my-6">
-              <video
-                src={article.uploadedVideoUrl}
-                controls
-                playsInline
-                className="w-full rounded-2xl bg-slate-950"
-              />
+              <VideoPlayer src={article.uploadedVideoUrl} className="w-full rounded-2xl bg-slate-950" />
             </div>
           ) : (
             article.videoUrl && (

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AdCampaign } from '../types';
 import { logAdEvent } from '../services/firestoreService';
 import { VideoEmbed } from './VideoEmbed';
+import { VideoPlayer } from './VideoPlayer';
 import { parseVideoUrl } from '../utils/videoEmbed';
 import { subscribePlatformAdsEnabled, getPlatformAdsEnabled } from '../utils/platformAdsStore';
 import {
@@ -30,7 +31,8 @@ export type AdSlotId =
   | 'writer_profile_feed'
   | 'reader_profile'
   | 'comments_feed'
-  | 'tweet_feed';
+  | 'tweet_feed'
+  | 'messages_list';
 
 interface SlotConfig {
   /** من يستفيد من عائد هذا الموضع */
@@ -60,7 +62,10 @@ export const SLOT_CONFIG: Record<AdSlotId, SlotConfig> = {
   // قسم التغريد الجديد — إعلان منصة عادي مدمج في القائمة (نفس تنسيق بطاقة
   // مستقلة واضحة العنوان "إعلان"، وليس نافذة منبثقة أو محتوى مموّه) حتى
   // لا يُفسد تجربة التصفح السريع للتغريدات القصيرة.
-  tweet_feed: { beneficiary: 'platform', writerShare: 0 }
+  tweet_feed: { beneficiary: 'platform', writerShare: 0 },
+  // شريط إعلاني صغير أعلى قائمة المحادثات فقط (وليس داخل محادثة مفتوحة)،
+  // حتى لا يُزعج تدفّق الرسائل نفسه.
+  messages_list: { beneficiary: 'platform', writerShare: 0 }
 };
 
 /**
@@ -265,7 +270,7 @@ export const AdSlot: React.FC<AdSlotProps> = ({
 
   const mediaBlock = (extraClass: string) =>
     hasUploadedVideo ? (
-      <video src={uploadedVideoUrl} controls playsInline className={extraClass} />
+      <VideoPlayer src={uploadedVideoUrl} className={extraClass} />
     ) : hasEmbedVideo ? (
       <div onClick={(e) => e.stopPropagation()}>
         <VideoEmbed url={videoUrl} />
