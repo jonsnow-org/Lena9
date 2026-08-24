@@ -23,7 +23,7 @@ import { uploadAdMedia } from '../services/mediaApi';
 import { timeAgoAr } from '../utils/dateFormat';
 import { CHAT_STICKERS, ChatStickerFace, findStickerMeta } from './ChatStickers';
 import { VideoPlayer } from './VideoPlayer';
-import { AdSlot } from './AdSlot';
+import { AdTickerBar } from './AdTickerBar';
 
 const STANDARD_EMOJIS = [
   '😀', '😂', '🥰', '😍', '😘', '😉', '😊', '🙂', '😎', '🤩',
@@ -513,10 +513,10 @@ export const DirectMessagesModal: React.FC<DirectMessagesModalProps> = ({
               selectedPartner ? 'hidden sm:block' : 'block'
             }`}
           >
-            {/* شريط إعلاني صغير أعلى قائمة المحادثات فقط — لا يظهر إطلاقاً
-                داخل أي محادثة مفتوحة حتى لا يزعج تدفّق الرسائل نفسه. */}
+            {/* شريط إعلاني صغير متقلّب أعلى قائمة المحادثات فقط — لا يظهر
+                إطلاقاً داخل أي محادثة مفتوحة حتى لا يزعج تدفّق الرسائل. */}
             <div className="px-3 pt-3">
-              <AdSlot slotId="messages_list" campaigns={campaigns} viewerId={currentUser.id} />
+              <AdTickerBar slotId="messages_list" campaigns={campaigns} viewerId={currentUser.id} />
             </div>
 
             {visibleConversations.length === 0 ? (

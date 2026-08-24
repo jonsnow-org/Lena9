@@ -4182,6 +4182,16 @@ export function App() {
         onSetTyping={handleSetTyping}
         activeChatPartner={activeChatPartner}
         onOpenConversation={(partnerId) => {
+          // تحديث محلي فوري أولاً — لا ننتظر جولة Firestore كاملة (قراءة
+          // ثم كتابة دفعية) قبل اختفاء الشارة، فيبقى المستخدم يرى "غير
+          // مقروء" لثوانٍ رغم أنه يقرأ الرسالة أمامه فعلياً على شبكة بطيئة.
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.senderId === partnerId && m.recipientId === currentUser.id && !m.isRead
+                ? { ...m, isRead: true }
+                : m
+            )
+          );
           markConversationMessagesRead(currentUser.id, partnerId).catch((err) =>
             console.error('تعذر تعليم الرسائل كمقروءة:', err)
           );
