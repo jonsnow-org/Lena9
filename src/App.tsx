@@ -58,6 +58,7 @@ import { TweetFeed } from './components/TweetFeed';
 import { ArticleEditorModal } from './components/ArticleEditorModal';
 import { AdvertiserDashboard } from './components/AdvertiserDashboard';
 import { WriterProfileView } from './components/WriterProfileView';
+import { FollowListModal } from './components/FollowListModal';
 import { ExploreView } from './components/ExploreView';
 import { AdsRevenueView } from './components/AdsRevenueView';
 import { UserProfileView } from './components/UserProfileView';
@@ -430,6 +431,9 @@ export function App() {
   const [depositRequests, setDepositRequests] = useState<any[]>([]);
   const [payoutRequests, setPayoutRequests] = useState<any[]>([]);
   const [followsData, setFollowsData] = useState<{ id: string; followerId: string; followingId: string }[]>([]);
+  // نافذة قائمة "متابِعون/يتابع" — كانت العدّادات في الملف الشخصي أرقاماً
+  // غير قابلة للضغط فقط، بلا أي وسيلة لعرض القائمة الفعلية للأشخاص.
+  const [followListModal, setFollowListModal] = useState<{ title: string; userIds: string[] } | null>(null);
   const [purchaseRequests, setPurchaseRequests] = useState<any[]>([]);
   const [adEvents, setAdEvents] = useState<any[]>([]);
   const [isDirectMessagesOpen, setIsDirectMessagesOpen] = useState(false);
@@ -1587,6 +1591,20 @@ export function App() {
     }
   };
 
+  const handleShowFollowers = (userId: string) => {
+    setFollowListModal({
+      title: 'المتابعون',
+      userIds: followsData.filter((f) => f.followingId === userId).map((f) => f.followerId)
+    });
+  };
+
+  const handleShowFollowing = (userId: string) => {
+    setFollowListModal({
+      title: 'يتابع',
+      userIds: followsData.filter((f) => f.followerId === userId).map((f) => f.followingId)
+    });
+  };
+
   // Bookmark Toggle
   const handleToggleBookmark = (articleId: string) => {
     if (!requireAuth()) return;
@@ -1688,7 +1706,7 @@ export function App() {
       await addTweetToFirestore(newTweet);
     } catch (err) {
       console.error('تعذر نشر التغريدة:', err);
-      alert('تعذر نشر التغريدة. تحقق من اتصالك ثم حاول مجدداً.');
+      alert(`تعذر نشر التغريدة.\n${(err as any)?.code || (err as any)?.message || 'تحقق من اتصالك ثم حاول مجدداً.'}`);
     }
   };
 
@@ -1698,7 +1716,7 @@ export function App() {
       await deleteTweetInFirestore(tweetId);
     } catch (err) {
       console.error('تعذر حذف التغريدة:', err);
-      alert('تعذر حذف التغريدة. تحقق من اتصالك ثم حاول مجدداً.');
+      alert(`تعذر حذف التغريدة.\n${(err as any)?.code || (err as any)?.message || 'تحقق من اتصالك ثم حاول مجدداً.'}`);
     }
   };
 
@@ -1741,7 +1759,7 @@ export function App() {
           ? [...prev, { id: `${tweetId}_${currentUser.id}`, tweetId, userId: currentUser.id }]
           : prev.filter((l) => !(l.tweetId === tweetId && l.userId === currentUser.id))
       );
-      alert('تعذر تحديث الإعجاب. تحقق من اتصالك ثم حاول مجدداً.');
+      alert(`تعذر تحديث الإعجاب.\n${(err as any)?.code || (err as any)?.message || 'تحقق من اتصالك ثم حاول مجدداً.'}`);
     }
   };
 
@@ -1764,7 +1782,7 @@ export function App() {
       setFavoritedTweetIds((prev) =>
         alreadyFavorited ? [...prev, tweetId] : prev.filter((id) => id !== tweetId)
       );
-      alert('تعذر تحديث المفضلة. تحقق من اتصالك ثم حاول مجدداً.');
+      alert(`تعذر تحديث المفضلة.\n${(err as any)?.code || (err as any)?.message || 'تحقق من اتصالك ثم حاول مجدداً.'}`);
     }
   };
 
@@ -1812,7 +1830,7 @@ export function App() {
       }
     } catch (err) {
       console.error('تعذر إضافة التعليق:', err);
-      alert('تعذر إضافة التعليق. تحقق من اتصالك ثم حاول مجدداً.');
+      alert(`تعذر إضافة التعليق.\n${(err as any)?.code || (err as any)?.message || 'تحقق من اتصالك ثم حاول مجدداً.'}`);
     }
   };
 
@@ -1844,7 +1862,7 @@ export function App() {
       }
     } catch (err) {
       console.error('تعذر إضافة الرد:', err);
-      alert('تعذر إضافة الرد. تحقق من اتصالك ثم حاول مجدداً.');
+      alert(`تعذر إضافة الرد.\n${(err as any)?.code || (err as any)?.message || 'تحقق من اتصالك ثم حاول مجدداً.'}`);
     }
   };
 
@@ -1854,7 +1872,7 @@ export function App() {
       await toggleTweetCommentLikeInFirestore(commentId, currentUser.id, isLiking);
     } catch (err) {
       console.error('تعذر تحديث إعجاب التعليق:', err);
-      alert('تعذر تحديث الإعجاب. تحقق من اتصالك ثم حاول مجدداً.');
+      alert(`تعذر تحديث الإعجاب.\n${(err as any)?.code || (err as any)?.message || 'تحقق من اتصالك ثم حاول مجدداً.'}`);
     }
   };
 
@@ -2875,10 +2893,15 @@ export function App() {
             followersCount={followsData.filter((f) => f.followingId === viewingWriterProfile.id).length}
             followingCount={followsData.filter((f) => f.followerId === viewingWriterProfile.id).length}
             isFollowing={followedWriterIds.includes(viewingWriterProfile.id)}
+            isFollowingMe={followsData.some(
+              (f) => f.followerId === viewingWriterProfile.id && f.followingId === currentUserId
+            )}
             onOpenDirectMessage={(w) => {
               setActiveChatPartner(w);
               setIsDirectMessagesOpen(true);
             }}
+            onShowFollowers={() => handleShowFollowers(viewingWriterProfile.id)}
+            onShowFollowing={() => handleShowFollowing(viewingWriterProfile.id)}
           />
         ) : activeTab === 'profile' ? (
           <UserProfileView
@@ -3069,6 +3092,8 @@ export function App() {
             onAddTweetComment={handlePostTweetComment}
             onLikeTweetComment={handleToggleTweetCommentLike}
             onReplyToTweetComment={handleReplyToTweetComment}
+            onShowFollowers={() => handleShowFollowers(currentUser.id)}
+            onShowFollowing={() => handleShowFollowing(currentUser.id)}
           />
         ) : activeTab === 'explore' ? (
           <ExploreView
@@ -3266,6 +3291,8 @@ export function App() {
             onAddTweetComment={handlePostTweetComment}
             onLikeTweetComment={handleToggleTweetCommentLike}
             onReplyToTweetComment={handleReplyToTweetComment}
+            onShowFollowers={() => handleShowFollowers(currentUser.id)}
+            onShowFollowing={() => handleShowFollowing(currentUser.id)}
           />
         ) : activeTab === 'campaigns' && currentUser.id !== 'guest' ? (
           <AdvertiserDashboard
@@ -3890,6 +3917,28 @@ export function App() {
           );
         }}
       />
+
+      {/* نافذة قائمة متابِعون/يتابع — كانت الأعداد في الملف الشخصي أرقاماً
+          غير قابلة للضغط فقط، دون أي وسيلة لعرض القائمة الفعلية للأشخاص. */}
+      {followListModal && (
+        <FollowListModal
+          title={followListModal.title}
+          users={followListModal.userIds
+            .map((id) => users.find((u) => u.id === id))
+            .filter((u): u is User => Boolean(u))}
+          currentUserId={currentUserId || null}
+          followedWriterIds={followedWriterIds}
+          onToggleFollow={handleToggleFollow}
+          onSelectUser={(u) => {
+            if (u.id === currentUserId) {
+              setActiveTab('profile');
+            } else {
+              setViewingWriterProfile(u);
+            }
+          }}
+          onClose={() => setFollowListModal(null)}
+        />
+      )}
 
       {/* Notifications Modal — التحديد كمقروء والحذف كانا يعدّلان الحالة
           المحلية فقط دون أي كتابة فعلية إلى Firestore، فيعود كل شيء

@@ -33,6 +33,8 @@ interface WriterProfileViewProps {
   onSelectArticle: (article: Article) => void;
   onFollowWriter: (writerId: string) => void;
   isFollowing: boolean;
+  /** هل هذا الكاتب يتابع المستخدم الحالي أيضاً؟ لعرض شارة "يتابعك". */
+  isFollowingMe?: boolean;
   onOpenDirectMessage: (writer: User) => void;
   /** عدد المتابِعين الفعلي محسوباً من مجموعة follows */
   followersCount?: number;
@@ -51,6 +53,7 @@ export const WriterProfileView: React.FC<WriterProfileViewProps> = ({
   onSelectArticle,
   onFollowWriter,
   isFollowing,
+  isFollowingMe = false,
   onOpenDirectMessage,
   followersCount,
   followingCount,
@@ -157,16 +160,21 @@ export const WriterProfileView: React.FC<WriterProfileViewProps> = ({
                 <span>رسالة مباشرة</span>
               </button>
 
-              <button
-                onClick={() => onFollowWriter(writer.id)}
-                className={`px-6 py-2.5 rounded-xl font-black text-xs sm:text-sm shadow-md transition-all ${
-                  isFollowing
-                    ? 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200'
-                    : 'bg-teal-600 hover:bg-teal-700 text-white shadow-teal-500/20'
-                }`}
-              >
-                {isFollowing ? 'تتابعه' : '+ متابعة الكاتب'}
-              </button>
+              <div className="flex flex-col items-end gap-1">
+                <button
+                  onClick={() => onFollowWriter(writer.id)}
+                  className={`px-6 py-2.5 rounded-xl font-black text-xs sm:text-sm shadow-md transition-all ${
+                    isFollowing
+                      ? 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200'
+                      : 'bg-teal-600 hover:bg-teal-700 text-white shadow-teal-500/20'
+                  }`}
+                >
+                  {isFollowing ? 'تتابعه' : '+ متابعة الكاتب'}
+                </button>
+                {isFollowingMe && (
+                  <span className="text-[10px] font-bold text-slate-400">يتابعك</span>
+                )}
+              </div>
             </div>
           </div>
 

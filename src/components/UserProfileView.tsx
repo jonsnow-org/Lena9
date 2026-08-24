@@ -125,8 +125,8 @@ interface UserProfileViewProps {
   users?: User[];
   // Lets a parent (the bottom nav) pick which writer sub-tab shows —
   // optional, falls back to internal state so this still works standalone.
-  initialWriterTab?: 'articles' | 'stats_earnings' | 'literary_profile' | 'ai_tools' | 'tweets' | 'favorites';
-  onWriterTabChange?: (tab: 'articles' | 'stats_earnings' | 'literary_profile' | 'ai_tools' | 'tweets' | 'favorites') => void;
+  initialWriterTab?: 'articles' | 'bookmarks' | 'my_ads' | 'stats_earnings' | 'literary_profile' | 'ai_tools' | 'tweets' | 'favorites';
+  onWriterTabChange?: (tab: 'articles' | 'bookmarks' | 'my_ads' | 'stats_earnings' | 'literary_profile' | 'ai_tools' | 'tweets' | 'favorites') => void;
   // ===== تبويبا "التغريد" و"المفضلة" في صفحة الملف الشخصي للكاتب =====
   /** تغريدات هذا المستخدم فقط (مُصفّاة مسبقاً من الأب حسب authorId). */
   tweets?: Tweet[];
@@ -152,6 +152,8 @@ interface UserProfileViewProps {
    *  كان هذا يُمرَّر سابقاً فقط لصفحة "استوديو الكاتب" المنفصلة (WriterDashboard)
    *  التي أُلغيت كوجهة قائمة بذاتها ودُمج محتواها هنا. */
   followersCount?: number;
+  onShowFollowers?: () => void;
+  onShowFollowing?: () => void;
   /** عدّادات الإشعارات المعلَّقة لخانات لوحة الأدمن المجمَّعة في هذه
    *  الصفحة (أدوات المستخدمين/الدفع/الأمان) — اختيارية، تُخفى الشارة
    *  ببساطة إن لم تُمرَّر. */
@@ -255,6 +257,8 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   onWriterTabChange,
   followingCount,
   followersCount,
+  onShowFollowers,
+  onShowFollowing,
   pendingKycCount = 0,
   pendingMoneyCount = 0,
   pendingFraudCount = 0,
@@ -314,7 +318,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
 
   // Common Active Tab state
   const [readerTab, setReaderTab] = useState<'bookmarks' | 'history' | 'campaigns' | 'following' | 'quota_wallet' | 'settings'>('bookmarks');
-  const [internalWriterTab, setInternalWriterTab] = useState<'articles' | 'stats_earnings' | 'literary_profile' | 'ai_tools' | 'tweets' | 'favorites'>('articles');
+  const [internalWriterTab, setInternalWriterTab] = useState<'articles' | 'bookmarks' | 'my_ads' | 'stats_earnings' | 'literary_profile' | 'ai_tools' | 'tweets' | 'favorites'>('articles');
   // Controlled-if-provided: the bottom nav's "مقالاتي" / "الأرباح" buttons
   // drive this when a parent supplies initialWriterTab/onWriterTabChange;
   // otherwise this screen manages its own tab like before.
@@ -581,6 +585,19 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                       <span>زائر</span>
                     </span>
                   )}
+                  {/* شارة "منشئ محتوى موثّق" — حالة نشاط تتحقق تلقائياً عند
+                      استيفاء شروط الأهلية (متابعون + مشاهدات + عمر الحساب +
+                      عدد مقالات + توثيق KYC)، وليست مرتبطة بدور ثابت. تظهر
+                      لأي حساب مسجَّل استوفى الشروط، قارئاً كان أم كاتباً. */}
+                  {currentUser.id !== 'guest' && currentUser.role !== 'admin' && creatorEligibility.isEligible && (
+                    <span
+                      className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 border border-amber-500/30 flex items-center gap-1"
+                      title="منشئ محتوى موثّق — استوفى شروط الأهلية الكاملة لاحتساب الأرباح"
+                    >
+                      <Award className="w-3 h-3" />
+                      <span>منشئ محتوى موثّق</span>
+                    </span>
+                  )}
                   {/* تعديل الاسم/الصورة/النبذة — لم يكن هناك أي مدخل لهذا
                       بعد التسجيل الأولي رغم أن قواعد الأمان تسمح به دائماً
                       لصاحب الحساب. */}
@@ -652,23 +669,52 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                 </div>
               )}
 
-              {/* متابعون / يتابع — كانا يظهران للكاتب فقط رغم أن نظام
-                  المتابعة الموحّد يسمح لأي حساب مسجَّل (بما فيه الأدمن)
-                  بأن يُتابَع أو يتابع غيره. عدّادان حقيقيان من مجموعة
-                  follows الفعلية، وليسا زرّي فتح قائمة كاملة بعد (تلك ميزة
-                  أوسع لم تُبنَ لها واجهة مستقلة بعد). */}
+              {/* متابعون / يتابع — الآن زرّان حقيقيان يفتحان قائمة الأشخاص
+                  الفعلية (FollowListModal)، وليسا مجرد عدّادين ثابتين كما
+                  كانا سابقاً. */}
               {currentUser.id !== 'guest' && (
                 <div className="flex items-center justify-center sm:justify-start gap-4 pt-1">
-                  <div className="text-center sm:text-start">
+                  <button
+                    type="button"
+                    onClick={onShowFollowers}
+                    className="text-center sm:text-start hover:opacity-70 transition-opacity"
+                  >
                     <span className="block text-sm font-black text-slate-900 dark:text-white">{realFollowersCount.toLocaleString('ar-EG')}</span>
                     <span className="block text-[10px] text-slate-400 font-bold">متابعون</span>
-                  </div>
-                  <div className="text-center sm:text-start">
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onShowFollowing}
+                    className="text-center sm:text-start hover:opacity-70 transition-opacity"
+                  >
                     <span className="block text-sm font-black text-slate-900 dark:text-white">{(followingCount ?? currentUser.followingCount ?? 0).toLocaleString('ar-EG')}</span>
                     <span className="block text-[10px] text-slate-400 font-bold">يتابع</span>
-                  </div>
+                  </button>
                 </div>
               )}
+
+              {/* معلومات عن الكاتب — بطاقة موجزة للقراءة فقط (الاختصاص،
+                  توثيق الهوية)، تفتح على التعديل الكامل عبر تبويب "إعدادات
+                  الملف الأدبي" أسفل الصفحة. */}
+              {currentUser.id !== 'guest' && (currentUser.specialties?.length || currentUser.isKycVerified) ? (
+                <div className="flex flex-wrap items-center justify-center sm:justify-start gap-1.5 pt-1">
+                  <span className="text-[10px] font-bold text-slate-400">معلومات عن الكاتب:</span>
+                  {currentUser.isKycVerified && (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                      <ShieldCheck className="w-3 h-3" />
+                      <span>هوية موثقة</span>
+                    </span>
+                  )}
+                  {currentUser.specialties?.map((spec, i) => (
+                    <span
+                      key={i}
+                      className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-[10px] font-medium text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700"
+                    >
+                      {spec}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
             </div>
           </div>
 
@@ -735,362 +781,14 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
       </div>
 
       {/* ========================================================================= */}
-      {/* 1. READER SPECIFIC VIEW */}
+      {/* 2. المدونة والتغريد — متاحة لأي حساب مسجَّل (قارئ/كاتب/معلن)، وليست
+          حكراً على دور "كاتب" فقط، تماشياً مع نموذج الحساب الموحّد الذي
+          يتيح الكتابة والتغريد والإعلان لأي عضو دون قيد دور. كانت هذه
+          القسمة محصورة سابقاً بـ role === 'writer' فقط، فكان القارئ
+          والمعلن لا يريان هذا القسم إطلاقاً مهما نشروا من مقالات أو
+          تغريدات. */}
       {/* ========================================================================= */}
-      {currentUser.role === 'reader' && (
-        <div className="space-y-6">
-          {/* reader_profile — 100% للمنصة، يظهر فقط لحساب قارئ حقيقي
-              مسجّل (وليس زائراً)، حسب خريطة المواضع الإعلانية المعتمدة. */}
-          {currentUser.id !== 'guest' && (
-            <AdSlot slotId="reader_profile" campaigns={safeCampaigns} viewerId={currentUser.id} adFree={false} />
-          )}
-
-          {/* Reader Quick Tabs */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none border-b border-slate-200 dark:border-slate-800">
-            <button
-              onClick={() => setReaderTab('bookmarks')}
-              className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
-                readerTab === 'bookmarks'
-                  ? 'border-brand-600 text-brand-600 dark:text-brand-400'
-                  : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <Bookmark className="w-4 h-4" />
-              <span>المقالات المحفوظة ({bookmarkedArticles.length})</span>
-            </button>
-
-            <button
-              onClick={() => setReaderTab('history')}
-              className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
-                readerTab === 'history'
-                  ? 'border-brand-600 text-brand-600 dark:text-brand-400'
-                  : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <Clock className="w-4 h-4" />
-              <span>سجل القراءة والمتابعة</span>
-            </button>
-
-            <button
-              onClick={() => setReaderTab('campaigns')}
-              className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
-                readerTab === 'campaigns'
-                  ? 'border-cyan-600 text-cyan-600 dark:text-cyan-400'
-                  : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <Megaphone className="w-4 h-4" />
-              <span>إعلاناتي وترويجي ({myCampaigns.length})</span>
-            </button>
-
-            <button
-              onClick={() => setReaderTab('following')}
-              className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
-                readerTab === 'following'
-                  ? 'border-brand-600 text-brand-600 dark:text-brand-400'
-                  : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <Users className="w-4 h-4" />
-              <span>الكُتّاب المتابعون ({followingCount ?? currentUser.followingCount ?? 0})</span>
-            </button>
-
-            <button
-              onClick={() => setReaderTab('quota_wallet')}
-              className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
-                readerTab === 'quota_wallet'
-                  ? 'border-brand-600 text-brand-600 dark:text-brand-400'
-                  : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <Sparkles className="w-4 h-4 text-brand-500" />
-              <span>الرصيد واستخدامات الذكاء الاصطناعي</span>
-            </button>
-
-            <button
-              onClick={() => setReaderTab('settings')}
-              className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
-                readerTab === 'settings'
-                  ? 'border-brand-600 text-brand-600 dark:text-brand-400'
-                  : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <Settings className="w-4 h-4" />
-              <span>تفضيلات القراءة</span>
-            </button>
-          </div>
-
-          {/* Reader Tab Contents */}
-
-          {/* A. BOOKMARKS */}
-          {readerTab === 'bookmarks' && (
-            <div className="space-y-4">
-              {bookmarkedArticles.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {bookmarkedArticles.map((art) => (
-                    <div
-                      key={art.id}
-                      onClick={() => onSelectArticle(art)}
-                      className="p-4 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs hover:border-brand-500/50 cursor-pointer transition-all flex flex-col justify-between group"
-                    >
-                      <div className="space-y-3">
-                        <div className="aspect-16/9 rounded-2xl overflow-hidden bg-slate-950 relative">
-                          <img
-                            src={art.featuredImage}
-                            alt={art.title}
-                            referrerPolicy="no-referrer"
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                          />
-                          <div className="absolute top-2 end-2 bg-brand-900/90 text-brand-200 px-2 py-0.5 rounded-lg text-[10px] font-bold">
-                            محفوظ
-                          </div>
-                        </div>
-                        <h4 className="font-extrabold text-sm text-slate-900 dark:text-white group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors line-clamp-2">
-                          {art.title}
-                        </h4>
-                        <p className="text-xs text-slate-500 line-clamp-2">{art.description}</p>
-                      </div>
-
-                      <div className="pt-3 mt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-400">
-                        <span className="font-bold text-slate-600 dark:text-slate-300">{art.writerName}</span>
-                        <span className="text-brand-600 dark:text-brand-400 font-bold flex items-center gap-1">
-                          <span>متابعة القراءة</span>
-                          <span>←</span>
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-12 rounded-3xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800">
-                  <Bookmark className="w-10 h-10 text-slate-400 mx-auto mb-3" />
-                  <h4 className="font-bold text-sm text-slate-900 dark:text-white">لم تقم بحفظ أي مقالات بعد</h4>
-                  <p className="text-xs text-slate-500 mt-1">اضغط على أيقونة الإشارة المرجعية في المقال لحفظه وقراءته لاحقاً.</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* B. READING HISTORY */}
-          {readerTab === 'history' && (
-            <div className="space-y-3">
-              {readingHistory.length > 0 ? (
-                readingHistory.map((art) => (
-                  <div
-                    key={art.id}
-                    onClick={() => onSelectArticle(art)}
-                    className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-brand-500/40 cursor-pointer transition-all flex flex-col sm:flex-row items-center justify-between gap-4"
-                  >
-                    <div className="flex items-center gap-3 w-full sm:w-auto">
-                      <img
-                        src={art.featuredImage}
-                        alt={art.title}
-                        referrerPolicy="no-referrer"
-                        className="w-16 h-16 rounded-xl object-cover shrink-0"
-                      />
-                      <div className="space-y-1">
-                        <span className="text-[10px] font-bold text-brand-600 dark:text-brand-400 px-2 py-0.5 rounded-full bg-brand-50 dark:bg-brand-950/60 border border-brand-500/20">
-                          {art.readAt}
-                        </span>
-                        <h4 className="font-bold text-sm text-slate-900 dark:text-white line-clamp-1">
-                          {art.title}
-                        </h4>
-                        <p className="text-xs text-slate-500">{art.writerName}</p>
-                      </div>
-                    </div>
-
-                    <div className="w-full sm:w-48 space-y-1.5">
-                      <div className="flex justify-between text-[11px] font-bold text-slate-500">
-                        <span>نسبة الإنجاز</span>
-                        <span className="text-brand-600 dark:text-brand-400">{art.progress}%</span>
-                      </div>
-                      <div className="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                        <div
-                          className="h-full bg-gradient-to-r from-brand-500 to-teal-400 rounded-full transition-all"
-                          style={{ width: `${art.progress}%` }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="text-center py-12 rounded-3xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800">
-                  <Clock className="w-10 h-10 text-slate-400 mx-auto mb-3" />
-                  <h4 className="font-bold text-sm text-slate-900 dark:text-white">لا يوجد سجل قراءة بعد</h4>
-                  <p className="text-xs text-slate-500 mt-1">المقالات التي تطلع عليها ستظهر هنا لمتابعة تقدمك في القراءة.</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* C. READER CAMPAIGNS & PROMOTIONS */}
-          {readerTab === 'campaigns' && (
-            <div className="space-y-4">
-              <div className="p-6 rounded-3xl bg-gradient-to-r from-cyan-950/60 to-slate-900 border border-cyan-500/30 flex flex-col sm:flex-row items-center justify-between gap-4">
-                <div>
-                  <h4 className="font-extrabold text-base text-white flex items-center gap-2">
-                    <Megaphone className="w-5 h-5 text-cyan-400" />
-                    <span>إعلاناتي وترويجي في المنصة</span>
-                  </h4>
-                  <p className="text-xs text-slate-300 mt-1">
-                    يمكنك كقارئ أو كاتب إنشاء حملات إعلانية مباشرة والترويج لمشروعك أمام مجتمع ليتيريوم.
-                  </p>
-                </div>
-                <button
-                  onClick={onOpenNewCampaign || onOpenWallet}
-                  className="px-5 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white font-extrabold text-xs shadow-md active:scale-95 transition-all flex items-center gap-1.5 shrink-0"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>إنشاء حملة جديدة</span>
-                </button>
-              </div>
-
-              {myCampaigns.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {myCampaigns.map((camp) => (
-                    <div
-                      key={camp.id}
-                      className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-slate-900 dark:text-white line-clamp-1">
-                          {camp.campaignName}
-                        </span>
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                          camp.status === 'active'
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                            : 'bg-slate-500/20 text-slate-300 border border-slate-500/30'
-                        }`}>
-                          {camp.status === 'active' ? 'نشطة الآن' : 'منتهية'}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-400 line-clamp-2">{camp.description}</p>
-                      <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500">
-                        <span>المشاهدات: {camp.impressionsCount.toLocaleString()}</span>
-                        <span>النقرات: {camp.clicksCount.toLocaleString()}</span>
-                        <span>الميزانية: {(camp.totalBudget ?? 0).toFixed(2)}$</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-10 rounded-3xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 space-y-2">
-                  <Megaphone className="w-10 h-10 text-slate-400 mx-auto" />
-                  <h4 className="font-bold text-sm text-slate-900 dark:text-white">لا توجد حملات إعلانية نشطة حالياً</h4>
-                  <p className="text-xs text-slate-400">ابدأ حملتك الأولى للوصول لآلاف المهتمين بالأدب والتقنية</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* D. FOLLOWING AUTHORS */}
-          {readerTab === 'following' && (
-            <div className="text-center py-12 rounded-3xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800">
-              <Users className="w-10 h-10 text-slate-400 mx-auto mb-3" />
-              <h4 className="font-bold text-sm text-slate-900 dark:text-white">لم تقم بمتابعة أي كُتّاب بعد</h4>
-              <p className="text-xs text-slate-500 mt-1">تصفح المقالات وتابع كُتّابك المفضلين ليصلك جديدهم أولاً بأول.</p>
-            </div>
-          )}
-
-          {/* E. AI QUOTA & WALLET */}
-          {readerTab === 'quota_wallet' && (
-            <div className="space-y-6">
-              {/* AI Quota Card */}
-              <div className="p-6 rounded-3xl bg-gradient-to-br from-brand-900/30 via-slate-900 to-slate-900 border border-brand-500/30 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-10 h-10 rounded-2xl bg-brand-600/20 text-brand-400 flex items-center justify-center">
-                      <Sparkles className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h4 className="font-extrabold text-base text-white">رصيد واستخدامات الذكاء الاصطناعي (Gemini)</h4>
-                      <p className="text-xs text-slate-400">10 استخدامات يومية مجانية تتجدد كل 24 ساعة</p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={onOpenSubscription}
-                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs shadow-md active:scale-95 transition-all flex items-center gap-1.5"
-                  >
-                    <Crown className="w-3.5 h-3.5" />
-                    <span>ترقية إلى VIP غير محدود</span>
-                  </button>
-                </div>
-
-                {/* Progress bar */}
-                <div className="space-y-2 pt-2">
-                  <div className="flex justify-between text-xs font-bold text-slate-300">
-                    <span>الاستخدام اليومي: {quotaStats.usedToday} من {quotaStats.limit || 5}</span>
-                    <span className="text-brand-400">{quotaStats.remaining} متبقية اليوم</span>
-                  </div>
-                  <div className="w-full h-3 rounded-full bg-slate-800 overflow-hidden p-0.5 border border-slate-700">
-                    <div
-                      className="h-full bg-gradient-to-r from-brand-500 via-brand-500 to-teal-400 rounded-full transition-all"
-                      style={{ width: `${Math.min(100, (quotaStats.usedToday / (quotaStats.limit || 5)) * 100)}%` }}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Wallet Summary */}
-              <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-2xl bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center">
-                    <Wallet className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <span className="text-xs text-slate-500">رصيد المحفظة المتاح للشراء والترويج</span>
-                    <h3 className="text-2xl font-black text-slate-900 dark:text-white">
-                      ${(currentUser.walletBalance || 0).toFixed(2)}
-                    </h3>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 w-full sm:w-auto">
-                  <button
-                    onClick={onOpenWallet}
-                    className="flex-1 sm:flex-none px-6 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs shadow-md active:scale-95 transition-all"
-                  >
-                    شحن الرصيد / إدارة المحفظة
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* F. READING PREFERENCES */}
-          {readerTab === 'settings' && (
-            <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4">
-              <h4 className="font-extrabold text-sm text-slate-900 dark:text-white">تفضيلات القراءة والعرض</h4>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
-                  <div className="flex items-center gap-2.5">
-                    {theme === 'dark' ? <Moon className="w-4 h-4 text-brand-400" /> : <Sun className="w-4 h-4 text-amber-500" />}
-                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300">المظهر العام (داكن / فاتح)</span>
-                  </div>
-                  <button
-                    onClick={onToggleTheme}
-                    className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-xs font-bold"
-                  >
-                    {theme === 'dark' ? 'الوضع الليلي 🌙' : 'الوضع النهاري ☀️'}
-                  </button>
-                </div>
-
-                {/* ⚠️ خيار اللغة مُخفى مؤقتاً — الترجمة غير مكتملة في الواجهة */}
-              </div>
-
-              {onSaveSocialLinks && (
-                <div className="-mx-6 -mb-6 mt-2">
-                  <SocialLinksEditor currentUser={currentUser} onSave={onSaveSocialLinks} />
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* 2. WRITER SPECIFIC VIEW */}
-      {/* ========================================================================= */}
-      {currentUser.role === 'writer' && (
+      {currentUser.id !== 'guest' && currentUser.role !== 'admin' && (
         <div className="space-y-6">
           {/* Writer 4 KPI Statistics Cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
@@ -1149,7 +847,10 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
             </div>
           </div>
 
-          {/* Writer Tabs */}
+          {/* مدونة / تغريد — الترتيب الجديد يضع المحتوى (المقالات والتغريد)
+              أولاً، ثم اختصاراتهما (المحفوظة/إعلاناتي وترويجي/المفضلة)،
+              وأخيراً الأرباح وإعدادات الملف الأدبي (لا تزالان متاحتين،
+              فقط انتقلتا لآخر الشريط بدل أن تكونا القسم الوحيد الظاهر). */}
           <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none border-b border-slate-200 dark:border-slate-800">
             <button
               onClick={() => setWriterTab('articles')}
@@ -1160,7 +861,55 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
               }`}
             >
               <FileText className="w-4 h-4" />
-              <span>إدارة المقالات (المنشورة والمسودات)</span>
+              <span>مدونة (مقالاتي)</span>
+            </button>
+
+            <button
+              onClick={() => setWriterTab('bookmarks')}
+              className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
+                writerTab === 'bookmarks'
+                  ? 'border-teal-600 text-teal-600 dark:text-teal-400'
+                  : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <Bookmark className="w-4 h-4" />
+              <span>المقالات المحفوظة ({bookmarkedArticles.length})</span>
+            </button>
+
+            <button
+              onClick={() => setWriterTab('my_ads')}
+              className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
+                writerTab === 'my_ads'
+                  ? 'border-teal-600 text-teal-600 dark:text-teal-400'
+                  : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <Megaphone className="w-4 h-4" />
+              <span>إعلاناتي وترويجي ({myCampaigns.length})</span>
+            </button>
+
+            <button
+              onClick={() => setWriterTab('tweets')}
+              className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
+                writerTab === 'tweets'
+                  ? 'border-teal-600 text-teal-600 dark:text-teal-400'
+                  : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <MessageSquare className="w-4 h-4" />
+              <span>تغريد ({tweets.length})</span>
+            </button>
+
+            <button
+              onClick={() => setWriterTab('favorites')}
+              className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
+                writerTab === 'favorites'
+                  ? 'border-teal-600 text-teal-600 dark:text-teal-400'
+                  : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <Star className="w-4 h-4" />
+              <span>المفضلة ({favoritedTweets.length})</span>
             </button>
 
             <button
@@ -1186,31 +935,116 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
               <PenTool className="w-4 h-4" />
               <span>إعدادات الملف الأدبي والتوثيق</span>
             </button>
-
-            <button
-              onClick={() => setWriterTab('tweets')}
-              className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
-                writerTab === 'tweets'
-                  ? 'border-teal-600 text-teal-600 dark:text-teal-400'
-                  : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <MessageSquare className="w-4 h-4" />
-              <span>التغريد ({tweets.length})</span>
-            </button>
-
-            <button
-              onClick={() => setWriterTab('favorites')}
-              className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
-                writerTab === 'favorites'
-                  ? 'border-teal-600 text-teal-600 dark:text-teal-400'
-                  : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <Star className="w-4 h-4" />
-              <span>المفضلة ({favoritedTweets.length})</span>
-            </button>
           </div>
+
+          {/* Writer Tab: المقالات المحفوظة */}
+          {writerTab === 'bookmarks' && (
+            <div className="space-y-4">
+              {bookmarkedArticles.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {bookmarkedArticles.map((art) => (
+                    <div
+                      key={art.id}
+                      onClick={() => onSelectArticle(art)}
+                      className="p-4 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs hover:border-brand-500/50 cursor-pointer transition-all flex flex-col justify-between group"
+                    >
+                      <div className="space-y-3">
+                        <div className="aspect-16/9 rounded-2xl overflow-hidden bg-slate-950 relative">
+                          <img
+                            src={art.featuredImage}
+                            alt={art.title}
+                            referrerPolicy="no-referrer"
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                          />
+                          <div className="absolute top-2 end-2 bg-brand-900/90 text-brand-200 px-2 py-0.5 rounded-lg text-[10px] font-bold">
+                            محفوظ
+                          </div>
+                        </div>
+                        <h4 className="font-extrabold text-sm text-slate-900 dark:text-white group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors line-clamp-2">
+                          {art.title}
+                        </h4>
+                        <p className="text-xs text-slate-500 line-clamp-2">{art.description}</p>
+                      </div>
+
+                      <div className="pt-3 mt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-400">
+                        <span className="font-bold text-slate-600 dark:text-slate-300">{art.writerName}</span>
+                        <span className="text-brand-600 dark:text-brand-400 font-bold flex items-center gap-1">
+                          <span>متابعة القراءة</span>
+                          <span>←</span>
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-12 rounded-3xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800">
+                  <Bookmark className="w-10 h-10 text-slate-400 mx-auto mb-3" />
+                  <h4 className="font-bold text-sm text-slate-900 dark:text-white">لم تقم بحفظ أي مقالات بعد</h4>
+                  <p className="text-xs text-slate-500 mt-1">اضغط على أيقونة الإشارة المرجعية في المقال لحفظه وقراءته لاحقاً.</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Writer Tab: إعلاناتي وترويجي */}
+          {writerTab === 'my_ads' && (
+            <div className="space-y-4">
+              <div className="p-6 rounded-3xl bg-gradient-to-r from-cyan-950/60 to-slate-900 border border-cyan-500/30 flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div>
+                  <h4 className="font-extrabold text-base text-white flex items-center gap-2">
+                    <Megaphone className="w-5 h-5 text-cyan-400" />
+                    <span>إعلاناتي وترويجي في المنصة</span>
+                  </h4>
+                  <p className="text-xs text-slate-300 mt-1">
+                    يمكنك إنشاء حملات إعلانية مباشرة والترويج لمشروعك أمام مجتمع ليتيريوم.
+                  </p>
+                </div>
+                <button
+                  onClick={onOpenNewCampaign || onOpenWallet}
+                  className="px-5 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white font-extrabold text-xs shadow-md active:scale-95 transition-all flex items-center gap-1.5 shrink-0"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>إنشاء حملة جديدة</span>
+                </button>
+              </div>
+
+              {myCampaigns.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {myCampaigns.map((camp) => (
+                    <div
+                      key={camp.id}
+                      className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-900 dark:text-white line-clamp-1">
+                          {camp.campaignName}
+                        </span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          camp.status === 'active'
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                            : 'bg-slate-500/20 text-slate-300 border border-slate-500/30'
+                        }`}>
+                          {camp.status === 'active' ? 'نشطة الآن' : 'منتهية'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-400 line-clamp-2">{camp.description}</p>
+                      <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500">
+                        <span>المشاهدات: {camp.impressionsCount.toLocaleString()}</span>
+                        <span>النقرات: {camp.clicksCount.toLocaleString()}</span>
+                        <span>الميزانية: {(camp.totalBudget ?? 0).toFixed(2)}$</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-10 rounded-3xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 space-y-2">
+                  <Megaphone className="w-10 h-10 text-slate-400 mx-auto" />
+                  <h4 className="font-bold text-sm text-slate-900 dark:text-white">لا توجد حملات إعلانية نشطة حالياً</h4>
+                  <p className="text-xs text-slate-400">ابدأ حملتك الأولى للوصول لآلاف المهتمين بالأدب والتقنية</p>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Writer Tab 1: Articles & Drafts */}
           {writerTab === 'articles' && (
@@ -1598,6 +1432,359 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                     onReplyToComment={onReplyToTweetComment || (() => {})}
                   />
                 ))
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 1. READER SPECIFIC VIEW */}
+      {/* ========================================================================= */}
+      {currentUser.role === 'reader' && (
+        <div className="space-y-6">
+          {/* reader_profile — 100% للمنصة، يظهر فقط لحساب قارئ حقيقي
+              مسجّل (وليس زائراً)، حسب خريطة المواضع الإعلانية المعتمدة. */}
+          {currentUser.id !== 'guest' && (
+            <AdSlot slotId="reader_profile" campaigns={safeCampaigns} viewerId={currentUser.id} adFree={false} />
+          )}
+
+          {/* Reader Quick Tabs */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none border-b border-slate-200 dark:border-slate-800">
+            <button
+              onClick={() => setReaderTab('bookmarks')}
+              className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
+                readerTab === 'bookmarks'
+                  ? 'border-brand-600 text-brand-600 dark:text-brand-400'
+                  : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <Bookmark className="w-4 h-4" />
+              <span>المقالات المحفوظة ({bookmarkedArticles.length})</span>
+            </button>
+
+            <button
+              onClick={() => setReaderTab('history')}
+              className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
+                readerTab === 'history'
+                  ? 'border-brand-600 text-brand-600 dark:text-brand-400'
+                  : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <Clock className="w-4 h-4" />
+              <span>سجل القراءة والمتابعة</span>
+            </button>
+
+            <button
+              onClick={() => setReaderTab('campaigns')}
+              className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
+                readerTab === 'campaigns'
+                  ? 'border-cyan-600 text-cyan-600 dark:text-cyan-400'
+                  : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <Megaphone className="w-4 h-4" />
+              <span>إعلاناتي وترويجي ({myCampaigns.length})</span>
+            </button>
+
+            <button
+              onClick={() => setReaderTab('following')}
+              className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
+                readerTab === 'following'
+                  ? 'border-brand-600 text-brand-600 dark:text-brand-400'
+                  : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <Users className="w-4 h-4" />
+              <span>الكُتّاب المتابعون ({followingCount ?? currentUser.followingCount ?? 0})</span>
+            </button>
+
+            <button
+              onClick={() => setReaderTab('quota_wallet')}
+              className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
+                readerTab === 'quota_wallet'
+                  ? 'border-brand-600 text-brand-600 dark:text-brand-400'
+                  : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <Sparkles className="w-4 h-4 text-brand-500" />
+              <span>الرصيد واستخدامات الذكاء الاصطناعي</span>
+            </button>
+
+            <button
+              onClick={() => setReaderTab('settings')}
+              className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
+                readerTab === 'settings'
+                  ? 'border-brand-600 text-brand-600 dark:text-brand-400'
+                  : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <Settings className="w-4 h-4" />
+              <span>تفضيلات القراءة</span>
+            </button>
+          </div>
+
+          {/* Reader Tab Contents */}
+
+          {/* A. BOOKMARKS */}
+          {readerTab === 'bookmarks' && (
+            <div className="space-y-4">
+              {bookmarkedArticles.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {bookmarkedArticles.map((art) => (
+                    <div
+                      key={art.id}
+                      onClick={() => onSelectArticle(art)}
+                      className="p-4 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs hover:border-brand-500/50 cursor-pointer transition-all flex flex-col justify-between group"
+                    >
+                      <div className="space-y-3">
+                        <div className="aspect-16/9 rounded-2xl overflow-hidden bg-slate-950 relative">
+                          <img
+                            src={art.featuredImage}
+                            alt={art.title}
+                            referrerPolicy="no-referrer"
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                          />
+                          <div className="absolute top-2 end-2 bg-brand-900/90 text-brand-200 px-2 py-0.5 rounded-lg text-[10px] font-bold">
+                            محفوظ
+                          </div>
+                        </div>
+                        <h4 className="font-extrabold text-sm text-slate-900 dark:text-white group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors line-clamp-2">
+                          {art.title}
+                        </h4>
+                        <p className="text-xs text-slate-500 line-clamp-2">{art.description}</p>
+                      </div>
+
+                      <div className="pt-3 mt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-400">
+                        <span className="font-bold text-slate-600 dark:text-slate-300">{art.writerName}</span>
+                        <span className="text-brand-600 dark:text-brand-400 font-bold flex items-center gap-1">
+                          <span>متابعة القراءة</span>
+                          <span>←</span>
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-12 rounded-3xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800">
+                  <Bookmark className="w-10 h-10 text-slate-400 mx-auto mb-3" />
+                  <h4 className="font-bold text-sm text-slate-900 dark:text-white">لم تقم بحفظ أي مقالات بعد</h4>
+                  <p className="text-xs text-slate-500 mt-1">اضغط على أيقونة الإشارة المرجعية في المقال لحفظه وقراءته لاحقاً.</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* B. READING HISTORY */}
+          {readerTab === 'history' && (
+            <div className="space-y-3">
+              {readingHistory.length > 0 ? (
+                readingHistory.map((art) => (
+                  <div
+                    key={art.id}
+                    onClick={() => onSelectArticle(art)}
+                    className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-brand-500/40 cursor-pointer transition-all flex flex-col sm:flex-row items-center justify-between gap-4"
+                  >
+                    <div className="flex items-center gap-3 w-full sm:w-auto">
+                      <img
+                        src={art.featuredImage}
+                        alt={art.title}
+                        referrerPolicy="no-referrer"
+                        className="w-16 h-16 rounded-xl object-cover shrink-0"
+                      />
+                      <div className="space-y-1">
+                        <span className="text-[10px] font-bold text-brand-600 dark:text-brand-400 px-2 py-0.5 rounded-full bg-brand-50 dark:bg-brand-950/60 border border-brand-500/20">
+                          {art.readAt}
+                        </span>
+                        <h4 className="font-bold text-sm text-slate-900 dark:text-white line-clamp-1">
+                          {art.title}
+                        </h4>
+                        <p className="text-xs text-slate-500">{art.writerName}</p>
+                      </div>
+                    </div>
+
+                    <div className="w-full sm:w-48 space-y-1.5">
+                      <div className="flex justify-between text-[11px] font-bold text-slate-500">
+                        <span>نسبة الإنجاز</span>
+                        <span className="text-brand-600 dark:text-brand-400">{art.progress}%</span>
+                      </div>
+                      <div className="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-brand-500 to-teal-400 rounded-full transition-all"
+                          style={{ width: `${art.progress}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-12 rounded-3xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800">
+                  <Clock className="w-10 h-10 text-slate-400 mx-auto mb-3" />
+                  <h4 className="font-bold text-sm text-slate-900 dark:text-white">لا يوجد سجل قراءة بعد</h4>
+                  <p className="text-xs text-slate-500 mt-1">المقالات التي تطلع عليها ستظهر هنا لمتابعة تقدمك في القراءة.</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* C. READER CAMPAIGNS & PROMOTIONS */}
+          {readerTab === 'campaigns' && (
+            <div className="space-y-4">
+              <div className="p-6 rounded-3xl bg-gradient-to-r from-cyan-950/60 to-slate-900 border border-cyan-500/30 flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div>
+                  <h4 className="font-extrabold text-base text-white flex items-center gap-2">
+                    <Megaphone className="w-5 h-5 text-cyan-400" />
+                    <span>إعلاناتي وترويجي في المنصة</span>
+                  </h4>
+                  <p className="text-xs text-slate-300 mt-1">
+                    يمكنك كقارئ أو كاتب إنشاء حملات إعلانية مباشرة والترويج لمشروعك أمام مجتمع ليتيريوم.
+                  </p>
+                </div>
+                <button
+                  onClick={onOpenNewCampaign || onOpenWallet}
+                  className="px-5 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white font-extrabold text-xs shadow-md active:scale-95 transition-all flex items-center gap-1.5 shrink-0"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>إنشاء حملة جديدة</span>
+                </button>
+              </div>
+
+              {myCampaigns.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {myCampaigns.map((camp) => (
+                    <div
+                      key={camp.id}
+                      className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-900 dark:text-white line-clamp-1">
+                          {camp.campaignName}
+                        </span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          camp.status === 'active'
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                            : 'bg-slate-500/20 text-slate-300 border border-slate-500/30'
+                        }`}>
+                          {camp.status === 'active' ? 'نشطة الآن' : 'منتهية'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-400 line-clamp-2">{camp.description}</p>
+                      <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500">
+                        <span>المشاهدات: {camp.impressionsCount.toLocaleString()}</span>
+                        <span>النقرات: {camp.clicksCount.toLocaleString()}</span>
+                        <span>الميزانية: {(camp.totalBudget ?? 0).toFixed(2)}$</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-10 rounded-3xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 space-y-2">
+                  <Megaphone className="w-10 h-10 text-slate-400 mx-auto" />
+                  <h4 className="font-bold text-sm text-slate-900 dark:text-white">لا توجد حملات إعلانية نشطة حالياً</h4>
+                  <p className="text-xs text-slate-400">ابدأ حملتك الأولى للوصول لآلاف المهتمين بالأدب والتقنية</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* D. FOLLOWING AUTHORS */}
+          {readerTab === 'following' && (
+            <div className="text-center py-12 rounded-3xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800">
+              <Users className="w-10 h-10 text-slate-400 mx-auto mb-3" />
+              <h4 className="font-bold text-sm text-slate-900 dark:text-white">لم تقم بمتابعة أي كُتّاب بعد</h4>
+              <p className="text-xs text-slate-500 mt-1">تصفح المقالات وتابع كُتّابك المفضلين ليصلك جديدهم أولاً بأول.</p>
+            </div>
+          )}
+
+          {/* E. AI QUOTA & WALLET */}
+          {readerTab === 'quota_wallet' && (
+            <div className="space-y-6">
+              {/* AI Quota Card */}
+              <div className="p-6 rounded-3xl bg-gradient-to-br from-brand-900/30 via-slate-900 to-slate-900 border border-brand-500/30 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-10 h-10 rounded-2xl bg-brand-600/20 text-brand-400 flex items-center justify-center">
+                      <Sparkles className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-base text-white">رصيد واستخدامات الذكاء الاصطناعي (Gemini)</h4>
+                      <p className="text-xs text-slate-400">10 استخدامات يومية مجانية تتجدد كل 24 ساعة</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={onOpenSubscription}
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs shadow-md active:scale-95 transition-all flex items-center gap-1.5"
+                  >
+                    <Crown className="w-3.5 h-3.5" />
+                    <span>ترقية إلى VIP غير محدود</span>
+                  </button>
+                </div>
+
+                {/* Progress bar */}
+                <div className="space-y-2 pt-2">
+                  <div className="flex justify-between text-xs font-bold text-slate-300">
+                    <span>الاستخدام اليومي: {quotaStats.usedToday} من {quotaStats.limit || 5}</span>
+                    <span className="text-brand-400">{quotaStats.remaining} متبقية اليوم</span>
+                  </div>
+                  <div className="w-full h-3 rounded-full bg-slate-800 overflow-hidden p-0.5 border border-slate-700">
+                    <div
+                      className="h-full bg-gradient-to-r from-brand-500 via-brand-500 to-teal-400 rounded-full transition-all"
+                      style={{ width: `${Math.min(100, (quotaStats.usedToday / (quotaStats.limit || 5)) * 100)}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Wallet Summary */}
+              <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center">
+                    <Wallet className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <span className="text-xs text-slate-500">رصيد المحفظة المتاح للشراء والترويج</span>
+                    <h3 className="text-2xl font-black text-slate-900 dark:text-white">
+                      ${(currentUser.walletBalance || 0).toFixed(2)}
+                    </h3>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <button
+                    onClick={onOpenWallet}
+                    className="flex-1 sm:flex-none px-6 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs shadow-md active:scale-95 transition-all"
+                  >
+                    شحن الرصيد / إدارة المحفظة
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* F. READING PREFERENCES */}
+          {readerTab === 'settings' && (
+            <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4">
+              <h4 className="font-extrabold text-sm text-slate-900 dark:text-white">تفضيلات القراءة والعرض</h4>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+                  <div className="flex items-center gap-2.5">
+                    {theme === 'dark' ? <Moon className="w-4 h-4 text-brand-400" /> : <Sun className="w-4 h-4 text-amber-500" />}
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300">المظهر العام (داكن / فاتح)</span>
+                  </div>
+                  <button
+                    onClick={onToggleTheme}
+                    className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-xs font-bold"
+                  >
+                    {theme === 'dark' ? 'الوضع الليلي 🌙' : 'الوضع النهاري ☀️'}
+                  </button>
+                </div>
+
+                {/* ⚠️ خيار اللغة مُخفى مؤقتاً — الترجمة غير مكتملة في الواجهة */}
+              </div>
+
+              {onSaveSocialLinks && (
+                <div className="-mx-6 -mb-6 mt-2">
+                  <SocialLinksEditor currentUser={currentUser} onSave={onSaveSocialLinks} />
+                </div>
               )}
             </div>
           )}
