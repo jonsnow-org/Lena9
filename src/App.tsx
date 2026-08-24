@@ -457,8 +457,8 @@ export function App() {
   // Same lifting pattern for the writer's profile sub-tabs (مقالاتي /
   // الأرباح), which live inside UserProfileView's own tab system.
   const [writerActiveTab, setWriterActiveTab] = useState<
-    'articles' | 'stats_earnings' | 'literary_profile' | 'ai_tools'
-  >('articles');
+    'blog' | 'tweet' | 'control_panel'
+  >('blog');
 
   // Current User Object
   const currentUser = useMemo(() => {
@@ -3114,7 +3114,7 @@ export function App() {
             followingCount={followedWriterIds.length}
             followersCount={followsData.filter((f) => f.followingId === currentUser.id).length}
             campaigns={campaigns}
-            initialWriterTab="articles"
+            initialWriterTab="blog"
             onWriterTabChange={setWriterActiveTab}
             onOpenNewCampaign={() => setIsNewCampaignOpen(true)}
             onSelectArticle={(art) => setReadingArticle(art)}

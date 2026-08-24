@@ -125,8 +125,8 @@ interface UserProfileViewProps {
   users?: User[];
   // Lets a parent (the bottom nav) pick which writer sub-tab shows —
   // optional, falls back to internal state so this still works standalone.
-  initialWriterTab?: 'articles' | 'bookmarks' | 'my_ads' | 'stats_earnings' | 'literary_profile' | 'ai_tools' | 'tweets' | 'favorites';
-  onWriterTabChange?: (tab: 'articles' | 'bookmarks' | 'my_ads' | 'stats_earnings' | 'literary_profile' | 'ai_tools' | 'tweets' | 'favorites') => void;
+  initialWriterTab?: 'blog' | 'tweet' | 'control_panel';
+  onWriterTabChange?: (tab: 'blog' | 'tweet' | 'control_panel') => void;
   // ===== تبويبا "التغريد" و"المفضلة" في صفحة الملف الشخصي للكاتب =====
   /** تغريدات هذا المستخدم فقط (مُصفّاة مسبقاً من الأب حسب authorId). */
   tweets?: Tweet[];
@@ -318,12 +318,19 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
 
   // Common Active Tab state
   const [readerTab, setReaderTab] = useState<'bookmarks' | 'history' | 'campaigns' | 'following' | 'quota_wallet' | 'settings'>('bookmarks');
-  const [internalWriterTab, setInternalWriterTab] = useState<'articles' | 'bookmarks' | 'my_ads' | 'stats_earnings' | 'literary_profile' | 'ai_tools' | 'tweets' | 'favorites'>('articles');
+  const [internalWriterTab, setInternalWriterTab] = useState<'blog' | 'tweet' | 'control_panel'>('blog');
   // Controlled-if-provided: the bottom nav's "مقالاتي" / "الأرباح" buttons
   // drive this when a parent supplies initialWriterTab/onWriterTabChange;
   // otherwise this screen manages its own tab like before.
   const writerTab = initialWriterTab ?? internalWriterTab;
   const setWriterTab = onWriterTabChange ?? setInternalWriterTab;
+  // اختصارات فرعية داخل كل قسم من الأقسام الثلاثة — "مدونة" تفتح افتراضياً
+  // على مقالاتي مع اختصار للمحفوظة، "تغريد" على تغريداتي مع اختصار
+  // للمفضلة، و"لوحة التحكم" تجمع الإعلانات والأرباح والإعدادات الأدبية
+  // خلف زر واحد بدل تشتيتها كتبويبات منفصلة في الأعلى.
+  const [blogSubView, setBlogSubView] = useState<'articles' | 'bookmarks'>('articles');
+  const [tweetSubView, setTweetSubView] = useState<'mine' | 'favorites'>('mine');
+  const [controlPanelSubView, setControlPanelSubView] = useState<'ads' | 'earnings' | 'literary'>('ads');
 
   // نفس نمط writerTab أعلاه، لأقسام الإدارة (دور admin) — كانت تُتحكَّم من
   // مكوّن AdminDashboard.tsx المنفصل والمحذوف الآن؛ منطقه (الحالة، الطي
@@ -790,155 +797,204 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
       {/* ========================================================================= */}
       {currentUser.id !== 'guest' && currentUser.role !== 'admin' && (
         <div className="space-y-6">
-          {/* Writer 4 KPI Statistics Cards */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-            <div className="p-4 sm:p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-              <div className="flex items-center justify-between text-slate-400 mb-2">
-                <span className="text-xs font-bold">إجمالي المشاهدات</span>
-                <Eye className="w-4 h-4 text-teal-500" />
-              </div>
-              <h3 className="text-2xl font-black text-slate-900 dark:text-white">
-                {(totalMyViews || 0).toLocaleString()}
-              </h3>
-              <p className="text-[11px] text-teal-600 font-bold mt-1">
-                {myPublishedArticles.length > 0
-                  ? `بمعدل ${Math.round(totalMyViews / myPublishedArticles.length)} قراءة لكل مقال`
-                  : 'مشاهدات موثقة من القرّاء'}
-              </p>
-            </div>
-
-            <div className="p-4 sm:p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-              <div className="flex items-center justify-between text-slate-400 mb-2">
-                <span className="text-xs font-bold">الأرباح التراكمية</span>
-                <DollarSign className="w-4 h-4 text-amber-500" />
-              </div>
-              <h3 className="text-2xl font-black text-slate-900 dark:text-white">
-                ${(currentUser.lifetimeEarnings || 0).toFixed(2)}
-              </h3>
-              <p className="text-[11px] text-amber-600 font-bold mt-1">
-                {REVENUE_SHARES.IN_ARTICLE_ADS.WRITER_PERCENT}% إعلانات + {REVENUE_SHARES.LOCKED_ARTICLES.WRITER_PERCENT}% مبيعات
-              </p>
-            </div>
-
-            <div className="p-4 sm:p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-              <div className="flex items-center justify-between text-slate-400 mb-2">
-                <span className="text-xs font-bold">المقالات المنشورة</span>
-                <FileText className="w-4 h-4 text-brand-500" />
-              </div>
-              <h3 className="text-2xl font-black text-slate-900 dark:text-white">
-                {myPublishedArticles.length}
-              </h3>
-              <p className="text-[11px] text-brand-600 font-bold mt-1">
-                {myDraftArticles.length + (hasDraft ? 1 : 0) > 0 ? `${myDraftArticles.length + (hasDraft ? 1 : 0)} مسودة جاهزة للنشر` : 'جاهزة للجمهور'}
-              </p>
-            </div>
-
-            <div className="p-4 sm:p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-              <div className="flex items-center justify-between text-slate-400 mb-2">
-                <span className="text-xs font-bold">متوسط التقييم</span>
-                <Award className="w-4 h-4 text-rose-500" />
-              </div>
-              <h3 className="text-2xl font-black text-slate-900 dark:text-white">
-                {avgRating ? `${avgRating} ★` : '—'}
-              </h3>
-              <p className="text-[11px] text-slate-400 font-medium mt-1">
-                {totalRatingsCount > 0 ? `من ${totalRatingsCount.toLocaleString()} تقييم موثق` : 'لا تقييمات حقيقية بعد'}
-              </p>
-            </div>
-          </div>
-
-          {/* مدونة / تغريد — الترتيب الجديد يضع المحتوى (المقالات والتغريد)
-              أولاً، ثم اختصاراتهما (المحفوظة/إعلاناتي وترويجي/المفضلة)،
-              وأخيراً الأرباح وإعدادات الملف الأدبي (لا تزالان متاحتين،
-              فقط انتقلتا لآخر الشريط بدل أن تكونا القسم الوحيد الظاهر). */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none border-b border-slate-200 dark:border-slate-800">
+          {/* مدونة / تغريد / لوحة التحكم — ثلاثة أزرار فقط أسفل المحفظة
+              وإنشاء إعلان مباشرة، بدل شريط تبويبات مزدحم بسبعة أزرار.
+              "مدونة" و"تغريد" هما المحتوى المنشور، و"لوحة التحكم" تجمع كل
+              ما هو إدارة/مال/إعدادات (الإعلانات، الأرباح، التوثيق) خلف
+              مدخل واحد. */}
+          <div className="flex items-center gap-2 p-1 rounded-2xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
             <button
-              onClick={() => setWriterTab('articles')}
-              className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
-                writerTab === 'articles'
-                  ? 'border-teal-600 text-teal-600 dark:text-teal-400'
-                  : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
+              onClick={() => setWriterTab('blog')}
+              className={`flex-1 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-extrabold flex items-center justify-center gap-2 transition-all ${
+                writerTab === 'blog'
+                  ? 'bg-white dark:bg-slate-800 text-teal-600 dark:text-teal-400 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               <FileText className="w-4 h-4" />
-              <span>مدونة (مقالاتي)</span>
+              <span>مدونة</span>
             </button>
 
             <button
-              onClick={() => setWriterTab('bookmarks')}
-              className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
-                writerTab === 'bookmarks'
-                  ? 'border-teal-600 text-teal-600 dark:text-teal-400'
-                  : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <Bookmark className="w-4 h-4" />
-              <span>المقالات المحفوظة ({bookmarkedArticles.length})</span>
-            </button>
-
-            <button
-              onClick={() => setWriterTab('my_ads')}
-              className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
-                writerTab === 'my_ads'
-                  ? 'border-teal-600 text-teal-600 dark:text-teal-400'
-                  : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <Megaphone className="w-4 h-4" />
-              <span>إعلاناتي وترويجي ({myCampaigns.length})</span>
-            </button>
-
-            <button
-              onClick={() => setWriterTab('tweets')}
-              className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
-                writerTab === 'tweets'
-                  ? 'border-teal-600 text-teal-600 dark:text-teal-400'
-                  : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
+              onClick={() => setWriterTab('tweet')}
+              className={`flex-1 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-extrabold flex items-center justify-center gap-2 transition-all ${
+                writerTab === 'tweet'
+                  ? 'bg-white dark:bg-slate-800 text-teal-600 dark:text-teal-400 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               <MessageSquare className="w-4 h-4" />
-              <span>تغريد ({tweets.length})</span>
+              <span>تغريد</span>
             </button>
 
             <button
-              onClick={() => setWriterTab('favorites')}
-              className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
-                writerTab === 'favorites'
-                  ? 'border-teal-600 text-teal-600 dark:text-teal-400'
-                  : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
+              onClick={() => setWriterTab('control_panel')}
+              className={`flex-1 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-extrabold flex items-center justify-center gap-2 transition-all ${
+                writerTab === 'control_panel'
+                  ? 'bg-white dark:bg-slate-800 text-teal-600 dark:text-teal-400 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
-              <Star className="w-4 h-4" />
-              <span>المفضلة ({favoritedTweets.length})</span>
-            </button>
-
-            <button
-              onClick={() => setWriterTab('stats_earnings')}
-              className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
-                writerTab === 'stats_earnings'
-                  ? 'border-teal-600 text-teal-600 dark:text-teal-400'
-                  : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <DollarSign className="w-4 h-4" />
-              <span>سحب الأرباح والتقارير المالية</span>
-            </button>
-
-            <button
-              onClick={() => setWriterTab('literary_profile')}
-              className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
-                writerTab === 'literary_profile'
-                  ? 'border-teal-600 text-teal-600 dark:text-teal-400'
-                  : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <PenTool className="w-4 h-4" />
-              <span>إعدادات الملف الأدبي والتوثيق</span>
+              <Sliders className="w-4 h-4" />
+              <span>لوحة التحكم</span>
             </button>
           </div>
 
+          {/* اختصار "مدونة": مقالاتي (افتراضي) أو المقالات المحفوظة */}
+          {writerTab === 'blog' && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setBlogSubView('articles')}
+                className={`px-3.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition-all ${
+                  blogSubView === 'articles'
+                    ? 'bg-teal-600 text-white'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>مقالاتي</span>
+              </button>
+              <button
+                onClick={() => setBlogSubView('bookmarks')}
+                className={`px-3.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition-all ${
+                  blogSubView === 'bookmarks'
+                    ? 'bg-teal-600 text-white'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <Bookmark className="w-3.5 h-3.5" />
+                <span>المقالات المحفوظة ({bookmarkedArticles.length})</span>
+              </button>
+            </div>
+          )}
+
+          {/* اختصار "تغريد": تغريداتي (افتراضي) أو المفضلة */}
+          {writerTab === 'tweet' && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setTweetSubView('mine')}
+                className={`px-3.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition-all ${
+                  tweetSubView === 'mine'
+                    ? 'bg-teal-600 text-white'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                <span>تغريداتي ({tweets.length})</span>
+              </button>
+              <button
+                onClick={() => setTweetSubView('favorites')}
+                className={`px-3.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition-all ${
+                  tweetSubView === 'favorites'
+                    ? 'bg-teal-600 text-white'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <Star className="w-3.5 h-3.5" />
+                <span>المفضلة ({favoritedTweets.length})</span>
+              </button>
+            </div>
+          )}
+
+          {/* لوحة التحكم: نظرة عامة (بطاقات الأداء) ثم 3 أقسام فرعية */}
+          {writerTab === 'control_panel' && (
+            <>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                <div className="p-4 sm:p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+                  <div className="flex items-center justify-between text-slate-400 mb-2">
+                    <span className="text-xs font-bold">إجمالي المشاهدات</span>
+                    <Eye className="w-4 h-4 text-teal-500" />
+                  </div>
+                  <h3 className="text-2xl font-black text-slate-900 dark:text-white">
+                    {(totalMyViews || 0).toLocaleString()}
+                  </h3>
+                  <p className="text-[11px] text-teal-600 font-bold mt-1">
+                    {myPublishedArticles.length > 0
+                      ? `بمعدل ${Math.round(totalMyViews / myPublishedArticles.length)} قراءة لكل مقال`
+                      : 'مشاهدات موثقة من القرّاء'}
+                  </p>
+                </div>
+
+                <div className="p-4 sm:p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+                  <div className="flex items-center justify-between text-slate-400 mb-2">
+                    <span className="text-xs font-bold">الأرباح التراكمية</span>
+                    <DollarSign className="w-4 h-4 text-amber-500" />
+                  </div>
+                  <h3 className="text-2xl font-black text-slate-900 dark:text-white">
+                    ${(currentUser.lifetimeEarnings || 0).toFixed(2)}
+                  </h3>
+                  <p className="text-[11px] text-amber-600 font-bold mt-1">
+                    {REVENUE_SHARES.IN_ARTICLE_ADS.WRITER_PERCENT}% إعلانات + {REVENUE_SHARES.LOCKED_ARTICLES.WRITER_PERCENT}% مبيعات
+                  </p>
+                </div>
+
+                <div className="p-4 sm:p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+                  <div className="flex items-center justify-between text-slate-400 mb-2">
+                    <span className="text-xs font-bold">متوسط التقييم</span>
+                    <Award className="w-4 h-4 text-rose-500" />
+                  </div>
+                  <h3 className="text-2xl font-black text-slate-900 dark:text-white">
+                    {avgRating ? `${avgRating} ★` : '—'}
+                  </h3>
+                  <p className="text-[11px] text-slate-400 font-medium mt-1">
+                    {totalRatingsCount > 0 ? `من ${totalRatingsCount.toLocaleString()} تقييم موثق` : 'لا تقييمات حقيقية بعد'}
+                  </p>
+                </div>
+
+                <div className="p-4 sm:p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+                  <div className="flex items-center justify-between text-slate-400 mb-2">
+                    <span className="text-xs font-bold">المقالات المنشورة</span>
+                    <FileText className="w-4 h-4 text-amber-500" />
+                  </div>
+                  <h3 className="text-2xl font-black text-slate-900 dark:text-white">
+                    {myPublishedArticles.length}
+                  </h3>
+                  <p className="text-[11px] text-amber-600 font-bold mt-1">
+                    {myDraftArticles.length + (hasDraft ? 1 : 0) > 0 ? `${myDraftArticles.length + (hasDraft ? 1 : 0)} مسودة جاهزة للنشر` : 'جاهزة للجمهور'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+                <button
+                  onClick={() => setControlPanelSubView('ads')}
+                  className={`px-3.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition-all whitespace-nowrap ${
+                    controlPanelSubView === 'ads'
+                      ? 'bg-teal-600 text-white'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <Megaphone className="w-3.5 h-3.5" />
+                  <span>إعلاناتي وترويجي ({myCampaigns.length})</span>
+                </button>
+                <button
+                  onClick={() => setControlPanelSubView('earnings')}
+                  className={`px-3.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition-all whitespace-nowrap ${
+                    controlPanelSubView === 'earnings'
+                      ? 'bg-teal-600 text-white'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <DollarSign className="w-3.5 h-3.5" />
+                  <span>سحب الأرباح والتقارير المالية</span>
+                </button>
+                <button
+                  onClick={() => setControlPanelSubView('literary')}
+                  className={`px-3.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition-all whitespace-nowrap ${
+                    controlPanelSubView === 'literary'
+                      ? 'bg-teal-600 text-white'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <PenTool className="w-3.5 h-3.5" />
+                  <span>إعدادات الملف الأدبي والتوثيق</span>
+                </button>
+              </div>
+            </>
+          )}
+
           {/* Writer Tab: المقالات المحفوظة */}
-          {writerTab === 'bookmarks' && (
+          {writerTab === 'blog' && blogSubView === 'bookmarks' && (
             <div className="space-y-4">
               {bookmarkedArticles.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -987,7 +1043,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
           )}
 
           {/* Writer Tab: إعلاناتي وترويجي */}
-          {writerTab === 'my_ads' && (
+          {writerTab === 'control_panel' && controlPanelSubView === 'ads' && (
             <div className="space-y-4">
               <div className="p-6 rounded-3xl bg-gradient-to-r from-cyan-950/60 to-slate-900 border border-cyan-500/30 flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div>
@@ -1047,7 +1103,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
           )}
 
           {/* Writer Tab 1: Articles & Drafts */}
-          {writerTab === 'articles' && (
+          {writerTab === 'blog' && blogSubView === 'articles' && (
             <div className="space-y-4">
               {/* Sub-tabs for published vs drafts */}
               <div className="flex items-center justify-between">
@@ -1260,7 +1316,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
           )}
 
           {/* Writer Tab 2: Earnings & Withdrawals */}
-          {writerTab === 'stats_earnings' && (
+          {writerTab === 'control_panel' && controlPanelSubView === 'earnings' && (
             <div className="space-y-5">
               {/* شروط تفعيل احتساب الأرباح — كانت سابقاً تظهر فقط في صفحة
                   "استوديو الكاتب" المنفصلة (WriterDashboard) التي أُلغيت
@@ -1342,7 +1398,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
           )}
 
           {/* Writer Tab 3: Literary Profile Settings */}
-          {writerTab === 'literary_profile' && (
+          {writerTab === 'control_panel' && controlPanelSubView === 'literary' && (
             <>
             {onSaveSocialLinks && (
               <SocialLinksEditor currentUser={currentUser} onSave={onSaveSocialLinks} />
@@ -1375,7 +1431,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
           )}
 
           {/* Writer Tab 4: التغريد — تغريدات هذا الكاتب فقط */}
-          {writerTab === 'tweets' && (
+          {writerTab === 'tweet' && tweetSubView === 'mine' && (
             <div className="space-y-3">
               {tweets.length === 0 ? (
                 <div className="p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center space-y-2">
@@ -1406,7 +1462,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
           )}
 
           {/* Writer Tab 5: المفضلة — تغريدات مُيِّزت بنجمة (قد تكون لكتّاب آخرين) */}
-          {writerTab === 'favorites' && (
+          {writerTab === 'tweet' && tweetSubView === 'favorites' && (
             <div className="space-y-3">
               {favoritedTweets.length === 0 ? (
                 <div className="p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center space-y-2">
