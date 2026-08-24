@@ -644,6 +644,10 @@ export async function logAdEvent(event: {
   writerId?: string;
   viewerId?: string | null;
   eventType: 'impression' | 'click';
+  /** true = مشاهدة موثّقة (نفس شرط الرؤية 50%/ثانية) لإعلان شبكة خارجية
+   *  في موضع كاتب — أساس حساب عائد الكاتب من هذه الشبكات بسعر تقديري
+   *  ثابت، منفصل تماماً عن أحداث الحملات الداخلية (campaignId). */
+  isExternalAdView?: boolean;
 }): Promise<void> {
   try {
     const payload: Record<string, any> = {
@@ -657,6 +661,7 @@ export async function logAdEvent(event: {
     if (event.promotionId) payload.promotionId = event.promotionId;
     if (event.articleId) payload.articleId = event.articleId;
     if (event.writerId) payload.writerId = event.writerId;
+    if (event.isExternalAdView) payload.isExternalAdView = true;
 
     await addDoc(collection(db, 'adEvents'), payload);
   } catch (error) {
@@ -1303,7 +1308,11 @@ export async function setPlatformAdsEnabledInFirestore(enabled: boolean, updated
 /** يحفظ إعدادات الشبكات الإعلانية الخارجية الاحتياطية (PropellerAds/
  *  Adsterra) — كود HTML/JS خام لكل شبكة مع مفتاح تفعيل مستقل. */
 export async function setExternalAdsConfigInFirestore(
-  config: { propellerAds: { enabled: boolean; snippet: string }; adsterra: { enabled: boolean; snippet: string } },
+  config: {
+    propellerAds: { enabled: boolean; snippet: string };
+    adsterra: { enabled: boolean; snippet: string };
+    estimatedCpmUsd?: number;
+  },
   updatedByUserId: string
 ): Promise<void> {
   try {

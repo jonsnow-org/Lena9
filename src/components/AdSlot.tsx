@@ -128,22 +128,17 @@ export const AdSlot: React.FC<AdSlotProps> = ({
 
   const config = SLOT_CONFIG[slotId];
 
-  // مفتاح المالك العام لإعلانات المنصة — يُطفئ فقط مواضع beneficiary
-  // 'platform' (الإعلانات المملوكة للمنصة نفسها)، ولا يؤثر إطلاقاً على
-  // إعلانات الكتّاب التشاركية التي تبقى مصدر دخل مستقل لهم.
+  // مفتاح تشغيل/إيقاف الإعلانات العام — يشمل الآن كل المواضع (المنصة
+  // والكاتب معاً)، بعد أن أصبح لدينا نظام لحساب حصة الكاتب من مشاهدات
+  // الشبكات الخارجية أيضاً (انظر estimatedCpmUsd أدناه) بدل استبعادها من
+  // مواضع الكاتب كلياً كما كان سابقاً.
   useEffect(() => {
-    if (config.beneficiary !== 'platform') return;
     return subscribePlatformAdsEnabled(setPlatformAdsEnabled);
-  }, [config.beneficiary]);
+  }, []);
 
-  // الشبكات الإعلانية الخارجية الاحتياطية (PropellerAds/Adsterra) تُطبَّق
-  // فقط على مواضع المنصة نفسها (نفس نطاق platformAdsEnabled أعلاه) — لا
-  // تمس مواضع الكتّاب التشاركية، لأن حصة الكاتب من هذه الشبكات غير
-  // محسوبة أو موزَّعة في هذا الإصدار.
   useEffect(() => {
-    if (config.beneficiary !== 'platform') return;
     return subscribeExternalAdsConfig(setExternalAdsConfig);
-  }, [config.beneficiary]);
+  }, []);
 
   /**
    * مرشَّح المعلن الداخلي (بمعزل عن الأولوية) — حملة معلن داخلية نشطة
@@ -174,15 +169,15 @@ export const AdSlot: React.FC<AdSlotProps> = ({
   }, [campaigns, config.sponsorOnly, config.beneficiary, platformAdsEnabled, category, slotIndex]);
 
   /**
-   * مرشَّح الشبكة الخارجية (بمعزل عن الأولوية) — مواضع المنصة العامة فقط
-   * (beneficiary: 'platform'). مستبعدة عمداً من مواضع الكاتب لأن عائد
-   * هذه الشبكات غير موزَّع للكاتب في هذا الإصدار — لو عُرضت هناك بدل
-   * معلن داخلي حقيقي لخسر الكاتب حصته من العائد دون أي تعويض.
+   * مرشَّح الشبكة الخارجية (بمعزل عن الأولوية) — متاح الآن لكل المواضع
+   * بما فيها مواضع الكاتب: عائد الكاتب من مشاهدات الشبكة الخارجية هناك
+   * يُحتسب لاحقاً بسعر تقديري ثابت عبر تتبّع trackExternalWriterView أدناه
+   * (لم يعد مستبعداً كلياً كما كان سابقاً).
    */
   const externalCandidate: ExternalAdNetworkConfig | null = useMemo(() => {
-    if (config.beneficiary !== 'platform' || !platformAdsEnabled) return null;
+    if (!platformAdsEnabled) return null;
     return pickActiveExternalNetwork(externalAdsConfig);
-  }, [config.beneficiary, platformAdsEnabled, externalAdsConfig]);
+  }, [platformAdsEnabled, externalAdsConfig]);
 
   /**
    * أولوية العرض النهائية:
@@ -211,8 +206,15 @@ export const AdSlot: React.FC<AdSlotProps> = ({
   // ويُعاد بدؤه عند العودة. لا يُحتسب أي مبلغ هنا — الاحتساب يتم لاحقاً
   // بمراجعة الأدمن.
   const MIN_VIEWABLE_MS = 1000;
+  // تتبّع مشاهدة إعلان شبكة خارجية في موضع كاتب (حصة ربح ثابتة) — أساس
+  // حساب عائد الكاتب من هذه الشبكات بسعر تقديري ثابت (settings/
+  // externalAds.estimatedCpmUsd) عبر معالجة إدارية لاحقة، بنفس شرط الرؤية
+  // الحقيقية (50% مرئي لمدة ثانية متواصلة) المستخدم أصلاً للحملات
+  // الداخلية — بلا هذا الفرع كانت مشاهدات الإعلان الخارجي في مقالات/ملفات
+  // الكُتّاب تمرّ دون أي أثر يُحتسب منه عائد الكاتب لاحقاً.
+  const trackExternalWriterView = Boolean(externalNetwork) && config.beneficiary === 'writer';
   useEffect(() => {
-    if (!selectedCampaign || hasLoggedImpression.current) return;
+    if ((!selectedCampaign && !trackExternalWriterView) || hasLoggedImpression.current) return;
     const el = containerRef.current;
     if (!el || typeof IntersectionObserver === 'undefined') return;
 
@@ -226,14 +228,11 @@ export const AdSlot: React.FC<AdSlotProps> = ({
             dwellTimer = setTimeout(() => {
               if (hasLoggedImpression.current) return;
               hasLoggedImpression.current = true;
-              logAdEvent({
-                campaignId: selectedCampaign.id,
-                slotId,
-                articleId,
-                writerId,
-                viewerId,
-                eventType: 'impression'
-              }).catch(() => {
+              logAdEvent(
+                selectedCampaign
+                  ? { campaignId: selectedCampaign.id, slotId, articleId, writerId, viewerId, eventType: 'impression' }
+                  : { slotId, articleId, writerId, viewerId, eventType: 'impression', isExternalAdView: true }
+              ).catch(() => {
                 /* تسجيل الظهور ليس حرجاً — لا نزعج المستخدم برسالة خطأ */
               });
               observer.disconnect();
@@ -252,7 +251,7 @@ export const AdSlot: React.FC<AdSlotProps> = ({
       if (dwellTimer) clearTimeout(dwellTimer);
       observer.disconnect();
     };
-  }, [selectedCampaign, slotId, articleId, writerId, viewerId]);
+  }, [selectedCampaign, trackExternalWriterView, slotId, articleId, writerId, viewerId]);
 
   const handleClick = () => {
     if (!selectedCampaign) return;

@@ -94,8 +94,16 @@ export const FieldValue = AdminFieldValue;
  * يتحقق من رمز هوية Firebase (ID Token) المُرسَل من العميل في ترويسة
  * Authorization: Bearer <token>، ويعيد uid المستخدم الحقيقي — بدل الثقة
  * بأي userId يُرسله العميل ضمن جسم الطلب (يمكن تزويره بسهولة).
+ *
+ * isAnonymous: مأخوذ من firebase.sign_in_provider في الرمز نفسه —
+ * يفرّق بدقة بين جلسة زائر (Anonymous Auth، تحمل uid حقيقياً وتُقبل هنا
+ * بلا مشكلة لأي نقطة API لا تمانع الزوار) وحساب مسجَّل حقيقي (Google/
+ * بريد). أي نقطة API يجب أن تُحصر بالأعضاء المسجَّلين فقط (كمكافآت مالية)
+ * يتوجّب عليها فحص هذا الحقل صراحةً بنفسها ورفض الزوار.
  */
-export async function verifyRequestAuth(authHeader: string | undefined): Promise<{ uid: string; email: string | null }> {
+export async function verifyRequestAuth(
+  authHeader: string | undefined
+): Promise<{ uid: string; email: string | null; isAnonymous: boolean }> {
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     throw new Error('missing_auth_token');
   }
@@ -104,5 +112,9 @@ export async function verifyRequestAuth(authHeader: string | undefined): Promise
     throw new Error('missing_auth_token');
   }
   const decoded = await getAdminAuth().verifyIdToken(token);
-  return { uid: decoded.uid, email: decoded.email || null };
+  return {
+    uid: decoded.uid,
+    email: decoded.email || null,
+    isAnonymous: decoded.firebase?.sign_in_provider === 'anonymous'
+  };
 }

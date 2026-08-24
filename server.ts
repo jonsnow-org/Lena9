@@ -1678,7 +1678,17 @@ async function startServer() {
       });
     }
     try {
-      const { uid } = await verifyRequestAuth(req.headers.authorization);
+      const { uid, isAnonymous } = await verifyRequestAuth(req.headers.authorization);
+      // المكافأة المالية مقصورة على الأعضاء المسجَّلين حقيقياً — الزائر
+      // (جلسة Anonymous Auth) يحمل uid حقيقياً فيمرّ من verifyRequestAuth
+      // بلا مشكلة، لذا يلزم هذا الفحص الصريح هنا تحديداً (لا يوجد أي مكان
+      // آخر يمنع زائراً من محاولة تحقق مزيّف والحصول على مكافأة).
+      if (isAnonymous) {
+        return res.status(403).json({
+          error: 'registered_members_only',
+          message: 'يجب إنشاء حساب مسجَّل (وليس تصفحاً كزائر) لتلقي مكافأة التحقق.'
+        });
+      }
       const { campaignId, widgetData } = req.body || {};
       if (!campaignId || !widgetData) {
         return res.status(400).json({ error: 'missing_params' });
@@ -1714,7 +1724,13 @@ async function startServer() {
 
   app.post('/api/social/verify-youtube', async (req, res) => {
     try {
-      const { uid } = await verifyRequestAuth(req.headers.authorization);
+      const { uid, isAnonymous } = await verifyRequestAuth(req.headers.authorization);
+      if (isAnonymous) {
+        return res.status(403).json({
+          error: 'registered_members_only',
+          message: 'يجب إنشاء حساب مسجَّل (وليس تصفحاً كزائر) لتلقي مكافأة التحقق.'
+        });
+      }
       const { campaignId, accessToken } = req.body || {};
       if (!campaignId || !accessToken) {
         return res.status(400).json({ error: 'missing_params' });

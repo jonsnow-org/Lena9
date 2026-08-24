@@ -58,6 +58,9 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
   const [propellerSnippet, setPropellerSnippet] = useState(externalAdsConfig?.propellerAds?.snippet ?? '');
   const [adsterraEnabled, setAdsterraEnabled] = useState(externalAdsConfig?.adsterra?.enabled ?? false);
   const [adsterraSnippet, setAdsterraSnippet] = useState(externalAdsConfig?.adsterra?.snippet ?? '');
+  // سعر تقديري (USD) لكل 1000 مشاهدة حقيقية موثّقة لإعلان خارجي في مواضع
+  // الكاتب — أساس حساب حصة الكاتب من عائد هذه الشبكات (انظر AdminFinanceTab).
+  const [estimatedCpmUsd, setEstimatedCpmUsd] = useState(String(externalAdsConfig?.estimatedCpmUsd ?? 2));
   const [isSavingExternalAds, setIsSavingExternalAds] = useState(false);
   const [externalAdsSavedMsg, setExternalAdsSavedMsg] = useState('');
 
@@ -68,14 +71,16 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
     propellerEnabled,
     propellerSnippet,
     adsterraEnabled,
-    adsterraSnippet
+    adsterraSnippet,
+    estimatedCpmUsd
   });
 
   const isExternalAdsDirty =
     propellerEnabled !== savedExternalAdsSnapshot.propellerEnabled ||
     propellerSnippet.trim() !== savedExternalAdsSnapshot.propellerSnippet.trim() ||
     adsterraEnabled !== savedExternalAdsSnapshot.adsterraEnabled ||
-    adsterraSnippet.trim() !== savedExternalAdsSnapshot.adsterraSnippet.trim();
+    adsterraSnippet.trim() !== savedExternalAdsSnapshot.adsterraSnippet.trim() ||
+    estimatedCpmUsd.trim() !== savedExternalAdsSnapshot.estimatedCpmUsd.trim();
 
   // إن وصلت قيمة externalAdsConfig من Firestore بعد أول تحميل لهذا
   // المكوّن (شائع: الاشتراك اللحظي يبدأ فارغاً ثم يمتلئ بعد جزء من
@@ -88,12 +93,14 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
       propellerEnabled: externalAdsConfig?.propellerAds?.enabled ?? false,
       propellerSnippet: externalAdsConfig?.propellerAds?.snippet ?? '',
       adsterraEnabled: externalAdsConfig?.adsterra?.enabled ?? false,
-      adsterraSnippet: externalAdsConfig?.adsterra?.snippet ?? ''
+      adsterraSnippet: externalAdsConfig?.adsterra?.snippet ?? '',
+      estimatedCpmUsd: String(externalAdsConfig?.estimatedCpmUsd ?? 2)
     };
     setPropellerEnabled(nextSnapshot.propellerEnabled);
     setPropellerSnippet(nextSnapshot.propellerSnippet);
     setAdsterraEnabled(nextSnapshot.adsterraEnabled);
     setAdsterraSnippet(nextSnapshot.adsterraSnippet);
+    setEstimatedCpmUsd(nextSnapshot.estimatedCpmUsd);
     setSavedExternalAdsSnapshot(nextSnapshot);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [externalAdsConfig]);
@@ -105,15 +112,18 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
     try {
       const trimmedPropeller = propellerSnippet.trim();
       const trimmedAdsterra = adsterraSnippet.trim();
+      const cpmValue = Math.max(0, Number(estimatedCpmUsd) || 0);
       await onSaveExternalAdsConfig({
         propellerAds: { enabled: propellerEnabled, snippet: trimmedPropeller },
-        adsterra: { enabled: adsterraEnabled, snippet: trimmedAdsterra }
+        adsterra: { enabled: adsterraEnabled, snippet: trimmedAdsterra },
+        estimatedCpmUsd: cpmValue
       });
       setSavedExternalAdsSnapshot({
         propellerEnabled,
         propellerSnippet: trimmedPropeller,
         adsterraEnabled,
-        adsterraSnippet: trimmedAdsterra
+        adsterraSnippet: trimmedAdsterra,
+        estimatedCpmUsd: String(cpmValue)
       });
       setExternalAdsSavedMsg('تم الحفظ بنجاح ✓');
       setTimeout(() => setExternalAdsSavedMsg(''), 3000);
@@ -522,6 +532,26 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
                   dir="ltr"
                 />
               </div>
+            </div>
+
+            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+              <div className="font-bold text-xs text-white">
+                سعر تقديري لكل 1000 مشاهدة إعلان خارجي في مواضع الكاتب (USD)
+              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                لا تخبرنا الشبكات الخارجية بقيمة كل مشاهدة بالدولار، فنعتمد رقماً ثابتاً تحدّده أنت لحساب حصة
+                الكاتب من مشاهدات إعلانات هذه الشبكات في مقالاته وملفه الشخصي — مستقل تماماً عن أرباحك
+                الحقيقية في لوحة الشبكة نفسها.
+              </p>
+              <input
+                type="number"
+                min={0}
+                step="0.1"
+                value={estimatedCpmUsd}
+                onChange={(e) => setEstimatedCpmUsd(e.target.value)}
+                className="w-32 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-blue-500"
+                dir="ltr"
+              />
             </div>
 
             <div className="flex items-center gap-3 pt-1 min-h-[38px]">

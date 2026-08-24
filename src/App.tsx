@@ -97,7 +97,7 @@ import { PromoteArticleModal } from './components/PromoteArticleModal';
 import { LegalPages, LegalSection } from './components/LegalPages';
 import { SiteFooter } from './components/SiteFooter';
 import { MoneyRequestModal } from './components/MoneyRequestModal';
-import { AdSlot, resetAdSlotCounter } from './components/AdSlot';
+import { AdSlot, resetAdSlotCounter, SLOT_CONFIG, AdSlotId } from './components/AdSlot';
 import { evaluateAdEventBatch, calculateEventCost } from './utils/fraudFilters';
 import {
   subscribeToPromotions,
@@ -943,6 +943,86 @@ export function App() {
       );
     } catch (err) {
       console.error('تعذر احتساب أحداث الإعلانات:', err);
+      alert('تعذر إكمال الاحتساب. تأكد من صلاحيات الأدمن ثم حاول مجدداً.');
+    }
+  };
+
+  /**
+   * احتساب عائد الكُتّاب من مشاهدات إعلانات الشبكات الخارجية (Monetag/
+   * PropellerAds/Adsterra) في مواضعهم — منفصل تماماً عن أحداث الحملات
+   * الداخلية أعلاه (لا campaignId ولا سعر حقيقي معروف لكل حدث)، ويستخدم
+   * سعراً تقديرياً ثابتاً بالدولار لكل 1000 مشاهدة يحدّده الأدمن
+   * (settings/externalAds.estimatedCpmUsd)، مضروباً بحصة الكاتب الثابتة
+   * لموضعه (55% داخل المقال، 50% في ملفه الشخصي). نفس شرط أهلية احتساب
+   * الأرباح المطبَّق على الحملات الداخلية بالضبط (متابعون + KYC + إلخ).
+   */
+  const handleProcessExternalAdRevenue = async () => {
+    const allUnprocessed = adEvents.filter((e: any) => e.isExternalAdView && !e.processed);
+    if (allUnprocessed.length === 0) return;
+
+    const sorted = [...allUnprocessed].sort((a: any, b: any) =>
+      String(a.createdAt || '').localeCompare(String(b.createdAt || ''))
+    );
+    const unprocessed = sorted.slice(0, AD_EVENTS_BATCH_SIZE);
+    const remainingAfterBatch = sorted.length - unprocessed.length;
+
+    try {
+      const writerEarnings: Record<string, number> = {};
+      const validEvents: any[] = [];
+      const skippedEvents: any[] = [];
+
+      unprocessed.forEach((ev: any) => {
+        const slotConfig = SLOT_CONFIG[ev.slotId as AdSlotId];
+        const writerShare = slotConfig?.writerShare ?? 0;
+        if (!ev.writerId || writerShare <= 0) {
+          skippedEvents.push(ev);
+          return;
+        }
+        const writerUser = users.find((u) => u.id === ev.writerId);
+        const writerFollowersCount = followsData.filter((f) => f.followingId === ev.writerId).length;
+        if (!isEligibleForMonetization(writerUser, articles, writerFollowersCount)) {
+          skippedEvents.push(ev);
+          return;
+        }
+        validEvents.push(ev);
+        const amount = (externalAdsConfig.estimatedCpmUsd / 1000) * writerShare;
+        writerEarnings[ev.writerId] = (writerEarnings[ev.writerId] || 0) + amount;
+      });
+
+      for (const [wId, amount] of Object.entries(writerEarnings)) {
+        const w: any = users.find((u) => u.id === wId);
+        if (!w) continue;
+        const currentPending = w.pendingEarnings ?? 0;
+        const currentLifetime = w.lifetimeEarnings ?? 0;
+        await adminAdjustUserBalance(wId, {
+          pendingEarnings: Number((currentPending + amount).toFixed(4)),
+          lifetimeEarnings: Number((currentLifetime + amount).toFixed(4))
+        });
+        await adminLogEarning({
+          userId: wId,
+          amount: Number(amount.toFixed(4)),
+          source: 'external_ad_revenue',
+          description: `حصة من مشاهدات إعلانات شبكة خارجية (سعر تقديري $${externalAdsConfig.estimatedCpmUsd.toFixed(2)}/1000 مشاهدة)`
+        });
+      }
+
+      for (const ev of validEvents) {
+        await markAdEventProcessed(ev.id, true);
+      }
+      for (const ev of skippedEvents) {
+        await markAdEventProcessed(ev.id, false);
+      }
+
+      alert(
+        `تم احتساب ${validEvents.length} مشاهدة إعلان خارجي وإيداع حصص الكُتّاب` +
+          (skippedEvents.length > 0 ? ` (${skippedEvents.length} مشاهدة لم تُحتسب لعدم أهلية الكاتب بعد)` : '') +
+          '.' +
+          (remainingAfterBatch > 0
+            ? ` تبقّى ${remainingAfterBatch} مشاهدة أخرى — اضغط الزر مجدداً لمعالجة الدفعة التالية.`
+            : '')
+      );
+    } catch (err) {
+      console.error('تعذر احتساب عائد الإعلانات الخارجية:', err);
       alert('تعذر إكمال الاحتساب. تأكد من صلاحيات الأدمن ثم حاول مجدداً.');
     }
   };
@@ -3204,6 +3284,8 @@ export function App() {
             earningsRecords={earningsRecords}
             manualBalanceAdjustments={manualBalanceAdjustments}
             onProcessAdEvents={handleProcessAdEvents}
+            estimatedExternalCpmUsd={externalAdsConfig.estimatedCpmUsd}
+            onProcessExternalAdRevenue={handleProcessExternalAdRevenue}
             onUpdatePurchaseRequest={handleUpdatePurchaseRequest}
             onUpdateMoneyRequest={handleUpdateMoneyRequest}
             onUpdatePromotionStatus={handleUpdatePromotionStatus}
@@ -3408,6 +3490,8 @@ export function App() {
             earningsRecords={earningsRecords}
             manualBalanceAdjustments={manualBalanceAdjustments}
             onProcessAdEvents={handleProcessAdEvents}
+            estimatedExternalCpmUsd={externalAdsConfig.estimatedCpmUsd}
+            onProcessExternalAdRevenue={handleProcessExternalAdRevenue}
             onUpdatePurchaseRequest={handleUpdatePurchaseRequest}
             onUpdateMoneyRequest={handleUpdateMoneyRequest}
             onUpdatePromotionStatus={handleUpdatePromotionStatus}

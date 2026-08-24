@@ -17,12 +17,20 @@ export interface ExternalAdNetworkConfig {
 export interface ExternalAdsConfig {
   propellerAds: ExternalAdNetworkConfig;
   adsterra: ExternalAdNetworkConfig;
+  /**
+   * السعر التقديري بالدولار لكل 1000 مشاهدة حقيقية موثّقة لإعلان شبكة
+   * خارجية في مواضع الكاتب (ذات حصة ربح ثابتة) — أساس حساب عائد الكاتب
+   * من هذه الشبكات بقرار صريح من المالك، مستقلاً تماماً عن الرقم الحقيقي
+   * الذي تدفعه الشبكة فعلياً في لوحتها الخاصة (غير متاح للتطبيق أصلاً).
+   */
+  estimatedCpmUsd: number;
 }
 
 const EMPTY_NETWORK: ExternalAdNetworkConfig = { enabled: false, snippet: '' };
 const DEFAULT_CONFIG: ExternalAdsConfig = {
   propellerAds: { ...EMPTY_NETWORK },
-  adsterra: { ...EMPTY_NETWORK }
+  adsterra: { ...EMPTY_NETWORK },
+  estimatedCpmUsd: 2
 };
 
 let currentValue: ExternalAdsConfig = DEFAULT_CONFIG;
@@ -38,7 +46,11 @@ function ensureStarted() {
       const data = snap.exists() ? (snap.data() as any) : {};
       currentValue = {
         propellerAds: { ...EMPTY_NETWORK, ...(data.propellerAds || {}) },
-        adsterra: { ...EMPTY_NETWORK, ...(data.adsterra || {}) }
+        adsterra: { ...EMPTY_NETWORK, ...(data.adsterra || {}) },
+        estimatedCpmUsd:
+          typeof data.estimatedCpmUsd === 'number' && data.estimatedCpmUsd >= 0
+            ? data.estimatedCpmUsd
+            : DEFAULT_CONFIG.estimatedCpmUsd
       };
       listeners.forEach((cb) => cb(currentValue));
     },

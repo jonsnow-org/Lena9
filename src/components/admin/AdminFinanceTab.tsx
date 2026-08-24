@@ -17,6 +17,7 @@ import {
 import { User, AdCampaign } from '../../types';
 import { evaluateAdEventBatch, calculateEventCost } from '../../utils/fraudFilters';
 import { REVENUE_SHARES } from '../../constants/revenueShares';
+import { SLOT_CONFIG, AdSlotId } from '../AdSlot';
 
 interface AdminFinanceTabProps {
   users: User[];
@@ -46,6 +47,9 @@ interface AdminFinanceTabProps {
   onUpdatePurchaseRequest?: (requestId: string, status: 'approved' | 'rejected') => void;
   onReleaseEarning?: (earning: { id: string; userId: string; amount: number }) => void;
   onProcessAdEvents?: () => void;
+  /** السعر التقديري (USD) لكل 1000 مشاهدة إعلان خارجي موثّقة في مواضع الكاتب */
+  estimatedExternalCpmUsd?: number;
+  onProcessExternalAdRevenue?: () => void;
   onOpenAdjustBalance?: (user: User) => void;
 }
 
@@ -63,6 +67,8 @@ export const AdminFinanceTab: React.FC<AdminFinanceTabProps> = ({
   onUpdatePurchaseRequest,
   onReleaseEarning,
   onProcessAdEvents,
+  estimatedExternalCpmUsd = 2,
+  onProcessExternalAdRevenue,
   onOpenAdjustBalance
 }) => {
   const [subTab, setSubTab] = useState<
@@ -129,6 +135,25 @@ export const AdminFinanceTab: React.FC<AdminFinanceTabProps> = ({
       writerShares: writerMap
     };
   }, [unprocessedEvents, advertiserByCampaign, campaigns]);
+
+  // مشاهدات إعلانات الشبكات الخارجية الموثّقة في مواضع الكاتب — منفصلة
+  // تماماً عن أحداث الحملات الداخلية أعلاه (لا campaignId لها إطلاقاً)،
+  // وسعرها بالدولار تقديري ثابت يحدّده الأدمن، لا سعر حقيقي معروف لكل حدث.
+  const { externalViewCount, externalWriterShares, externalTotalUsd } = useMemo(() => {
+    const externalEvents = adEvents.filter((e: any) => e.isExternalAdView && !e.processed);
+    const writerMap: Record<string, number> = {};
+    let total = 0;
+    externalEvents.forEach((ev: any) => {
+      if (!ev.writerId) return;
+      const slotConfig = SLOT_CONFIG[ev.slotId as AdSlotId];
+      const writerShare = slotConfig?.writerShare ?? 0;
+      if (writerShare <= 0) return;
+      const amount = (estimatedExternalCpmUsd / 1000) * writerShare;
+      writerMap[ev.writerId] = (writerMap[ev.writerId] || 0) + amount;
+      total += amount;
+    });
+    return { externalViewCount: externalEvents.length, externalWriterShares: writerMap, externalTotalUsd: total };
+  }, [adEvents, estimatedExternalCpmUsd]);
 
   const pendingPayoutsCount = payoutRequests.filter((r) => r.status === 'pending').length;
   const pendingDepositsCount = depositRequests.filter((r) => r.status === 'pending').length;
@@ -632,6 +657,51 @@ export const AdminFinanceTab: React.FC<AdminFinanceTabProps> = ({
               احتساب الأحداث الصالحة وإيداع الأرباح للكتّاب الآن
             </button>
           )}
+
+          {/* عائد الكاتب من مشاهدات الشبكات الخارجية (سعر تقديري ثابت) —
+              منفصل تماماً عن الحملات الداخلية أعلاه. */}
+          <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+            <div>
+              <h4 className="font-black text-white text-sm">عائد الكُتّاب من إعلانات الشبكات الخارجية</h4>
+              <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                مشاهدات موثّقة (نفس شرط الرؤية الحقيقية) لإعلانات الشبكة الخارجية داخل مقالات/ملفات الكُتّاب،
+                محسوبة بسعر تقديري ثابت ${estimatedExternalCpmUsd.toFixed(2)} لكل 1000 مشاهدة (قابل للتعديل من
+                قسم الشبكات الخارجية)، مستقلة تماماً عن أرباحك الحقيقية في لوحة الشبكة نفسها.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                <div className="text-xl font-black text-white font-mono">{externalViewCount}</div>
+                <div className="text-[11px] text-slate-400 mt-0.5">مشاهدة غير معالَجة</div>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-950 border border-amber-500/30">
+                <div className="text-xl font-black text-amber-400 font-mono">${externalTotalUsd.toFixed(2)}</div>
+                <div className="text-[11px] text-slate-400 mt-0.5">إجمالي حصص الكُتّاب المستحقة</div>
+              </div>
+            </div>
+            {Object.keys(externalWriterShares).length > 0 && (
+              <div className="space-y-1.5 pt-1">
+                {Object.entries(externalWriterShares).map(([wId, amt]) => {
+                  const w = users.find((u) => u.id === wId);
+                  const numericAmt = typeof amt === 'number' ? amt : Number(amt) || 0;
+                  return (
+                    <div key={wId} className="flex items-center justify-between text-xs py-1 border-b border-slate-800/60 last:border-0">
+                      <span className="text-slate-300 font-medium">{w ? w.fullName : wId}</span>
+                      <span className="font-mono font-bold text-emerald-400">${numericAmt.toFixed(4)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {externalViewCount > 0 && onProcessExternalAdRevenue && (
+              <button
+                onClick={onProcessExternalAdRevenue}
+                className="w-full py-3 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs transition-all shadow-lg shadow-blue-600/20"
+              >
+                احتساب عائد الإعلانات الخارجية وإيداعه للكُتّاب الآن
+              </button>
+            )}
+          </div>
         </div>
       )}
 

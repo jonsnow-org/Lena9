@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Youtube, Send, Instagram, Twitter, Facebook, ExternalLink, ShieldCheck, Loader2, AlertCircle, Gift } from 'lucide-react';
+import { Youtube, Send, Instagram, Twitter, Facebook, ExternalLink, ShieldCheck, Loader2, AlertCircle, Gift, Lock } from 'lucide-react';
 import { AdCampaign, PromotionKind } from '../types';
 import { mountTelegramLoginWidget, TelegramWidgetUser } from '../utils/telegramWidgetAuth';
 import { requestYoutubeReadonlyToken, isGoogleOAuthConfigured } from '../utils/googleIdentity';
 import { verifyTelegramJoin, verifyYoutubeSubscription, fetchSocialVerifyStatus } from '../services/socialVerifyApi';
 import { SOCIAL_VERIFIED_ACTION_REWARD_USD } from '../constants/socialPromoRewards';
+import { auth } from '../firebase';
 
 const PLATFORM_META: Record<Exclude<PromotionKind, 'website'>, { label: string; platformName: string; icon: React.FC<any>; color: string }> = {
   youtube: { label: 'اشترك في القناة', platformName: 'يوتيوب', icon: Youtube, color: 'bg-red-600 hover:bg-red-700' },
@@ -88,6 +89,12 @@ export const SocialPromoCta: React.FC<SocialPromoCtaProps> = ({ campaign, onClic
     (kind === 'telegram' && serverSupport.telegram && Boolean(import.meta.env.VITE_TELEGRAM_BOT_USERNAME)) ||
     (kind === 'youtube' && serverSupport.youtube && isGoogleOAuthConfigured());
 
+  // مكافأة التحقق مقصورة على الأعضاء المسجَّلين حقيقياً — جلسة الزائر
+  // (Anonymous Auth) لا تصلح لها إطلاقاً (نفس القيد مفروض من الخادم أيضاً
+  // في recordVerificationAndReward، هذا فقط لتوضيح السبب للزائر مسبقاً
+  // بدل تركه يجرّب فيفشل الطلب بلا تفسير).
+  const isGuestSession = Boolean(auth.currentUser?.isAnonymous);
+
   return (
     <div className="space-y-2" onClick={(e) => e.stopPropagation()}>
       <button
@@ -103,7 +110,14 @@ export const SocialPromoCta: React.FC<SocialPromoCtaProps> = ({ campaign, onClic
         <ExternalLink className="w-3.5 h-3.5 opacity-70" />
       </button>
 
-      {canVerify && verifyAvailable && verifyStatus !== 'verified' && (
+      {canVerify && isGuestSession && verifyStatus !== 'verified' && (
+        <div className="flex items-center justify-center gap-1.5 text-[10px] font-bold text-slate-400 dark:text-slate-500 py-1">
+          <Lock className="w-3 h-3" />
+          <span>سجّل حساباً (وليس زائراً) لتربح ${SOCIAL_VERIFIED_ACTION_REWARD_USD.toFixed(2)} عند التحقق الحقيقي</span>
+        </div>
+      )}
+
+      {canVerify && !isGuestSession && verifyAvailable && verifyStatus !== 'verified' && (
         <div className="space-y-1.5">
           <div className="flex items-center justify-center gap-1.5 text-[10px] font-bold text-amber-600 dark:text-amber-400">
             <Gift className="w-3 h-3" />
