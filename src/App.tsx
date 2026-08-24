@@ -76,6 +76,7 @@ import { NewCampaignModal } from './components/NewCampaignModal';
 import { consumeAiUsage, applySubscriptionUpgrade } from './utils/aiQuota';
 import { rememberAccount } from './utils/savedAccounts';
 import { isEligibleForMonetization, getMemberStatusLabel } from './utils/creatorEligibility';
+import { normalizeArabicSearch } from './utils/arabicSearch';
 import { getTranslator } from './data/translations';
 import { applyThemePreset, applyBackgroundPreset, syncBackgroundOverlayMode } from './utils/themeEngine';
 import { subscribePlatformAdsEnabled, getPlatformAdsEnabled } from './utils/platformAdsStore';
@@ -1584,18 +1585,21 @@ export function App() {
   // وأيضاً اسم المستخدم الفعلي (username) لصاحب المقال — حتى يستطيع أي
   // شخص إيجاد مقالات كاتب معين بالبحث عن معرّفه (username) وليس فقط اسمه.
   const filteredArticles = useMemo(() => {
-    const q = searchQuery.toLowerCase().trim();
+    // تطبيع النص العربي قبل المطابقة — بدونه كانت مطابقة .includes() الحرفية
+    // تفشل بصمت لأي فرق شكلي شائع (أ/إ/آ/ا، ى/ي، ة/ه، تشكيل، مسافات
+    // زائدة) بين ما يكتبه المستخدم والحقل الفعلي، فيبدو البحث معطّلاً.
+    const q = normalizeArabicSearch(searchQuery);
     return articles.filter((art) => {
       const matchCategory = selectedCategory === 'all' || art.category === selectedCategory;
       if (!q) return matchCategory;
 
       const writerAccount = users.find((u) => u.id === art.writerId);
       const matchSearch =
-        art.title.toLowerCase().includes(q) ||
-        art.description.toLowerCase().includes(q) ||
-        art.writerName.toLowerCase().includes(q) ||
-        (writerAccount?.username || '').toLowerCase().includes(q) ||
-        (art.tags && art.tags.some((tg) => tg.toLowerCase().includes(q)));
+        normalizeArabicSearch(art.title).includes(q) ||
+        normalizeArabicSearch(art.description).includes(q) ||
+        normalizeArabicSearch(art.writerName).includes(q) ||
+        normalizeArabicSearch(writerAccount?.username || '').includes(q) ||
+        (art.tags && art.tags.some((tg) => normalizeArabicSearch(tg).includes(q)));
 
       return matchCategory && matchSearch;
     });
@@ -1604,14 +1608,14 @@ export function App() {
   // نتائج البحث عن حسابات المستخدمين مباشرة (بالاسم أو معرّف المستخدم)،
   // تُعرض فوق نتائج المقالات عند وجود نص بحث فعلي.
   const matchingUsers = useMemo(() => {
-    const q = searchQuery.toLowerCase().trim();
+    const q = normalizeArabicSearch(searchQuery);
     if (!q) return [];
     return users
       .filter(
         (u) =>
           u.id !== 'guest' &&
-          ((u.username || '').toLowerCase().includes(q) ||
-            (u.fullName || '').toLowerCase().includes(q))
+          (normalizeArabicSearch(u.username || '').includes(q) ||
+            normalizeArabicSearch(u.fullName || '').includes(q))
       )
       .slice(0, 6);
   }, [users, searchQuery]);
@@ -3648,6 +3652,18 @@ export function App() {
               <HomeFeedModeSwitcher mode={homeFeedMode} onChange={setHomeFeedMode} />
 
               {homeFeedMode === 'tweet' && (
+                <>
+                <div className="flex items-center justify-end">
+                  <button
+                    onClick={handleRefreshFeed}
+                    disabled={isRefreshing}
+                    className="min-h-[44px] px-3.5 py-2 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-1.5 shadow-2xs transition-all touch-manipulation active:scale-95"
+                    title="تحديث التغريدات"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-brand-500' : ''}`} />
+                    <span>تحديث</span>
+                  </button>
+                </div>
                 <TweetFeed
                   currentUser={currentUser}
                   tweets={tweets}
@@ -3668,6 +3684,7 @@ export function App() {
                     if (w) setViewingWriterProfile(w);
                   }}
                 />
+                </>
               )}
 
               {homeFeedMode === 'blog' && (

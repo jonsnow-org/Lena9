@@ -352,7 +352,14 @@ export function subscribeToUsers(
             lastResetTime: new Date().toISOString(),
             isSubscriber: false,
             plan: 'none'
-          }
+          },
+          // ⚠️ كانت هذه الحقول الثلاثة غائبة تماماً عن هذا الإسقاط اليدوي —
+          // فتُكتب فعلياً في Firestore (نبضة الحضور، الحظر، الكتم) لكنها
+          // تختفي فوراً بمجرد مرورها من هنا، فيظهر أي طرف "غير متصل" دائماً
+          // مهما كان متصلاً فعلاً، ويبقى الحظر/الكتم بلا أثر يُقرأ في الواجهة.
+          presence: data.presence,
+          blockedUserIds: Array.isArray(data.blockedUserIds) ? data.blockedUserIds : undefined,
+          mutedUserIds: Array.isArray(data.mutedUserIds) ? data.mutedUserIds : undefined
         });
       });
       onUsers(list);
