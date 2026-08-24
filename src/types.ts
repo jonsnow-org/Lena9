@@ -168,6 +168,40 @@ export interface Comment {
   replies: CommentReply[];
 }
 
+// -------------------------------------------------------------------
+// التغريدات — محتوى قصير (٢٨٠ حرفاً كحد أقصى) بجانب المدونة الطويلة،
+// متاح لأي عضو مسجَّل (وليس الكُتّاب فقط)، بنفس منطق تفاعل المقالات
+// تماماً (إعجاب/تعليق/مشاركة) بالإضافة إلى التمييز بنجمة للمفضلة.
+// -------------------------------------------------------------------
+export interface Tweet {
+  id: string;
+  authorId: string;
+  authorName: string;
+  authorUsername: string;
+  authorAvatar: string;
+  authorRole: UserRole;
+  content: string;
+  likesCount: number;
+  commentsCount: number;
+  sharesCount: number;
+  createdAt: string;
+}
+
+/** تعليق على تغريدة — نفس شكل Comment تماماً لكن مرتبط بتغريدة بدل مقال. */
+export interface TweetComment {
+  id: string;
+  tweetId: string;
+  userId: string;
+  userName: string;
+  userAvatar: string;
+  userRole: UserRole;
+  content: string;
+  likesCount: number;
+  likedBy?: string[];
+  createdAt: string;
+  replies: CommentReply[];
+}
+
 export type ReactionType = 'love' | 'funny' | 'surprised' | 'sad' | 'insightful';
 
 export interface ArticleReview {

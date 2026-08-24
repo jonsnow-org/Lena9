@@ -50,11 +50,14 @@ import {
   MousePointerClick,
   Activity,
   Radio,
-  UserPlus
+  UserPlus,
+  MessageSquare,
+  Star
 } from 'lucide-react';
-import { User, Article, UserRole, AdCampaign, LanguageCode, ArticlePromotion, FraudFlag } from '../types';
+import { User, Article, UserRole, AdCampaign, LanguageCode, ArticlePromotion, FraudFlag, Tweet, TweetComment } from '../types';
 import { SocialLinksEditor } from './SocialLinksEditor';
 import { EditProfileModal } from './EditProfileModal';
+import { TweetCard } from './TweetCard';
 import { AdSlot } from './AdSlot';
 import { auth, resendVerificationEmail, checkAndReloadEmailVerification, OWNER_ADMIN_EMAIL } from '../firebase';
 import { MailWarning } from 'lucide-react';
@@ -122,8 +125,25 @@ interface UserProfileViewProps {
   users?: User[];
   // Lets a parent (the bottom nav) pick which writer sub-tab shows —
   // optional, falls back to internal state so this still works standalone.
-  initialWriterTab?: 'articles' | 'stats_earnings' | 'literary_profile' | 'ai_tools';
-  onWriterTabChange?: (tab: 'articles' | 'stats_earnings' | 'literary_profile' | 'ai_tools') => void;
+  initialWriterTab?: 'articles' | 'stats_earnings' | 'literary_profile' | 'ai_tools' | 'tweets' | 'favorites';
+  onWriterTabChange?: (tab: 'articles' | 'stats_earnings' | 'literary_profile' | 'ai_tools' | 'tweets' | 'favorites') => void;
+  // ===== تبويبا "التغريد" و"المفضلة" في صفحة الملف الشخصي للكاتب =====
+  /** تغريدات هذا المستخدم فقط (مُصفّاة مسبقاً من الأب حسب authorId). */
+  tweets?: Tweet[];
+  /** كل تعليقات التغريدات — تُصفّى محلياً هنا حسب tweetId عند العرض. */
+  tweetComments?: TweetComment[];
+  /** معرّفات التغريدات التي أعجب بها المستخدم الحالي (لأي تغريدة، وليس فقط تغريداته). */
+  likedTweetIds?: string[];
+  favoritedTweetIds?: string[];
+  /** التغريدات المُميَّزة بنجمة (قد تكون لكتّاب آخرين) — لعرضها في تبويب "المفضلة". */
+  favoritedTweets?: Tweet[];
+  onDeleteTweet?: (tweetId: string) => void;
+  onToggleTweetLike?: (tweetId: string) => void;
+  onToggleTweetFavorite?: (tweetId: string) => void;
+  onShareTweet?: (tweet: Tweet) => void;
+  onAddTweetComment?: (tweetId: string, content: string) => void;
+  onLikeTweetComment?: (commentId: string, isLiking: boolean) => void;
+  onReplyToTweetComment?: (commentId: string, content: string) => void;
   /** عدد الكتّاب الذين يتابعهم هذا المستخدم فعلياً (followedWriterIds.length)
    *  — بخلاف currentUser.followingCount المخزَّن الذي لا يُحدَّث أبداً. */
   followingCount?: number;
@@ -270,7 +290,19 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   followersCountByUserId,
   onBroadcastMessage,
   initialAdminSection,
-  onAdminSectionChange
+  onAdminSectionChange,
+  tweets = [],
+  tweetComments = [],
+  likedTweetIds = [],
+  favoritedTweetIds = [],
+  favoritedTweets = [],
+  onDeleteTweet,
+  onToggleTweetLike,
+  onToggleTweetFavorite,
+  onShareTweet,
+  onAddTweetComment,
+  onLikeTweetComment,
+  onReplyToTweetComment
 }) => {
   const safeArticles = Array.isArray(articles) ? articles : [];
   const safeBookmarkedIds = Array.isArray(bookmarkedArticleIds) ? bookmarkedArticleIds : [];
@@ -282,7 +314,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
 
   // Common Active Tab state
   const [readerTab, setReaderTab] = useState<'bookmarks' | 'history' | 'campaigns' | 'following' | 'quota_wallet' | 'settings'>('bookmarks');
-  const [internalWriterTab, setInternalWriterTab] = useState<'articles' | 'stats_earnings' | 'literary_profile' | 'ai_tools'>('articles');
+  const [internalWriterTab, setInternalWriterTab] = useState<'articles' | 'stats_earnings' | 'literary_profile' | 'ai_tools' | 'tweets' | 'favorites'>('articles');
   // Controlled-if-provided: the bottom nav's "مقالاتي" / "الأرباح" buttons
   // drive this when a parent supplies initialWriterTab/onWriterTabChange;
   // otherwise this screen manages its own tab like before.
@@ -1154,6 +1186,30 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
               <PenTool className="w-4 h-4" />
               <span>إعدادات الملف الأدبي والتوثيق</span>
             </button>
+
+            <button
+              onClick={() => setWriterTab('tweets')}
+              className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
+                writerTab === 'tweets'
+                  ? 'border-teal-600 text-teal-600 dark:text-teal-400'
+                  : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <MessageSquare className="w-4 h-4" />
+              <span>التغريد ({tweets.length})</span>
+            </button>
+
+            <button
+              onClick={() => setWriterTab('favorites')}
+              className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
+                writerTab === 'favorites'
+                  ? 'border-teal-600 text-teal-600 dark:text-teal-400'
+                  : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <Star className="w-4 h-4" />
+              <span>المفضلة ({favoritedTweets.length})</span>
+            </button>
           </div>
 
           {/* Writer Tab 1: Articles & Drafts */}
@@ -1482,6 +1538,68 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
               </div>
             </div>
             </>
+          )}
+
+          {/* Writer Tab 4: التغريد — تغريدات هذا الكاتب فقط */}
+          {writerTab === 'tweets' && (
+            <div className="space-y-3">
+              {tweets.length === 0 ? (
+                <div className="p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center space-y-2">
+                  <MessageSquare className="w-8 h-8 text-slate-300 dark:text-slate-700 mx-auto" />
+                  <p className="text-sm font-bold text-slate-600 dark:text-slate-300">لا توجد تغريدات بعد</p>
+                  <p className="text-xs text-slate-400">انشر أول تغريدة من الصفحة الرئيسية — قسم "تغريد".</p>
+                </div>
+              ) : (
+                tweets.map((tweet) => (
+                  <TweetCard
+                    key={tweet.id}
+                    tweet={tweet}
+                    currentUser={currentUser}
+                    isLiked={likedTweetIds.includes(tweet.id)}
+                    isFavorited={favoritedTweetIds.includes(tweet.id)}
+                    comments={tweetComments.filter((c) => c.tweetId === tweet.id)}
+                    onToggleLike={onToggleTweetLike || (() => {})}
+                    onToggleFavorite={onToggleTweetFavorite || (() => {})}
+                    onShare={onShareTweet || (() => {})}
+                    onDelete={onDeleteTweet}
+                    onAddComment={onAddTweetComment || (() => {})}
+                    onLikeComment={onLikeTweetComment || (() => {})}
+                    onReplyToComment={onReplyToTweetComment || (() => {})}
+                  />
+                ))
+              )}
+            </div>
+          )}
+
+          {/* Writer Tab 5: المفضلة — تغريدات مُيِّزت بنجمة (قد تكون لكتّاب آخرين) */}
+          {writerTab === 'favorites' && (
+            <div className="space-y-3">
+              {favoritedTweets.length === 0 ? (
+                <div className="p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center space-y-2">
+                  <Star className="w-8 h-8 text-slate-300 dark:text-slate-700 mx-auto" />
+                  <p className="text-sm font-bold text-slate-600 dark:text-slate-300">لا توجد تغريدات مفضّلة بعد</p>
+                  <p className="text-xs text-slate-400">اضغط على أيقونة النجمة داخل أي تغريدة لحفظها هنا.</p>
+                </div>
+              ) : (
+                favoritedTweets.map((tweet) => (
+                  <TweetCard
+                    key={tweet.id}
+                    tweet={tweet}
+                    currentUser={currentUser}
+                    isLiked={likedTweetIds.includes(tweet.id)}
+                    isFavorited={favoritedTweetIds.includes(tweet.id)}
+                    comments={tweetComments.filter((c) => c.tweetId === tweet.id)}
+                    onToggleLike={onToggleTweetLike || (() => {})}
+                    onToggleFavorite={onToggleTweetFavorite || (() => {})}
+                    onShare={onShareTweet || (() => {})}
+                    onDelete={onDeleteTweet}
+                    onAddComment={onAddTweetComment || (() => {})}
+                    onLikeComment={onLikeTweetComment || (() => {})}
+                    onReplyToComment={onReplyToTweetComment || (() => {})}
+                  />
+                ))
+              )}
+            </div>
           )}
         </div>
       )}

@@ -26,6 +26,7 @@ import {
   User,
   AdCampaign,
   Comment,
+  CommentReply,
   Transaction,
   AppNotification,
   Conversation,
@@ -37,7 +38,9 @@ import {
   KycDetails,
   FraudFlag,
   PricingModel,
-  ArticlePromotion
+  ArticlePromotion,
+  Tweet,
+  TweetComment
 } from './types';
 
 import { REVENUE_SHARES } from './constants/revenueShares';
@@ -50,6 +53,8 @@ import { FeaturedArticlesSection } from './components/FeaturedArticlesSection';
 import { TrendingArticlesSection } from './components/TrendingArticlesSection';
 import { SmartAdBanner } from './components/SmartAdBanner';
 import { ArticleReader } from './components/ArticleReader';
+import { HomeFeedModeSwitcher, HomeFeedMode } from './components/HomeFeedModeSwitcher';
+import { TweetFeed } from './components/TweetFeed';
 import { ArticleEditorModal } from './components/ArticleEditorModal';
 import { AdvertiserDashboard } from './components/AdvertiserDashboard';
 import { WriterProfileView } from './components/WriterProfileView';
@@ -137,6 +142,20 @@ import {
   rateArticleInFirestore,
   syncArticleRatingSummary,
   setArticleReactionInFirestore,
+  subscribeToTweets,
+  addTweetToFirestore,
+  deleteTweetInFirestore,
+  incrementTweetSharesInFirestore,
+  subscribeToTweetLikes,
+  likeTweetInFirestore,
+  unlikeTweetInFirestore,
+  subscribeToTweetFavorites,
+  favoriteTweetInFirestore,
+  unfavoriteTweetInFirestore,
+  subscribeToTweetComments,
+  addTweetCommentToFirestore,
+  addReplyToTweetCommentInFirestore,
+  toggleTweetCommentLikeInFirestore,
   subscribeToAllEarningsAdmin,
   subscribeToManualBalanceAdjustments,
   deleteMessageInFirestore,
@@ -275,6 +294,14 @@ export function App() {
   const [articleRatings, setArticleRatings] = useState<
     { id: string; articleId: string; userId: string; stars: number }[]
   >([]);
+
+  // التغريدات — محتوى قصير بجانب المدونة، بنفس نمط المقالات/الإعجابات/
+  // التعليقات تماماً.
+  const [tweets, setTweets] = useState<Tweet[]>([]);
+  const [tweetComments, setTweetComments] = useState<TweetComment[]>([]);
+  const [tweetLikes, setTweetLikes] = useState<{ id: string; tweetId: string; userId: string }[]>([]);
+  const [favoritedTweetIds, setFavoritedTweetIds] = useState<string[]>([]);
+  const [homeFeedMode, setHomeFeedMode] = useState<HomeFeedMode>('blog');
 
   // سجلات الأرباح الفردية (لكل مقال/حملة)، تحمل موعد استحقاق التحرير بعد
   // 30 يوماً من التجميد — تُقرأ فقط لحساب الأدمن (القواعد تمنع غيره).
@@ -1057,6 +1084,41 @@ export function App() {
     };
   }, []);
 
+  // الاستماع للتغريدات وتعليقاتها وإعجاباتها (قراءة عامة، نفس منطق المقالات)
+  useEffect(() => {
+    const unsubTweets = subscribeToTweets(
+      setTweets,
+      (e) => console.error('Tweets subscription error:', e)
+    );
+    const unsubTweetComments = subscribeToTweetComments(
+      setTweetComments,
+      (e) => console.error('Tweet comments subscription error:', e)
+    );
+    const unsubTweetLikes = subscribeToTweetLikes(
+      setTweetLikes,
+      (e) => console.error('Tweet likes subscription error:', e)
+    );
+    return () => {
+      unsubTweets();
+      unsubTweetComments();
+      unsubTweetLikes();
+    };
+  }, []);
+
+  // مفضلة التغريدات الخاصة بالمستخدم الحالي فقط
+  useEffect(() => {
+    if (!currentUserId) {
+      setFavoritedTweetIds([]);
+      return;
+    }
+    const unsub = subscribeToTweetFavorites(
+      currentUserId,
+      setFavoritedTweetIds,
+      (e) => console.error('Tweet favorites subscription error:', e)
+    );
+    return () => unsub();
+  }, [currentUserId]);
+
   // الاستماع لإشعارات المستخدم الحالي فقط (قواعد الأمان تمنع قراءة إشعارات الغير)
   useEffect(() => {
     if (!currentUserId) {
@@ -1600,6 +1662,198 @@ export function App() {
           ? [...prev, { id: `${articleId}_${effectiveUserId}`, articleId, userId: effectiveUserId! }]
           : prev.filter((l) => !(l.articleId === articleId && l.userId === effectiveUserId))
       );
+      alert('تعذر تحديث الإعجاب. تحقق من اتصالك ثم حاول مجدداً.');
+    }
+  };
+
+  // ===== التغريدات =====
+  // نشر تغريد جديد. النشر متاح لأي عضو مسجّل (قارئ/كاتب/معلن)، وليس
+  // للكتّاب فقط، تماشياً مع نموذج "الحساب الموحّد" في المنصة.
+  const handlePostTweet = async (content: string) => {
+    if (!requireAuth()) return;
+    try {
+      const newTweet: Tweet = {
+        id: `tw_${Date.now()}`,
+        authorId: currentUser.id,
+        authorName: currentUser.fullName,
+        authorUsername: currentUser.username,
+        authorAvatar: currentUser.avatarUrl,
+        authorRole: currentUser.role,
+        content,
+        likesCount: 0,
+        commentsCount: 0,
+        sharesCount: 0,
+        createdAt: new Date().toISOString()
+      };
+      await addTweetToFirestore(newTweet);
+    } catch (err) {
+      console.error('تعذر نشر التغريدة:', err);
+      alert('تعذر نشر التغريدة. تحقق من اتصالك ثم حاول مجدداً.');
+    }
+  };
+
+  const handleDeleteTweet = async (tweetId: string) => {
+    if (!requireAuth()) return;
+    try {
+      await deleteTweetInFirestore(tweetId);
+    } catch (err) {
+      console.error('تعذر حذف التغريدة:', err);
+      alert('تعذر حذف التغريدة. تحقق من اتصالك ثم حاول مجدداً.');
+    }
+  };
+
+  const handleToggleTweetLike = async (tweetId: string) => {
+    if (!requireAuth()) return;
+    const alreadyLiked = tweetLikes.some((l) => l.tweetId === tweetId && l.userId === currentUser.id);
+
+    setTweets((prev) =>
+      prev.map((t) => (t.id === tweetId ? { ...t, likesCount: Math.max(0, t.likesCount + (alreadyLiked ? -1 : 1)) } : t))
+    );
+    setTweetLikes((prev) =>
+      alreadyLiked
+        ? prev.filter((l) => !(l.tweetId === tweetId && l.userId === currentUser.id))
+        : [...prev, { id: `${tweetId}_${currentUser.id}`, tweetId, userId: currentUser.id }]
+    );
+
+    try {
+      if (alreadyLiked) {
+        await unlikeTweetInFirestore(tweetId, currentUser.id);
+      } else {
+        await likeTweetInFirestore(tweetId, currentUser.id);
+        const tweet = tweets.find((t) => t.id === tweetId);
+        if (tweet && tweet.authorId !== currentUser.id) {
+          createNotificationInFirestore({
+            userId: tweet.authorId,
+            type: 'like',
+            title: 'إعجاب جديد بتغريدتك',
+            message: `أعجب ${currentUser.fullName} بتغريدتك`,
+            actorId: currentUser.id
+          });
+        }
+      }
+    } catch (err) {
+      console.error('تعذر تحديث الإعجاب بالتغريدة:', err);
+      setTweets((prev) =>
+        prev.map((t) => (t.id === tweetId ? { ...t, likesCount: Math.max(0, t.likesCount + (alreadyLiked ? 1 : -1)) } : t))
+      );
+      setTweetLikes((prev) =>
+        alreadyLiked
+          ? [...prev, { id: `${tweetId}_${currentUser.id}`, tweetId, userId: currentUser.id }]
+          : prev.filter((l) => !(l.tweetId === tweetId && l.userId === currentUser.id))
+      );
+      alert('تعذر تحديث الإعجاب. تحقق من اتصالك ثم حاول مجدداً.');
+    }
+  };
+
+  const handleToggleTweetFavorite = async (tweetId: string) => {
+    if (!requireAuth()) return;
+    const alreadyFavorited = favoritedTweetIds.includes(tweetId);
+
+    setFavoritedTweetIds((prev) =>
+      alreadyFavorited ? prev.filter((id) => id !== tweetId) : [...prev, tweetId]
+    );
+
+    try {
+      if (alreadyFavorited) {
+        await unfavoriteTweetInFirestore(tweetId, currentUser.id);
+      } else {
+        await favoriteTweetInFirestore(tweetId, currentUser.id);
+      }
+    } catch (err) {
+      console.error('تعذر تحديث المفضلة:', err);
+      setFavoritedTweetIds((prev) =>
+        alreadyFavorited ? [...prev, tweetId] : prev.filter((id) => id !== tweetId)
+      );
+      alert('تعذر تحديث المفضلة. تحقق من اتصالك ثم حاول مجدداً.');
+    }
+  };
+
+  const handleShareTweet = async (tweet: Tweet) => {
+    const shareUrl = `${window.location.origin}${window.location.pathname}?tweet=${tweet.id}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ text: tweet.content, url: shareUrl });
+      } else {
+        await navigator.clipboard.writeText(shareUrl);
+        alert('تم نسخ رابط التغريدة.');
+      }
+      incrementTweetSharesInFirestore(tweet.id).catch((err) => console.error('تعذر تحديث عدد المشاركات:', err));
+    } catch {
+      // المستخدم ألغى نافذة المشاركة — لا حاجة لأي إجراء.
+    }
+  };
+
+  const handlePostTweetComment = async (tweetId: string, content: string) => {
+    if (!requireAuth()) return;
+    try {
+      const newComment: TweetComment = {
+        id: `twcomm_${Date.now()}`,
+        tweetId,
+        userId: currentUser.id,
+        userName: currentUser.fullName,
+        userAvatar: currentUser.avatarUrl,
+        userRole: currentUser.role,
+        content,
+        likesCount: 0,
+        likedBy: [],
+        createdAt: new Date().toISOString(),
+        replies: []
+      };
+      await addTweetCommentToFirestore(newComment);
+      const tweet = tweets.find((t) => t.id === tweetId);
+      if (tweet && tweet.authorId !== currentUser.id) {
+        createNotificationInFirestore({
+          userId: tweet.authorId,
+          type: 'comment',
+          title: 'تعليق جديد على تغريدتك',
+          message: `علّق ${currentUser.fullName} على تغريدتك`,
+          actorId: currentUser.id
+        });
+      }
+    } catch (err) {
+      console.error('تعذر إضافة التعليق:', err);
+      alert('تعذر إضافة التعليق. تحقق من اتصالك ثم حاول مجدداً.');
+    }
+  };
+
+  const handleReplyToTweetComment = async (commentId: string, content: string) => {
+    if (!requireAuth()) return;
+    try {
+      const newReply: CommentReply = {
+        id: `twrep_${Date.now()}`,
+        userId: currentUser.id,
+        userName: currentUser.fullName,
+        userAvatar: currentUser.avatarUrl,
+        userRole: currentUser.role,
+        content,
+        likesCount: 0,
+        isLiked: false,
+        likedBy: [],
+        createdAt: new Date().toISOString()
+      };
+      await addReplyToTweetCommentInFirestore(commentId, newReply);
+      const comment = tweetComments.find((c) => c.id === commentId);
+      if (comment && comment.userId !== currentUser.id) {
+        createNotificationInFirestore({
+          userId: comment.userId,
+          type: 'comment',
+          title: 'رد جديد على تعليقك',
+          message: `رد ${currentUser.fullName} على تعليقك على تغريدة`,
+          actorId: currentUser.id
+        });
+      }
+    } catch (err) {
+      console.error('تعذر إضافة الرد:', err);
+      alert('تعذر إضافة الرد. تحقق من اتصالك ثم حاول مجدداً.');
+    }
+  };
+
+  const handleToggleTweetCommentLike = async (commentId: string, isLiking: boolean) => {
+    if (!requireAuth()) return;
+    try {
+      await toggleTweetCommentLikeInFirestore(commentId, currentUser.id, isLiking);
+    } catch (err) {
+      console.error('تعذر تحديث إعجاب التعليق:', err);
       alert('تعذر تحديث الإعجاب. تحقق من اتصالك ثم حاول مجدداً.');
     }
   };
@@ -2803,6 +3057,18 @@ export function App() {
             onSaveExternalAdsConfig={handleSaveExternalAdsConfig}
             initialAdminSection={adminActiveTab}
             onAdminSectionChange={setAdminActiveTab}
+            tweets={tweets.filter((t) => t.authorId === currentUser.id)}
+            tweetComments={tweetComments}
+            likedTweetIds={tweetLikes.filter((l) => l.userId === currentUser.id).map((l) => l.tweetId)}
+            favoritedTweetIds={favoritedTweetIds}
+            favoritedTweets={tweets.filter((t) => favoritedTweetIds.includes(t.id))}
+            onDeleteTweet={handleDeleteTweet}
+            onToggleTweetLike={handleToggleTweetLike}
+            onToggleTweetFavorite={handleToggleTweetFavorite}
+            onShareTweet={handleShareTweet}
+            onAddTweetComment={handlePostTweetComment}
+            onLikeTweetComment={handleToggleTweetCommentLike}
+            onReplyToTweetComment={handleReplyToTweetComment}
           />
         ) : activeTab === 'explore' ? (
           <ExploreView
@@ -2988,6 +3254,18 @@ export function App() {
             onSaveExternalAdsConfig={handleSaveExternalAdsConfig}
             initialAdminSection={adminActiveTab}
             onAdminSectionChange={setAdminActiveTab}
+            tweets={tweets.filter((t) => t.authorId === currentUser.id)}
+            tweetComments={tweetComments}
+            likedTweetIds={tweetLikes.filter((l) => l.userId === currentUser.id).map((l) => l.tweetId)}
+            favoritedTweetIds={favoritedTweetIds}
+            favoritedTweets={tweets.filter((t) => favoritedTweetIds.includes(t.id))}
+            onDeleteTweet={handleDeleteTweet}
+            onToggleTweetLike={handleToggleTweetLike}
+            onToggleTweetFavorite={handleToggleTweetFavorite}
+            onShareTweet={handleShareTweet}
+            onAddTweetComment={handlePostTweetComment}
+            onLikeTweetComment={handleToggleTweetCommentLike}
+            onReplyToTweetComment={handleReplyToTweetComment}
           />
         ) : activeTab === 'campaigns' && currentUser.id !== 'guest' ? (
           <AdvertiserDashboard
@@ -3001,6 +3279,33 @@ export function App() {
         ) : (
           /* Main Feed View: Available to all users/roles when on 'feed' */
           <div className="space-y-6 animate-android-in">
+              {/* مبدّل المدونة/التغريد — "الستارة": القسم النشط يتمدد والآخر ينطوي بجانبه */}
+              <HomeFeedModeSwitcher mode={homeFeedMode} onChange={setHomeFeedMode} />
+
+              {homeFeedMode === 'tweet' && (
+                <TweetFeed
+                  currentUser={currentUser}
+                  tweets={tweets}
+                  comments={tweetComments}
+                  likedTweetIds={tweetLikes.filter((l) => l.userId === currentUserId).map((l) => l.tweetId)}
+                  favoritedTweetIds={favoritedTweetIds}
+                  onPostTweet={handlePostTweet}
+                  onToggleLike={handleToggleTweetLike}
+                  onToggleFavorite={handleToggleTweetFavorite}
+                  onShare={handleShareTweet}
+                  onDeleteTweet={handleDeleteTweet}
+                  onAddComment={handlePostTweetComment}
+                  onLikeComment={handleToggleTweetCommentLike}
+                  onReplyToComment={handleReplyToTweetComment}
+                  onSelectAuthor={(wId) => {
+                    const w = users.find((u) => u.id === wId);
+                    if (w) setViewingWriterProfile(w);
+                  }}
+                />
+              )}
+
+              {homeFeedMode === 'blog' && (
+              <>
               {/* Search Bar — عدسة البحث عنصر منفصل تماماً عن حقل الكتابة،
                   وليست أيقونة عائمة داخل الحقل، حتى يكون شكلها واضحاً كزر بحث حقيقي */}
               <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
@@ -3251,6 +3556,8 @@ export function App() {
                     </React.Fragment>
                   ))}
                 </div>
+              )}
+              </>
               )}
             </div>
           )

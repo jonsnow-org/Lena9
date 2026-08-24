@@ -17,7 +17,7 @@ import {
   writeBatch
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { Article, AdCampaign, Transaction, FraudFlag, User, UserRole, Comment, CommentReply, AppNotification, ArticlePromotion } from '../types';
+import { Article, AdCampaign, Transaction, FraudFlag, User, UserRole, Comment, CommentReply, AppNotification, ArticlePromotion, Tweet, TweetComment } from '../types';
 import { DEFAULT_FREE_DAILY_LIMIT } from '../utils/aiQuota';
 
 // -------------------------------------------------------------------
@@ -1547,6 +1547,208 @@ export async function removeArticleReactionInFirestore(articleId: string, userId
     await deleteDoc(doc(db, 'reactions', `${articleId}_${userId}`));
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, 'reactions');
+    throw error;
+  }
+}
+
+// -------------------------------------------------------------------
+// التغريدات — محتوى قصير (٢٨٠ حرفاً) بجانب المدونة، بنفس نمط المقالات
+// تماماً: مستند واحد لكل تغريدة في مجموعة tweets، وإعجاب/مفضلة كمستند
+// مستقل لكل (تغريدة+مستخدم) في مجموعتي tweetLikes/tweetFavorites (نفس
+// أسلوب مجموعة likes الحقيقي، وليس مصفوفة محلية تختفي عند التحديث).
+// -------------------------------------------------------------------
+
+export function subscribeToTweets(
+  onTweets: (tweets: Tweet[]) => void,
+  onError?: (err: any) => void
+) {
+  return onSnapshot(
+    collection(db, 'tweets'),
+    (snapshot) => {
+      const list: Tweet[] = [];
+      snapshot.forEach((d) => list.push({ id: d.id, ...(d.data() as any) } as Tweet));
+      list.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+      onTweets(list);
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'tweets');
+      if (onError) onError(error);
+    }
+  );
+}
+
+export async function addTweetToFirestore(tweet: Tweet): Promise<void> {
+  try {
+    await setDoc(doc(db, 'tweets', tweet.id), tweet);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'tweets');
+    throw error;
+  }
+}
+
+export async function deleteTweetInFirestore(tweetId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'tweets', tweetId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `tweets/${tweetId}`);
+    throw error;
+  }
+}
+
+export async function incrementTweetSharesInFirestore(tweetId: string): Promise<void> {
+  try {
+    await updateDoc(doc(db, 'tweets', tweetId), { sharesCount: increment(1) });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `tweets/${tweetId}`);
+  }
+}
+
+export function subscribeToTweetLikes(
+  onLikes: (likes: { id: string; tweetId: string; userId: string }[]) => void,
+  onError?: (err: any) => void
+) {
+  return onSnapshot(
+    collection(db, 'tweetLikes'),
+    (snapshot) => {
+      const list: any[] = [];
+      snapshot.forEach((d) => list.push({ id: d.id, ...d.data() }));
+      onLikes(list);
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'tweetLikes');
+      if (onError) onError(error);
+    }
+  );
+}
+
+export async function likeTweetInFirestore(tweetId: string, userId: string): Promise<void> {
+  try {
+    await setDoc(doc(db, 'tweetLikes', `${tweetId}_${userId}`), {
+      tweetId,
+      userId,
+      createdAt: new Date().toISOString()
+    });
+    await updateDoc(doc(db, 'tweets', tweetId), { likesCount: increment(1) });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'tweetLikes');
+    throw error;
+  }
+}
+
+export async function unlikeTweetInFirestore(tweetId: string, userId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'tweetLikes', `${tweetId}_${userId}`));
+    await updateDoc(doc(db, 'tweets', tweetId), { likesCount: increment(-1) });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, 'tweetLikes');
+    throw error;
+  }
+}
+
+// المفضلة (تمييز بنجمة) — نفس نمط الإعجاب تماماً، مستند مستقل لكل
+// (تغريدة+مستخدم)، تُقرأ لاحقاً في قسم "المفضلة" بالملف الشخصي مُصفّاة
+// على userId الحالي فقط (وليس مصفوفة محلية في localStorage تختفي بين
+// الأجهزة كما كانت حالة تحديد المقالات المحفوظة سابقاً).
+export function subscribeToTweetFavorites(
+  userId: string | null,
+  onFavorites: (tweetIds: string[]) => void,
+  onError?: (err: any) => void
+) {
+  if (!userId) {
+    onFavorites([]);
+    return () => {};
+  }
+  return onSnapshot(
+    query(collection(db, 'tweetFavorites'), where('userId', '==', userId)),
+    (snapshot) => {
+      const ids: string[] = [];
+      snapshot.forEach((d) => ids.push((d.data() as any).tweetId));
+      onFavorites(ids);
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'tweetFavorites');
+      if (onError) onError(error);
+    }
+  );
+}
+
+export async function favoriteTweetInFirestore(tweetId: string, userId: string): Promise<void> {
+  try {
+    await setDoc(doc(db, 'tweetFavorites', `${tweetId}_${userId}`), {
+      tweetId,
+      userId,
+      createdAt: new Date().toISOString()
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'tweetFavorites');
+    throw error;
+  }
+}
+
+export async function unfavoriteTweetInFirestore(tweetId: string, userId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'tweetFavorites', `${tweetId}_${userId}`));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, 'tweetFavorites');
+    throw error;
+  }
+}
+
+export function subscribeToTweetComments(
+  onComments: (comments: TweetComment[]) => void,
+  onError?: (err: any) => void
+) {
+  return onSnapshot(
+    collection(db, 'tweetComments'),
+    (snapshot) => {
+      const list: TweetComment[] = [];
+      snapshot.forEach((d) => list.push({ id: d.id, ...(d.data() as any) } as TweetComment));
+      list.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+      onComments(list);
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'tweetComments');
+      if (onError) onError(error);
+    }
+  );
+}
+
+export async function addTweetCommentToFirestore(comment: TweetComment): Promise<void> {
+  try {
+    await setDoc(doc(db, 'tweetComments', comment.id), comment);
+    await updateDoc(doc(db, 'tweets', comment.tweetId), { commentsCount: increment(1) });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'tweetComments');
+    throw error;
+  }
+}
+
+export async function addReplyToTweetCommentInFirestore(
+  commentId: string,
+  reply: CommentReply
+): Promise<void> {
+  try {
+    await updateDoc(doc(db, 'tweetComments', commentId), {
+      replies: arrayUnion(reply)
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `tweetComments/${commentId}`);
+    throw error;
+  }
+}
+
+export async function toggleTweetCommentLikeInFirestore(
+  commentId: string,
+  userId: string,
+  isLiking: boolean
+): Promise<void> {
+  try {
+    await updateDoc(doc(db, 'tweetComments', commentId), {
+      likesCount: increment(isLiking ? 1 : -1),
+      likedBy: isLiking ? arrayUnion(userId) : arrayRemove(userId)
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `tweetComments/${commentId}`);
     throw error;
   }
 }

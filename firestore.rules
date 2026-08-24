@@ -332,6 +332,63 @@ service cloud.firestore {
       allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
     }
 
+    // التغريدات — محتوى قصير (٢٨٠ حرفاً كحد أقصى) متاح لأي عضو مسجَّل
+    // (وليس الكُتّاب فقط)، بنفس صلاحيات المقالات من حيث الحذف.
+    match /tweets/{tweetId} {
+      allow read: if true;
+      allow create: if isSignedIn()
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.content is string
+        && request.resource.data.content.size() > 0
+        && request.resource.data.content.size() <= 280;
+      // أي مستخدم مسجّل يستطيع فقط تحديث عدّادات الإعجاب/التعليقات/
+      // المشاركة (لا يستطيع تعديل نص تغريدة غيره)، وصاحب التغريدة أو
+      // الأدمن يملكان تعديلاً كاملاً.
+      allow update: if
+        (isSignedIn() && resource.data.authorId == request.auth.uid)
+        || isAdmin()
+        || (
+          isSignedIn()
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['likesCount', 'commentsCount', 'sharesCount'])
+        );
+      allow delete: if isSignedIn() && (resource.data.authorId == request.auth.uid || isAdmin());
+    }
+
+    // إعجاب التغريدات — نفس نمط likes تماماً (معرّف مركّب tweetId_userId).
+    match /tweetLikes/{likeId} {
+      allow read: if true;
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && likeId == request.resource.data.tweetId + '_' + request.resource.data.userId;
+      allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    // مفضلة التغريدات (تمييز بنجمة) — نفس نمط tweetLikes تماماً، تُقرأ
+    // لاحقاً في قسم "المفضلة" بالملف الشخصي مُصفّاة على صاحبها فقط.
+    match /tweetFavorites/{favoriteId} {
+      allow read: if isSignedIn()
+        && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && favoriteId == request.resource.data.tweetId + '_' + request.resource.data.userId;
+      allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    match /tweetComments/{commentId} {
+      allow read: if true;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if
+        (isSignedIn() && resource.data.userId == request.auth.uid)
+        || isAdmin()
+        || (
+          isSignedIn()
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['likesCount', 'likedBy', 'replies'])
+        );
+      allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
     match /notifications/{notificationId} {
       allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
       allow update: if isSignedIn()
