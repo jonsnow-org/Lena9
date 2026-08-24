@@ -60,7 +60,6 @@ import { AdvertiserDashboard } from './components/AdvertiserDashboard';
 import { WriterProfileView } from './components/WriterProfileView';
 import { FollowListModal } from './components/FollowListModal';
 import { ExploreView } from './components/ExploreView';
-import { AdsRevenueView } from './components/AdsRevenueView';
 import { UserProfileView } from './components/UserProfileView';
 import { WalletModal } from './components/WalletModal';
 import { KycModal } from './components/KycModal';
@@ -75,7 +74,7 @@ import { SubscriptionModal } from './components/SubscriptionModal';
 import { NewCampaignModal } from './components/NewCampaignModal';
 import { consumeAiUsage, applySubscriptionUpgrade } from './utils/aiQuota';
 import { rememberAccount } from './utils/savedAccounts';
-import { isEligibleForMonetization } from './utils/creatorEligibility';
+import { isEligibleForMonetization, getMemberStatusLabel } from './utils/creatorEligibility';
 import { getTranslator } from './data/translations';
 import { applyThemePreset, applyBackgroundPreset, syncBackgroundOverlayMode } from './utils/themeEngine';
 import { subscribePlatformAdsEnabled, getPlatformAdsEnabled } from './utils/platformAdsStore';
@@ -2755,6 +2754,19 @@ export function App() {
     return 'reader';
   }, [currentUser.role, currentUser.articlesCount, currentUser.id, campaigns]);
 
+  // حساب أهلية احتساب الأرباح بالمتابعين الحقيقيين (من مجموعة follows
+  // الفعلية)، لا بحقل currentUser.followersCount المخزَّن الذي لا يتحدّث
+  // أبداً — كان هذا يجعل شرط "100 متابع" مستحيل التحقق دائماً في القائمة
+  // الجانبية تحديداً، فتظهر "قارئ مسجل" حتى لكاتب مستوفٍ فعلياً كل الشروط.
+  const currentUserIsMonetizationEligible = isEligibleForMonetization(
+    currentUser,
+    articles,
+    followersCountByUserId[currentUser.id] || 0
+  );
+  // وسم حالة واحد فقط يُستخدم في كل مكان (الملف الشخصي + القائمة الجانبية)
+  // بدل أوسمة متضاربة لكل صفحة على حدة.
+  const memberStatusLabel = getMemberStatusLabel(currentUser.role, navPersona, currentUserIsMonetizationEligible);
+
   // Show Landing Page for new visitors or when explicitly opened
   if (showLandingPage) {
     return (
@@ -2910,6 +2922,7 @@ export function App() {
             bookmarkedArticleIds={bookmarkedArticleIds}
             followingCount={followedWriterIds.length}
             followersCount={followsData.filter((f) => f.followingId === currentUser.id).length}
+            memberStatusLabel={memberStatusLabel}
             campaigns={campaigns}
             initialWriterTab={writerActiveTab}
             onWriterTabChange={setWriterActiveTab}
@@ -3113,6 +3126,7 @@ export function App() {
             bookmarkedArticleIds={bookmarkedArticleIds}
             followingCount={followedWriterIds.length}
             followersCount={followsData.filter((f) => f.followingId === currentUser.id).length}
+            memberStatusLabel={memberStatusLabel}
             campaigns={campaigns}
             initialWriterTab="blog"
             onWriterTabChange={setWriterActiveTab}
@@ -3316,6 +3330,7 @@ export function App() {
                   comments={tweetComments}
                   likedTweetIds={tweetLikes.filter((l) => l.userId === currentUserId).map((l) => l.tweetId)}
                   favoritedTweetIds={favoritedTweetIds}
+                  campaigns={campaigns}
                   onPostTweet={handlePostTweet}
                   onToggleLike={handleToggleTweetLike}
                   onToggleFavorite={handleToggleTweetFavorite}
@@ -3444,7 +3459,7 @@ export function App() {
                   advertiser actually configured as platform-wide placements
                   (e.g. a flat-fee homepage package); in-article placements
                   are shown inside ArticleReader instead. */}
-              {campaigns.find((c) => c.status === 'active' && c.placementType === 'platform') && (
+              {platformAdsEnabled && campaigns.find((c) => c.status === 'active' && c.placementType === 'platform') && (
                 <SmartAdBanner
                   campaign={campaigns.find((c) => c.status === 'active' && c.placementType === 'platform')!}
                   placementType="platform"
@@ -3671,7 +3686,8 @@ export function App() {
         }}
         onSwitchRole={handleSwitchRole}
         navPersona={navPersona}
-        isMonetizationEligible={isEligibleForMonetization(currentUser, articles)}
+        isMonetizationEligible={currentUserIsMonetizationEligible}
+        memberStatusLabel={memberStatusLabel}
         onStartWriting={() => {
           setEditingArticle(null);
           setIsArticleEditorOpen(true);

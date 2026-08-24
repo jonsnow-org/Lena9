@@ -29,7 +29,8 @@ export type AdSlotId =
   | 'writer_profile_top'
   | 'writer_profile_feed'
   | 'reader_profile'
-  | 'comments_feed';
+  | 'comments_feed'
+  | 'tweet_feed';
 
 interface SlotConfig {
   /** من يستفيد من عائد هذا الموضع */
@@ -55,17 +56,27 @@ export const SLOT_CONFIG: Record<AdSlotId, SlotConfig> = {
   // قسم التعليقات مرتبط مباشرة بمقال الكاتب ونقاشه، فحصته من العائد
   // تطابق بقية مواضع داخل المقال (55% كاتب / 45% منصة) بدل تركه بلا أي
   // استفادة كما كان الحال (لم تكن مساحة التعليقات مستثمرة إعلانياً إطلاقاً).
-  comments_feed: { beneficiary: 'writer', writerShare: 0.55 }
+  comments_feed: { beneficiary: 'writer', writerShare: 0.55 },
+  // قسم التغريد الجديد — إعلان منصة عادي مدمج في القائمة (نفس تنسيق بطاقة
+  // مستقلة واضحة العنوان "إعلان"، وليس نافذة منبثقة أو محتوى مموّه) حتى
+  // لا يُفسد تجربة التصفح السريع للتغريدات القصيرة.
+  tweet_feed: { beneficiary: 'platform', writerShare: 0 }
 };
 
 /**
  * حد أقصى صارم: 3 وحدات إعلانية في أي صفحة واحدة.
  * تجاوزه يعرّض حساب AdSense للرفض أو الإغلاق.
  */
-const MAX_ADS_PER_PAGE = 3;
+export const MAX_ADS_PER_PAGE = 3;
 let renderedAdsOnPage = 0;
 export function resetAdSlotCounter() {
   renderedAdsOnPage = 0;
+}
+/** يحجز الرقم التالي في عدّاد الإعلانات المشترك — يُستخدم من أي مكوّن
+ *  إعلاني آخر خارج <AdSlot> نفسه (مثل SmartAdBanner) حتى يخضع لنفس الحد
+ *  الأقصى (3 وحدات/صفحة) بدل عدّه بمعزل عن بقية المواضع. */
+export function claimAdSlotIndex(): number {
+  return renderedAdsOnPage++;
 }
 
 interface AdSlotProps {

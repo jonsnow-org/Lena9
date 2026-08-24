@@ -51,6 +51,10 @@ interface DrawerMenuProps {
    *  تلقائياً بمجرد تحقق كل الشروط — بدل وسم ثابت يعتمد فقط على الدور
    *  المُختار عند التسجيل. */
   isMonetizationEligible?: boolean;
+  /** وسم الحالة الجاهز — محسوب مرة واحدة في App.tsx بنفس المصدر المستخدم
+   *  في الملف الشخصي، حتى لا يظهر الحساب بلقبين مختلفين في صفحتين. إن لم
+   *  يُمرَّر، يُحسب محلياً كاحتياط. */
+  memberStatusLabel?: string;
   /** شخصية التنقل المُشتقة من النشاط الفعلي (وليس الدور المُسجَّل فقط) —
    *  نفس القيمة المستخدمة في شريط التنقل السفلي، لضمان اتساق القوائم
    *  المعروضة هنا مع الواجهة الفعلية بدل تناقضهما. */
@@ -87,7 +91,8 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
   navPersona,
   onStartWriting,
   onOpenImageStudio,
-  isMonetizationEligible = false
+  isMonetizationEligible = false,
+  memberStatusLabel
 }) => {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const quotaStats = getRemainingAiUses(currentUser.aiQuota);
@@ -153,7 +158,7 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
                   )}
                 </div>
                 <span className="text-[11px] text-brand-400 font-bold">
-                  {getRoleLabel(currentUser.role)}
+                  {memberStatusLabel || getRoleLabel(currentUser.role)}
                 </span>
               </div>
             </button>

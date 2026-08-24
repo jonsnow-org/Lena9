@@ -3,6 +3,7 @@ import { ShieldCheck, AlertTriangle, ExternalLink, Sparkles, Info, Eye, MousePoi
 import { AdCampaign, PricingModel, AdPlacementType, FraudFlag } from '../types';
 import { AntiFraudEngine } from '../utils/antiFraud';
 import { REVENUE_SHARES } from '../constants/revenueShares';
+import { claimAdSlotIndex, MAX_ADS_PER_PAGE } from './AdSlot';
 
 interface SmartAdBannerProps {
   campaign: AdCampaign;
@@ -30,6 +31,10 @@ export const SmartAdBanner: React.FC<SmartAdBannerProps> = ({
   variant = 'banner'
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  // يحجز رقماً من نفس عدّاد <AdSlot> المشترك حتى يُحتسب ضمن الحد الأقصى
+  // (3 وحدات/صفحة) بدل الظهور دائماً بمعزل عن بقية مواضع الإعلانات —
+  // كان هذا البانر يتجاوز الحد فعلياً عند اجتماعه مع 3 مواضع أخرى.
+  const [slotIndex] = useState<number>(() => claimAdSlotIndex());
   const [loadTime] = useState<number>(Date.now());
   const [visiblePercentage, setVisiblePercentage] = useState<number>(0);
   const [continuousVisibleMs, setContinuousVisibleMs] = useState<number>(0);
@@ -159,6 +164,9 @@ export const SmartAdBanner: React.FC<SmartAdBannerProps> = ({
         return { label: 'إعلان موثوق', color: 'bg-brand-500/10 text-brand-400 border-brand-500/20' };
     }
   };
+
+  // احترام الحد الأقصى للصفحة — نفس فحص <AdSlot> بالضبط.
+  if (slotIndex >= MAX_ADS_PER_PAGE) return null;
 
   const badge = getPricingBadge();
 

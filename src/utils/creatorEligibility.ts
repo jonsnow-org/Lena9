@@ -1,4 +1,4 @@
-import { User, Article } from '../types';
+import { User, Article, UserRole } from '../types';
 
 // -------------------------------------------------------------------
 // شروط الأهلية لاحتساب أرباح المحتوى (منشئ محتوى موثّق)
@@ -89,4 +89,27 @@ export function isEligibleForMonetization(
   if (!user) return false;
   if (user.role === 'admin') return true;
   return getCreatorEligibility(user, articles, followersCountOverride).isEligible;
+}
+
+/**
+ * وسم "الحالة" الظاهر بجانب اسم المستخدم — مصدر واحد يُستخدم في كل مكان
+ * (الملف الشخصي، القائمة الجانبية، صفحة ملف كاتب آخر) بدل ثلاثة أوسمة
+ * منفصلة كانت تتناقض مع بعضها: بطاقة الملف الشخصي كانت تعرض وسماً ثابتاً
+ * حسب role المُختار عند التسجيل فقط ("كاتب شريك" لأي role='writer' حتى
+ * لو لم ينشر شيئاً)، بينما القائمة الجانبية كانت تعرض وسماً آخر محسوباً
+ * من النشاط الفعلي والأهلية — فيظهر الحساب نفسه بلقبين متضاربين في
+ * صفحتين مختلفتين. الترتيب هنا تصاعدي: قارئ ← كاتب (نشر شيئاً) ← منشئ
+ * محتوى موثّق (استوفى شروط احتساب الأرباح) ← معلن/شريك أعمال، والأدمن
+ * يبقى الاستثناء الوحيد الثابت.
+ */
+export function getMemberStatusLabel(
+  role: UserRole,
+  navPersona: UserRole,
+  isMonetizationEligible: boolean
+): string {
+  if (role === 'admin') return 'مالك المنصة';
+  if (role === 'advertiser' || navPersona === 'advertiser') return 'معلن وشريك أعمال';
+  if (isMonetizationEligible) return 'منشئ محتوى موثّق';
+  if (role === 'writer' || navPersona === 'writer') return 'كاتب';
+  return 'قارئ مسجل';
 }

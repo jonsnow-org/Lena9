@@ -154,6 +154,9 @@ interface UserProfileViewProps {
   followersCount?: number;
   onShowFollowers?: () => void;
   onShowFollowing?: () => void;
+  /** وسم الحالة الجاهز — نفس المصدر المستخدم في القائمة الجانبية، حتى لا
+   *  يظهر الحساب بلقبين مختلفين في صفحتين. */
+  memberStatusLabel?: string;
   /** عدّادات الإشعارات المعلَّقة لخانات لوحة الأدمن المجمَّعة في هذه
    *  الصفحة (أدوات المستخدمين/الدفع/الأمان) — اختيارية، تُخفى الشارة
    *  ببساطة إن لم تُمرَّر. */
@@ -259,6 +262,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   followersCount,
   onShowFollowers,
   onShowFollowing,
+  memberStatusLabel = 'قارئ مسجل',
   pendingKycCount = 0,
   pendingMoneyCount = 0,
   pendingFraudCount = 0,
@@ -317,7 +321,6 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   const pendingCampaignsCount = safeCampaigns.filter((c) => c.status === 'pending').length;
 
   // Common Active Tab state
-  const [readerTab, setReaderTab] = useState<'bookmarks' | 'history' | 'campaigns' | 'following' | 'quota_wallet' | 'settings'>('bookmarks');
   const [internalWriterTab, setInternalWriterTab] = useState<'blog' | 'tweet' | 'control_panel'>('blog');
   // Controlled-if-provided: the bottom nav's "مقالاتي" / "الأرباح" buttons
   // drive this when a parent supplies initialWriterTab/onWriterTabChange;
@@ -416,7 +419,6 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
     promotions.filter((p) => p.status === 'pending').length;
 
   const [writerArticleSubTab, setWriterArticleSubTab] = useState<'published' | 'drafts'>('published');
-  const [advertiserTab, setAdvertiserTab] = useState<'campaigns' | 'performance' | 'create_ad' | 'billing'>('campaigns');
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
   const [verifyEmailStatus, setVerifyEmailStatus] = useState<'idle' | 'sending' | 'sent' | 'checking' | 'verified'>('idle');
   const [isEmailVerified, setIsEmailVerified] = useState<boolean>(auth.currentUser?.emailVerified ?? false);
@@ -505,21 +507,9 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
     ? (weightedRatingSum / totalRatingsCount).toFixed(1)
     : null; // null = لا يوجد أي تقييم حقيقي بعد؛ الواجهة تعرض "لا تقييمات بعد" بدل رقم وهمي
 
-  // Reading history from actual user activity or empty
-  const readingHistory: Array<Article & { progress: number; readAt: string }> = [];
-
-  // Advertiser specific metrics
+  // Advertiser specific metrics — لا تزال مستخدمة في قسم "إعلاناتي وترويجي"
+  // بلوحة التحكم.
   const myCampaigns = safeCampaigns.filter((c) => c.advertiserId === currentUser.id || c.advertiserName.includes(currentUser.companyName || currentUser.fullName));
-  const totalImpressions = myCampaigns.reduce((sum, c) => sum + c.impressionsCount, 0);
-  const totalClicks = myCampaigns.reduce((sum, c) => sum + c.clicksCount, 0);
-  const avgCtr = totalImpressions > 0 ? ((totalClicks / totalImpressions) * 100).toFixed(2) : '0.00';
-
-  // Quota bar calculations
-  const totalLimit = quotaStats.limit || 5;
-  const usedCount = quotaStats.usedToday || 0;
-  const usedPercentage = quotaStats.isUnlimited
-    ? 0
-    : Math.min(100, Math.round((usedCount / totalLimit) * 100));
 
   return (
     <div className="space-y-6 animate-android-in pb-24 max-w-6xl mx-auto">
@@ -568,41 +558,20 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
               <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
                 <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2">
                   <span>{currentUser.penName || currentUser.companyName || currentUser.fullName}</span>
-                  {currentUser.role === 'writer' && (
-                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-teal-50 dark:bg-teal-950/60 text-teal-700 dark:text-teal-400 border border-teal-500/30 flex items-center gap-1">
-                      <PenTool className="w-3 h-3" />
-                      <span>كاتب شريك</span>
-                    </span>
-                  )}
-                  {currentUser.role === 'advertiser' && (
-                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-cyan-50 dark:bg-cyan-950/60 text-cyan-700 dark:text-cyan-400 border border-cyan-500/30 flex items-center gap-1">
-                      <Megaphone className="w-3 h-3" />
-                      <span>حساب معلن</span>
-                    </span>
-                  )}
-                  {currentUser.role === 'reader' && currentUser.id !== 'guest' && (
-                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-brand-50 dark:bg-brand-950/60 text-brand-700 dark:text-brand-400 border border-brand-500/30 flex items-center gap-1">
-                      <BookOpen className="w-3 h-3" />
-                      <span>قارئ معتمد</span>
-                    </span>
-                  )}
-                  {currentUser.id === 'guest' && (
+                  {/* وسم حالة واحد فقط — نفس المصدر المستخدم في القائمة
+                      الجانبية (memberStatusLabel من App.tsx)، بدل أربعة
+                      أوسمة منفصلة كانت تتراكم هنا معاً (دور ثابت + أهلية
+                      منشئ المحتوى + حالة زائر) وقد تتناقض مع ما تعرضه
+                      القائمة الجانبية لنفس الحساب. */}
+                  {currentUser.id === 'guest' ? (
                     <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-300/50 dark:border-slate-700 flex items-center gap-1">
                       <UserIcon className="w-3 h-3" />
                       <span>زائر</span>
                     </span>
-                  )}
-                  {/* شارة "منشئ محتوى موثّق" — حالة نشاط تتحقق تلقائياً عند
-                      استيفاء شروط الأهلية (متابعون + مشاهدات + عمر الحساب +
-                      عدد مقالات + توثيق KYC)، وليست مرتبطة بدور ثابت. تظهر
-                      لأي حساب مسجَّل استوفى الشروط، قارئاً كان أم كاتباً. */}
-                  {currentUser.id !== 'guest' && currentUser.role !== 'admin' && creatorEligibility.isEligible && (
-                    <span
-                      className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 border border-amber-500/30 flex items-center gap-1"
-                      title="منشئ محتوى موثّق — استوفى شروط الأهلية الكاملة لاحتساب الأرباح"
-                    >
-                      <Award className="w-3 h-3" />
-                      <span>منشئ محتوى موثّق</span>
+                  ) : (
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-teal-50 dark:bg-teal-950/60 text-teal-700 dark:text-teal-400 border border-teal-500/30 flex items-center gap-1">
+                      {creatorEligibility.isEligible ? <Award className="w-3 h-3" /> : <PenTool className="w-3 h-3" />}
+                      <span>{memberStatusLabel}</span>
                     </span>
                   )}
                   {/* تعديل الاسم/الصورة/النبذة — لم يكن هناك أي مدخل لهذا
@@ -725,33 +694,9 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
             </div>
           </div>
 
-          {/* Fixed Role Badge — role is set once at registration and is no
-              longer casually switchable. This closes a security/UX gap where
-              any signed-in user could instantly flip between reader/writer/
-              advertiser (or worse) with a single click. */}
+          {/* أزرار الإجراءات — وسم الحالة (الدور/الأهلية) أصبح مصدره الوحيد
+              الآن الشارة بجانب الاسم أعلاه، بدل تكراره هنا بصياغة مختلفة. */}
           <div className="flex flex-col sm:items-end gap-2.5 shrink-0 w-full sm:w-auto">
-            <div
-              className={`px-4 py-2 rounded-2xl text-xs font-extrabold flex items-center justify-center gap-1.5 ${
-                currentUser.role === 'writer'
-                  ? 'bg-teal-600/10 text-teal-600 dark:text-teal-400 border border-teal-600/20'
-                  : currentUser.role === 'advertiser'
-                  ? 'bg-cyan-600/10 text-cyan-600 dark:text-cyan-400 border border-cyan-600/20'
-                  : currentUser.role === 'admin'
-                  ? 'bg-amber-600/10 text-amber-600 dark:text-amber-400 border border-amber-600/20'
-                  : 'bg-brand-600/10 text-brand-600 dark:text-brand-400 border border-brand-600/20'
-              }`}
-            >
-              {currentUser.id === 'guest'
-                ? 'زائر'
-                : currentUser.role === 'writer'
-                ? 'حساب كاتب'
-                : currentUser.role === 'advertiser'
-                ? 'حساب معلن'
-                : currentUser.role === 'admin'
-                ? 'حساب مدير المنصة'
-                : 'حساب قارئ ومُعلن'}
-            </div>
-
             <div className="flex items-center gap-2 justify-center sm:justify-end flex-wrap">
               {/* زر "كتابة مقال جديد" أُزيل من هنا — الكاتب لديه أصلاً زر FAB
                   مركزي "كتابة" في الشريط السفلي يفتح نفس محرر المقال بالضبط
@@ -786,6 +731,13 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* موضع reader_profile — أعلى صفحة الملف الشخصي مباشرة، ملك المنصة
+          بالكامل (100%). كان يظهر فقط داخل قسم القارئ القديم المحذوف الآن؛
+          أُعيد هنا ليبقى متاحاً لكل الحسابات المسجّلة بلا استثناء. */}
+      {currentUser.id !== 'guest' && (
+        <AdSlot slotId="reader_profile" campaigns={safeCampaigns} viewerId={currentUser.id} adFree={false} />
+      )}
 
       {/* ========================================================================= */}
       {/* 2. المدونة والتغريد — متاحة لأي حساب مسجَّل (قارئ/كاتب/معلن)، وليست
@@ -1489,564 +1441,6 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   />
                 ))
               )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* 1. READER SPECIFIC VIEW */}
-      {/* ========================================================================= */}
-      {currentUser.role === 'reader' && (
-        <div className="space-y-6">
-          {/* reader_profile — 100% للمنصة، يظهر فقط لحساب قارئ حقيقي
-              مسجّل (وليس زائراً)، حسب خريطة المواضع الإعلانية المعتمدة. */}
-          {currentUser.id !== 'guest' && (
-            <AdSlot slotId="reader_profile" campaigns={safeCampaigns} viewerId={currentUser.id} adFree={false} />
-          )}
-
-          {/* Reader Quick Tabs */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none border-b border-slate-200 dark:border-slate-800">
-            <button
-              onClick={() => setReaderTab('bookmarks')}
-              className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
-                readerTab === 'bookmarks'
-                  ? 'border-brand-600 text-brand-600 dark:text-brand-400'
-                  : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <Bookmark className="w-4 h-4" />
-              <span>المقالات المحفوظة ({bookmarkedArticles.length})</span>
-            </button>
-
-            <button
-              onClick={() => setReaderTab('history')}
-              className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
-                readerTab === 'history'
-                  ? 'border-brand-600 text-brand-600 dark:text-brand-400'
-                  : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <Clock className="w-4 h-4" />
-              <span>سجل القراءة والمتابعة</span>
-            </button>
-
-            <button
-              onClick={() => setReaderTab('campaigns')}
-              className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
-                readerTab === 'campaigns'
-                  ? 'border-cyan-600 text-cyan-600 dark:text-cyan-400'
-                  : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <Megaphone className="w-4 h-4" />
-              <span>إعلاناتي وترويجي ({myCampaigns.length})</span>
-            </button>
-
-            <button
-              onClick={() => setReaderTab('following')}
-              className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
-                readerTab === 'following'
-                  ? 'border-brand-600 text-brand-600 dark:text-brand-400'
-                  : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <Users className="w-4 h-4" />
-              <span>الكُتّاب المتابعون ({followingCount ?? currentUser.followingCount ?? 0})</span>
-            </button>
-
-            <button
-              onClick={() => setReaderTab('quota_wallet')}
-              className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
-                readerTab === 'quota_wallet'
-                  ? 'border-brand-600 text-brand-600 dark:text-brand-400'
-                  : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <Sparkles className="w-4 h-4 text-brand-500" />
-              <span>الرصيد واستخدامات الذكاء الاصطناعي</span>
-            </button>
-
-            <button
-              onClick={() => setReaderTab('settings')}
-              className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
-                readerTab === 'settings'
-                  ? 'border-brand-600 text-brand-600 dark:text-brand-400'
-                  : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <Settings className="w-4 h-4" />
-              <span>تفضيلات القراءة</span>
-            </button>
-          </div>
-
-          {/* Reader Tab Contents */}
-
-          {/* A. BOOKMARKS */}
-          {readerTab === 'bookmarks' && (
-            <div className="space-y-4">
-              {bookmarkedArticles.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {bookmarkedArticles.map((art) => (
-                    <div
-                      key={art.id}
-                      onClick={() => onSelectArticle(art)}
-                      className="p-4 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs hover:border-brand-500/50 cursor-pointer transition-all flex flex-col justify-between group"
-                    >
-                      <div className="space-y-3">
-                        <div className="aspect-16/9 rounded-2xl overflow-hidden bg-slate-950 relative">
-                          <img
-                            src={art.featuredImage}
-                            alt={art.title}
-                            referrerPolicy="no-referrer"
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                          />
-                          <div className="absolute top-2 end-2 bg-brand-900/90 text-brand-200 px-2 py-0.5 rounded-lg text-[10px] font-bold">
-                            محفوظ
-                          </div>
-                        </div>
-                        <h4 className="font-extrabold text-sm text-slate-900 dark:text-white group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors line-clamp-2">
-                          {art.title}
-                        </h4>
-                        <p className="text-xs text-slate-500 line-clamp-2">{art.description}</p>
-                      </div>
-
-                      <div className="pt-3 mt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-400">
-                        <span className="font-bold text-slate-600 dark:text-slate-300">{art.writerName}</span>
-                        <span className="text-brand-600 dark:text-brand-400 font-bold flex items-center gap-1">
-                          <span>متابعة القراءة</span>
-                          <span>←</span>
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-12 rounded-3xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800">
-                  <Bookmark className="w-10 h-10 text-slate-400 mx-auto mb-3" />
-                  <h4 className="font-bold text-sm text-slate-900 dark:text-white">لم تقم بحفظ أي مقالات بعد</h4>
-                  <p className="text-xs text-slate-500 mt-1">اضغط على أيقونة الإشارة المرجعية في المقال لحفظه وقراءته لاحقاً.</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* B. READING HISTORY */}
-          {readerTab === 'history' && (
-            <div className="space-y-3">
-              {readingHistory.length > 0 ? (
-                readingHistory.map((art) => (
-                  <div
-                    key={art.id}
-                    onClick={() => onSelectArticle(art)}
-                    className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-brand-500/40 cursor-pointer transition-all flex flex-col sm:flex-row items-center justify-between gap-4"
-                  >
-                    <div className="flex items-center gap-3 w-full sm:w-auto">
-                      <img
-                        src={art.featuredImage}
-                        alt={art.title}
-                        referrerPolicy="no-referrer"
-                        className="w-16 h-16 rounded-xl object-cover shrink-0"
-                      />
-                      <div className="space-y-1">
-                        <span className="text-[10px] font-bold text-brand-600 dark:text-brand-400 px-2 py-0.5 rounded-full bg-brand-50 dark:bg-brand-950/60 border border-brand-500/20">
-                          {art.readAt}
-                        </span>
-                        <h4 className="font-bold text-sm text-slate-900 dark:text-white line-clamp-1">
-                          {art.title}
-                        </h4>
-                        <p className="text-xs text-slate-500">{art.writerName}</p>
-                      </div>
-                    </div>
-
-                    <div className="w-full sm:w-48 space-y-1.5">
-                      <div className="flex justify-between text-[11px] font-bold text-slate-500">
-                        <span>نسبة الإنجاز</span>
-                        <span className="text-brand-600 dark:text-brand-400">{art.progress}%</span>
-                      </div>
-                      <div className="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                        <div
-                          className="h-full bg-gradient-to-r from-brand-500 to-teal-400 rounded-full transition-all"
-                          style={{ width: `${art.progress}%` }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="text-center py-12 rounded-3xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800">
-                  <Clock className="w-10 h-10 text-slate-400 mx-auto mb-3" />
-                  <h4 className="font-bold text-sm text-slate-900 dark:text-white">لا يوجد سجل قراءة بعد</h4>
-                  <p className="text-xs text-slate-500 mt-1">المقالات التي تطلع عليها ستظهر هنا لمتابعة تقدمك في القراءة.</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* C. READER CAMPAIGNS & PROMOTIONS */}
-          {readerTab === 'campaigns' && (
-            <div className="space-y-4">
-              <div className="p-6 rounded-3xl bg-gradient-to-r from-cyan-950/60 to-slate-900 border border-cyan-500/30 flex flex-col sm:flex-row items-center justify-between gap-4">
-                <div>
-                  <h4 className="font-extrabold text-base text-white flex items-center gap-2">
-                    <Megaphone className="w-5 h-5 text-cyan-400" />
-                    <span>إعلاناتي وترويجي في المنصة</span>
-                  </h4>
-                  <p className="text-xs text-slate-300 mt-1">
-                    يمكنك كقارئ أو كاتب إنشاء حملات إعلانية مباشرة والترويج لمشروعك أمام مجتمع ليتيريوم.
-                  </p>
-                </div>
-                <button
-                  onClick={onOpenNewCampaign || onOpenWallet}
-                  className="px-5 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white font-extrabold text-xs shadow-md active:scale-95 transition-all flex items-center gap-1.5 shrink-0"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>إنشاء حملة جديدة</span>
-                </button>
-              </div>
-
-              {myCampaigns.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {myCampaigns.map((camp) => (
-                    <div
-                      key={camp.id}
-                      className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-slate-900 dark:text-white line-clamp-1">
-                          {camp.campaignName}
-                        </span>
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                          camp.status === 'active'
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                            : 'bg-slate-500/20 text-slate-300 border border-slate-500/30'
-                        }`}>
-                          {camp.status === 'active' ? 'نشطة الآن' : 'منتهية'}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-400 line-clamp-2">{camp.description}</p>
-                      <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500">
-                        <span>المشاهدات: {camp.impressionsCount.toLocaleString()}</span>
-                        <span>النقرات: {camp.clicksCount.toLocaleString()}</span>
-                        <span>الميزانية: {(camp.totalBudget ?? 0).toFixed(2)}$</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-10 rounded-3xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 space-y-2">
-                  <Megaphone className="w-10 h-10 text-slate-400 mx-auto" />
-                  <h4 className="font-bold text-sm text-slate-900 dark:text-white">لا توجد حملات إعلانية نشطة حالياً</h4>
-                  <p className="text-xs text-slate-400">ابدأ حملتك الأولى للوصول لآلاف المهتمين بالأدب والتقنية</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* D. FOLLOWING AUTHORS */}
-          {readerTab === 'following' && (
-            <div className="text-center py-12 rounded-3xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800">
-              <Users className="w-10 h-10 text-slate-400 mx-auto mb-3" />
-              <h4 className="font-bold text-sm text-slate-900 dark:text-white">لم تقم بمتابعة أي كُتّاب بعد</h4>
-              <p className="text-xs text-slate-500 mt-1">تصفح المقالات وتابع كُتّابك المفضلين ليصلك جديدهم أولاً بأول.</p>
-            </div>
-          )}
-
-          {/* E. AI QUOTA & WALLET */}
-          {readerTab === 'quota_wallet' && (
-            <div className="space-y-6">
-              {/* AI Quota Card */}
-              <div className="p-6 rounded-3xl bg-gradient-to-br from-brand-900/30 via-slate-900 to-slate-900 border border-brand-500/30 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-10 h-10 rounded-2xl bg-brand-600/20 text-brand-400 flex items-center justify-center">
-                      <Sparkles className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h4 className="font-extrabold text-base text-white">رصيد واستخدامات الذكاء الاصطناعي (Gemini)</h4>
-                      <p className="text-xs text-slate-400">10 استخدامات يومية مجانية تتجدد كل 24 ساعة</p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={onOpenSubscription}
-                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs shadow-md active:scale-95 transition-all flex items-center gap-1.5"
-                  >
-                    <Crown className="w-3.5 h-3.5" />
-                    <span>ترقية إلى VIP غير محدود</span>
-                  </button>
-                </div>
-
-                {/* Progress bar */}
-                <div className="space-y-2 pt-2">
-                  <div className="flex justify-between text-xs font-bold text-slate-300">
-                    <span>الاستخدام اليومي: {quotaStats.usedToday} من {quotaStats.limit || 5}</span>
-                    <span className="text-brand-400">{quotaStats.remaining} متبقية اليوم</span>
-                  </div>
-                  <div className="w-full h-3 rounded-full bg-slate-800 overflow-hidden p-0.5 border border-slate-700">
-                    <div
-                      className="h-full bg-gradient-to-r from-brand-500 via-brand-500 to-teal-400 rounded-full transition-all"
-                      style={{ width: `${Math.min(100, (quotaStats.usedToday / (quotaStats.limit || 5)) * 100)}%` }}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Wallet Summary */}
-              <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-2xl bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center">
-                    <Wallet className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <span className="text-xs text-slate-500">رصيد المحفظة المتاح للشراء والترويج</span>
-                    <h3 className="text-2xl font-black text-slate-900 dark:text-white">
-                      ${(currentUser.walletBalance || 0).toFixed(2)}
-                    </h3>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 w-full sm:w-auto">
-                  <button
-                    onClick={onOpenWallet}
-                    className="flex-1 sm:flex-none px-6 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs shadow-md active:scale-95 transition-all"
-                  >
-                    شحن الرصيد / إدارة المحفظة
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* F. READING PREFERENCES */}
-          {readerTab === 'settings' && (
-            <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4">
-              <h4 className="font-extrabold text-sm text-slate-900 dark:text-white">تفضيلات القراءة والعرض</h4>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
-                  <div className="flex items-center gap-2.5">
-                    {theme === 'dark' ? <Moon className="w-4 h-4 text-brand-400" /> : <Sun className="w-4 h-4 text-amber-500" />}
-                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300">المظهر العام (داكن / فاتح)</span>
-                  </div>
-                  <button
-                    onClick={onToggleTheme}
-                    className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-xs font-bold"
-                  >
-                    {theme === 'dark' ? 'الوضع الليلي 🌙' : 'الوضع النهاري ☀️'}
-                  </button>
-                </div>
-
-                {/* ⚠️ خيار اللغة مُخفى مؤقتاً — الترجمة غير مكتملة في الواجهة */}
-              </div>
-
-              {onSaveSocialLinks && (
-                <div className="-mx-6 -mb-6 mt-2">
-                  <SocialLinksEditor currentUser={currentUser} onSave={onSaveSocialLinks} />
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* 3. ADVERTISER SPECIFIC VIEW */}
-      {/* ========================================================================= */}
-      {currentUser.role === 'advertiser' && (
-        <div className="space-y-6">
-          {/* Advertiser 4 KPI Statistics Cards */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-            <div className="p-4 sm:p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-              <div className="flex items-center justify-between text-slate-400 mb-2">
-                <span className="text-xs font-bold">الحملات النشطة</span>
-                <Megaphone className="w-4 h-4 text-cyan-500" />
-              </div>
-              <h3 className="text-2xl font-black text-slate-900 dark:text-white">
-                {myCampaigns.length}
-              </h3>
-              <p className="text-[11px] text-cyan-600 font-bold mt-1">تصل للقراء الآن</p>
-            </div>
-
-            <div className="p-4 sm:p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-              <div className="flex items-center justify-between text-slate-400 mb-2">
-                <span className="text-xs font-bold">مرات الظهور (Impressions)</span>
-                <Eye className="w-4 h-4 text-brand-500" />
-              </div>
-              <h3 className="text-2xl font-black text-slate-900 dark:text-white">
-                {totalImpressions.toLocaleString()}
-              </h3>
-              <p className="text-[11px] text-brand-600 font-bold mt-1">ظهور مؤكد في المقالات</p>
-            </div>
-
-            <div className="p-4 sm:p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-              <div className="flex items-center justify-between text-slate-400 mb-2">
-                <span className="text-xs font-bold">إجمالي النقرات (Clicks)</span>
-                <MousePointerClick className="w-4 h-4 text-teal-500" />
-              </div>
-              <h3 className="text-2xl font-black text-slate-900 dark:text-white">
-                {totalClicks.toLocaleString()}
-              </h3>
-              <p className="text-[11px] text-teal-600 font-bold mt-1">معدل التحويل (CTR): {avgCtr}%</p>
-            </div>
-
-            <div className="p-4 sm:p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-              <div className="flex items-center justify-between text-slate-400 mb-2">
-                <span className="text-xs font-bold">رصيد الإعلانات المتاح</span>
-                <DollarSign className="w-4 h-4 text-amber-500" />
-              </div>
-              <h3 className="text-2xl font-black text-slate-900 dark:text-white">
-                ${(currentUser.walletBalance || 0).toFixed(2)}
-              </h3>
-              <p className="text-[11px] text-amber-600 font-bold mt-1">جاهز لتمويل الحملات</p>
-            </div>
-          </div>
-
-          {/* Advertiser Tabs */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none border-b border-slate-200 dark:border-slate-800">
-            <button
-              onClick={() => setAdvertiserTab('campaigns')}
-              className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
-                advertiserTab === 'campaigns'
-                  ? 'border-cyan-600 text-cyan-600 dark:text-cyan-400'
-                  : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <Megaphone className="w-4 h-4" />
-              <span>الحملات الإعلانية الحالية ({myCampaigns.length})</span>
-            </button>
-
-            <button
-              onClick={() => setAdvertiserTab('create_ad')}
-              className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
-                advertiserTab === 'create_ad'
-                  ? 'border-cyan-600 text-cyan-600 dark:text-cyan-400'
-                  : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <Plus className="w-4 h-4" />
-              <span>إنشاء حملة إعلانية جديدة</span>
-            </button>
-
-            <button
-              onClick={() => setAdvertiserTab('billing')}
-              className={`pb-3 px-3 text-xs sm:text-sm font-extrabold flex items-center gap-2 border-b-2 transition-all whitespace-nowrap ${
-                advertiserTab === 'billing'
-                  ? 'border-cyan-600 text-cyan-600 dark:text-cyan-400'
-                  : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <Wallet className="w-4 h-4" />
-              <span>الرصيد وطرق الدفع والشحن</span>
-            </button>
-          </div>
-
-          {/* Advertiser Tab 1: Current Campaigns */}
-          {advertiserTab === 'campaigns' && (
-            <div className="space-y-3">
-              {myCampaigns.length === 0 && (
-                <div className="p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center space-y-3">
-                  <Megaphone className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto" />
-                  <p className="text-sm font-bold text-slate-600 dark:text-slate-300">لا توجد حملات إعلانية بعد</p>
-                  <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                    أنشئ حملتك الأولى ليظهر إعلانك للقرّاء وتظهر إحصائياتها الحقيقية هنا فور اعتمادها.
-                  </p>
-                  {(onOpenNewCampaign || onOpenWallet) && (
-                    <button
-                      onClick={onOpenNewCampaign || onOpenWallet}
-                      className="px-5 py-2.5 rounded-2xl bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs shadow-md"
-                    >
-                      إنشاء حملة إعلانية جديدة
-                    </button>
-                  )}
-                </div>
-              )}
-              {myCampaigns.map((camp) => (
-                <div
-                  key={camp.id}
-                  className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-col md:flex-row items-center justify-between gap-4"
-                >
-                  <div className="flex items-center gap-4 w-full md:w-auto">
-                    <img
-                      src={camp.imageUrl}
-                      alt={camp.campaignName}
-                      referrerPolicy="no-referrer"
-                      className="w-24 h-16 rounded-2xl object-cover shrink-0"
-                    />
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                          {camp.status === 'active' ? 'نشطة' : camp.status === 'pending' ? 'قيد المراجعة' : camp.status === 'paused' ? 'موقوفة مؤقتاً' : camp.status === 'rejected' ? 'مرفوضة' : 'منتهية'}
-                          {camp.durationHours ? ` • ${camp.durationHours} ساعة` : ''}
-                        </span>
-                        <span className="text-xs text-slate-400 font-mono">الميزانية: ${camp.totalBudget?.toFixed(2) ?? '0.00'}</span>
-                      </div>
-                      <h4 className="font-bold text-sm text-slate-900 dark:text-white">{camp.campaignName}</h4>
-                      <p className="text-xs text-cyan-600 dark:text-cyan-400 truncate max-w-[220px]">{camp.destinationUrl}</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-6 w-full md:w-auto justify-between md:justify-end border-t md:border-t-0 pt-3 md:pt-0 border-slate-100 dark:border-slate-800">
-                    <div className="text-center">
-                      <span className="text-[11px] text-slate-400 block">الظهور</span>
-                      <span className="font-extrabold text-xs text-slate-900 dark:text-white">
-                        {camp.impressionsCount.toLocaleString()}
-                      </span>
-                    </div>
-                    <div className="text-center">
-                      <span className="text-[11px] text-slate-400 block">النقرات</span>
-                      <span className="font-extrabold text-xs text-teal-600 dark:text-teal-400">
-                        {camp.clicksCount.toLocaleString()}
-                      </span>
-                    </div>
-                    <div className="text-center">
-                      <span className="text-[11px] text-slate-400 block">معدل النقر CTR</span>
-                      <span className="font-extrabold text-xs text-cyan-600 dark:text-cyan-400">
-                        {((camp.clicksCount / (camp.impressionsCount || 1)) * 100).toFixed(2)}%
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Advertiser Tab 2: Create Ad — يفتح نموذج إنشاء الحملة الحقيقي
-              (NewCampaignModal) بدل حقول غير مربوطة بأي حالة كانت لا تُنشئ
-              شيئاً فعلياً، وزر يفتح المحفظة متجاهلاً كل ما كُتب فيها. */}
-          {advertiserTab === 'create_ad' && (
-            <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4 text-center">
-              <Megaphone className="w-10 h-10 text-cyan-500 mx-auto" />
-              <h4 className="font-black text-base text-slate-900 dark:text-white">إطلاق حملة إعلانية مخصصة</h4>
-              <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                اختر نوع الحملة والجمهور المستهدف وميزانيتك من نافذة إنشاء الحملة، وستظهر هنا فور اعتمادها.
-              </p>
-              {(onOpenNewCampaign || onOpenWallet) && (
-                <button
-                  onClick={onOpenNewCampaign || onOpenWallet}
-                  className="px-6 py-3 rounded-2xl bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs shadow-md transition-all"
-                >
-                  فتح نموذج إنشاء الحملة
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* Advertiser Tab 3: Billing */}
-          {advertiserTab === 'billing' && (
-            <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4">
-              <h4 className="font-extrabold text-sm text-slate-900 dark:text-white">طرق الدفع وشحن الحساب المعلن</h4>
-              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-center justify-between">
-                <div>
-                  <span className="text-xs text-slate-500">الرصيد المالي المتاح للحملات</span>
-                  <h3 className="text-xl font-black text-slate-900 dark:text-white">
-                    ${(currentUser.walletBalance ?? 0).toFixed(2)}
-                  </h3>
-                </div>
-                <button
-                  onClick={onOpenWallet}
-                  className="px-5 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs"
-                >
-                  إيداع رصيد جديد
-                </button>
-              </div>
             </div>
           )}
         </div>

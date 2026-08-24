@@ -1,8 +1,9 @@
 import React from 'react';
 import { MessageSquare } from 'lucide-react';
-import { Tweet, TweetComment, User } from '../types';
+import { Tweet, TweetComment, User, AdCampaign } from '../types';
 import { TweetComposer } from './TweetComposer';
 import { TweetCard } from './TweetCard';
+import { AdSlot } from './AdSlot';
 
 interface TweetFeedProps {
   currentUser: User;
@@ -10,6 +11,7 @@ interface TweetFeedProps {
   comments: TweetComment[];
   likedTweetIds: string[];
   favoritedTweetIds: string[];
+  campaigns?: AdCampaign[];
   onPostTweet: (content: string) => void | Promise<void>;
   onToggleLike: (tweetId: string) => void;
   onToggleFavorite: (tweetId: string) => void;
@@ -21,12 +23,17 @@ interface TweetFeedProps {
   onSelectAuthor?: (userId: string) => void;
 }
 
+// كل كم تغريدة يُدرج إعلان منصة واحد — تباعد كافٍ حتى لا يُشعر القارئ
+// بازدحام إعلاني أثناء التصفح السريع المعتاد لمحتوى قصير.
+const TWEETS_PER_AD = 6;
+
 export const TweetFeed: React.FC<TweetFeedProps> = ({
   currentUser,
   tweets,
   comments,
   likedTweetIds,
   favoritedTweetIds,
+  campaigns = [],
   onPostTweet,
   onToggleLike,
   onToggleFavorite,
@@ -49,23 +56,27 @@ export const TweetFeed: React.FC<TweetFeedProps> = ({
           <p className="text-sm text-slate-400">لا توجد تغريدات بعد — كن أول من يشارك خاطرة قصيرة.</p>
         </div>
       ) : (
-        tweets.map((tweet) => (
-          <TweetCard
-            key={tweet.id}
-            tweet={tweet}
-            currentUser={currentUser}
-            isLiked={likedTweetIds.includes(tweet.id)}
-            isFavorited={favoritedTweetIds.includes(tweet.id)}
-            comments={comments.filter((c) => c.tweetId === tweet.id)}
-            onToggleLike={onToggleLike}
-            onToggleFavorite={onToggleFavorite}
-            onShare={onShare}
-            onDelete={onDeleteTweet}
-            onAddComment={onAddComment}
-            onLikeComment={onLikeComment}
-            onReplyToComment={onReplyToComment}
-            onSelectAuthor={onSelectAuthor}
-          />
+        tweets.map((tweet, idx) => (
+          <React.Fragment key={tweet.id}>
+            {idx > 0 && idx % TWEETS_PER_AD === 0 && (
+              <AdSlot slotId="tweet_feed" campaigns={campaigns} viewerId={currentUser.id !== 'guest' ? currentUser.id : null} />
+            )}
+            <TweetCard
+              tweet={tweet}
+              currentUser={currentUser}
+              isLiked={likedTweetIds.includes(tweet.id)}
+              isFavorited={favoritedTweetIds.includes(tweet.id)}
+              comments={comments.filter((c) => c.tweetId === tweet.id)}
+              onToggleLike={onToggleLike}
+              onToggleFavorite={onToggleFavorite}
+              onShare={onShare}
+              onDelete={onDeleteTweet}
+              onAddComment={onAddComment}
+              onLikeComment={onLikeComment}
+              onReplyToComment={onReplyToComment}
+              onSelectAuthor={onSelectAuthor}
+            />
+          </React.Fragment>
         ))
       )}
     </div>
