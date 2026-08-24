@@ -23,7 +23,7 @@ interface AdminAdsTabProps {
   platformAdsEnabled?: boolean;
   onTogglePlatformAds?: (enabled: boolean) => void;
   externalAdsConfig?: ExternalAdsConfig;
-  onSaveExternalAdsConfig?: (config: ExternalAdsConfig) => void;
+  onSaveExternalAdsConfig?: (config: ExternalAdsConfig) => void | Promise<void>;
   onUpdateCampaignStatus?: (campaignId: string, status: AdCampaign['status']) => void;
   onUpdatePromotionStatus?: (promotionId: string, status: 'approved' | 'rejected') => void;
   initialSubTab?: 'ad_campaigns' | 'promotions' | 'external_networks';
@@ -47,6 +47,35 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
 
   const [campaignFilter, setCampaignFilter] = useState<'all' | 'active' | 'pending' | 'paused' | 'rejected'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // ⚠️ حقول "الشبكات الخارجية" أدناه كانت وهمية بالكامل: بلا onChange وبلا
+  // زر حفظ إطلاقاً، وتقرأ propellerAds.zoneId / adsterra.tagId رغم أن
+  // الشكل الحقيقي المحفوظ فعلياً في Firestore (externalAdsStore.ts) هو
+  // {enabled, snippet} — فكانت الكتابة فيها لا تُخزَّن ولا تُقرأ من أي
+  // مكان، ويظهر الحقل فارغاً دائماً حتى بعد أي "حفظ" وهمي. الآن حالة
+  // محلية حقيقية + زر حفظ فعلي يستدعي onSaveExternalAdsConfig.
+  const [propellerEnabled, setPropellerEnabled] = useState(externalAdsConfig?.propellerAds?.enabled ?? false);
+  const [propellerSnippet, setPropellerSnippet] = useState(externalAdsConfig?.propellerAds?.snippet ?? '');
+  const [adsterraEnabled, setAdsterraEnabled] = useState(externalAdsConfig?.adsterra?.enabled ?? false);
+  const [adsterraSnippet, setAdsterraSnippet] = useState(externalAdsConfig?.adsterra?.snippet ?? '');
+  const [isSavingExternalAds, setIsSavingExternalAds] = useState(false);
+  const [externalAdsSavedMsg, setExternalAdsSavedMsg] = useState('');
+
+  const handleSaveExternalNetworks = async () => {
+    if (!onSaveExternalAdsConfig) return;
+    setIsSavingExternalAds(true);
+    setExternalAdsSavedMsg('');
+    try {
+      await onSaveExternalAdsConfig({
+        propellerAds: { enabled: propellerEnabled, snippet: propellerSnippet.trim() },
+        adsterra: { enabled: adsterraEnabled, snippet: adsterraSnippet.trim() }
+      });
+      setExternalAdsSavedMsg('تم الحفظ بنجاح ✓');
+      setTimeout(() => setExternalAdsSavedMsg(''), 3000);
+    } finally {
+      setIsSavingExternalAds(false);
+    }
+  };
 
   // Filtered campaigns
   const filteredCampaigns = campaigns.filter((camp) => {
@@ -395,29 +424,69 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
               ربط شبكات الإعلانات الخارجية البديلة (Fallback Ad Networks)
             </h4>
             <p className="text-xs text-slate-400 leading-relaxed">
-              إذا لم تكن هناك حملات محلية نشطة للمعلنين، يمكن ملء المساحات الشاغرة تلقائياً عبر شبكات خارجية مثل PropellerAds أو Adsterra أو Google AdSense لتعظيم الدخل السلبي.
+              إذا لم تكن هناك حملات محلية نشطة للمعلنين، يمكن ملء المساحات الشاغرة تلقائياً عبر شبكات خارجية مثل PropellerAds (يشمل Monetag) أو Adsterra لتعظيم الدخل السلبي. الصق كود الإعلان الكامل (وسم &lt;script&gt; كاملاً) كما هو من لوحة الشبكة، ثم فعّل المفتاح.
             </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
-                <div className="font-bold text-xs text-white">PropellerAds Zone ID</div>
-                <input
-                  type="text"
-                  placeholder="مثال: 7291048"
-                  defaultValue={externalAdsConfig?.propellerAds?.zoneId || ''}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-blue-500"
+              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="font-bold text-xs text-white">PropellerAds (ويشمل Monetag)</div>
+                  <button
+                    type="button"
+                    onClick={() => setPropellerEnabled((v) => !v)}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${
+                      propellerEnabled ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400'
+                    }`}
+                  >
+                    {propellerEnabled ? 'مفعّلة ✓' : 'معطّلة'}
+                  </button>
+                </div>
+                <textarea
+                  rows={4}
+                  placeholder="الصق كود <script> الكامل من PropellerAds/Monetag هنا"
+                  value={propellerSnippet}
+                  onChange={(e) => setPropellerSnippet(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-[11px] text-white font-mono focus:outline-none focus:border-blue-500 resize-y"
+                  dir="ltr"
                 />
               </div>
 
-              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
-                <div className="font-bold text-xs text-white">Adsterra Key / Tag ID</div>
-                <input
-                  type="text"
-                  placeholder="مثال: 4a2b9f..."
-                  defaultValue={externalAdsConfig?.adsterra?.tagId || ''}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-blue-500"
+              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="font-bold text-xs text-white">Adsterra</div>
+                  <button
+                    type="button"
+                    onClick={() => setAdsterraEnabled((v) => !v)}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${
+                      adsterraEnabled ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400'
+                    }`}
+                  >
+                    {adsterraEnabled ? 'مفعّلة ✓' : 'معطّلة'}
+                  </button>
+                </div>
+                <textarea
+                  rows={4}
+                  placeholder="الصق كود <script> الكامل من Adsterra هنا"
+                  value={adsterraSnippet}
+                  onChange={(e) => setAdsterraSnippet(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-[11px] text-white font-mono focus:outline-none focus:border-blue-500 resize-y"
+                  dir="ltr"
                 />
               </div>
+            </div>
+
+            <div className="flex items-center gap-3 pt-1">
+              <button
+                type="button"
+                onClick={handleSaveExternalNetworks}
+                disabled={isSavingExternalAds || !onSaveExternalAdsConfig}
+                className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold transition-all shadow-lg shadow-blue-600/20"
+              >
+                {isSavingExternalAds ? 'جارٍ الحفظ...' : 'حفظ إعدادات الشبكات الخارجية'}
+              </button>
+              {externalAdsSavedMsg && (
+                <span className="text-xs font-bold text-emerald-400">{externalAdsSavedMsg}</span>
+              )}
             </div>
           </div>
         </div>

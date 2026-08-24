@@ -196,7 +196,7 @@ interface UserProfileViewProps {
   platformAdsEnabled?: boolean;
   onTogglePlatformAds?: (enabled: boolean) => void;
   externalAdsConfig?: ExternalAdsConfig;
-  onSaveExternalAdsConfig?: (config: ExternalAdsConfig) => void;
+  onSaveExternalAdsConfig?: (config: ExternalAdsConfig) => void | Promise<void>;
   followersCountByUserId?: Record<string, number>;
   onBroadcastMessage?: (text: string) => Promise<{ sent: number; failed: number }>;
   // نفس نمط initialWriterTab/onWriterTabChange أعلاه، لكن لأقسام الإدارة —
