@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Settings,
   Sparkles,
@@ -7,11 +7,13 @@ import {
   BadgePercent,
   CheckCircle2,
   DollarSign,
-  Info
+  Info,
+  AlertOctagon
 } from 'lucide-react';
 import { THEME_PRESETS, ThemePresetKey, DEFAULT_THEME_PRESET } from '../../constants/themePresets';
 import { BACKGROUND_PRESETS, BackgroundPresetKey, DEFAULT_BACKGROUND_PRESET } from '../../constants/backgroundPresets';
 import { REVENUE_SHARES } from '../../constants/revenueShares';
+import { resetAllTestFinancialData } from '../../services/adminDangerZoneApi';
 
 interface AdminSettingsTabProps {
   currentThemePreset?: ThemePresetKey;
@@ -26,6 +28,37 @@ export const AdminSettingsTab: React.FC<AdminSettingsTabProps> = ({
   currentBackgroundPreset = DEFAULT_BACKGROUND_PRESET,
   onChangeBackgroundPreset
 }) => {
+  const [isResettingFinancials, setIsResettingFinancials] = useState(false);
+  const [resetFinancialsResultMsg, setResetFinancialsResultMsg] = useState('');
+  const [resetFinancialsErrorMsg, setResetFinancialsErrorMsg] = useState('');
+
+  const handleResetTestFinancialData = async () => {
+    const confirmed = window.confirm(
+      'سيتم تصفير رصيد كل حساب (المحفظة والأرباح المتاحة والمجمَّدة) إلى صفر، وتصفير إنفاق كل حملة إعلانية ومبيعات كل مقال حصري، وحذف كل سجلات الإيداعات والسحوبات والمشتريات والأرباح وأحداث الإعلانات وبلاغات الاحتيال نهائياً.\n\nلن تُحذف حسابات المستخدمين أو الحملات أو المقالات نفسها — فقط أرقامها المالية. هذا الإجراء لا رجعة فيه إطلاقاً.\n\nاستخدمه فقط إن كنت متأكداً أن كل البيانات الحالية تجريبية ولا يوجد مستخدم حقيقي واحد بعد. هل تريد المتابعة؟'
+    );
+    if (!confirmed) return;
+
+    const typed = window.prompt('للتأكيد النهائي، اكتب بالضبط: تصفير الكل');
+    if (typed?.trim() !== 'تصفير الكل') {
+      if (typed !== null) alert('النص غير مطابق — لم يتم تنفيذ أي شيء.');
+      return;
+    }
+
+    setIsResettingFinancials(true);
+    setResetFinancialsResultMsg('');
+    setResetFinancialsErrorMsg('');
+    try {
+      const result = await resetAllTestFinancialData();
+      setResetFinancialsResultMsg(
+        `تم التصفير: ${result.usersReset} حساب، ${result.campaignsReset} حملة، ${result.articlesReset} مقال. وحُذف: ${result.earningsDeleted} سجل ربح، ${result.articlePurchasesDeleted} عملية شراء مقال، ${result.transactionsDeleted} حركة مالية، ${result.depositRequestsDeleted} طلب إيداع، ${result.payoutRequestsDeleted} طلب سحب، ${result.purchaseRequestsDeleted} طلب شراء، ${result.adEventsDeleted} حدث إعلاني، ${result.fraudFlagsDeleted} بلاغ احتيال.`
+      );
+    } catch (err: any) {
+      setResetFinancialsErrorMsg(err?.message || 'تعذر تنفيذ التصفير.');
+    } finally {
+      setIsResettingFinancials(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header Bar */}
@@ -166,6 +199,39 @@ export const AdminSettingsTab: React.FC<AdminSettingsTabProps> = ({
             فترة التجميد المالية (30 يوماً): لضمان حماية المنصة من النقر الاحتيالي ومطالبات الاسترداد، تظل أرباح الكُتّاب في رصيد "أرباح مجمّدة" لمدة 30 يوماً قبل أن تظهر في تبويب "تحرير الأرباح" وتصبح قابلة للسحب.
           </span>
         </div>
+      </div>
+
+      {/* 4. DANGER ZONE — تصفير كل البيانات المالية التجريبية دفعة واحدة.
+          مخصص للاستخدام مرة واحدة فقط قبل الإطلاق الحقيقي، بعد تأكيد
+          صريح أن كل الحسابات/الحملات/المقالات الحالية بيانات اختبار. */}
+      <div className="p-5 rounded-2xl bg-rose-950/20 border border-rose-500/30 space-y-4">
+        <h4 className="font-bold text-rose-300 text-sm flex items-center gap-2">
+          <AlertOctagon className="w-4 h-4 text-rose-400" />
+          منطقة الخطر — تصفير كل البيانات المالية التجريبية
+        </h4>
+        <p className="text-xs text-rose-200/80 leading-relaxed">
+          يُصفِّر رصيد كل حساب وإنفاق كل حملة ومبيعات كل مقال إلى صفر، ويحذف نهائياً كل سجلات الإيداعات والسحوبات والمشتريات والأرباح وأحداث الإعلانات وبلاغات الاحتيال. لا يحذف الحسابات أو الحملات أو المقالات نفسها. استخدمه فقط قبل الإطلاق الحقيقي وبعد التأكد أن كل البيانات الحالية تجريبية — لا رجعة عنه بعد التنفيذ.
+        </p>
+
+        <button
+          type="button"
+          onClick={handleResetTestFinancialData}
+          disabled={isResettingFinancials}
+          className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white text-xs font-bold transition-all shadow-lg shadow-rose-600/20"
+        >
+          {isResettingFinancials ? 'جارٍ التصفير...' : 'تصفير كل البيانات المالية التجريبية'}
+        </button>
+
+        {resetFinancialsResultMsg && (
+          <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[11px] leading-relaxed">
+            {resetFinancialsResultMsg}
+          </div>
+        )}
+        {resetFinancialsErrorMsg && (
+          <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-[11px]">
+            {resetFinancialsErrorMsg}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1116,6 +1116,126 @@ async function startServer() {
     return totalDeleted;
   }
 
+  /**
+   * تصفير كل البيانات المالية/النشاطية التجريبية دفعة واحدة — للاستخدام
+   * مرة واحدة فقط قبل الإطلاق الحقيقي، بعد تأكيد صريح من المالك أن كل
+   * الحسابات والحملات والمقالات الحالية بيانات اختبار أُنشئت أثناء بناء
+   * المنصة ولا يوجد أي مستخدم حقيقي بعد.
+   *
+   * يُصفِّر (لا يحذف) الحقول المالية على المستندات التي يجب أن تبقى
+   * موجودة (المستخدمون، الحملات، المقالات)، ويحذف بالكامل المجموعات التي
+   * هي سجلات/تاريخ عمليات فقط (لا قيمة لها بعد التصفير، وإبقاؤها يُنشئ
+   * سجلات "شبح" تشير إلى أرصدة لم تعد موجودة).
+   */
+  async function zeroFieldsInBatches(
+    db: FirebaseFirestore.Firestore,
+    collectionRef: FirebaseFirestore.CollectionReference,
+    fields: string[]
+  ): Promise<number> {
+    let totalUpdated = 0;
+    let lastDoc: FirebaseFirestore.QueryDocumentSnapshot | undefined;
+    const zeroPatch: Record<string, number> = {};
+    fields.forEach((f) => {
+      zeroPatch[f] = 0;
+    });
+    while (true) {
+      let q = collectionRef.orderBy('__name__').limit(400) as FirebaseFirestore.Query;
+      if (lastDoc) q = q.startAfter(lastDoc);
+      const snap = await q.get();
+      if (snap.empty) break;
+      const batch = db.batch();
+      snap.docs.forEach((d) => batch.update(d.ref, zeroPatch));
+      await batch.commit();
+      totalUpdated += snap.size;
+      lastDoc = snap.docs[snap.docs.length - 1];
+      if (snap.size < 400) break;
+    }
+    return totalUpdated;
+  }
+
+  app.post('/api/admin/reset-test-financial-data', async (req, res) => {
+    if (!isAdminConfigured()) {
+      return res.status(503).json({ error: 'not_configured', message: 'الخدمة غير مهيأة على الخادم حالياً.' });
+    }
+    try {
+      const { uid } = await verifyRequestAuth(req.headers.authorization);
+      const db = getAdminDb();
+
+      const callerSnap = await db.collection('users').doc(uid).get();
+      const callerData = callerSnap.exists ? callerSnap.data()! : {};
+      const isAdminCaller =
+        callerData.role === 'admin' ||
+        String(callerData.email || '').toLowerCase() === 'brnardtsho@gmail.com';
+      if (!isAdminCaller) {
+        return res.status(403).json({ error: 'forbidden', message: 'هذا الإجراء مخصص لإدارة المنصة فقط.' });
+      }
+
+      // يشترط تأكيداً صريحاً بنص محدد في جسم الطلب — حماية إضافية ضد أي
+      // نداء عرضي لهذا المسار المدمِّر، فوق تأكيد الواجهة نفسها.
+      if (req.body?.confirm !== 'RESET_ALL_TEST_FINANCIAL_DATA') {
+        return res.status(400).json({ error: 'confirmation_required', message: 'يلزم تأكيد صريح لتنفيذ هذا الإجراء.' });
+      }
+
+      const [usersReset, campaignsReset, articlesReset] = await Promise.all([
+        zeroFieldsInBatches(db, db.collection('users'), [
+          'walletBalance',
+          'availableBalance',
+          'pendingEarnings',
+          'lifetimeEarnings',
+          'totalEarnings'
+        ]),
+        zeroFieldsInBatches(db, db.collection('campaigns'), ['totalSpent', 'impressionsCount', 'clicksCount']),
+        zeroFieldsInBatches(db, db.collection('articles'), [
+          'revenueFromAds',
+          'revenueFromSales',
+          'totalRevenue',
+          'purchasesCount'
+        ])
+      ]);
+
+      const [
+        earningsDeleted,
+        articlePurchasesDeleted,
+        transactionsDeleted,
+        depositRequestsDeleted,
+        payoutRequestsDeleted,
+        purchaseRequestsDeleted,
+        adEventsDeleted,
+        fraudFlagsDeleted
+      ] = await Promise.all([
+        deleteAllDocsInBatches(db, db.collection('earnings')),
+        deleteAllDocsInBatches(db, db.collection('articlePurchases')),
+        deleteAllDocsInBatches(db, db.collection('transactions')),
+        deleteAllDocsInBatches(db, db.collection('depositRequests')),
+        deleteAllDocsInBatches(db, db.collection('payoutRequests')),
+        deleteAllDocsInBatches(db, db.collection('purchaseRequests')),
+        deleteAllDocsInBatches(db, db.collection('adEvents')),
+        deleteAllDocsInBatches(db, db.collection('fraudFlags'))
+      ]);
+
+      res.json({
+        success: true,
+        usersReset,
+        campaignsReset,
+        articlesReset,
+        earningsDeleted,
+        articlePurchasesDeleted,
+        transactionsDeleted,
+        depositRequestsDeleted,
+        payoutRequestsDeleted,
+        purchaseRequestsDeleted,
+        adEventsDeleted,
+        fraudFlagsDeleted
+      });
+    } catch (err: any) {
+      if (err?.message === 'missing_auth_token') {
+        return res.status(401).json({ error: 'auth_required', message: 'يتطلب هذا الإجراء تسجيل الدخول أولاً.' });
+      }
+      console.error('Reset test financial data error:', err?.message || err);
+      res.status(500).json({ error: 'reset_failed', message: 'تعذر تصفير البيانات. حاول مجدداً.' });
+    }
+  });
+
   app.post('/api/analytics/reset', async (req, res) => {
     if (!isAdminConfigured()) {
       return res.status(503).json({ error: 'not_configured', message: 'الخدمة غير مهيأة على الخادم حالياً.' });
