@@ -31,6 +31,7 @@ import {
 import { Article, ArticleCategory, User } from '../types';
 import { VideoUrlInput, VideoEmbed } from './VideoEmbed';
 import { MediaUploadInput } from './MediaUploadInput';
+import { VideoPlayer } from './VideoPlayer';
 import { getRemainingAiUses } from '../utils/aiQuota';
 import { REVENUE_SHARES } from '../constants/revenueShares';
 
@@ -622,7 +623,7 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
 
               {/* Video: uploaded file takes priority over an embed link */}
               {uploadedVideoUrl ? (
-                <video src={uploadedVideoUrl} controls playsInline className="w-full rounded-2xl" />
+                <VideoPlayer src={uploadedVideoUrl} className="w-full rounded-2xl" />
               ) : (
                 videoUrl && <VideoEmbed url={videoUrl} />
               )}

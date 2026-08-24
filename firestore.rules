@@ -298,7 +298,8 @@ service cloud.firestore {
     }
 
     match /fraudFlags/{flagId} {
-      allow read: if isSignedIn();
+      // تحتوي IP وهوية الكاتب/الحملة — بيانات حساسة تخص مستخدمين آخرين، تُعرض فقط في لوحة الإدارة.
+      allow read: if isAdmin();
       allow create: if isSignedIn();
       allow update, delete: if isAdmin();
     }
@@ -435,7 +436,16 @@ service cloud.firestore {
         && resource.data.userId == request.auth.uid
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead', 'readAt']);
       allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
-      allow create: if isSignedIn();
+      // يمنع انتحال إشعار مزيف (مثلاً "تم إيداع $$$ في محفظتك") من مستخدم عادي:
+      // إشعارات التفاعل الاجتماعي يجب أن يكون actorId هو نفس منشئ الطلب فعلاً،
+      // وإشعارات المال/النظام لا يُنشئها إلا الأدمن (تُطابق تدفق لوحة الإدارة الفعلي).
+      allow create: if isSignedIn()
+        && request.resource.data.type in ['like', 'comment', 'follow', 'earning', 'withdrawal', 'campaign', 'system', 'share', 'reply']
+        && (
+          (request.resource.data.type in ['like', 'comment', 'follow', 'share', 'reply']
+            && request.resource.data.actorId == request.auth.uid)
+          || (request.resource.data.type in ['earning', 'withdrawal', 'campaign', 'system'] && isAdmin())
+        );
     }
 
     // القالب اللوني العام للتطبيق — قراءة متاحة للجميع (حتى الزوار غير

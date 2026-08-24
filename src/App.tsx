@@ -17,7 +17,8 @@ import {
   ShieldCheck,
   Zap,
   Info,
-  ChevronUp
+  ChevronUp,
+  X
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -400,6 +401,9 @@ export function App() {
   const [activeTab, setActiveTab] = useState<'feed' | 'explore' | 'action' | 'ads' | 'profile' | 'dashboard' | 'messages'>('feed');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  // شريط البحث ينطوي افتراضياً لأيقونة عدسة فقط، ويتمدد للكتابة عند الضغط عليها
+  // بدل إشغال عرض الشاشة بحقل نص فارغ طوال الوقت.
+  const [isSearchExpanded, setIsSearchExpanded] = useState<boolean>(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
   const [showScrollTop, setShowScrollTop] = useState(false);
@@ -1615,7 +1619,9 @@ export function App() {
         (u) =>
           u.id !== 'guest' &&
           (normalizeArabicSearch(u.username || '').includes(q) ||
-            normalizeArabicSearch(u.fullName || '').includes(q))
+            normalizeArabicSearch(u.fullName || '').includes(q) ||
+            normalizeArabicSearch(u.penName || '').includes(q) ||
+            normalizeArabicSearch(u.companyName || '').includes(q))
       )
       .slice(0, 6);
   }, [users, searchQuery]);
@@ -3692,18 +3698,43 @@ export function App() {
               {/* Search Bar — عدسة البحث عنصر منفصل تماماً عن حقل الكتابة،
                   وليست أيقونة عائمة داخل الحقل، حتى يكون شكلها واضحاً كزر بحث حقيقي */}
               <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-                <div className="flex items-stretch flex-1 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xs focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/20 transition-all overflow-hidden">
-                  <div className="w-11 shrink-0 flex items-center justify-center text-slate-400 border-e border-slate-200 dark:border-slate-800">
-                    <Search className="w-4 h-4" />
+                {isSearchExpanded ? (
+                  <div className="flex items-stretch flex-1 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xs focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/20 transition-all overflow-hidden">
+                    <div className="w-11 shrink-0 flex items-center justify-center text-slate-400 border-e border-slate-200 dark:border-slate-800">
+                      <Search className="w-4 h-4" />
+                    </div>
+                    <input
+                      autoFocus
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onBlur={() => {
+                        if (!searchQuery.trim()) setIsSearchExpanded(false);
+                      }}
+                      placeholder="ابحث عن مقال، جملة من محتواه، أو اسم مستخدم..."
+                      className="w-full px-4 py-3 bg-transparent text-xs sm:text-sm outline-hidden text-slate-900 dark:text-white"
+                    />
+                    <button
+                      onClick={() => {
+                        setSearchQuery('');
+                        setIsSearchExpanded(false);
+                      }}
+                      className="w-11 shrink-0 flex items-center justify-center text-slate-400 hover:text-rose-500 transition-colors"
+                      title="إغلاق البحث"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
                   </div>
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="ابحث عن مقال، جملة من محتواه، أو اسم مستخدم..."
-                    className="w-full px-4 py-3 bg-transparent text-xs sm:text-sm outline-hidden text-slate-900 dark:text-white"
-                  />
-                </div>
+                ) : (
+                  <button
+                    onClick={() => setIsSearchExpanded(true)}
+                    className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xs hover:border-brand-400 dark:hover:border-brand-600 transition-all text-slate-400 self-start touch-manipulation active:scale-95"
+                    title="بحث"
+                  >
+                    <Search className="w-4 h-4" />
+                    <span className="text-xs sm:text-sm">بحث...</span>
+                  </button>
+                )}
 
                 <div className="flex items-center gap-2">
                   <button

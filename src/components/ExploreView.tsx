@@ -91,7 +91,9 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
     ? writers.filter(
         (w) =>
           normalizeArabicSearch(w.username || '').includes(normalizedQuery) ||
-          normalizeArabicSearch(w.fullName || '').includes(normalizedQuery)
+          normalizeArabicSearch(w.fullName || '').includes(normalizedQuery) ||
+          normalizeArabicSearch(w.penName || '').includes(normalizedQuery) ||
+          normalizeArabicSearch(w.companyName || '').includes(normalizedQuery)
       )
     : writers;
 

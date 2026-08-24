@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { UploadCloud, Link2, X, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { fetchMediaUploadStatus, uploadAdMedia } from '../services/mediaApi';
+import { VideoPlayer } from './VideoPlayer';
 
 let cachedConfigured: boolean | null = null;
 let inFlight: Promise<boolean> | null = null;
@@ -187,7 +188,7 @@ export const MediaUploadInput: React.FC<MediaUploadInputProps> = (props) => {
               {kind === 'image' ? (
                 <img src={value} alt="" className="w-full max-h-40 object-cover" />
               ) : (
-                <video src={value} controls className="w-full max-h-40" />
+                <VideoPlayer src={value} className="w-full max-h-40" />
               )}
               <button
                 type="button"
