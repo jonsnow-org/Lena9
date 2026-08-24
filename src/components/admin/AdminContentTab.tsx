@@ -187,12 +187,20 @@ export const AdminContentTab: React.FC<AdminContentTabProps> = ({
 
                     <h4 className="font-bold text-sm text-white line-clamp-1">{art.title}</h4>
 
-                    <div className="text-xs text-slate-400 flex items-center gap-3">
+                    <div className="text-xs text-slate-400 flex items-center gap-3 flex-wrap">
                       <span>الكاتب: {author ? author.fullName : art.writerName}</span>
                       <span>•</span>
                       <span>{art.viewsCount || 0} مشاهدة</span>
                       <span>•</span>
                       <span>{art.likesCount || 0} إعجاب</span>
+                      {art.isLocked && (
+                        <>
+                          <span>•</span>
+                          <span className="text-amber-400 font-bold">
+                            {art.purchasesCount || 0} عملية شراء (${(art.revenueFromSales || 0).toFixed(2)})
+                          </span>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>

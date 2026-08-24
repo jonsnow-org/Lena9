@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Megaphone,
   Rocket,
@@ -61,14 +61,59 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
   const [isSavingExternalAds, setIsSavingExternalAds] = useState(false);
   const [externalAdsSavedMsg, setExternalAdsSavedMsg] = useState('');
 
+  // آخر نسخة محفوظة فعلياً — يُقارَن بها الإدخال الحالي لإظهار زر الحفظ
+  // فقط عند وجود تغيير حقيقي لم يُحفَظ بعد، ولإخفائه بعد نجاح الحفظ
+  // (بدل بقائه ظاهراً دائماً بلا فائدة تُذكر للمستخدم عن حالة الحفظ).
+  const [savedExternalAdsSnapshot, setSavedExternalAdsSnapshot] = useState({
+    propellerEnabled,
+    propellerSnippet,
+    adsterraEnabled,
+    adsterraSnippet
+  });
+
+  const isExternalAdsDirty =
+    propellerEnabled !== savedExternalAdsSnapshot.propellerEnabled ||
+    propellerSnippet.trim() !== savedExternalAdsSnapshot.propellerSnippet.trim() ||
+    adsterraEnabled !== savedExternalAdsSnapshot.adsterraEnabled ||
+    adsterraSnippet.trim() !== savedExternalAdsSnapshot.adsterraSnippet.trim();
+
+  // إن وصلت قيمة externalAdsConfig من Firestore بعد أول تحميل لهذا
+  // المكوّن (شائع: الاشتراك اللحظي يبدأ فارغاً ثم يمتلئ بعد جزء من
+  // الثانية)، أو حدَّثها أدمن آخر من جلسة مختلفة، يجب أن تنعكس في الحقول
+  // — لكن فقط ما دام المستخدم لم يبدأ تعديلاً محلياً غير محفوظ بعد،
+  // حتى لا تُفقَد كتابته الحالية.
+  useEffect(() => {
+    if (isExternalAdsDirty) return;
+    const nextSnapshot = {
+      propellerEnabled: externalAdsConfig?.propellerAds?.enabled ?? false,
+      propellerSnippet: externalAdsConfig?.propellerAds?.snippet ?? '',
+      adsterraEnabled: externalAdsConfig?.adsterra?.enabled ?? false,
+      adsterraSnippet: externalAdsConfig?.adsterra?.snippet ?? ''
+    };
+    setPropellerEnabled(nextSnapshot.propellerEnabled);
+    setPropellerSnippet(nextSnapshot.propellerSnippet);
+    setAdsterraEnabled(nextSnapshot.adsterraEnabled);
+    setAdsterraSnippet(nextSnapshot.adsterraSnippet);
+    setSavedExternalAdsSnapshot(nextSnapshot);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalAdsConfig]);
+
   const handleSaveExternalNetworks = async () => {
     if (!onSaveExternalAdsConfig) return;
     setIsSavingExternalAds(true);
     setExternalAdsSavedMsg('');
     try {
+      const trimmedPropeller = propellerSnippet.trim();
+      const trimmedAdsterra = adsterraSnippet.trim();
       await onSaveExternalAdsConfig({
-        propellerAds: { enabled: propellerEnabled, snippet: propellerSnippet.trim() },
-        adsterra: { enabled: adsterraEnabled, snippet: adsterraSnippet.trim() }
+        propellerAds: { enabled: propellerEnabled, snippet: trimmedPropeller },
+        adsterra: { enabled: adsterraEnabled, snippet: trimmedAdsterra }
+      });
+      setSavedExternalAdsSnapshot({
+        propellerEnabled,
+        propellerSnippet: trimmedPropeller,
+        adsterraEnabled,
+        adsterraSnippet: trimmedAdsterra
       });
       setExternalAdsSavedMsg('تم الحفظ بنجاح ✓');
       setTimeout(() => setExternalAdsSavedMsg(''), 3000);
@@ -262,12 +307,16 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
                         {camp.description}
                       </p>
 
-                      <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800/80 grid grid-cols-3 gap-2 text-center text-xs font-mono">
+                      <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800/80 grid grid-cols-4 gap-2 text-center text-xs font-mono">
                         <div>
                           <div className="text-[10px] text-slate-500">الميزانية</div>
                           <div className="font-bold text-white">
                             ${camp.status === 'pending' ? camp.requestedBudget || 0 : camp.totalBudget}
                           </div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] text-slate-500">المُنفَق</div>
+                          <div className="font-bold text-amber-400">${(camp.totalSpent || 0).toFixed(2)}</div>
                         </div>
                         <div>
                           <div className="text-[10px] text-slate-500">الظهور</div>
@@ -475,15 +524,17 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center gap-3 pt-1">
-              <button
-                type="button"
-                onClick={handleSaveExternalNetworks}
-                disabled={isSavingExternalAds || !onSaveExternalAdsConfig}
-                className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold transition-all shadow-lg shadow-blue-600/20"
-              >
-                {isSavingExternalAds ? 'جارٍ الحفظ...' : 'حفظ إعدادات الشبكات الخارجية'}
-              </button>
+            <div className="flex items-center gap-3 pt-1 min-h-[38px]">
+              {(isExternalAdsDirty || isSavingExternalAds) && (
+                <button
+                  type="button"
+                  onClick={handleSaveExternalNetworks}
+                  disabled={isSavingExternalAds || !onSaveExternalAdsConfig}
+                  className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold transition-all shadow-lg shadow-blue-600/20"
+                >
+                  {isSavingExternalAds ? 'جارٍ الحفظ...' : 'حفظ إعدادات الشبكات الخارجية'}
+                </button>
+              )}
               {externalAdsSavedMsg && (
                 <span className="text-xs font-bold text-emerald-400">{externalAdsSavedMsg}</span>
               )}
