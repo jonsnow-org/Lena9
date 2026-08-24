@@ -1103,8 +1103,10 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                     myPublishedArticles.map((art, artIdx) => (
                       <React.Fragment key={art.id}>
                       {/* موضع reader_profile — داخل قائمة المقالات نفسها كل 6
-                          مقالات، وليس شريطاً ثابتاً أعلى الصفحة كما كان سابقاً. */}
-                      {artIdx > 0 && artIdx % 6 === 0 && (
+                          مقالات، وليس شريطاً ثابتاً أعلى الصفحة كما كان سابقاً.
+                          مستبعد تماماً لملف مالك المنصة (أدمن) — لا يظهر أي
+                          إعلان في ملفه الشخصي إطلاقاً بقرار صريح. */}
+                      {artIdx > 0 && artIdx % 6 === 0 && currentUser.role !== 'admin' && (
                         <AdSlot slotId="reader_profile" campaigns={safeCampaigns} viewerId={currentUser.id} adFree={false} />
                       )}
                       <div

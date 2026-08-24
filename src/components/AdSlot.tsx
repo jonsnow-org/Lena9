@@ -40,24 +40,40 @@ interface SlotConfig {
   writerShare: number;
   /** موضع مخصص لراعي القسم حصراً */
   sponsorOnly?: boolean;
+  /**
+   * true = يُعرض المعلن الداخلي أولاً (والشبكة الخارجية احتياط فقط عند
+   * غياب معلن داخلي مناسب) — هذا محصور عمداً بموضعين اثنين فقط حسب
+   * الخطة الأصلية: بانر الصفحة الرئيسية العلوي، وموضع الملف الشخصي.
+   * بقية مواضع المنصة العامة false (أو محذوفة) عمداً: الشبكة الخارجية
+   * أولاً، والداخلي يملأ الفراغ فقط إن لم توجد شبكة خارجية مفعَّلة — حتى
+   * لا يبقى أي موضع فارغاً أبداً. لا قيمة لهذا الحقل في مواضع الكاتب
+   * (beneficiary: 'writer') لأن الشبكات الخارجية مستبعدة منها أصلاً
+   * (انظر externalCandidate أدناه) فتبقى داخلية دائماً بغض النظر عنه.
+   */
+  internalPriority?: boolean;
 }
 
 export const SLOT_CONFIG: Record<AdSlotId, SlotConfig> = {
-  home_hero: { beneficiary: 'platform', writerShare: 0 },
+  // الموضع الوحيد على الصفحة الرئيسية بأولوية للمعلن الداخلي — البانر
+  // العلوي فقط، حسب الخطة الأصلية.
+  home_hero: { beneficiary: 'platform', writerShare: 0, internalPriority: true },
   home_feed_1: { beneficiary: 'platform', writerShare: 0 },
   home_feed_2: { beneficiary: 'platform', writerShare: 0 },
   category_banner: { beneficiary: 'platform', writerShare: 0, sponsorOnly: true },
   category_feed: { beneficiary: 'platform', writerShare: 0 },
-  article_top: { beneficiary: 'writer', writerShare: 0.55 },
-  article_mid: { beneficiary: 'writer', writerShare: 0.55 },
-  article_bottom: { beneficiary: 'writer', writerShare: 0.55 },
-  writer_profile_top: { beneficiary: 'writer', writerShare: 0.5 },
-  writer_profile_feed: { beneficiary: 'writer', writerShare: 0.5 },
-  reader_profile: { beneficiary: 'platform', writerShare: 0 },
+  article_top: { beneficiary: 'writer', writerShare: 0.55, internalPriority: true },
+  article_mid: { beneficiary: 'writer', writerShare: 0.55, internalPriority: true },
+  article_bottom: { beneficiary: 'writer', writerShare: 0.55, internalPriority: true },
+  writer_profile_top: { beneficiary: 'writer', writerShare: 0.5, internalPriority: true },
+  writer_profile_feed: { beneficiary: 'writer', writerShare: 0.5, internalPriority: true },
+  // موضع الملف الشخصي المخصَّص بأولوية للمعلن الداخلي — ملفّك الشخصي
+  // أنت تحديداً (وليس ملفات مستخدمين آخرين، تلك مواضع writer_profile_*
+  // أعلاه وهي "بقية المواضع" ذات أولوية الشبكة الخارجية).
+  reader_profile: { beneficiary: 'platform', writerShare: 0, internalPriority: true },
   // قسم التعليقات مرتبط مباشرة بمقال الكاتب ونقاشه، فحصته من العائد
   // تطابق بقية مواضع داخل المقال (55% كاتب / 45% منصة) بدل تركه بلا أي
   // استفادة كما كان الحال (لم تكن مساحة التعليقات مستثمرة إعلانياً إطلاقاً).
-  comments_feed: { beneficiary: 'writer', writerShare: 0.55 },
+  comments_feed: { beneficiary: 'writer', writerShare: 0.55, internalPriority: true },
   // قسم التغريد الجديد — إعلان منصة عادي مدمج في القائمة (نفس تنسيق بطاقة
   // مستقلة واضحة العنوان "إعلان"، وليس نافذة منبثقة أو محتوى مموّه) حتى
   // لا يُفسد تجربة التصفح السريع للتغريدات القصيرة.
@@ -130,15 +146,10 @@ export const AdSlot: React.FC<AdSlotProps> = ({
   }, [config.beneficiary]);
 
   /**
-   * اختيار الإعلان بالأولوية:
-   * 1. راعي القسم (لموضع category_banner فقط، ولا يشاركه أحد)
-   * 2. حملة معلن داخلية نشطة مناسبة للموضع
-   * 3. شبكة إعلانية خارجية احتياطية (PropellerAds/Adsterra) إن فُعِّلت
-   *    من لوحة الإدارة — مواضع المنصة فقط، انظر externalNetwork أدناه
-   * 4. AdSense (المكان محجوز، غير مفعّل بعد)
-   * 5. لا شيء — لا تُعرض مساحة فارغة إطلاقاً
+   * مرشَّح المعلن الداخلي (بمعزل عن الأولوية) — حملة معلن داخلية نشطة
+   * مناسبة للموضع، أو حملة راعي القسم لموضع category_banner تحديداً.
    */
-  const selectedCampaign = useMemo(() => {
+  const internalCandidate = useMemo(() => {
     if (config.beneficiary === 'platform' && !platformAdsEnabled) return null;
     const active = campaigns.filter((c) => c.status === 'active');
     if (active.length === 0) return null;
@@ -162,13 +173,37 @@ export const AdSlot: React.FC<AdSlotProps> = ({
     return eligible[slotIndex % eligible.length] || null;
   }, [campaigns, config.sponsorOnly, config.beneficiary, platformAdsEnabled, category, slotIndex]);
 
-  // الطبقة الاحتياطية الرابعة: تُستخدَم فقط عندما لا توجد حملة داخلية
-  // مناسبة (selectedCampaign فارغ) وفي مواضع المنصة المفعَّلة حصراً.
-  const externalNetwork: ExternalAdNetworkConfig | null = useMemo(() => {
-    if (selectedCampaign) return null;
+  /**
+   * مرشَّح الشبكة الخارجية (بمعزل عن الأولوية) — مواضع المنصة العامة فقط
+   * (beneficiary: 'platform'). مستبعدة عمداً من مواضع الكاتب لأن عائد
+   * هذه الشبكات غير موزَّع للكاتب في هذا الإصدار — لو عُرضت هناك بدل
+   * معلن داخلي حقيقي لخسر الكاتب حصته من العائد دون أي تعويض.
+   */
+  const externalCandidate: ExternalAdNetworkConfig | null = useMemo(() => {
     if (config.beneficiary !== 'platform' || !platformAdsEnabled) return null;
     return pickActiveExternalNetwork(externalAdsConfig);
-  }, [selectedCampaign, config.beneficiary, platformAdsEnabled, externalAdsConfig]);
+  }, [config.beneficiary, platformAdsEnabled, externalAdsConfig]);
+
+  /**
+   * أولوية العرض النهائية:
+   * - مواضع internalPriority=true (الرئيسية العلوي + الملف الشخصي +
+   *   راعي القسم + كل مواضع الكاتب): معلن داخلي أولاً، والشبكة الخارجية
+   *   احتياط فقط عند غيابه.
+   * - بقية مواضع المنصة العامة: الشبكة الخارجية أولاً (إن فُعِّلت)، والمعلن
+   *   الداخلي يملأ الفراغ فقط عند غياب شبكة خارجية مفعَّلة — حتى لا يبقى
+   *   أي موضع فارغاً أبداً.
+   */
+  const internalPriority = config.sponsorOnly || (config.internalPriority ?? false);
+  const selectedCampaign = internalPriority
+    ? internalCandidate
+    : externalCandidate
+    ? null
+    : internalCandidate;
+  const externalNetwork: ExternalAdNetworkConfig | null = internalPriority
+    ? internalCandidate
+      ? null
+      : externalCandidate
+    : externalCandidate;
 
   // تسجيل الظهور فقط بعد بقاء 50% من الإعلان مرئياً لمدة ثانية متواصلة
   // (Viewability) — وليس عند مجرد دخوله الشاشة للحظة عابرة أثناء التمرير
