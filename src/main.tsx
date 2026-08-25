@@ -10,9 +10,11 @@ import {applyStoredThemePresetImmediately} from './utils/themeEngine';
 applyStoredThemePresetImmediately();
 
 // تسجيل Service Worker للأصول الثابتة فقط (انظر شرح public/sw.js) — بعد
-// اكتمال تحميل الصفحة حتى لا يزاحم أول رسم، وفي وضع الإنتاج فقط تفادياً
-// لتضارب أي تخزين مؤقت مع إعادة التحميل الفوري (HMR) أثناء التطوير المحلي.
-if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+// اكتمال تحميل الصفحة حتى لا يزاحم أول رسم. لا يُقيَّد بفحص "وضع
+// الإنتاج" (كان يعتمد على import.meta.env.PROD الذي لم يُتأكَّد من
+// ضبطه بنفس الطريقة المتوقَّعة على كل بيئات النشر) — تسجيله في أي بيئة
+// غير ضار: أسوأ حالة أنه يخزّن أصولاً ثابتة محلياً حتى أثناء التطوير.
+if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').catch(() => {});
   });
