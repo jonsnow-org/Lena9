@@ -30,6 +30,7 @@ import {
   isNowPaymentsConfigured,
   isNowPaymentsIpnConfigured,
   createNowPaymentsInvoice,
+  createNowPaymentsDirectPayment,
   verifyNowPaymentsIpnSignature
 } from './server/nowPayments';
 import { isEligibleForMonetization } from './src/utils/creatorEligibility';
@@ -244,11 +245,17 @@ async function startServer() {
 
         const status = payload.payment_status as string;
         const finished = status === 'finished' || status === 'confirmed';
+        // partially_paid: وصل مبلغ أقل من المطلوب (مثلاً رسوم اقتطعها وسيط
+        // دفع خارجي عند الدفع بالبطاقة) — نعتبرها حالة نهائية (NOWPayments
+        // لا يسمح "إكمال" نفس الدفعة لاحقاً) ونعتمد المبلغ الفعلي الواصل
+        // (actually_paid) فقط، لا المبلغ المطلوب أصلاً، تفادياً لأي اعتماد
+        // زائد عن الحقيقة.
+        const partiallyPaid = status === 'partially_paid';
 
-        if (finished) {
+        if (finished || partiallyPaid) {
           const orderId = String(payload.order_id || '');
           const uid = orderId.split('_')[0];
-          const amount = Number(payload.price_amount);
+          const amount = finished ? Number(payload.price_amount) : Number(payload.actually_paid);
 
           if (uid && Number.isFinite(amount) && amount > 0) {
             const db = getAdminDb();
@@ -1470,6 +1477,37 @@ async function startServer() {
       const status = err?.message === 'missing_auth_token' ? 401 : 500;
       console.error('nowpayments/create-invoice error:', err?.message || err);
       res.status(status).json({ error: 'nowpayments_invoice_failed', message: err?.message || 'تعذر بدء عملية الدفع بالعملة الرقمية.' });
+    }
+  });
+
+  // عنوان استلام USDT-TRC20 مباشر (Payment API) — يُعرض للمستخدم مع زر نسخ
+  // ليدفع عبر وسيط بطاقة↔كريبتو خارجي (بما إن التعبئة التلقائية عبر رابط
+  // جاهز غير موثوقة). يستخدم نفس بنية IPN الموقّعة أعلاه، ونفس منطق
+  // الاعتماد بالـ webhook (partially_paid/finished عبر actually_paid).
+  app.post('/api/payments/nowpayments/create-direct-payment', async (req, res) => {
+    if (!isNowPaymentsConfigured() || !isNowPaymentsIpnConfigured() || !isAdminConfigured()) {
+      return res.status(503).json({
+        error: 'nowpayments_not_configured',
+        message: 'الدفع الفوري بالعملات الرقمية غير مفعّل على هذا الخادم بعد.'
+      });
+    }
+    try {
+      const { uid } = await verifyRequestAuth(req.headers.authorization);
+      const amount = Number(req.body?.amount);
+      if (!Number.isFinite(amount) || amount < 1 || amount > 50000) {
+        return res.status(400).json({ error: 'invalid_amount', message: 'المبلغ يجب أن يكون بين 1 و50,000$.' });
+      }
+
+      const result = await createNowPaymentsDirectPayment({ uid, amount });
+      res.json({
+        payAddress: result.payAddress,
+        payCurrency: result.payCurrency,
+        payAmount: result.payAmount
+      });
+    } catch (err: any) {
+      const status = err?.message === 'missing_auth_token' ? 401 : 500;
+      console.error('nowpayments/create-direct-payment error:', err?.message || err);
+      res.status(status).json({ error: 'nowpayments_direct_payment_failed', message: err?.message || 'تعذر إنشاء عنوان استلام الدفع.' });
     }
   });
 

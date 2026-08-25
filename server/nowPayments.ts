@@ -28,6 +28,13 @@ export interface NowPaymentsInvoiceResult {
   invoiceId: string;
 }
 
+export interface NowPaymentsDirectPaymentResult {
+  paymentId: string;
+  payAddress: string;
+  payCurrency: string;
+  payAmount: number;
+}
+
 export async function createNowPaymentsInvoice(params: {
   uid: string;
   amount: number;
@@ -71,6 +78,52 @@ export async function createNowPaymentsInvoice(params: {
   }
 
   return { invoiceUrl: body.invoice_url, invoiceId: String(body.id) };
+}
+
+/**
+ * إنشاء "دفعة مباشرة" (Payment API، لا Invoice API) — تُرجع pay_address حقيقي
+ * لعملة/شبكة محددة صراحة (usdttrc20 هنا)، بدل صفحة NOWPayments المستضافة.
+ * الغرض الوحيد: عرض هذا العنوان للمستخدم (مع زر نسخ) ليدفع عبر بوابة
+ * بطاقة↔كريبتو خارجية يلصق فيها العنوان يدوياً، بما إن التعبئة التلقائية
+ * عبر رابط جاهز غير موثوقة (اختُبرت مع Guardarian ولم تعمل).
+ */
+export async function createNowPaymentsDirectPayment(params: {
+  uid: string;
+  amount: number;
+  ipnCallbackUrl?: string;
+}): Promise<NowPaymentsDirectPaymentResult> {
+  const apiKey = process.env.NOWPAYMENTS_API_KEY;
+  if (!apiKey) throw new Error('nowpayments_not_configured');
+
+  const requestBody: Record<string, unknown> = {
+    price_amount: params.amount,
+    price_currency: 'usd',
+    pay_currency: 'usdttrc20',
+    order_id: `${params.uid}_${Date.now()}`,
+    order_description: 'شحن محفظة ليتيريوم - دفع بالبطاقة عبر وسيط خارجي'
+  };
+  if (params.ipnCallbackUrl) requestBody.ipn_callback_url = params.ipnCallbackUrl;
+
+  const res = await fetch(`${NOWPAYMENTS_API_BASE}/payment`, {
+    method: 'POST',
+    headers: {
+      'x-api-key': apiKey,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(requestBody)
+  });
+
+  const body = await res.json();
+  if (!res.ok || !body.pay_address) {
+    throw new Error(body?.message || 'تعذر إنشاء عنوان استلام الدفع.');
+  }
+
+  return {
+    paymentId: String(body.payment_id),
+    payAddress: String(body.pay_address),
+    payCurrency: String(body.pay_currency || 'usdttrc20'),
+    payAmount: Number(body.pay_amount)
+  };
 }
 
 /**
