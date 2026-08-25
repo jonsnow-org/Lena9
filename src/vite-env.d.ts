@@ -10,3 +10,6 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+/** مُعرِّف رقم البناء الحالي، يُخبَز عبر vite.config.ts define من public/version.json */
+declare const __APP_BUILD__: string;

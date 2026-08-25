@@ -71,6 +71,7 @@ import { NotificationsModal } from './components/NotificationsModal';
 import { BetaTesting20Modal } from './components/BetaTesting20Modal';
 import { ImageStudioModal } from './components/ImageStudioModal';
 import { AuthModal } from './components/AuthModal';
+import { ResetPasswordModal } from './components/ResetPasswordModal';
 import { DrawerMenu } from './components/DrawerMenu';
 import { SubscriptionModal } from './components/SubscriptionModal';
 import { NewCampaignModal } from './components/NewCampaignModal';
@@ -189,7 +190,8 @@ import {
   updateUserRoleInFirestore,
   updateWalletBalanceInFirestore,
   recordEarningInFirestore,
-  handleEmailVerificationFromUrl
+  handleEmailVerificationFromUrl,
+  getPasswordResetCodeFromUrl
 } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import {
@@ -463,6 +465,10 @@ export function App() {
   const [imageStudioPrompt, setImageStudioPrompt] = useState('');
   const [imageStudioSelectCallback, setImageStudioSelectCallback] = useState<((url: string) => void) | null>(null);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
+  // oobCode من رابط إعادة تعيين كلمة المرور، إن فُتح التطبيق منه (انظر
+  // useEffect بجانب handleEmailVerificationFromUrl أدناه). null = لا تُعرض
+  // نافذة إعادة التعيين.
+  const [passwordResetCode, setPasswordResetCode] = useState<string | null>(null);
   const [isNewCampaignOpen, setIsNewCampaignOpen] = useState(false);
   // زر الرجوع الفعلي (أو زر الجوال) على المستوى الجذر: ضغطة واحدة تُغلق
   // أعلى نافذة/طبقة مفتوحة إن وُجدت، وإلا (لا شيء مفتوح) تُظهر تلميح تأكيد
@@ -686,6 +692,9 @@ export function App() {
         alert(res.message);
       }
     });
+
+    const resetCode = getPasswordResetCodeFromUrl();
+    if (resetCode) setPasswordResetCode(resetCode);
 
     const params = new URLSearchParams(window.location.search);
     const payment = params.get('payment');
@@ -3143,6 +3152,18 @@ export function App() {
           externalError={authTriggerError}
         />
 
+        {passwordResetCode && (
+          <ResetPasswordModal
+            oobCode={passwordResetCode}
+            onClose={() => setPasswordResetCode(null)}
+            onSuccess={() => {
+              setPasswordResetCode(null);
+              setAuthModalMode('login');
+              setIsAuthOpen(true);
+            }}
+          />
+        )}
+
         {showExitToast && (
           <div className="fixed bottom-6 inset-x-0 z-[60] flex justify-center pointer-events-none px-4">
             <div className="px-4 py-2.5 rounded-full bg-slate-900/95 text-white text-xs font-bold shadow-2xl animate-fade-in">
@@ -4438,6 +4459,18 @@ export function App() {
         onGoogleSignIn={(role) => handleRealGoogleSignIn(role)}
         externalError={authTriggerError}
       />
+
+      {passwordResetCode && (
+        <ResetPasswordModal
+          oobCode={passwordResetCode}
+          onClose={() => setPasswordResetCode(null)}
+          onSuccess={() => {
+            setPasswordResetCode(null);
+            setAuthModalMode('login');
+            setIsAuthOpen(true);
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -11,6 +11,9 @@ import {
   signInAnonymously,
   updateProfile,
   sendEmailVerification,
+  sendPasswordResetEmail,
+  verifyPasswordResetCode,
+  confirmPasswordReset,
   applyActionCode,
   signOut as fbSignOut,
   onAuthStateChanged,
@@ -138,6 +141,10 @@ export function getAuthErrorMessage(error: any): string {
       return 'تعذّر فتح نافذة تسجيل الدخول في هذا المتصفح. تتم إعادة المحاولة تلقائياً بطريقة أخرى.';
     case 'auth/internal-error':
       return 'حدث خطأ داخلي من خدمة تسجيل الدخول. حاول مرة أخرى خلال لحظات.';
+    case 'auth/expired-action-code':
+      return 'انتهت صلاحية رابط إعادة تعيين كلمة المرور. اطلب رابطاً جديداً.';
+    case 'auth/invalid-action-code':
+      return 'رابط إعادة تعيين كلمة المرور غير صالح، أو استُخدم من قبل. اطلب رابطاً جديداً.';
     case 'permission-denied':
       return 'تم رفض إذن حفظ البيانات في قاعدة البيانات Firestore. تأكد من إعدادات الصلاحيات.';
     case 'unavailable':
@@ -627,6 +634,24 @@ export async function resendVerificationEmail(): Promise<boolean> {
   }
 }
 
+/** يرسل رابط إعادة تعيين كلمة المرور لهذا البريد — نفس آلية Firebase
+ *  المستخدمة أصلاً لتحقق البريد، فيصل رابط (لا كود يدوي) يفتح صفحة تعيين
+ *  كلمة مرور جديدة. يرمي الخطأ للمتصل ليعرضه عبر getAuthErrorMessage. */
+export async function resetPassword(email: string): Promise<void> {
+  await sendPasswordResetEmail(auth, email);
+}
+
+/** يتحقق من صلاحية كود رابط إعادة التعيين (oobCode من رابط البريد) ويعيد
+ *  البريد الإلكتروني المرتبط به لعرضه للمستخدم قبل إدخال كلمة مرور جديدة. */
+export async function verifyResetCode(oobCode: string): Promise<string> {
+  return verifyPasswordResetCode(auth, oobCode);
+}
+
+/** يطبّق كلمة المرور الجديدة فعلياً بعد التحقق من الكود. */
+export async function confirmNewPassword(oobCode: string, newPassword: string): Promise<void> {
+  await confirmPasswordReset(auth, oobCode, newPassword);
+}
+
 /**
  * يتحقق من حالة تأكيد البريد الإلكتروني للمستخدم الحالي عبر إعادة تحميل حسابه
  * من خوادم Firebase Auth مباشرة لتحديث حقل emailVerified.
@@ -664,6 +689,16 @@ export async function handleEmailVerificationFromUrl(): Promise<{ handled: boole
     return { handled: true, success: false, message: 'رابط التحقق غير صالح أو انتهت صلاحيته.' };
   }
   return { handled: false, success: false };
+}
+
+/** يقرأ oobCode من رابط إعادة تعيين كلمة المرور (mode=resetPassword) إن
+ *  فُتح التطبيق منه مباشرة — قراءة فقط، بلا أي نداء شبكة؛ التحقق الفعلي من
+ *  الكود يحدث داخل ResetPasswordModal نفسها عبر verifyResetCode. */
+export function getPasswordResetCodeFromUrl(): string | null {
+  if (typeof window === 'undefined') return null;
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get('mode') !== 'resetPassword') return null;
+  return urlParams.get('oobCode');
 }
 
 export async function logOut(): Promise<void> {

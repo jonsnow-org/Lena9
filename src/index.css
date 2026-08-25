@@ -44,6 +44,11 @@
     scroll-behavior: smooth;
     overflow-x: clip;
     max-width: 100vw;
+    /* يمنع تمرير الصفحة من "التسرّب" لسحب Chrome الأصلي (شحن الصفحة كاملة
+       بسحبة لأسفل + وميض أسود) — هذا السلوك تحديداً هو ما جعل تطبيق TWA
+       يحس "متصفح" رغم عمله الصحيح فعلياً (بلا شريط عنوان). لا يمنع تمرير
+       الصفحة العادي لأعلى/أسفل داخل التطبيق نفسه، فقط منع تسريبه للخارج. */
+    overscroll-behavior-y: contain;
   }
 
   /* لون قاعدة الصفحة (Canvas) — يُرسم في أسفل كل الطبقات دائماً */
@@ -53,6 +58,7 @@
     overflow-x: clip;
     max-width: 100vw;
     -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
   }
 
   .dark body {

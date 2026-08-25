@@ -16,7 +16,7 @@ import {
   CheckCircle2
 } from 'lucide-react';
 import { UserRole } from '../types';
-import { registerWithEmail, loginWithEmail, getAuthErrorMessage } from '../firebase';
+import { registerWithEmail, loginWithEmail, resetPassword, getAuthErrorMessage } from '../firebase';
 import { REVENUE_SHARES } from '../constants/revenueShares';
 import { CREATOR_ELIGIBILITY_THRESHOLDS } from '../utils/creatorEligibility';
 import { getSavedAccounts, forgetAccount, SavedAccount } from '../utils/savedAccounts';
@@ -97,11 +97,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [savedAccounts, setSavedAccounts] = useState<SavedAccount[]>([]);
   const [useNewAccountForm, setUseNewAccountForm] = useState(false);
 
+  // نسيت كلمة المرور: عرض مصغّر داخل نفس النافذة بدل نافذة منفصلة —
+  // يرسل رابط إعادة تعيين حقيقي عبر Firebase (نفس آلية تحقق البريد
+  // المستخدمة أصلاً بالتطبيق)، وليس كوداً يُكتب يدوياً.
+  const [isForgotPassword, setIsForgotPassword] = useState(false);
+  const [resetSubmitting, setResetSubmitting] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+
   useEffect(() => {
     setRole('writer');
     if (initialMode) setMode(initialMode);
     setAuthError(null);
     setIsLoading(false);
+    setIsForgotPassword(false);
+    setResetSubmitting(false);
+    setResetSent(false);
+    setResetError(null);
 
     // إفراغ الحقول في كل مرة تُفتح فيها النافذة.
     if (isOpen) {
@@ -169,6 +181,24 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setAuthError(getAuthErrorMessage(err));
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleForgotPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email) {
+      setResetError('أدخل بريدك الإلكتروني أولاً.');
+      return;
+    }
+    setResetError(null);
+    setResetSubmitting(true);
+    try {
+      await resetPassword(email);
+      setResetSent(true);
+    } catch (err: any) {
+      setResetError(getAuthErrorMessage(err));
+    } finally {
+      setResetSubmitting(false);
     }
   };
 
@@ -321,8 +351,28 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
           {/* Form */}
           {!(mode === 'login' && savedAccounts.length > 0 && !useNewAccountForm) && (
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {mode === 'register' && (
+          <form onSubmit={isForgotPassword ? handleForgotPasswordSubmit : handleSubmit} className="space-y-4">
+            {isForgotPassword && (
+              <div className="p-3.5 rounded-2xl bg-teal-50/60 dark:bg-teal-950/20 border border-teal-200/60 dark:border-teal-900/40 text-[11px] text-teal-800 dark:text-teal-300 leading-relaxed">
+                أدخل بريدك الإلكتروني المسجَّل، وسنرسل لك رابط إعادة تعيين كلمة المرور.
+              </div>
+            )}
+
+            {resetSent ? (
+              <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-xs font-bold flex items-center gap-2.5">
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <span>تم إرسال رابط إعادة التعيين إلى {email}. افتح بريدك واتبع الرابط.</span>
+              </div>
+            ) : (
+            <>
+            {resetError && (
+              <div className="p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400 text-xs font-medium flex items-center gap-2.5">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{resetError}</span>
+              </div>
+            )}
+
+            {mode === 'register' && !isForgotPassword && (
               <div className="space-y-3.5 p-4 rounded-2xl bg-teal-50/40 dark:bg-teal-950/20 border border-teal-200/60 dark:border-teal-900/40">
                 <div className="flex items-center gap-1.5 text-xs font-bold text-teal-800 dark:text-teal-300">
                   <PenTool className="w-4 h-4 text-teal-600" />
@@ -446,6 +496,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               />
             </div>
 
+            {!isForgotPassword && (
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">كلمة المرور</label>
               <input
@@ -460,15 +511,30 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               {mode === 'register' && (
                 <p className="mt-1 text-[10px] text-slate-400">6 أحرف على الأقل</p>
               )}
+              {mode === 'login' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setResetError(null);
+                    setIsForgotPassword(true);
+                  }}
+                  className="mt-1.5 text-[11px] font-bold text-teal-600 dark:text-teal-400 hover:underline"
+                >
+                  نسيت كلمة المرور؟
+                </button>
+              )}
             </div>
+            )}
 
             <button
               type="submit"
-              disabled={isLoading}
+              disabled={isForgotPassword ? resetSubmitting : isLoading}
               className="w-full py-3.5 rounded-2xl text-white font-extrabold text-xs sm:text-sm shadow-md active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-60 bg-teal-600 hover:bg-teal-700 shadow-teal-500/20"
             >
-              {isLoading ? (
+              {(isForgotPassword ? resetSubmitting : isLoading) ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
+              ) : isForgotPassword ? (
+                <span>إرسال رابط إعادة التعيين</span>
               ) : (
                 <>
                   <span>
@@ -480,6 +546,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 </>
               )}
             </button>
+            </>
+            )}
+
+            {isForgotPassword && (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsForgotPassword(false);
+                  setResetSent(false);
+                  setResetError(null);
+                }}
+                className="w-full text-center text-[11px] font-bold text-teal-600 dark:text-teal-400 hover:underline"
+              >
+                → العودة لتسجيل الدخول
+              </button>
+            )}
           </form>
           )}
 
