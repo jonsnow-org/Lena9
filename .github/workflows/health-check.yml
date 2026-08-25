@@ -1,0 +1,66 @@
+name: Live Site Health Check
+
+# يعمل هذا على مشغّلات GitHub نفسها (اتصال إنترنت حقيقي كامل) لا داخل أي
+# جلسة عمل معزولة — الجلسات المعزولة في هذا المشروع محجوبة صراحة عن
+# الوصول لنطاق literium.ai.studio عبر بروكسي الشبكة الخاص بها (تأكّد هذا
+# بفشل curl وWebFetch بخطأ "policy denial" وليس بأي استجابة حقيقية من
+# الموقع) — فمحاولة فحص صحة الموقع من هناك تعطي نتيجة كاذبة دوماً. هذا
+# السير هو المصدر الوحيد الموثوق لحالة الموقع الحي فعلياً.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/30 * * * *'
+
+permissions:
+  issues: write
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check https://literium.ai.studio/api/health (3 attempts)
+        id: check
+        run: |
+          status="000"
+          for attempt in 1 2 3; do
+            status=$(curl -sS -o /tmp/body.txt -w "%{http_code}" --max-time 15 https://literium.ai.studio/api/health || echo "000")
+            if [ "$status" = "200" ] && grep -q '"status"[[:space:]]*:[[:space:]]*"ok"' /tmp/body.txt 2>/dev/null; then
+              echo "healthy=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "Attempt $attempt failed (HTTP $status)"
+            sleep 20
+          done
+          echo "healthy=false" >> "$GITHUB_OUTPUT"
+          echo "last_status=$status" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure the alert label exists
+        if: steps.check.outputs.healthy == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh label create site-down --color B60205 --description "Live site health check failed" --repo ${{ github.repository }} || true
+
+      - name: Open or update the alert issue on failure
+        if: steps.check.outputs.healthy == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          existing=$(gh issue list --repo ${{ github.repository }} --label site-down --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
+          body="آخر فحص فشل عند $(date -u +"%Y-%m-%dT%H:%M:%SZ") UTC — HTTP ${{ steps.check.outputs.last_status }} من https://literium.ai.studio/api/health بعد 3 محاولات بفارق 20 ثانية."
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo ${{ github.repository }} --body "$body"
+          else
+            gh issue create --repo ${{ github.repository }} --title "🔴 الموقع الحي لا يستجيب" --label site-down --body "$body"
+          fi
+
+      - name: Close the alert issue once healthy again
+        if: steps.check.outputs.healthy == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          existing=$(gh issue list --repo ${{ github.repository }} --label site-down --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo ${{ github.repository }} --body "✅ عاد الموقع للعمل بشكل طبيعي عند $(date -u +"%Y-%m-%dT%H:%M:%SZ") UTC."
+            gh issue close "$existing" --repo ${{ github.repository }}
+          fi
