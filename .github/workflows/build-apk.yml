@@ -50,8 +50,14 @@ jobs:
           echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android-build/android.keystore
 
       - name: Scaffold TWA project from the live site's manifest
-        working-directory: android-build
-        run: node ../.github/scripts/twa-init.cjs
+        # الملف يُنسخ داخل android-build عمداً قبل تشغيله: توزيع الحزم عبر
+        # require() في Node يعتمد على مكان الملف نفسه لا مجلد العمل الحالي
+        # (cwd)، فلو بقي بمكانه الأصلي تحت .github/scripts/ لن يجد
+        # node_modules المُثبَّتة داخل android-build/ رغم أنها بجواره تقريباً.
+        run: |
+          cp .github/scripts/twa-init.cjs android-build/twa-init.cjs
+          cd android-build
+          node twa-init.cjs
 
       - name: Build & sign APK
         working-directory: android-build
