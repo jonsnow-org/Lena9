@@ -35,7 +35,16 @@ export const AppUpdateWidget: React.FC = () => {
     : {download: 'Download App', update: 'Update'};
 
   return (
-    <div className="fixed bottom-20 end-4 z-50 flex flex-col items-end gap-2">
+    // ملاحظة: bottom-36/40 مقصودة — مرتفعة عمداً فوق صف الأزرار العائمة
+    // الموجود أصلاً في App.tsx (زر الكتابة وزر الصعود، كلاهما bottom-20/24)
+    // لتفادي التراكب فوقهما، خصوصاً أن الموقع dir="rtl" فيجعل end-4 يقع
+    // فعلياً بنفس مكان زر "ابدأ الكتابة" (left-4) لو استخدمنا نفس الارتفاع.
+    // z-40 (وليس z-50) عمداً: هذا العنصر مُركَّب كشقيق لاحق لـ App في main.tsx،
+    // فلو ساوى ترتيبه ترتيب طبقة النوافذ المنبثقة (z-50) في App لظهر فوقها
+    // بسبب ترتيب الـ DOM لا تحتها — z-40 يطابق طبقة عناصر الواجهة الثابتة
+    // (الشريط العلوي/السفلي والأزرار العائمة) فيختفي تلقائياً خلف أي نافذة
+    // منبثقة مفتوحة، تماماً كبقية عناصر الواجهة الدائمة.
+    <div className="fixed bottom-36 sm:bottom-40 end-4 sm:end-6 z-40 flex flex-col items-end gap-2">
       {updateAvailable && (
         <button
           type="button"
