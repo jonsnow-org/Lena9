@@ -9,6 +9,15 @@ import {applyStoredThemePresetImmediately} from './utils/themeEngine';
 // قبل تحميل القالب اللوني الذي اختاره المالك سابقاً لهذا الجهاز.
 applyStoredThemePresetImmediately();
 
+// تسجيل Service Worker للأصول الثابتة فقط (انظر شرح public/sw.js) — بعد
+// اكتمال تحميل الصفحة حتى لا يزاحم أول رسم، وفي وضع الإنتاج فقط تفادياً
+// لتضارب أي تخزين مؤقت مع إعادة التحميل الفوري (HMR) أثناء التطوير المحلي.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}
+
 // شاشة البدء (Splash) عنصر مستقل تماماً عن App — يُعرض فوقه كطبقة بينما
 // App يُحمَّل بالفعل بالخلفية (مصادقة، بيانات...)، فتختفي الشاشة على
 // محتوى جاهز فعلاً لا شاشة تحميل فارغة. وضعها هنا (لا داخل App نفسه)
