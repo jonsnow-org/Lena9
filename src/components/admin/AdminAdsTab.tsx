@@ -58,6 +58,11 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
   const [propellerSnippet, setPropellerSnippet] = useState(externalAdsConfig?.propellerAds?.snippet ?? '');
   const [adsterraEnabled, setAdsterraEnabled] = useState(externalAdsConfig?.adsterra?.enabled ?? false);
   const [adsterraSnippet, setAdsterraSnippet] = useState(externalAdsConfig?.adsterra?.snippet ?? '');
+  // appSafe: تأكيد صريح إن سياسة الشبكة تسمح بعرضها داخل تطبيق APK لا
+  // الموقع فقط — افتراضياً معطّل، لا علاقة له بظهورها بالموقع (enabled
+  // وحده يكفي هناك). انظر شرح كامل في externalAdsStore.ts.
+  const [propellerAppSafe, setPropellerAppSafe] = useState(externalAdsConfig?.propellerAds?.appSafe ?? false);
+  const [adsterraAppSafe, setAdsterraAppSafe] = useState(externalAdsConfig?.adsterra?.appSafe ?? false);
   // سعر تقديري (USD) لكل 1000 مشاهدة حقيقية موثّقة لإعلان خارجي في مواضع
   // الكاتب — أساس حساب حصة الكاتب من عائد هذه الشبكات (انظر AdminFinanceTab).
   const [estimatedCpmUsd, setEstimatedCpmUsd] = useState(String(externalAdsConfig?.estimatedCpmUsd ?? 2));
@@ -70,16 +75,20 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
   const [savedExternalAdsSnapshot, setSavedExternalAdsSnapshot] = useState({
     propellerEnabled,
     propellerSnippet,
+    propellerAppSafe,
     adsterraEnabled,
     adsterraSnippet,
+    adsterraAppSafe,
     estimatedCpmUsd
   });
 
   const isExternalAdsDirty =
     propellerEnabled !== savedExternalAdsSnapshot.propellerEnabled ||
     propellerSnippet.trim() !== savedExternalAdsSnapshot.propellerSnippet.trim() ||
+    propellerAppSafe !== savedExternalAdsSnapshot.propellerAppSafe ||
     adsterraEnabled !== savedExternalAdsSnapshot.adsterraEnabled ||
     adsterraSnippet.trim() !== savedExternalAdsSnapshot.adsterraSnippet.trim() ||
+    adsterraAppSafe !== savedExternalAdsSnapshot.adsterraAppSafe ||
     estimatedCpmUsd.trim() !== savedExternalAdsSnapshot.estimatedCpmUsd.trim();
 
   // إن وصلت قيمة externalAdsConfig من Firestore بعد أول تحميل لهذا
@@ -92,14 +101,18 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
     const nextSnapshot = {
       propellerEnabled: externalAdsConfig?.propellerAds?.enabled ?? false,
       propellerSnippet: externalAdsConfig?.propellerAds?.snippet ?? '',
+      propellerAppSafe: externalAdsConfig?.propellerAds?.appSafe ?? false,
       adsterraEnabled: externalAdsConfig?.adsterra?.enabled ?? false,
       adsterraSnippet: externalAdsConfig?.adsterra?.snippet ?? '',
+      adsterraAppSafe: externalAdsConfig?.adsterra?.appSafe ?? false,
       estimatedCpmUsd: String(externalAdsConfig?.estimatedCpmUsd ?? 2)
     };
     setPropellerEnabled(nextSnapshot.propellerEnabled);
     setPropellerSnippet(nextSnapshot.propellerSnippet);
+    setPropellerAppSafe(nextSnapshot.propellerAppSafe);
     setAdsterraEnabled(nextSnapshot.adsterraEnabled);
     setAdsterraSnippet(nextSnapshot.adsterraSnippet);
+    setAdsterraAppSafe(nextSnapshot.adsterraAppSafe);
     setEstimatedCpmUsd(nextSnapshot.estimatedCpmUsd);
     setSavedExternalAdsSnapshot(nextSnapshot);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -114,15 +127,17 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
       const trimmedAdsterra = adsterraSnippet.trim();
       const cpmValue = Math.max(0, Number(estimatedCpmUsd) || 0);
       await onSaveExternalAdsConfig({
-        propellerAds: { enabled: propellerEnabled, snippet: trimmedPropeller },
-        adsterra: { enabled: adsterraEnabled, snippet: trimmedAdsterra },
+        propellerAds: { enabled: propellerEnabled, snippet: trimmedPropeller, appSafe: propellerAppSafe },
+        adsterra: { enabled: adsterraEnabled, snippet: trimmedAdsterra, appSafe: adsterraAppSafe },
         estimatedCpmUsd: cpmValue
       });
       setSavedExternalAdsSnapshot({
         propellerEnabled,
         propellerSnippet: trimmedPropeller,
+        propellerAppSafe,
         adsterraEnabled,
         adsterraSnippet: trimmedAdsterra,
+        adsterraAppSafe,
         estimatedCpmUsd: String(cpmValue)
       });
       setExternalAdsSavedMsg('تم الحفظ بنجاح ✓');
@@ -508,6 +523,19 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
                   className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-[11px] text-white font-mono focus:outline-none focus:border-blue-500 resize-y"
                   dir="ltr"
                 />
+                <button
+                  type="button"
+                  onClick={() => setPropellerAppSafe((v) => !v)}
+                  title="فعّله فقط بعد التأكد من دعم الشبكة لعرض إعلاناتها داخل تطبيق APK، لا الموقع فقط"
+                  className={`w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
+                    propellerAppSafe
+                      ? 'bg-teal-600/20 text-teal-300 border border-teal-600/40'
+                      : 'bg-slate-900 text-slate-500 border border-slate-800'
+                  }`}
+                >
+                  <span>متوافقة مع نسخة APK</span>
+                  <span>{propellerAppSafe ? 'مفعّل ✓' : 'غير مؤكَّد بعد'}</span>
+                </button>
               </div>
 
               <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
@@ -531,8 +559,27 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
                   className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-[11px] text-white font-mono focus:outline-none focus:border-blue-500 resize-y"
                   dir="ltr"
                 />
+                <button
+                  type="button"
+                  onClick={() => setAdsterraAppSafe((v) => !v)}
+                  title="فعّله فقط بعد التأكد من دعم الشبكة لعرض إعلاناتها داخل تطبيق APK، لا الموقع فقط"
+                  className={`w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
+                    adsterraAppSafe
+                      ? 'bg-teal-600/20 text-teal-300 border border-teal-600/40'
+                      : 'bg-slate-900 text-slate-500 border border-slate-800'
+                  }`}
+                >
+                  <span>متوافقة مع نسخة APK</span>
+                  <span>{adsterraAppSafe ? 'مفعّل ✓' : 'غير مؤكَّد بعد'}</span>
+                </button>
               </div>
             </div>
+
+            <p className="text-[11px] text-amber-300/90 bg-amber-950/30 border border-amber-800/40 rounded-xl px-3 py-2 leading-relaxed">
+              ⚠️ "متوافقة مع نسخة APK" لا تؤثر على ظهور الشبكة بالموقع (المتصفح) إطلاقاً — تتحكم فقط بظهورها
+              داخل تطبيق APK حال بنائه لاحقاً. اتركها معطّلة لأي شبكة لم تؤكّد لك بنفسك (بالتواصل معها مباشرة)
+              أن سياستها تسمح بعرض نفس هذا الكود داخل تطبيق مثبَّت، لا موقع ويب فقط — AdSense تحديداً يمنع هذا صراحة.
+            </p>
 
             <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
               <div className="font-bold text-xs text-white">

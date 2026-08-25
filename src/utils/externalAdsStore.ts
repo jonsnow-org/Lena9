@@ -1,5 +1,6 @@
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
+import { isRunningInNativeApp } from './nativeAppEnv';
 
 // -------------------------------------------------------------------
 // إعدادات شبكات إعلانات خارجية احتياطية (PropellerAds / Adsterra) —
@@ -12,6 +13,16 @@ export interface ExternalAdNetworkConfig {
   enabled: boolean;
   /** كود HTML/JS الجاهز من لوحة الشبكة الإعلانية، يُلصق كما هو */
   snippet: string;
+  /**
+   * تأكيد إداري صريح بأن سياسة هذه الشبكة تسمح بعرض نفس هذا الكود داخل
+   * تطبيق أصلي (APK) لا داخل متصفح ويب فقط — افتراضياً false لأي شبكة،
+   * حتى لو كانت enabled=true للموقع. لا علاقة له بالموقع إطلاقاً (يبقى
+   * enabled وحده كافياً هناك) — يُستخدم فقط داخل pickActiveExternalNetwork
+   * لمنع عرض شبكة غير مؤكَّدة التوافق حين يعمل الكود داخل تطبيق Capacitor.
+   * فعّله يدوياً من لوحة الإدارة فقط بعد التأكد من دعم الشبكة نفسها لهذا
+   * الاستخدام (AdSense تحديداً يمنعه صراحة بسياسته المعلنة).
+   */
+  appSafe: boolean;
 }
 
 export interface ExternalAdsConfig {
@@ -26,7 +37,7 @@ export interface ExternalAdsConfig {
   estimatedCpmUsd: number;
 }
 
-const EMPTY_NETWORK: ExternalAdNetworkConfig = { enabled: false, snippet: '' };
+const EMPTY_NETWORK: ExternalAdNetworkConfig = { enabled: false, snippet: '', appSafe: false };
 const DEFAULT_CONFIG: ExternalAdsConfig = {
   propellerAds: { ...EMPTY_NETWORK },
   adsterra: { ...EMPTY_NETWORK },
@@ -71,9 +82,20 @@ export function subscribeExternalAdsConfig(cb: (config: ExternalAdsConfig) => vo
   return () => listeners.delete(cb);
 }
 
-/** أول شبكة مفعّلة ولديها كود فعلي، أو null إن لم توجد أي واحدة صالحة */
+/**
+ * أول شبكة مفعّلة ولديها كود فعلي، أو null إن لم توجد أي واحدة صالحة.
+ *
+ * داخل تطبيق أصلي (APK عبر Capacitor)، تُستبعَد أي شبكة appSafe=false
+ * تلقائياً حتى لو كانت enabled=true — الموقع (متصفح الويب) لا يتأثر
+ * بهذا الفحص إطلاقاً ويستمر بعرض كل الشبكات المفعّلة كما هي دائماً؛
+ * القيد يُطبَّق فقط حين isRunningInNativeApp() تُرجع true فعلياً.
+ */
 export function pickActiveExternalNetwork(config: ExternalAdsConfig): ExternalAdNetworkConfig | null {
-  if (config.propellerAds.enabled && config.propellerAds.snippet.trim()) return config.propellerAds;
-  if (config.adsterra.enabled && config.adsterra.snippet.trim()) return config.adsterra;
+  const insideNativeApp = isRunningInNativeApp();
+  const isEligible = (net: ExternalAdNetworkConfig) =>
+    net.enabled && net.snippet.trim() && (!insideNativeApp || net.appSafe);
+
+  if (isEligible(config.propellerAds)) return config.propellerAds;
+  if (isEligible(config.adsterra)) return config.adsterra;
   return null;
 }
