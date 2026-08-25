@@ -728,9 +728,12 @@ async function startServer() {
   // لرصيد مالك المنصة مباشرة (نفس آلية توليد الصور بالضبط: لا بوابة دفع
   // خارجية لهذه الميزة تحديداً، الدفع مسبق عبر شحن المحفظة الموجود أصلاً).
   const CLAUDE_FREE_DAILY_LIMIT = 10; // نفس الحد اليومي المجاني لمساعد Gemini
-  // ⚠️ رقم تكلفة مبدئي — يحتاج مراجعة صاحب المنصة قبل الإطلاق الفعلي،
-  // فهو يحدد هامش الربح الحقيقي مقابل تكلفة استهلاك Anthropic API.
-  const CLAUDE_PAID_MESSAGE_COST = 0.03;
+  // أعلى قليلاً من تكلفة ميزة Gemini المدفوعة الأخرى في المنصة (توليد
+  // الصور، $0.05) — Claude Sonnet فعلياً أغلى من Gemini Flash من جهة
+  // Anthropic نفسها، فهذا الفارق البسيط يعكس ذلك دون أن يكون رادعاً
+  // يمنع الاستخدام. عدّل الرقم هنا وحده إن أردت قيمة أخرى — لا مكان ثانٍ
+  // يحتاج تعديلاً.
+  const CLAUDE_PAID_MESSAGE_COST = 0.06;
   const claudeChatQuotas = new Map<string, { usedToday: number; lastResetTime: number }>();
 
   function consumeClaudeFreeQuota(uid: string): { allowed: boolean; remaining: number } {
