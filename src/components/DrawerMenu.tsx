@@ -17,7 +17,8 @@ import {
   Wand2,
   Palette,
   Download,
-  RefreshCw
+  RefreshCw,
+  Bot
 } from 'lucide-react';
 import { User, LanguageCode, UserRole } from '../types';
 import { getRemainingAiUses } from '../utils/aiQuota';
@@ -36,6 +37,7 @@ interface DrawerMenuProps {
   onOpenPolicies: (tab?: 'privacy' | 'terms' | 'restricted') => void;
   onOpenLegal?: (section: 'privacy' | 'terms' | 'about' | 'contact') => void;
   onOpenAiAssistant: () => void;
+  onOpenClaudeChat: () => void;
   onOpenSubscription: () => void;
   onOpenProfile: (writerId?: string) => void;
   onSwitchRole: (role: UserRole) => void;
@@ -74,6 +76,7 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
   onOpenPolicies,
   onOpenLegal,
   onOpenAiAssistant,
+  onOpenClaudeChat,
   onOpenSubscription,
   onOpenProfile,
   onSwitchRole,
@@ -188,32 +191,65 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
               </div>
             )}
 
-            {/* AI Assistant Quota Widget */}
-            <div className="p-3.5 rounded-2xl bg-gradient-to-r from-brand-950/60 to-brand-950/60 border border-brand-500/30">
-              <div className="flex items-center justify-between mb-1.5">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-brand-400" />
-                  <span className="text-xs font-bold text-white">المساعد الذكي (Gemini AI)</span>
-                </div>
-                {quotaStats.isUnlimited ? (
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-brand-500/30 text-brand-300 border border-brand-500/40">
-                    باقة غير محدودة ⭐
-                  </span>
-                ) : (
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-brand-500/20 text-brand-300">
-                    {quotaStats.remaining} استخدام متبقي
-                  </span>
-                )}
+            {/* قسم "الذكاء الاصطناعي" — يضم بابين منفصلين تماماً: التحدث مع
+                Claude (Anthropic، مساعد عام بلا قيود موضوعية) فوق المساعد
+                الذكي المبني على Gemini والمختص بشؤون المنصة، بناءً على طلب
+                صاحب المشروع صراحة. */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 px-1 text-[11px] font-bold text-slate-400">
+                <Sparkles className="w-3.5 h-3.5 text-brand-400" />
+                <span>{t('aiSectionTitle')}</span>
               </div>
-              <button
-                onClick={() => {
-                  onOpenAiAssistant();
-                  onClose();
-                }}
-                className="w-full mt-2 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs transition-all shadow-sm flex items-center justify-center gap-1.5"
-              >
-                <span>محادثة المساعد الذكي</span>
-              </button>
+
+              {/* Claude Chat */}
+              <div className="p-3.5 rounded-2xl bg-gradient-to-r from-orange-950/40 to-slate-900 border border-orange-500/30">
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-2">
+                    <Bot className="w-4 h-4 text-orange-400" />
+                    <span className="text-xs font-bold text-white">{t('chatWithClaude')}</span>
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-300">
+                    Anthropic
+                  </span>
+                </div>
+                <button
+                  onClick={() => {
+                    onOpenClaudeChat();
+                    onClose();
+                  }}
+                  className="w-full mt-2 py-1.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs transition-all shadow-sm flex items-center justify-center gap-1.5"
+                >
+                  <span>{t('chatWithClaude')}</span>
+                </button>
+              </div>
+
+              {/* Gemini AI Assistant Quota Widget */}
+              <div className="p-3.5 rounded-2xl bg-gradient-to-r from-brand-950/60 to-brand-950/60 border border-brand-500/30">
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-brand-400" />
+                    <span className="text-xs font-bold text-white">{t('chatWithGemini')}</span>
+                  </div>
+                  {quotaStats.isUnlimited ? (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-brand-500/30 text-brand-300 border border-brand-500/40">
+                      باقة غير محدودة ⭐
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-brand-500/20 text-brand-300">
+                      {quotaStats.remaining} استخدام متبقي
+                    </span>
+                  )}
+                </div>
+                <button
+                  onClick={() => {
+                    onOpenAiAssistant();
+                    onClose();
+                  }}
+                  className="w-full mt-2 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs transition-all shadow-sm flex items-center justify-center gap-1.5"
+                >
+                  <span>محادثة المساعد الذكي</span>
+                </button>
+              </div>
             </div>
 
             {/* لوحة تحكم الأدمن: لم يعد هناك مكوّن AdminDashboard منفصل أصلاً —
