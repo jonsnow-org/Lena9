@@ -15,12 +15,16 @@ import {
   CheckCircle2,
   ChevronLeft,
   Wand2,
-  Palette
+  Palette,
+  Download,
+  RefreshCw
 } from 'lucide-react';
 import { User, LanguageCode, UserRole } from '../types';
 import { getRemainingAiUses } from '../utils/aiQuota';
 import { getTranslator } from '../data/translations';
 import { isEligibleForMonetization } from '../utils/creatorEligibility';
+import { useAppUpdate } from '../hooks/useAppUpdate';
+import { isRunningAsInstalledApp } from '../utils/installState';
 
 interface DrawerMenuProps {
   isOpen: boolean;
@@ -90,6 +94,12 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const quotaStats = getRemainingAiUses(currentUser.aiQuota);
   const t = getTranslator(currentLang);
+  // يجب استدعاؤه دائماً بلا شرط (قاعدة الـ Hooks) رغم أن المكوّن قد يُعيد
+  // null أدناه — القائمة الجانبية مُركَّبة دوماً في App.tsx بغض النظر عن
+  // isOpen، فهذا لا يُعيد التركيب عند كل فتح/إغلاق، ويبقي فحص التحديث
+  // الدوري يعمل بالخلفية باستمرار كما كان بالعنصر العائم السابق.
+  const {updateAvailable, applyUpdate} = useAppUpdate();
+  const [isInstalledApp] = useState(isRunningAsInstalledApp);
 
   if (!isOpen) return null;
 
@@ -372,6 +382,34 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
               </div>
               <span className="text-[10px] text-slate-400">{currentLang === 'ar' ? 'تبديل' : 'Switch'}</span>
             </button>
+
+            {/* تحميل التطبيق (في المتصفح فقط) / تحديث التطبيق (يظهر فقط عند
+                وجود نشر أحدث من النسخة الحالية، ويختفي تلقائياً بعده) —
+                بجانب قسم اللغة عمداً بناءً على طلب صاحب المشروع. */}
+            {(!isInstalledApp || updateAvailable) && (
+              <div className="flex items-center gap-2">
+                {!isInstalledApp && (
+                  <a
+                    href="/downloads/Literium.apk"
+                    download="Literium.apk"
+                    className="flex-1 flex items-center justify-center gap-2 p-3 rounded-2xl text-xs font-bold text-white bg-brand-600 hover:bg-brand-500 transition-colors"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>{t('downloadApp')}</span>
+                  </a>
+                )}
+                {updateAvailable && (
+                  <button
+                    type="button"
+                    onClick={applyUpdate}
+                    className="flex-1 flex items-center justify-center gap-2 p-3 rounded-2xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 transition-colors"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                    <span>{t('updateAvailable')}</span>
+                  </button>
+                )}
+              </div>
+            )}
 
             <div className="p-3 rounded-2xl bg-slate-900/60 border border-slate-800">
               <div className="flex items-center gap-2 mb-2 text-xs font-bold text-slate-200">
