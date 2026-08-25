@@ -1,6 +1,7 @@
 import {StrictMode, useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
+import {AppUpdateWidget} from './components/AppUpdateWidget.tsx';
 import {SplashScreen} from './components/SplashScreen.tsx';
 import './index.css';
 import {applyStoredThemePresetImmediately} from './utils/themeEngine';
@@ -30,6 +31,7 @@ function Root() {
     <>
       {showSplash && <SplashScreen onFinish={() => setShowSplash(false)} />}
       <App />
+      <AppUpdateWidget />
     </>
   );
 }
