@@ -1,0 +1,68 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/build-apk.yml'
+      - '.github/scripts/twa-init.cjs'
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # bubblewrap يقرأ ~/.bubblewrap/config.json لمسار الـ JDK/SDK — بدون
+      # هذا الملف يحاول تشغيل معالج تثبيت تفاعلي (يفشل حتماً في CI).
+      - name: Configure Bubblewrap toolchain paths
+        run: |
+          mkdir -p ~/.bubblewrap
+          cat > ~/.bubblewrap/config.json <<EOF
+          {"jdkPath": "$JAVA_HOME", "androidSdkPath": "$ANDROID_HOME"}
+          EOF
+
+      - name: Install Bubblewrap
+        run: |
+          mkdir -p android-build
+          cd android-build
+          npm init -y
+          npm install @bubblewrap/cli@1.25.0 @bubblewrap/core@1.25.0
+
+      - name: Restore signing keystore from secret
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android-build/android.keystore
+
+      - name: Scaffold TWA project from the live site's manifest
+        working-directory: android-build
+        run: node ../.github/scripts/twa-init.cjs
+
+      - name: Build & sign APK
+        working-directory: android-build
+        env:
+          BUBBLEWRAP_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          BUBBLEWRAP_KEY_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: npx bubblewrap build
+
+      - name: Upload signed APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Literium-signed-apk
+          path: android-build/app-release-signed.apk
+          if-no-files-found: error
