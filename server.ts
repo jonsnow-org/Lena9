@@ -1808,7 +1808,12 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
+    // dotfiles: 'allow' — express يتجاهل صمتاً أي مسار بمقطع يبدأ بنقطة
+    // افتراضياً (dotfiles: 'ignore')، ما كان سيمنع تماماً الوصول لملف
+    // /.well-known/assetlinks.json المطلوب للتحقق من تطبيق TWA على
+    // أندرويد. آمن هنا لأن dist/ لا يحوي إلا ما ينتجه بناؤنا نفسه — لا
+    // .env ولا .git يصلان إليه إطلاقاً.
+    app.use(express.static(distPath, { dotfiles: 'allow' }));
 
     const escapeHtmlAttr = (s: string) =>
       String(s || '')
