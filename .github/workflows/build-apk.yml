@@ -8,6 +8,9 @@ on:
       - '.github/workflows/build-apk.yml'
       - '.github/scripts/twa-init.cjs'
 
+permissions:
+  contents: write
+
 jobs:
   build-apk:
     runs-on: ubuntu-latest
@@ -72,3 +75,19 @@ jobs:
           name: Literium-signed-apk
           path: android-build/app-release-signed.apk
           if-no-files-found: error
+
+      # يبقي زر "تحميل التطبيق" بالموقع (الذي يقدّم public/downloads/Literium.apk)
+      # مطابقاً دائماً لآخر نسخة بُنيت هنا — بدونها يحصل بالضبط ما لاحظه
+      # صاحب المشروع: نسخة GitHub Actions تختلف عن النسخة التي يحمّلها الزوار.
+      - name: Publish built APK as the in-app download
+        run: |
+          cp android-build/app-release-signed.apk public/downloads/Literium.apk
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add public/downloads/Literium.apk
+          if git diff --cached --quiet; then
+            echo "No change in the built APK — skipping commit."
+          else
+            git commit -m "Sync in-app download with latest CI-built APK [skip ci]"
+            git push origin HEAD:main
+          fi
