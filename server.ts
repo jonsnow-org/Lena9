@@ -444,7 +444,11 @@ async function startServer() {
   // AI Image Generation Studio Endpoint
   // Deducts cost from user wallet and credits platform owner balance when beyond free quota
   const FREE_LIFETIME_IMAGE_GENERATIONS = 3; // أول 3 صور مجانية مدى الحياة (وليس يومياً) لكل مستخدم غير مشترك
-  const IMAGE_GENERATION_COST = 0.05; // $0.05 per paid generated image
+  // نفس منطق تسعير محادثة Claude: تكلفة توليد صورة بـ Gemini Flash Image
+  // الفعلية عادة بضعة سنتات (أعلى من رسالة نصية واحدة لأنها بيانات أثقل)،
+  // فـ$0.02 يبقي هامش ربح معقولاً دون رقم يبدو مبالغاً فيه لخصم مباشر من
+  // محفظة حقيقية. كانت $0.05 سابقاً.
+  const IMAGE_GENERATION_COST = 0.02;
   // حصة المشتركين اليومية (خطط الذكاء الاصطناعي المدفوعة) — لا تزال في
   // الذاكرة لأنها مكافأة إضافية فوق الحصة المجانية الأساسية، وميزة الاشتراك
   // نفسها ليست موضع الشكوى الحالية.
