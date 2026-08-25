@@ -654,7 +654,10 @@ export function App() {
             localStorage.setItem('literium_has_seen_landing', 'true');
             setShowLandingPage(false);
             setIsAuthOpen(false);
-            setActiveTab(user.role === 'admin' || user.role === 'writer' ? 'profile' : 'feed');
+            // الشاشة الرئيسية (الخلاصة) هي وجهة الدخول الافتراضية دائماً —
+            // بغض النظر عن الدور — بدل القفز مباشرة لملف الكاتب/الأدمن في
+            // كل فتحة للتطبيق، حتى لو لم يفعل المستخدم شيئاً سوى فتحه.
+            setActiveTab('feed');
           }
         } catch (authDocError) {
           console.error('Error synchronizing authenticated user with Firestore:', authDocError);
@@ -3097,7 +3100,7 @@ export function App() {
             // refreshing while browsing as a guest would skip the landing
             // page (and its login options) on every future visit, trapping
             // the person in guest mode until they found the logout button.
-            setActiveTab(currentUser.role === 'admin' || currentUser.role === 'writer' ? 'profile' : 'feed');
+            setActiveTab('feed');
           }}
           onOpenRegister={(role) => {
             // فتح شاشة الدخول/التسجيل يعني نية واضحة وصريحة من المستخدم
@@ -3697,9 +3700,9 @@ export function App() {
               <>
               {/* Search Bar — عدسة البحث عنصر منفصل تماماً عن حقل الكتابة،
                   وليست أيقونة عائمة داخل الحقل، حتى يكون شكلها واضحاً كزر بحث حقيقي */}
-              <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+              <div className="flex flex-row items-center justify-between gap-2">
                 {isSearchExpanded ? (
-                  <div className="flex items-stretch flex-1 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xs focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/20 transition-all overflow-hidden">
+                  <div className="flex items-stretch flex-1 min-w-0 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xs focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/20 transition-all overflow-hidden">
                     <div className="w-11 shrink-0 flex items-center justify-center text-slate-400 border-e border-slate-200 dark:border-slate-800">
                       <Search className="w-4 h-4" />
                     </div>
@@ -3728,7 +3731,7 @@ export function App() {
                 ) : (
                   <button
                     onClick={() => setIsSearchExpanded(true)}
-                    className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xs hover:border-brand-400 dark:hover:border-brand-600 transition-all text-slate-400 self-start touch-manipulation active:scale-95"
+                    className="flex items-center gap-1.5 px-3 py-2.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xs hover:border-brand-400 dark:hover:border-brand-600 transition-all text-slate-400 shrink-0 touch-manipulation active:scale-95"
                     title="بحث"
                   >
                     <Search className="w-4 h-4" />
@@ -3736,17 +3739,15 @@ export function App() {
                   </button>
                 )}
 
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleRefreshFeed}
-                    disabled={isRefreshing}
-                    className="min-h-[44px] px-3.5 py-2 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-1.5 shadow-2xs transition-all touch-manipulation active:scale-95"
-                    title="تحديث قائمة المقالات"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-brand-500' : ''}`} />
-                    <span>تحديث</span>
-                  </button>
-                </div>
+                <button
+                  onClick={handleRefreshFeed}
+                  disabled={isRefreshing}
+                  className="px-3 py-2.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-1.5 shadow-2xs transition-all shrink-0 touch-manipulation active:scale-95"
+                  title="تحديث قائمة المقالات"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-brand-500' : ''}`} />
+                  <span className="hidden sm:inline">تحديث</span>
+                </button>
               </div>
 
               {/* نتائج حسابات المستخدمين المطابقة للبحث */}

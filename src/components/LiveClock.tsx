@@ -20,17 +20,17 @@ export const LiveClock: React.FC = () => {
 
   const turkeyTime = now.toLocaleTimeString('ar', {
     timeZone: 'Europe/Istanbul',
-    hour: '2-digit',
+    hour: 'numeric',
     minute: '2-digit',
     second: '2-digit',
-    hour12: false
+    hour12: true
   });
   const syriaTime = now.toLocaleTimeString('ar', {
     timeZone: 'Asia/Damascus',
-    hour: '2-digit',
+    hour: 'numeric',
     minute: '2-digit',
     second: '2-digit',
-    hour12: false
+    hour12: true
   });
   const dateLabel = now.toLocaleDateString('ar-SY', {
     timeZone: 'Europe/Istanbul',
