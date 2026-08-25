@@ -76,6 +76,29 @@ export async function createNowPaymentsInvoice(amount: number): Promise<{ checko
   return data;
 }
 
+export interface NowPaymentsDirectPayment {
+  payAddress: string;
+  payCurrency: string;
+  payAmount: number;
+}
+
+/**
+ * عنوان استلام USDT-TRC20 مباشر — يُعرض للمستخدم مع زر نسخ ليدفع عبر وسيط
+ * بطاقة↔كريبتو خارجي (Guardarian) يلصق فيها العنوان يدوياً. لا يوجد تعبئة
+ * تلقائية موثوقة عبر رابط جاهز (اختُبر ولم يعمل مع أكثر من مزوّد).
+ */
+export async function createNowPaymentsDirectPayment(amount: number): Promise<NowPaymentsDirectPayment> {
+  const headers = await authHeaders();
+  const res = await fetch('/api/payments/nowpayments/create-direct-payment', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ amount })
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.message || 'تعذر إنشاء عنوان استلام الدفع.');
+  return data;
+}
+
 export async function fetchPayoutAccountStatus(): Promise<PayoutAccountStatus> {
   const headers = await authHeaders();
   const res = await fetch('/api/payments/payout/status', { headers });

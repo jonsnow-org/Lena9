@@ -28,6 +28,7 @@ import {
   createAutomatedPayout,
   fetchNowPaymentsStatus,
   createNowPaymentsInvoice,
+  createNowPaymentsDirectPayment,
   PaymentStatus,
   PayoutAccountStatus
 } from '../services/paymentsApi';
@@ -75,6 +76,15 @@ export const WalletModal: React.FC<WalletModalProps> = ({
   const [cryptoAutomated, setCryptoAutomated] = useState(false);
   const [isCryptoBusy, setIsCryptoBusy] = useState(false);
   const [cryptoError, setCryptoError] = useState('');
+
+  // "دفع بالبطاقة عبر وسيط خارجي" — عنوان استلام USDT-TRC20 حقيقي من
+  // NOWPayments يُعرض للمستخدم مع زر نسخ، ليلصقه يدوياً بموقع Guardarian
+  // العام. لا تعبئة تلقائية (اختُبرت كل صيغ الروابط الجاهزة ولم تعمل مع
+  // أي مزوّد بدون شراكة رسمية/KYB)، فهذا المسار اليدوي الوحيد المضمون.
+  const [cardBridgeAddress, setCardBridgeAddress] = useState('');
+  const [isCardBridgeBusy, setIsCardBridgeBusy] = useState(false);
+  const [cardBridgeError, setCardBridgeError] = useState('');
+  const [cardBridgeCopied, setCardBridgeCopied] = useState(false);
 
   // Deposit state
   const [depositAmount, setDepositAmount] = useState<number>(MIN_DEPOSIT_USD);
@@ -130,6 +140,35 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     } catch (err: any) {
       setCryptoError(err?.message || 'تعذر بدء عملية الدفع بالعملة الرقمية.');
       setIsCryptoBusy(false);
+    }
+  };
+
+  const handleCardBridgeDeposit = async () => {
+    setCardBridgeError('');
+    setCardBridgeCopied(false);
+    if (!depositAmount || depositAmount < MIN_DEPOSIT_USD) {
+      setCardBridgeError(`الحد الأدنى للإيداع ${MIN_DEPOSIT_USD}$.`);
+      return;
+    }
+    setIsCardBridgeBusy(true);
+    try {
+      const result = await createNowPaymentsDirectPayment(Number(depositAmount));
+      setCardBridgeAddress(result.payAddress);
+    } catch (err: any) {
+      setCardBridgeError(err?.message || 'تعذر إنشاء عنوان استلام الدفع.');
+    } finally {
+      setIsCardBridgeBusy(false);
+    }
+  };
+
+  const handleCopyCardBridgeAddress = async () => {
+    if (!cardBridgeAddress) return;
+    try {
+      await navigator.clipboard.writeText(cardBridgeAddress);
+      setCardBridgeCopied(true);
+      setTimeout(() => setCardBridgeCopied(false), 2500);
+    } catch {
+      setCardBridgeError('تعذر النسخ التلقائي — انسخ العنوان يدوياً من الحقل أعلاه.');
     }
   };
 
@@ -445,6 +484,82 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                         )}
                         <span>ادفع {depositAmount}$ الآن بعملة رقمية</span>
                       </button>
+                    </div>
+                  )}
+
+                  {/* دفع بالبطاقة عبر وسيط خارجي (Guardarian) — لا تعبئة
+                      تلقائية ممكنة (يتطلب partner_api_token رسمي غير
+                      متاح)، فالمسار هنا: نعرض عنوان استلام USDT-TRC20
+                      حقيقي من NOWPayments مع زر نسخ، والمستخدم يلصقه يدوياً
+                      بموقع الوسيط بعد فتحه. */}
+                  {cryptoAutomated && (
+                    <div className="p-4 rounded-2xl bg-sky-50 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-800 space-y-2.5">
+                      <div className="flex items-center gap-2 text-sky-800 dark:text-sky-300 text-xs font-bold">
+                        <CreditCard className="w-4 h-4" />
+                        <span>الدفع بالفيزا/ماستركارد عبر وسيط خارجي</span>
+                      </div>
+                      <p className="text-[11px] text-sky-700 dark:text-sky-400 leading-relaxed">
+                        هذا المسار غير آلي بالكامل: أنشئ عنوان استلام أدناه، انسخه، ثم افتح موقع الوسيط (Guardarian)
+                        والصق العنوان هناك يدوياً، واختر <span dir="ltr" className="font-mono">USDT</span> على شبكة{' '}
+                        <span dir="ltr" className="font-mono">TRC20/TRON</span>. قد يطلب منك الوسيط تأكيد هويتك
+                        (KYC) كإجراء خاص فيه قبل إتمام أول عملية.
+                      </p>
+                      {cardBridgeError && (
+                        <p className="text-[11px] text-rose-600 dark:text-rose-400">{cardBridgeError}</p>
+                      )}
+
+                      {!cardBridgeAddress ? (
+                        <button
+                          type="button"
+                          onClick={handleCardBridgeDeposit}
+                          disabled={isCardBridgeBusy}
+                          className="w-full py-3 rounded-xl bg-sky-600 hover:bg-sky-700 disabled:opacity-60 text-white font-extrabold text-sm shadow-md transition-all flex items-center justify-center gap-2"
+                        >
+                          {isCardBridgeBusy ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <CreditCard className="w-4 h-4" />
+                          )}
+                          <span>أنشئ عنوان استلام لدفع {depositAmount}$ بالبطاقة</span>
+                        </button>
+                      ) : (
+                        <div className="space-y-2.5">
+                          <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-sky-300 dark:border-sky-700">
+                            <p className="text-[10px] text-slate-500 dark:text-slate-400 mb-1">
+                              عنوان الاستلام (USDT - شبكة TRC20):
+                            </p>
+                            <p dir="ltr" className="font-mono text-xs break-all text-slate-900 dark:text-white">
+                              {cardBridgeAddress}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleCopyCardBridgeAddress}
+                            className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2"
+                          >
+                            <span>{cardBridgeCopied ? 'تم نسخ العنوان ✓' : 'انسخ العنوان'}</span>
+                          </button>
+                          <a
+                            href="https://guardarian.com"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="w-full py-3 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-extrabold text-sm shadow-md transition-all flex items-center justify-center gap-2"
+                          >
+                            <ExternalLink className="w-4 h-4" />
+                            <span>افتح موقع الوسيط (Guardarian)</span>
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCardBridgeAddress('');
+                              setCardBridgeCopied(false);
+                            }}
+                            className="w-full py-2 text-[11px] text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 font-bold"
+                          >
+                            إنشاء عنوان جديد
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
 
