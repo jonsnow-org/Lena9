@@ -38,11 +38,11 @@ WebView، متصلة بنفس مشروع Firebase (`literium`) الذي يستخ
    **`FLUTTER_GOOGLE_SERVICES_JSON_BASE64`** في إعدادات هذا المستودع (Settings → Secrets → Actions).
 
 ### 2. معرّفات AdMob الحقيقية
-الكود يستخدم حالياً **معرّفات اختبار رسمية من Google** (آمنة، تعمل، لا تُحقق عائداً حقيقياً):
+✅ مُفعَّلة بالفعل — الكود يستخدم معرّفات حساب AdMob الحقيقي لتطبيق "Literium":
 - `lib/services/admob_service.dart` — بانر + بيني.
 - `.github/workflows/build-flutter-apk.yml` — `ADMOB_APP_ID`.
 
-ابحث عن `TODO: AdMob` في كلا الملفين واستبدل بالقيم الحقيقية من [AdMob Console](https://apps.admob.com) بعد تسجيل التطبيق هناك.
+لا توجد أي معرّفات اختبار وهمية متبقية في الكود.
 
 ## تشغيل السير لأول مرة
 

@@ -202,9 +202,8 @@ jobs:
       - name: Add AdMob App ID to AndroidManifest.xml
         working-directory: flutter_app
         env:
-          # TODO: AdMob — استبدل بمعرّف تطبيقك الحقيقي (App ID، وليس Ad Unit ID)
-          # من AdMob Console. القيمة أدناه هي معرّف الاختبار الرسمي من Google.
-          ADMOB_APP_ID: "ca-app-pub-3940256099942544~3347511713"
+          # App ID الحقيقي لتطبيق "Literium" في AdMob Console.
+          ADMOB_APP_ID: "ca-app-pub-8136741145180538~7102233960"
         run: |
           python3 - <<PY
           import re

@@ -1,20 +1,15 @@
 import 'dart:io';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
-/// ⚠️ معرّفات الاختبار الرسمية من Google أدناه — تعمل فعلياً وبأمان تام
-/// أثناء التطوير، لكنها **لا تُحقّق أي عائد حقيقي**. يجب استبدالها بمعرّفات
-/// حسابك الفعلي في AdMob Console قبل أي نشر حقيقي — ابحث عن "TODO: AdMob"
-/// في هذا الملف وAndroidManifest.xml لكل موضع يحتاج استبدالاً.
+/// معرّفات AdMob الحقيقية لحساب Literium (تطبيق "Literium" — Android).
 class AdMobService {
-  // TODO: AdMob — استبدل بمعرّف وحدة البانر الحقيقي من حسابك.
   static String get bannerAdUnitId {
-    if (Platform.isAndroid) return 'ca-app-pub-3940256099942544/6300978111';
+    if (Platform.isAndroid) return 'ca-app-pub-8136741145180538/2452542514';
     throw UnsupportedError('Android فقط في هذا الإصدار');
   }
 
-  // TODO: AdMob — استبدل بمعرّف وحدة الإعلان البيني الحقيقي من حسابك.
   static String get interstitialAdUnitId {
-    if (Platform.isAndroid) return 'ca-app-pub-3940256099942544/1033173712';
+    if (Platform.isAndroid) return 'ca-app-pub-8136741145180538/5810595378';
     throw UnsupportedError('Android فقط في هذا الإصدار');
   }
 
