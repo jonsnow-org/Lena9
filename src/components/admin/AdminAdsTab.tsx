@@ -58,11 +58,14 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
   const [propellerSnippet, setPropellerSnippet] = useState(externalAdsConfig?.propellerAds?.snippet ?? '');
   const [adsterraEnabled, setAdsterraEnabled] = useState(externalAdsConfig?.adsterra?.enabled ?? false);
   const [adsterraSnippet, setAdsterraSnippet] = useState(externalAdsConfig?.adsterra?.snippet ?? '');
+  const [taboolaEnabled, setTaboolaEnabled] = useState(externalAdsConfig?.taboola?.enabled ?? false);
+  const [taboolaSnippet, setTaboolaSnippet] = useState(externalAdsConfig?.taboola?.snippet ?? '');
   // appSafe: تأكيد صريح إن سياسة الشبكة تسمح بعرضها داخل تطبيق APK لا
   // الموقع فقط — افتراضياً معطّل، لا علاقة له بظهورها بالموقع (enabled
   // وحده يكفي هناك). انظر شرح كامل في externalAdsStore.ts.
   const [propellerAppSafe, setPropellerAppSafe] = useState(externalAdsConfig?.propellerAds?.appSafe ?? false);
   const [adsterraAppSafe, setAdsterraAppSafe] = useState(externalAdsConfig?.adsterra?.appSafe ?? false);
+  const [taboolaAppSafe, setTaboolaAppSafe] = useState(externalAdsConfig?.taboola?.appSafe ?? false);
   // سعر تقديري (USD) لكل 1000 مشاهدة حقيقية موثّقة لإعلان خارجي في مواضع
   // الكاتب — أساس حساب حصة الكاتب من عائد هذه الشبكات (انظر AdminFinanceTab).
   const [estimatedCpmUsd, setEstimatedCpmUsd] = useState(String(externalAdsConfig?.estimatedCpmUsd ?? 2));
@@ -79,6 +82,9 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
     adsterraEnabled,
     adsterraSnippet,
     adsterraAppSafe,
+    taboolaEnabled,
+    taboolaSnippet,
+    taboolaAppSafe,
     estimatedCpmUsd
   });
 
@@ -89,6 +95,9 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
     adsterraEnabled !== savedExternalAdsSnapshot.adsterraEnabled ||
     adsterraSnippet.trim() !== savedExternalAdsSnapshot.adsterraSnippet.trim() ||
     adsterraAppSafe !== savedExternalAdsSnapshot.adsterraAppSafe ||
+    taboolaEnabled !== savedExternalAdsSnapshot.taboolaEnabled ||
+    taboolaSnippet.trim() !== savedExternalAdsSnapshot.taboolaSnippet.trim() ||
+    taboolaAppSafe !== savedExternalAdsSnapshot.taboolaAppSafe ||
     estimatedCpmUsd.trim() !== savedExternalAdsSnapshot.estimatedCpmUsd.trim();
 
   // إن وصلت قيمة externalAdsConfig من Firestore بعد أول تحميل لهذا
@@ -105,6 +114,9 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
       adsterraEnabled: externalAdsConfig?.adsterra?.enabled ?? false,
       adsterraSnippet: externalAdsConfig?.adsterra?.snippet ?? '',
       adsterraAppSafe: externalAdsConfig?.adsterra?.appSafe ?? false,
+      taboolaEnabled: externalAdsConfig?.taboola?.enabled ?? false,
+      taboolaSnippet: externalAdsConfig?.taboola?.snippet ?? '',
+      taboolaAppSafe: externalAdsConfig?.taboola?.appSafe ?? false,
       estimatedCpmUsd: String(externalAdsConfig?.estimatedCpmUsd ?? 2)
     };
     setPropellerEnabled(nextSnapshot.propellerEnabled);
@@ -113,6 +125,9 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
     setAdsterraEnabled(nextSnapshot.adsterraEnabled);
     setAdsterraSnippet(nextSnapshot.adsterraSnippet);
     setAdsterraAppSafe(nextSnapshot.adsterraAppSafe);
+    setTaboolaEnabled(nextSnapshot.taboolaEnabled);
+    setTaboolaSnippet(nextSnapshot.taboolaSnippet);
+    setTaboolaAppSafe(nextSnapshot.taboolaAppSafe);
     setEstimatedCpmUsd(nextSnapshot.estimatedCpmUsd);
     setSavedExternalAdsSnapshot(nextSnapshot);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -125,10 +140,12 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
     try {
       const trimmedPropeller = propellerSnippet.trim();
       const trimmedAdsterra = adsterraSnippet.trim();
+      const trimmedTaboola = taboolaSnippet.trim();
       const cpmValue = Math.max(0, Number(estimatedCpmUsd) || 0);
       await onSaveExternalAdsConfig({
         propellerAds: { enabled: propellerEnabled, snippet: trimmedPropeller, appSafe: propellerAppSafe },
         adsterra: { enabled: adsterraEnabled, snippet: trimmedAdsterra, appSafe: adsterraAppSafe },
+        taboola: { enabled: taboolaEnabled, snippet: trimmedTaboola, appSafe: taboolaAppSafe },
         estimatedCpmUsd: cpmValue
       });
       setSavedExternalAdsSnapshot({
@@ -138,6 +155,9 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
         adsterraEnabled,
         adsterraSnippet: trimmedAdsterra,
         adsterraAppSafe,
+        taboolaEnabled,
+        taboolaSnippet: trimmedTaboola,
+        taboolaAppSafe,
         estimatedCpmUsd: String(cpmValue)
       });
       setExternalAdsSavedMsg('تم الحفظ بنجاح ✓');
@@ -498,10 +518,10 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
               ربط شبكات الإعلانات الخارجية البديلة (Fallback Ad Networks)
             </h4>
             <p className="text-xs text-slate-400 leading-relaxed">
-              إذا لم تكن هناك حملات محلية نشطة للمعلنين، يمكن ملء المساحات الشاغرة تلقائياً عبر شبكات خارجية مثل PropellerAds (يشمل Monetag) أو Adsterra لتعظيم الدخل السلبي. الصق كود الإعلان الكامل (وسم &lt;script&gt; كاملاً) كما هو من لوحة الشبكة، ثم فعّل المفتاح.
+              إذا لم تكن هناك حملات محلية نشطة للمعلنين، يمكن ملء المساحات الشاغرة تلقائياً عبر شبكات خارجية مثل PropellerAds (يشمل Monetag) أو Adsterra أو Taboola لتعظيم الدخل السلبي. الصق كود الإعلان الكامل (وسم &lt;script&gt; كاملاً) كما هو من لوحة الشبكة، ثم فعّل المفتاح.
             </p>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-2">
               <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
                 <div className="flex items-center justify-between">
                   <div className="font-bold text-xs text-white">PropellerAds (ويشمل Monetag)</div>
@@ -571,6 +591,42 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
                 >
                   <span>متوافقة مع نسخة APK</span>
                   <span>{adsterraAppSafe ? 'مفعّل ✓' : 'غير مؤكَّد بعد'}</span>
+                </button>
+              </div>
+
+              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="font-bold text-xs text-white">Taboola</div>
+                  <button
+                    type="button"
+                    onClick={() => setTaboolaEnabled((v) => !v)}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${
+                      taboolaEnabled ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400'
+                    }`}
+                  >
+                    {taboolaEnabled ? 'مفعّلة ✓' : 'معطّلة'}
+                  </button>
+                </div>
+                <textarea
+                  rows={4}
+                  placeholder="الصق كود Publisher Tag الكامل من Taboola هنا"
+                  value={taboolaSnippet}
+                  onChange={(e) => setTaboolaSnippet(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-[11px] text-white font-mono focus:outline-none focus:border-blue-500 resize-y"
+                  dir="ltr"
+                />
+                <button
+                  type="button"
+                  onClick={() => setTaboolaAppSafe((v) => !v)}
+                  title="فعّله فقط بعد التأكد من دعم الشبكة لعرض إعلاناتها داخل تطبيق APK، لا الموقع فقط"
+                  className={`w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
+                    taboolaAppSafe
+                      ? 'bg-teal-600/20 text-teal-300 border border-teal-600/40'
+                      : 'bg-slate-900 text-slate-500 border border-slate-800'
+                  }`}
+                >
+                  <span>متوافقة مع نسخة APK</span>
+                  <span>{taboolaAppSafe ? 'مفعّل ✓' : 'غير مؤكَّد بعد'}</span>
                 </button>
               </div>
             </div>

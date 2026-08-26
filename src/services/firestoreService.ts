@@ -19,6 +19,7 @@ import {
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { Article, AdCampaign, Transaction, FraudFlag, User, UserRole, Comment, CommentReply, AppNotification, ArticlePromotion, Tweet, TweetComment } from '../types';
 import { DEFAULT_FREE_DAILY_LIMIT } from '../utils/aiQuota';
+import { ExternalAdsConfig } from '../utils/externalAdsStore';
 
 // -------------------------------------------------------------------
 // Realtime Subscriptions & CRUD
@@ -1321,13 +1322,11 @@ export async function setPlatformAdsEnabledInFirestore(enabled: boolean, updated
 }
 
 /** يحفظ إعدادات الشبكات الإعلانية الخارجية الاحتياطية (PropellerAds/
- *  Adsterra) — كود HTML/JS خام لكل شبكة مع مفتاح تفعيل مستقل. */
+ *  Adsterra/Taboola) — كود HTML/JS خام لكل شبكة مع مفتاح تفعيل مستقل.
+ *  يستخدم نوع ExternalAdsConfig الحقيقي (بدل نسخة محلية كانت تفتقد
+ *  appSafe أصلاً وستفتقد أي حقل جديد يُضاف لاحقاً بصمت). */
 export async function setExternalAdsConfigInFirestore(
-  config: {
-    propellerAds: { enabled: boolean; snippet: string };
-    adsterra: { enabled: boolean; snippet: string };
-    estimatedCpmUsd?: number;
-  },
+  config: ExternalAdsConfig,
   updatedByUserId: string
 ): Promise<void> {
   try {

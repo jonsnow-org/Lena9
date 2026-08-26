@@ -28,6 +28,9 @@ export interface ExternalAdNetworkConfig {
 export interface ExternalAdsConfig {
   propellerAds: ExternalAdNetworkConfig;
   adsterra: ExternalAdNetworkConfig;
+  /** إعلانات "محتوى موصى به" — بطاقات أسفل المقال، بنفس آلية الكود
+   *  الجاهز المستخدمة في الشبكتين الأخريين. */
+  taboola: ExternalAdNetworkConfig;
   /**
    * السعر التقديري بالدولار لكل 1000 مشاهدة حقيقية موثّقة لإعلان شبكة
    * خارجية في مواضع الكاتب (ذات حصة ربح ثابتة) — أساس حساب عائد الكاتب
@@ -41,6 +44,7 @@ const EMPTY_NETWORK: ExternalAdNetworkConfig = { enabled: false, snippet: '', ap
 const DEFAULT_CONFIG: ExternalAdsConfig = {
   propellerAds: { ...EMPTY_NETWORK },
   adsterra: { ...EMPTY_NETWORK },
+  taboola: { ...EMPTY_NETWORK },
   estimatedCpmUsd: 2
 };
 
@@ -58,6 +62,7 @@ function ensureStarted() {
       currentValue = {
         propellerAds: { ...EMPTY_NETWORK, ...(data.propellerAds || {}) },
         adsterra: { ...EMPTY_NETWORK, ...(data.adsterra || {}) },
+        taboola: { ...EMPTY_NETWORK, ...(data.taboola || {}) },
         estimatedCpmUsd:
           typeof data.estimatedCpmUsd === 'number' && data.estimatedCpmUsd >= 0
             ? data.estimatedCpmUsd
@@ -97,5 +102,6 @@ export function pickActiveExternalNetwork(config: ExternalAdsConfig): ExternalAd
 
   if (isEligible(config.propellerAds)) return config.propellerAds;
   if (isEligible(config.adsterra)) return config.adsterra;
+  if (isEligible(config.taboola)) return config.taboola;
   return null;
 }
