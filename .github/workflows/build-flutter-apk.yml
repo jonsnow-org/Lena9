@@ -61,35 +61,49 @@ jobs:
           # استرجاع google-services.json أعلاه أنشأته عبر mkdir -p لوضع
           # الملفّين السرّيين فيه، فاختبار "-d android" وحده يعطي نتيجة
           # خاطئة (يظن المشروع موجوداً) ويتجاوز flutter create بالكامل.
-          if [ ! -f "android/settings.gradle" ]; then
+          if [ ! -f "android/settings.gradle" ] && [ ! -f "android/settings.gradle.kts" ]; then
             flutter create --platforms=android --org=studio.ai.literium --project-name=literium_app .
           fi
 
+      # منذ إصدارات Flutter الحديثة (٣.٤٧+ ضمن هذا السير) يولّد flutter create
+      # مشروع Gradle بصيغة Kotlin DSL افتراضياً (settings.gradle.kts،
+      # build.gradle.kts) بدل صيغة Groovy القديمة (.gradle) التي كتبت لها هذه
+      # الخطوة أصلاً — فتُكتشف الصيغة الفعلية وقت التشغيل بدل افتراض واحدة.
       - name: Wire the Google Services Gradle plugin
         working-directory: flutter_app
         run: |
-          # يضيف مُعرِّف الإضافة إلى كتلة plugins في settings.gradle (نمط
-          # Flutter الحديث، Declarative Plugin Management) إن لم يكن موجوداً.
-          if ! grep -q "com.google.gms.google-services" android/settings.gradle; then
-            python3 - <<'PY'
-          import re
-          path = "android/settings.gradle"
-          text = open(path).read()
-          marker = 'id "com.android.application"'
-          insert = '    id "com.google.gms.google-services" version "4.4.2" apply false\n'
-          idx = text.find(marker)
-          if idx == -1:
-              raise SystemExit("لم يُعثر على كتلة plugins المتوقعة في settings.gradle")
-          line_end = text.find("\n", idx) + 1
-          text = text[:line_end] + insert + text[line_end:]
-          open(path, "w").write(text)
-          PY
-          fi
+          python3 - <<'PY'
+          import os
 
-          if ! grep -q "com.google.gms.google-services" android/app/build.gradle; then
-            echo '
-          apply plugin: "com.google.gms.google-services"' >> android/app/build.gradle
-          fi
+          settings_path = "android/settings.gradle.kts" if os.path.exists("android/settings.gradle.kts") else "android/settings.gradle"
+          is_kts = settings_path.endswith(".kts")
+          text = open(settings_path).read()
+          if "com.google.gms.google-services" not in text:
+              marker = 'id("com.android.application")' if is_kts else 'id "com.android.application"'
+              insert = ('    id("com.google.gms.google-services") version "4.4.2" apply false\n'
+                        if is_kts else
+                        '    id "com.google.gms.google-services" version "4.4.2" apply false\n')
+              idx = text.find(marker)
+              if idx == -1:
+                  raise SystemExit(f"لم يُعثر على كتلة plugins المتوقعة في {settings_path}")
+              line_end = text.find("\n", idx) + 1
+              text = text[:line_end] + insert + text[line_end:]
+              open(settings_path, "w").write(text)
+
+          app_gradle_path = "android/app/build.gradle.kts" if os.path.exists("android/app/build.gradle.kts") else "android/app/build.gradle"
+          is_app_kts = app_gradle_path.endswith(".kts")
+          text = open(app_gradle_path).read()
+          if "com.google.gms.google-services" not in text:
+              if is_app_kts:
+                  idx = text.find("plugins {")
+                  if idx == -1:
+                      raise SystemExit(f"لم يُعثر على كتلة plugins في {app_gradle_path}")
+                  line_end = text.find("\n", idx) + 1
+                  text = text[:line_end] + '    id("com.google.gms.google-services")\n' + text[line_end:]
+              else:
+                  text += '\napply plugin: "com.google.gms.google-services"\n'
+              open(app_gradle_path, "w").write(text)
+          PY
 
       - name: Add release signing config
         working-directory: flutter_app
@@ -98,10 +112,32 @@ jobs:
           # خطوة `flutter create --org=... --project-name=...` أعلاه — لا
           # حاجة لتعديله هنا.
           python3 - <<'PY'
-          path = "android/app/build.gradle"
-          text = open(path).read()
+          import os
+
+          app_gradle_path = "android/app/build.gradle.kts" if os.path.exists("android/app/build.gradle.kts") else "android/app/build.gradle"
+          is_kts = app_gradle_path.endswith(".kts")
+          text = open(app_gradle_path).read()
           if "signingConfigs" not in text:
-              signing_block = '''
+              if is_kts:
+                  signing_block = '''
+          android {
+              signingConfigs {
+                  create("release") {
+                      storeFile = file("literium.keystore")
+                      storePassword = System.getenv("KEYSTORE_PASSWORD")
+                      keyAlias = "literium"
+                      keyPassword = System.getenv("KEYSTORE_PASSWORD")
+                  }
+              }
+              buildTypes {
+                  release {
+                      signingConfig = signingConfigs.getByName("release")
+                  }
+              }
+          }
+          '''
+              else:
+                  signing_block = '''
           android {
               signingConfigs {
                   release {
@@ -119,7 +155,7 @@ jobs:
           }
           '''
               text += signing_block
-          open(path, "w").write(text)
+              open(app_gradle_path, "w").write(text)
           PY
 
       - name: Add AdMob App ID to AndroidManifest.xml
