@@ -158,49 +158,39 @@ jobs:
               open(app_gradle_path, "w").write(text)
           PY
 
-      # حزم firebase_auth/cloud_firestore الأصلية تعتمد داخلياً على Guava
-      # التي تستخدم شروح checker-framework (@UnknownInitialization) في
-      # AbstractFuture ونحوها؛ مُصرِّف Kotlin الأحدث المرفق مع نسخة Flutter
-      # هذه يرفض تلك الشروح بخطأ "type annotation ... is inaccessible" ما
-      # لم يوجد checker-qual صراحةً على مسار الترجمة.
+      # ثلاث محاولات منفصلة لحقن checker-qual (في :app، عبر resolutionStrategy.force
+      # في الجذر، وأخيراً كاعتماد فعلي مضاف لكل subproject) فشلت جميعها بنفس
+      # خطأ "type annotation ... is inaccessible" حرفياً — حتى مع تحقّق فعلي
+      # من نجاح الحقن (بلا أي خطأ تهيئة) في المحاولة الثالثة. هذا يثبت أن
+      # الفرضية بأكملها (مكتبة ناقصة في classpath) كانت خاطئة من الأساس.
       #
-      # ⚠️ محاولتان سابقتان فشلتا بنفس الخطأ حرفياً:
-      # 1. وضع الاعتماد في android/app/build.gradle.kts (مشروع :app) — لا
-      #    يؤثر على :firebase_auth الذي يُترجَم كمشروع Gradle فرعي منفصل.
-      # 2. resolutionStrategy.force في الجذر — force يُعيد اختيار الإصدار
-      #    فقط بين تبعيات موجودة أصلاً في رسم التبعيات؛ إن لم يكن
-      #    checker-qual جزءاً من classpath الترجمة لـ :firebase_auth أصلاً
-      #    (Guava قد لا تُصدّره تعدياً ضمن compile scope)، فـ force لا يضيف
-      #    شيئاً فعلياً. الإصلاح الصحيح هو إضافة الاعتماد فعلياً (وليس مجرد
-      #    تثبيت إصداره) لكل مشروع فرعي عبر subprojects { dependencies.add(...) }.
-      - name: Work around Kotlin/checker-qual classpath issue in Firebase plugins
+      # السبب الحقيقي، بحسب تحذير Flutter نفسه في نفس السجل ("Your app uses
+      # plugins that apply Kotlin Gradle Plugin (KGP): firebase_auth,
+      # firebase_core... migrate to Built-in Kotlin"): كل إضافة (firebase_auth
+      # وfirebase_core) تطبّق نسخة Kotlin Gradle Plugin خاصة بها كمشروع Gradle
+      # فرعي مستقل، فيتصادم هذا مع مُصرِّف Kotlin الأحدث الذي يستخدمه Flutter
+      # نفسه لمشروع :app. تفعيل "Built-in Kotlin" (مدعوم في Flutter 3.47+، ونحن
+      # على 3.47.1) يوحّد كل الترجمة على أداة Kotlin واحدة تديرها Flutter
+      # مركزياً بدل أن تطبّق كل إضافة نسختها الخاصة — وهذا بالضبط ما يُفترض أن
+      # يزيل هذا التعارض من جذوره.
+      - name: Enable Flutter's Built-in Kotlin (fixes per-plugin KGP version conflicts)
         working-directory: flutter_app
         run: |
           python3 - <<'PY'
-          import os
+          import os, re
 
-          root_gradle_path = "android/build.gradle.kts" if os.path.exists("android/build.gradle.kts") else "android/build.gradle"
-          is_kts = root_gradle_path.endswith(".kts")
-          text = open(root_gradle_path).read()
-          if "checker-qual" not in text:
-              if is_kts:
-                  block = '''
-          subprojects {
-              configurations.findByName("implementation")?.let {
-                  dependencies.add("implementation", "org.checkerframework:checker-qual:3.43.0")
-              }
-          }
-          '''
-              else:
-                  block = '''
-          subprojects {
-              if (configurations.findByName("implementation") != null) {
-                  dependencies.add("implementation", "org.checkerframework:checker-qual:3.43.0")
-              }
-          }
-          '''
-              text += block
-              open(root_gradle_path, "w").write(text)
+          path = "android/gradle.properties"
+          text = open(path).read() if os.path.exists(path) else ""
+          # قد يكون flutter create نفسه كتب android.builtInKotlin=false مسبقاً
+          # (سلوكه الافتراضي الحالي) — نستبدل القيمة إن وُجد السطر، لا نتجاهله
+          # فقط لأن اسم المفتاح موجود.
+          if re.search(r'^android\.builtInKotlin=.*$', text, re.MULTILINE):
+              text = re.sub(r'^android\.builtInKotlin=.*$', 'android.builtInKotlin=true', text, flags=re.MULTILINE)
+          else:
+              if text and not text.endswith("\n"):
+                  text += "\n"
+              text += "android.builtInKotlin=true\n"
+          open(path, "w").write(text)
           PY
 
       - name: Add AdMob App ID to AndroidManifest.xml
