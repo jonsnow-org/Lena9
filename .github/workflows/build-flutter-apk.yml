@@ -168,22 +168,18 @@ jobs:
               open(app_gradle_path, "w").write(text)
           PY
 
-      # ثلاث محاولات منفصلة لحقن checker-qual (في :app، عبر resolutionStrategy.force
-      # في الجذر، وأخيراً كاعتماد فعلي مضاف لكل subproject) فشلت جميعها بنفس
-      # خطأ "type annotation ... is inaccessible" حرفياً — حتى مع تحقّق فعلي
-      # من نجاح الحقن (بلا أي خطأ تهيئة) في المحاولة الثالثة. هذا يثبت أن
-      # الفرضية بأكملها (مكتبة ناقصة في classpath) كانت خاطئة من الأساس.
-      #
-      # السبب الحقيقي، بحسب تحذير Flutter نفسه في نفس السجل ("Your app uses
-      # plugins that apply Kotlin Gradle Plugin (KGP): firebase_auth,
-      # firebase_core... migrate to Built-in Kotlin"): كل إضافة (firebase_auth
-      # وfirebase_core) تطبّق نسخة Kotlin Gradle Plugin خاصة بها كمشروع Gradle
-      # فرعي مستقل، فيتصادم هذا مع مُصرِّف Kotlin الأحدث الذي يستخدمه Flutter
-      # نفسه لمشروع :app. تفعيل "Built-in Kotlin" (مدعوم في Flutter 3.47+، ونحن
-      # على 3.47.1) يوحّد كل الترجمة على أداة Kotlin واحدة تديرها Flutter
-      # مركزياً بدل أن تطبّق كل إضافة نسختها الخاصة — وهذا بالضبط ما يُفترض أن
-      # يزيل هذا التعارض من جذوره.
-      - name: Enable Flutter's Built-in Kotlin (fixes per-plugin KGP version conflicts)
+      # كل المحاولات السابقة لتفعيل Built-in Kotlin أو حقن checker-qual كانت
+      # في الاتجاه الخاطئ. السجل الحقيقي (تشغيل رقم 15) كشف السبب الفعلي بلا
+      # أي لبس: cloud_firestore يطبّق 'kotlin-android' مباشرة (بلا أي شرط)،
+      # وAGP 9+ يرفض ذلك بخطأ صريح: "The 'org.jetbrains.kotlin.android'
+      # plugin is no longer required for Kotlin support since AGP 9.0" —
+      # ويقترح Gradle نفسه الحل رسمياً في نص الخطأ: تعيين
+      # android.builtInKotlin=false وandroid.newDsl=false معاً لتعطيل سلوك
+      # AGP 9 الجديد والعودة لمسار الترجمة القديم الذي تعمل عليه كل حزم
+      # FlutterFire فعلياً منذ شهور طويلة. هذا عكس ما فعلته الخطوة السابقة
+      # تماماً (كانت تُفعّل true بدل false) — كانت مبنية على قراءة خاطئة
+      # لتحذير غامض قبل أن يتوفر سجل الخطأ الصريح هذا.
+      - name: Disable AGP 9 built-in Kotlin (official Gradle-suggested workaround)
         working-directory: flutter_app
         run: |
           python3 - <<'PY'
@@ -191,15 +187,15 @@ jobs:
 
           path = "android/gradle.properties"
           text = open(path).read() if os.path.exists(path) else ""
-          # قد يكون flutter create نفسه كتب android.builtInKotlin=false مسبقاً
-          # (سلوكه الافتراضي الحالي) — نستبدل القيمة إن وُجد السطر، لا نتجاهله
-          # فقط لأن اسم المفتاح موجود.
-          if re.search(r'^android\.builtInKotlin=.*$', text, re.MULTILINE):
-              text = re.sub(r'^android\.builtInKotlin=.*$', 'android.builtInKotlin=true', text, flags=re.MULTILINE)
-          else:
-              if text and not text.endswith("\n"):
-                  text += "\n"
-              text += "android.builtInKotlin=true\n"
+          for key, value in (("android.builtInKotlin", "false"), ("android.newDsl", "false")):
+              pattern = rf'^{re.escape(key)}=.*$'
+              line = f'{key}={value}'
+              if re.search(pattern, text, re.MULTILINE):
+                  text = re.sub(pattern, line, text, flags=re.MULTILINE)
+              else:
+                  if text and not text.endswith("\n"):
+                      text += "\n"
+                  text += line + "\n"
           open(path, "w").write(text)
           PY
 
@@ -223,44 +219,6 @@ jobs:
       - name: flutter pub get
         working-directory: flutter_app
         run: flutter pub get
-
-      # تجربة أخيرة بعد فشل أربع محاولات متتالية بنفس الخطأ: تفعيل Built-in
-      # Kotlin (الخطوة أعلاه) وحده لا يمنع firebase_auth/firebase_core من
-      # تطبيق نسختيهما الخاصتين من Kotlin Gradle Plugin — الإصلاح الكامل
-      # (حسب دليل Flutter لمؤلفي الإضافات) يتطلب أن تتوقف الإضافة نفسها عن
-      # تطبيق "kotlin-android" لتعتمد على الأداة المركزية بدلاً من ذلك. بما
-      # أننا لا ننتظر تحديثاً من Firebase، نُعدّل نسخة الحزمة المُنزَّلة في
-      # الـ pub cache مباشرة بعد flutter pub get (لا نلمس كود التطبيق نفسه
-      # إطلاقاً، ولا نغيّر أي وظيفة — فقط كيفية ترجمة Kotlin لهذه الوحدة).
-      # الخطوة تطبع محتوى الملفّين أولاً كتشخيص حقيقي، ثم تحاول الإصلاح، ولا
-      # تفشل بصمت إن لم يُطابق النمط المتوقع (تكتفي بتنبيه في السجل).
-      - name: Diagnose and patch firebase_auth/firebase_core's self-applied Kotlin plugin
-        working-directory: flutter_app
-        run: |
-          python3 - <<'PY'
-          import glob, os, re
-
-          pub_cache = os.environ.get("PUB_CACHE", os.path.expanduser("~/.pub-cache"))
-          for pkg in ("firebase_auth", "firebase_core"):
-              candidates = glob.glob(os.path.join(pub_cache, "hosted", "pub.dev", f"{pkg}-*", "android", "build.gradle.kts"))
-              if not candidates:
-                  candidates = glob.glob(os.path.join(pub_cache, "hosted", "pub.dev", f"{pkg}-*", "android", "build.gradle"))
-              if not candidates:
-                  print(f"[{pkg}] لم يُعثر على android/build.gradle(.kts) في pub cache — تخطّي")
-                  continue
-              path = candidates[0]
-              text = open(path).read()
-              print(f"=== {path} (قبل التعديل) ===")
-              print(text)
-              new_text, count = re.subn(r'^\s*id\("kotlin-android"\)\s*\n', '', text, flags=re.MULTILINE)
-              if count == 0:
-                  new_text, count = re.subn(r'^\s*id\("org\.jetbrains\.kotlin\.android"\).*\n', '', text, flags=re.MULTILINE)
-              if count > 0:
-                  open(path, "w").write(new_text)
-                  print(f"[{pkg}] أُزيل تطبيق Kotlin الخاص بالإضافة ({count} تطابق) — ستعتمد الآن على Built-in Kotlin")
-              else:
-                  print(f"[{pkg}] لم يُعثر على سطر تطبيق Kotlin المتوقع — تُرك الملف كما هو")
-          PY
 
       - name: Build signed release APK
         working-directory: flutter_app
