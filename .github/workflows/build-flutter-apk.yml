@@ -115,6 +115,48 @@ jobs:
               open(app_gradle_path, "w").write(text)
           PY
 
+      # مطلوب لـ firebase_crashlytics — نفس منطق كشف Kotlin DSL/Groovy وقت
+      # التشغيل المستخدم في خطوة Google Services أعلاه بالضبط، لأن الحاجة
+      # لهذا السجل ظهرت فقط بعد أن ثبت أن شاشة التشخيص في main.dart لا تظهر
+      # إطلاقاً عند الانهيار الفوري — ما يعني عطلاً أصلياً قبل بدء Dart،
+      # وCrashlytics هو الأداة الوحيدة القادرة على التقاط هذا النوع من
+      # الأعطال بلا حاسوب/ADB لدى المستخدم.
+      - name: Wire the Firebase Crashlytics Gradle plugin
+        working-directory: flutter_app
+        run: |
+          python3 - <<'PY'
+          import os
+
+          settings_path = "android/settings.gradle.kts" if os.path.exists("android/settings.gradle.kts") else "android/settings.gradle"
+          is_kts = settings_path.endswith(".kts")
+          text = open(settings_path).read()
+          if "com.google.firebase.crashlytics" not in text:
+              marker = 'id("com.android.application")' if is_kts else 'id "com.android.application"'
+              insert = ('    id("com.google.firebase.crashlytics") version "3.0.3" apply false\n'
+                        if is_kts else
+                        '    id "com.google.firebase.crashlytics" version "3.0.3" apply false\n')
+              idx = text.find(marker)
+              if idx == -1:
+                  raise SystemExit(f"لم يُعثر على كتلة plugins المتوقعة في {settings_path}")
+              line_end = text.find("\n", idx) + 1
+              text = text[:line_end] + insert + text[line_end:]
+              open(settings_path, "w").write(text)
+
+          app_gradle_path = "android/app/build.gradle.kts" if os.path.exists("android/app/build.gradle.kts") else "android/app/build.gradle"
+          is_app_kts = app_gradle_path.endswith(".kts")
+          text = open(app_gradle_path).read()
+          if "com.google.firebase.crashlytics" not in text:
+              if is_app_kts:
+                  idx = text.find("plugins {")
+                  if idx == -1:
+                      raise SystemExit(f"لم يُعثر على كتلة plugins في {app_gradle_path}")
+                  line_end = text.find("\n", idx) + 1
+                  text = text[:line_end] + '    id("com.google.firebase.crashlytics")\n' + text[line_end:]
+              else:
+                  text += '\napply plugin: "com.google.firebase.crashlytics"\n'
+              open(app_gradle_path, "w").write(text)
+          PY
+
       - name: Add release signing config
         working-directory: flutter_app
         run: |

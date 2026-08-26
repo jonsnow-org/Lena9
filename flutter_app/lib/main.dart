@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:provider/provider.dart';
@@ -11,11 +13,14 @@ import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 
 Future<void> main() async {
-  // كان التطبيق ينهار فوراً عند الفتح بلا أي رسالة لأن Firebase.initializeApp()
-  // وMobileAds.instance.initialize() كانا يُستدعيان دون أي try/catch قبل
-  // runApp() — أي استثناء منهما يُغلق التطبيق مباشرة دون أثر يمكن تشخيصه على
-  // جهاز المستخدم (لا يوجد لديه حاسوب/ADB لقراءة سجل الانهيار). الآن أي فشل
-  // يُعرض كنص واضح على الشاشة بدل الإغلاق الصامت.
+  // كان التطبيق ينهار فوراً عند الفتح بلا أي رسالة، وحتى بعد إضافة try/catch
+  // حول main() لم تظهر شاشة التشخيص إطلاقاً — ما يعني أن الانهيار يحدث قبل
+  // أن يبدأ Dart بالتنفيذ أصلاً (على الأرجح أثناء التهيئة الذاتية الأصلية
+  // لـ Firebase عبر ContentProvider عند إقلاع العملية، قبل main() بوقت
+  // طويل). Firebase Crashlytics يثبّت معالج أعطال أصلياً في وقت مبكر جداً
+  // من إقلاع العملية (عبر ContentProvider خاص به أيضاً)، فهو أفضل أداة
+  // متاحة لالتقاط هذا النوع من الأعطال وإرساله إلى Firebase Console — يمكن
+  // للمستخدم مراجعته من متصفح هاتفه دون أي حاسوب أو ADB.
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
 
@@ -25,6 +30,13 @@ Future<void> main() async {
       // انظر flutter_app/README.md لخطوة الحصول عليه من نفس مشروع Firebase
       // "literium" المستخدم في الموقع الحي.
       await Firebase.initializeApp();
+
+      FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
+      PlatformDispatcher.instance.onError = (error, stack) {
+        FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+        return true;
+      };
+
       await MobileAds.instance.initialize();
     } catch (e, st) {
       startupError = '$e\n\n$st';
@@ -45,6 +57,7 @@ Future<void> main() async {
       ),
     );
   }, (error, stack) {
+    FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
     runApp(_StartupErrorApp(message: '$error\n\n$stack'));
   });
 }

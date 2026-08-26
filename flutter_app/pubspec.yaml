@@ -20,6 +20,9 @@ dependencies:
   firebase_core: ^4.14.0
   firebase_auth: ^6.6.0
   cloud_firestore: ^6.9.0
+  # يلتقط الأعطال الأصلية (native) عند الإقلاع — ضروري للتشخيص لأن المستخدم
+  # لا يملك حاسوباً/ADB لقراءة سجل عطل مباشرة من الجهاز.
+  firebase_crashlytics: ^4.0.0
   # يبقى على خط v6 عمداً — v7 غيّر الواجهة البرمجية جذرياً (GoogleSignIn()
   # أُزيل لصالح GoogleSignIn.instance + initialize()/authenticate() غير
   # المتزامنة)، وتبنّيه الآن يعني إعادة كتابة auth_service.dart دون أي مصحّح
