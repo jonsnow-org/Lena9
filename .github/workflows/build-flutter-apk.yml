@@ -186,20 +186,16 @@ jobs:
               if is_kts:
                   block = '''
           subprojects {
-              afterEvaluate {
-                  configurations.findByName("implementation")?.let {
-                      dependencies.add("implementation", "org.checkerframework:checker-qual:3.43.0")
-                  }
+              configurations.findByName("implementation")?.let {
+                  dependencies.add("implementation", "org.checkerframework:checker-qual:3.43.0")
               }
           }
           '''
               else:
                   block = '''
           subprojects {
-              afterEvaluate {
-                  if (configurations.findByName("implementation") != null) {
-                      dependencies.add("implementation", "org.checkerframework:checker-qual:3.43.0")
-                  }
+              if (configurations.findByName("implementation") != null) {
+                  dependencies.add("implementation", "org.checkerframework:checker-qual:3.43.0")
               }
           }
           '''
