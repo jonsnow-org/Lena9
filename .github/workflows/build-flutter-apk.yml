@@ -1,0 +1,152 @@
+name: Build Flutter Android APK
+
+# يبني تطبيق Literium الأصيل (Flutter) — منفصل تماماً عن سير build-apk.yml
+# الخاص بالنسخة السابقة (TWA)، الذي بقي كما هو بلا أي تعديل.
+#
+# ⚠️ هذا السير يشغّل `flutter create` على مشغّل GitHub نفسه (اتصال حقيقي +
+# أدوات Flutter حقيقية) لتوليد مجلد android/ الأصيل تلقائياً، بدل كتابته
+# يدوياً هنا — بنفس منطق سير build-apk.yml مع Bubblewrap سابقاً: لا يوجد
+# Flutter مثبَّت في بيئة كتابة هذا الكود، فتوليد المشروع الأصيل يتم في
+# المكان الوحيد الذي يملك الأداة الحقيقية.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'flutter_app/**'
+      - '.github/workflows/build-flutter-apk.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build-flutter-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # google-services.json الحقيقي (من Firebase Console → مشروع literium
+      # → إضافة تطبيق Android) — سرّ FLUTTER_GOOGLE_SERVICES_JSON_BASE64،
+      # يُضاف يدوياً من لوحة GitHub Secrets (لا يمكنني إنشاؤه عبر الـ API).
+      - name: Restore google-services.json from secret
+        run: |
+          mkdir -p flutter_app/android/app
+          echo "${{ secrets.FLUTTER_GOOGLE_SERVICES_JSON_BASE64 }}" | base64 -d > flutter_app/android/app/google-services.json
+
+      # نفس مفتاح التوقيع المستخدم للنسخة السابقة (TWA) — سرّان موجودان
+      # أصلاً في هذا المستودع (ANDROID_KEYSTORE_BASE64/PASSWORD)، يُعاد
+      # استخدامهما هنا مباشرة، لا حاجة لأي سر جديد لهذه الخطوة.
+      - name: Restore signing keystore from secret
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > flutter_app/android/app/literium.keystore
+
+      - name: Generate the native android/ project (only if missing)
+        working-directory: flutter_app
+        run: |
+          if [ ! -d "android" ]; then
+            flutter create --platforms=android --org=studio.ai.literium --project-name=literium_app .
+          fi
+
+      - name: Wire the Google Services Gradle plugin
+        working-directory: flutter_app
+        run: |
+          # يضيف مُعرِّف الإضافة إلى كتلة plugins في settings.gradle (نمط
+          # Flutter الحديث، Declarative Plugin Management) إن لم يكن موجوداً.
+          if ! grep -q "com.google.gms.google-services" android/settings.gradle; then
+            python3 - <<'PY'
+          import re
+          path = "android/settings.gradle"
+          text = open(path).read()
+          marker = 'id "com.android.application"'
+          insert = '    id "com.google.gms.google-services" version "4.4.2" apply false\n'
+          idx = text.find(marker)
+          if idx == -1:
+              raise SystemExit("لم يُعثر على كتلة plugins المتوقعة في settings.gradle")
+          line_end = text.find("\n", idx) + 1
+          text = text[:line_end] + insert + text[line_end:]
+          open(path, "w").write(text)
+          PY
+          fi
+
+          if ! grep -q "com.google.gms.google-services" android/app/build.gradle; then
+            echo '
+          apply plugin: "com.google.gms.google-services"' >> android/app/build.gradle
+          fi
+
+      - name: Add release signing config
+        working-directory: flutter_app
+        run: |
+          # applicationId ينتج بالفعل studio.ai.literium.literium_app من
+          # خطوة `flutter create --org=... --project-name=...` أعلاه — لا
+          # حاجة لتعديله هنا.
+          python3 - <<'PY'
+          path = "android/app/build.gradle"
+          text = open(path).read()
+          if "signingConfigs" not in text:
+              signing_block = '''
+          android {
+              signingConfigs {
+                  release {
+                      storeFile file("literium.keystore")
+                      storePassword System.getenv("KEYSTORE_PASSWORD")
+                      keyAlias "literium"
+                      keyPassword System.getenv("KEYSTORE_PASSWORD")
+                  }
+              }
+              buildTypes {
+                  release {
+                      signingConfig signingConfigs.release
+                  }
+              }
+          }
+          '''
+              text += signing_block
+          open(path, "w").write(text)
+          PY
+
+      - name: Add AdMob App ID to AndroidManifest.xml
+        working-directory: flutter_app
+        env:
+          # TODO: AdMob — استبدل بمعرّف تطبيقك الحقيقي (App ID، وليس Ad Unit ID)
+          # من AdMob Console. القيمة أدناه هي معرّف الاختبار الرسمي من Google.
+          ADMOB_APP_ID: "ca-app-pub-3940256099942544~3347511713"
+        run: |
+          python3 - <<PY
+          import re
+          path = "android/app/src/main/AndroidManifest.xml"
+          text = open(path).read()
+          if "com.google.android.gms.ads.APPLICATION_ID" not in text:
+              meta = '        <meta-data\n            android:name="com.google.android.gms.ads.APPLICATION_ID"\n            android:value="${ADMOB_APP_ID}"/>\n'
+              text = text.replace("</application>", meta + "    </application>")
+              open(path, "w").write(text)
+          PY
+
+      - name: flutter pub get
+        working-directory: flutter_app
+        run: flutter pub get
+
+      - name: Build signed release APK
+        working-directory: flutter_app
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: flutter build apk --release
+
+      - name: Upload signed APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Literium-flutter-signed-apk
+          path: flutter_app/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
