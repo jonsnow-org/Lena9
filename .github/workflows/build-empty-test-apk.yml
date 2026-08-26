@@ -11,6 +11,9 @@ name: Build Empty Test APK (diagnostic)
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/build-empty-test-apk.yml'
 
 jobs:
   build-empty-test-apk:
