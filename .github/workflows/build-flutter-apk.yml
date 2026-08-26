@@ -56,7 +56,12 @@ jobs:
       - name: Generate the native android/ project (only if missing)
         working-directory: flutter_app
         run: |
-          if [ ! -d "android" ]; then
+          # نتحقق من settings.gradle تحديداً وليس مجرد وجود مجلد android/ —
+          # مجلد android/app/ يكون موجوداً مسبقاً في هذه المرحلة لأن خطوة
+          # استرجاع google-services.json أعلاه أنشأته عبر mkdir -p لوضع
+          # الملفّين السرّيين فيه، فاختبار "-d android" وحده يعطي نتيجة
+          # خاطئة (يظن المشروع موجوداً) ويتجاوز flutter create بالكامل.
+          if [ ! -f "android/settings.gradle" ]; then
             flutter create --platforms=android --org=studio.ai.literium --project-name=literium_app .
           fi
 
