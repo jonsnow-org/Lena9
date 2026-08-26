@@ -279,52 +279,19 @@ jobs:
               open(path, "w").write(text)
           PY
 
-      # المستخدم أكّد أن جهازه (Redmi 10 / MIUI) لا يملك خدمات Google Play
-      # إطلاقاً ("خدمات Google Play غير موجود ولم أستطع تحميله") — وكل من
-      # Firebase وGoogle Mobile Ads يُشغّلان تهيئة أصلية تلقائية عبر
-      # ContentProvider عند إقلاع العملية مباشرة، قبل أن يبدأ Dart بالتنفيذ
-      # أصلاً (قبل main() بوقت طويل)، وهذا يفسّر لماذا لم تظهر شاشة التشخيص
-      # في main.dart إطلاقاً رغم إضافتها: العطل يحدث قبل أن يصل التنفيذ لأي
-      # كود Dart يمكنه التقاطه. الحل الرسمي الموثّق: إزالة الـ ContentProvider
-      # التلقائي لكليهما عبر tools:node="remove"، بحيث تصبح استدعاءات
-      # Firebase.initializeApp() وMobileAds.instance.initialize() الصريحة في
-      # main.dart (وهي محمية بالفعل بـ try/catch) هي نقطة التهيئة الوحيدة —
-      # فيتحول أي فشل من عطل أصلي غير قابل للالتقاط إلى استثناء Dart عادي
-      # تعرضه شاشة التشخيص بدل إغلاق التطبيق. تسجيل الدخول بالبريد/كلمة
-      # المرور لا يحتاج خدمات Google Play أصلاً (يحتاجها فقط تسجيل الدخول
-      # عبر Google)، فالتطبيق سيعمل فعلياً على هذا الجهاز بعد هذا الإصلاح.
-      - name: Disable Firebase/AdMob automatic native init (device has no Google Play Services)
-        working-directory: flutter_app
-        run: |
-          python3 - <<'PY'
-          path = "android/app/src/main/AndroidManifest.xml"
-          text = open(path).read()
-
-          if 'xmlns:tools=' not in text:
-              marker = '<manifest xmlns:android="http://schemas.android.com/apk/res/android"'
-              if marker not in text:
-                  raise SystemExit(f"لم يُعثر على عنصر <manifest> المتوقع في {path}")
-              text = text.replace(
-                  marker,
-                  marker + '\n    xmlns:tools="http://schemas.android.com/tools"',
-                  1,
-              )
-
-          if 'tools:node="remove"' not in text:
-              providers = (
-                  '        <provider\n'
-                  '            android:name="com.google.firebase.provider.FirebaseInitProvider"\n'
-                  '            android:authorities="${applicationId}.firebaseinitprovider"\n'
-                  '            tools:node="remove" />\n'
-                  '        <provider\n'
-                  '            android:name="com.google.android.gms.ads.MobileAdsInitProvider"\n'
-                  '            android:authorities="${applicationId}.mobileadsinitprovider"\n'
-                  '            tools:node="remove" />\n'
-              )
-              text = text.replace("</application>", providers + "    </application>")
-
-          open(path, "w").write(text)
-          PY
+      # تراجع: خطوة "Disable Firebase/AdMob automatic native init" أُزيلت.
+      # كانت مبنية على افتراض أن سبب الانهيار الفوري هو غياب خدمات Google
+      # Play على جهاز المستخدم الأول (Redmi 10) — لكن الجهاز الثاني (الذي
+      # يملك خدمات Google Play، بدليل نافذة "توقف" التي يعرضها Android نفسه
+      # عند رصد انهيار حقيقي) ينهار بنفس الطريقة أيضاً، ما يُسقط ذلك
+      # الافتراض. والأسوأ: إزالة FirebaseInitProvider مع إبقاء
+      # CrashlyticsInitProvider (مزوّد Crashlytics الأصلي) فعّالاً قد يكون
+      # سبب عطل جديد بحد ذاته — إذ يُحتمل أن يعتمد مزوّد Crashlytics على
+      # وجود تطبيق Firebase افتراضي جاهز مسبقاً عبر FirebaseInitProvider،
+      # وهو ما يفسّر أيضاً لماذا لم يصل ولو تقرير عطل واحد لـ Crashlytics
+      # عبر جهازين ومحاولات عديدة. العودة للتهيئة التلقائية الافتراضية
+      # (السلوك المُختبَر والموثّق فعلياً لملايين تطبيقات Firebase الأخرى)
+      # أكثر أماناً من إبقاء تعديل غير مثبَت الفائدة.
 
       - name: flutter pub get
         working-directory: flutter_app
