@@ -1,0 +1,213 @@
+name: Diagnostic Firebase-Core-Only APK Build
+
+# سير تشخيصي ثالث — يبني تطبيقاً بين النسخة الفارغة (عملت بشكل طبيعي) وبين
+# التطبيق الحقيقي (ينهار فوراً على جهازين حتى بعد استبعاد التهيئة التلقائية
+# لـ Firebase/AdMob وتفعيل R8): يضيف فقط firebase_core + Firebase.initializeApp()
+# الصريح، بلا Auth ولا Firestore ولا AdMob ولا Crashlytics ولا Google
+# Sign-In. الهدف: عزل ما إذا كان مجرد الاتصال الأساسي بـ Firebase (عبر
+# google-services.json الحقيقي) هو سبب الانهيار، أم أن السبب في إحدى
+# الحزم الأثقل المضافة لاحقاً.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/diagnostic-firebase-core-apk.yml'
+
+jobs:
+  build-firebase-core-test-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.7'
+          channel: stable
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # يجب أن يطابق applicationId هنا تماماً "studio.ai.literium.literium_app"
+      # المسجَّل في google-services.json الحقيقي (نفس التطبيق الحقيقي)، وإلا
+      # سيفشل Google Services Gradle plugin بخطأ "no matching client found"
+      # بدل أن يختبر ما نريد اختباره فعلاً. لذا org/project-name مطابقان
+      # للتطبيق الحقيقي تماماً، مع وضعه في مجلد مختلف (fbcore_test_app/)
+      # كي لا يتعارض مع flutter_app/ الحقيقي.
+      - name: Create the test app
+        run: |
+          flutter create --platforms=android --org=studio.ai.literium --project-name=literium_app fbcore_test_app
+
+      - name: Restore google-services.json from secret
+        run: |
+          echo "${{ secrets.FLUTTER_GOOGLE_SERVICES_JSON_BASE64 }}" | base64 -d > fbcore_test_app/android/app/google-services.json
+
+      - name: Add firebase_core dependency
+        working-directory: fbcore_test_app
+        run: |
+          python3 - <<'PY'
+          path = "pubspec.yaml"
+          text = open(path).read()
+          marker = "  cupertino_icons:"
+          idx = text.find(marker)
+          if idx == -1:
+              raise SystemExit("لم يُعثر على موضع الإدراج المتوقع في pubspec.yaml")
+          text = text[:idx] + "  firebase_core: ^4.14.0\n" + text[idx:]
+          open(path, "w").write(text)
+          PY
+
+      - name: Replace main.dart with a minimal Firebase.initializeApp() test
+        working-directory: fbcore_test_app
+        run: |
+          cat > lib/main.dart <<'DART'
+          import 'dart:async';
+
+          import 'package:firebase_core/firebase_core.dart';
+          import 'package:flutter/material.dart';
+
+          Future<void> main() async {
+            runZonedGuarded(() async {
+              WidgetsFlutterBinding.ensureInitialized();
+
+              String status = 'جارٍ التهيئة...';
+              try {
+                await Firebase.initializeApp();
+                status = 'نجحت تهيئة Firebase.initializeApp() بدون أي خطأ.';
+              } catch (e, st) {
+                status = 'فشلت التهيئة:\n$e\n\n$st';
+              }
+
+              runApp(MaterialApp(
+                home: Scaffold(
+                  body: SafeArea(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: SelectableText(status, style: const TextStyle(fontSize: 18)),
+                    ),
+                  ),
+                ),
+              ));
+            }, (error, stack) {
+              runApp(MaterialApp(
+                home: Scaffold(
+                  body: SafeArea(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: SelectableText('استثناء غير ملتقط:\n$error\n\n$stack'),
+                    ),
+                  ),
+                ),
+              ));
+            });
+          }
+          DART
+
+      - name: Wire the Google Services Gradle plugin
+        working-directory: fbcore_test_app
+        run: |
+          python3 - <<'PY'
+          import os
+
+          settings_path = "android/settings.gradle.kts" if os.path.exists("android/settings.gradle.kts") else "android/settings.gradle"
+          is_kts = settings_path.endswith(".kts")
+          text = open(settings_path).read()
+          if "com.google.gms.google-services" not in text:
+              marker = 'id("com.android.application")' if is_kts else 'id "com.android.application"'
+              insert = ('    id("com.google.gms.google-services") version "4.4.2" apply false\n'
+                        if is_kts else
+                        '    id "com.google.gms.google-services" version "4.4.2" apply false\n')
+              idx = text.find(marker)
+              if idx == -1:
+                  raise SystemExit(f"لم يُعثر على كتلة plugins المتوقعة في {settings_path}")
+              line_end = text.find("\n", idx) + 1
+              text = text[:line_end] + insert + text[line_end:]
+              open(settings_path, "w").write(text)
+
+          app_gradle_path = "android/app/build.gradle.kts" if os.path.exists("android/app/build.gradle.kts") else "android/app/build.gradle"
+          is_app_kts = app_gradle_path.endswith(".kts")
+          text = open(app_gradle_path).read()
+          if "com.google.gms.google-services" not in text:
+              if is_app_kts:
+                  idx = text.find("plugins {")
+                  if idx == -1:
+                      raise SystemExit(f"لم يُعثر على كتلة plugins في {app_gradle_path}")
+                  line_end = text.find("\n", idx) + 1
+                  text = text[:line_end] + '    id("com.google.gms.google-services")\n' + text[line_end:]
+              else:
+                  text += '\napply plugin: "com.google.gms.google-services"\n'
+              open(app_gradle_path, "w").write(text)
+          PY
+
+      - name: Add release signing config
+        working-directory: fbcore_test_app
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/literium.keystore
+
+          python3 - <<'PY'
+          import os
+
+          app_gradle_path = "android/app/build.gradle.kts" if os.path.exists("android/app/build.gradle.kts") else "android/app/build.gradle"
+          is_kts = app_gradle_path.endswith(".kts")
+          text = open(app_gradle_path).read()
+          if "signingConfigs" not in text:
+              if is_kts:
+                  signing_block = '''
+          android {
+              signingConfigs {
+                  create("release") {
+                      storeFile = file("literium.keystore")
+                      storePassword = System.getenv("KEYSTORE_PASSWORD")
+                      keyAlias = "literium"
+                      keyPassword = System.getenv("KEYSTORE_PASSWORD")
+                  }
+              }
+              buildTypes {
+                  release {
+                      signingConfig = signingConfigs.getByName("release")
+                  }
+              }
+          }
+          '''
+              else:
+                  signing_block = '''
+          android {
+              signingConfigs {
+                  release {
+                      storeFile file("literium.keystore")
+                      storePassword System.getenv("KEYSTORE_PASSWORD")
+                      keyAlias "literium"
+                      keyPassword System.getenv("KEYSTORE_PASSWORD")
+                  }
+              }
+              buildTypes {
+                  release {
+                      signingConfig signingConfigs.release
+                  }
+              }
+          }
+          '''
+              text += signing_block
+              open(app_gradle_path, "w").write(text)
+          PY
+
+      - name: flutter pub get
+        working-directory: fbcore_test_app
+        run: flutter pub get
+
+      - name: Build signed release APK
+        working-directory: fbcore_test_app
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: flutter build apk --release
+
+      - name: Upload signed APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Literium-firebase-core-test-apk
+          path: fbcore_test_app/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
