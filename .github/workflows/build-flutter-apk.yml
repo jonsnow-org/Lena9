@@ -27,9 +27,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # مثبَّت على إصدار محدد بدل channel: stable وحدها — قناة stable انتقلت
+      # مؤخراً جداً (خلال آخر يوم أو يومين) إلى Flutter 3.47 الذي يفعّل AGP 9
+      # بدعم Kotlin مدمَج جديد كلياً؛ 3.44 كانت الإصدار المستقر منذ أشهر (مايو
+      # 2026) قبل ذلك. أربعة عشر تشغيلاً متتالياً فشلت جميعها بنفس خطأ ترجمة
+      # Kotlin داخل firebase_auth تحديداً تحت 3.47 — وحقيقة أن firebase_auth
+      # 6.6.0 نُشر قبل ~40 ساعة فقط توحي بأن هذا تعارض طازج بين أحدث إصداري
+      # Flutter وFirebase لم يتكيّف معه أحدهما بعد. التثبيت على 3.44.7
+      # (المسار الأطول اختباراً) يتفادى AGP 9/Kotlin المدمَج كلياً بدل محاولة
+      # إصلاح تعارض في مُصرِّف Kotlin نفسه لا نملك السيطرة عليه.
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: '3.44.7'
           channel: stable
 
       - name: Set up JDK 17
