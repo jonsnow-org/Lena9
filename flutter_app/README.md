@@ -4,16 +4,30 @@
 `archive/twa-final-v1` في هذا المستودع) — واجهة Flutter 100%، بلا أي
 WebView، متصلة بنفس مشروع Firebase (`literium`) الذي يستخدمه الموقع الحي.
 
-## حالة الميزات (المرحلة الأولى)
+## حالة الميزات
 
 | الميزة | الحالة |
 |---|---|
 | تسجيل الدخول (بريد + Google) | ✅ كامل |
 | عرض المقالات + قراءة | ✅ كامل |
+| فتح مقال مقفول من رصيد المحفظة | ✅ كامل (`/api/articles/unlock` الموجود أصلاً) |
 | إعلانات AdMob (بانر + بيني كل 3 مقالات) | ✅ كامل (بمعرّفات اختبار — انظر أدناه) |
-| المحفظة | 🔶 عرض الرصيد فقط — الإيداع/السحب لاحقاً |
-| الرسائل | 🔶 عنصر نائب — النظام الكامل لاحقاً |
-| فتح مقال مقفول من داخل التطبيق | 🔶 لاحقاً (يستخدم endpoint `/api/articles/unlock` الموجود أصلاً) |
+| المحفظة — عرض الرصيد الحي | ✅ كامل |
+| المحفظة — إيداع حقيقي (Stripe Checkout) | ✅ كامل |
+| المحفظة — طلب سحب حقيقي | ✅ كامل |
+| الرسائل — قائمة المحادثات + مؤشر غير مقروء | ✅ كامل |
+| الرسائل — محادثة حية (إرسال/استقبال فوري) | ✅ كامل |
+| الرسائل — مؤشر "يكتب الآن" | ✅ كامل |
+| الرسائل — إغلاق/كتم/حظر/إبلاغ | ✅ كامل |
+| بدء محادثة جديدة (تصفح/بحث عن مستخدمين) | ❌ غير مبني بعد — يمكن حالياً متابعة محادثات موجودة فقط |
+| التحقق من الهوية (KYC) | ❌ غير مبني بعد |
+| الإشعارات | ❌ غير مبني بعد |
+| المتابعة (Follow/Followers) | ❌ غير مبني بعد |
+| التغريدات (Tweets) | ❌ غير مبني بعد |
+| محرر/نشر المقالات للكاتب | ❌ غير مبني بعد |
+| لوحة تحكم الأدمن | ❌ غير مبني بعد |
+
+الأقسام أعلاه المعلّمة ❌ موجودة في الموقع لكن لم تُبنَ في نسخة Flutter بعد — لم يتم إخفاء ذلك عمداً.
 
 ## خطوتان يدويتان مطلوبتان قبل أول بناء ناجح
 
@@ -49,13 +63,19 @@ flutter_app/
     main.dart
     models/article.dart
     services/auth_service.dart      # Firebase Auth
-    services/article_service.dart   # قراءة Firestore مباشرة (articles)
+    services/article_service.dart   # قراءة Firestore مباشرة (articles) + فتح المقفول
     services/admob_service.dart
+    services/payment_api.dart       # إيداع/سحب حقيقيان عبر server.ts
+    services/message_service.dart   # انعكاس كامل لقسم الرسائل في firestoreService.ts
+    models/article.dart
+    models/conversation.dart
+    models/dm_message.dart
     screens/login_screen.dart
     screens/home_screen.dart
     screens/articles_screen.dart
     screens/article_detail_screen.dart
     screens/wallet_screen.dart
     screens/messages_screen.dart
+    screens/chat_screen.dart
   android/   # يُولَّد تلقائياً عبر flutter create داخل CI — غير موجود محلياً بعد
 ```
