@@ -14,13 +14,20 @@ dependencies:
     sdk: flutter
 
   # ---- Firebase: نفس مشروع "literium" المستخدم في الموقع تماماً ----
-  firebase_core: ^3.6.0
-  firebase_auth: ^5.3.1
-  cloud_firestore: ^5.4.3
-  google_sign_in: ^6.2.1
+  # مثبَّتة على إصدارات حديثة (بدل ٣.x/٥.x الأصلية) لأن flutter create يولّد
+  # مشروع Gradle حديثاً (Kotlin DSL + AGP جديد) لا تتوافق معه الإصدارات
+  # القديمة من حزم Firebase/Google — ظهر هذا فعلياً عبر فشل بناء حقيقي.
+  firebase_core: ^4.14.0
+  firebase_auth: ^6.6.0
+  cloud_firestore: ^6.9.0
+  # يبقى على خط v6 عمداً — v7 غيّر الواجهة البرمجية جذرياً (GoogleSignIn()
+  # أُزيل لصالح GoogleSignIn.instance + initialize()/authenticate() غير
+  # المتزامنة)، وتبنّيه الآن يعني إعادة كتابة auth_service.dart دون أي مصحّح
+  # Dart متاح هنا للتحقق — مخاطرة غير ضرورية بينما v6 لم يفشل أصلاً.
+  google_sign_in: ^6.3.0
 
-  # ---- إعلانات AdMob ----
-  google_mobile_ads: ^5.2.0
+  # ---- إعلانات AdMob ---- (5.2.0 القديم غير متوافق مع Gradle الحديث)
+  google_mobile_ads: ^9.1.0
 
   # ---- استدعاء endpoint فتح المقال المقفول الموجود فعلاً في server.ts ----
   http: ^1.2.2
