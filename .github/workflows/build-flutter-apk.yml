@@ -163,11 +163,27 @@ jobs:
           # applicationId ينتج بالفعل studio.ai.literium.literium_app من
           # خطوة `flutter create --org=... --project-name=...` أعلاه — لا
           # حاجة لتعديله هنا.
+          #
+          # ⚠️ minifyEnabled/shrinkResources مُفعَّلان هنا عمداً (لم يكونا
+          # مفعّلين سابقاً): تطبيق فارغ بنفس أدوات البناء بالضبط فتح وعمل
+          # بشكل طبيعي على جهاز المستخدم (37 ضغطة مستقرة)، بينما التطبيق
+          # الحقيقي ينهار فوراً حتى بعد إزالة كل تهيئة Firebase/AdMob
+          # التلقائية — وCrashlytics نفسه (المُدمَج فعلياً) لم يستقبل ولو
+          # جلسة واحدة ناجحة، ما يعني أن العطل يحدث قبل أن يُتاح لأي كود —
+          # حتى مزوّد Crashlytics الأصلي نفسه — فرصة التنفيذ. هذا يطابق
+          # تماماً عطلاً كلاسيكياً في تحميل فئات DEX الأساسية عند عدم تفعيل
+          # R8/الانكماش مع مكتبات ثقيلة متعددة (Firestore + Auth +
+          # Crashlytics + AdMob + Google Sign-In) غير مُصغَّرة بالكامل.
           python3 - <<'PY'
           import os
 
           app_gradle_path = "android/app/build.gradle.kts" if os.path.exists("android/app/build.gradle.kts") else "android/app/build.gradle"
           is_kts = app_gradle_path.endswith(".kts")
+
+          proguard_path = "android/app/proguard-rules.pro"
+          if not os.path.exists(proguard_path):
+              open(proguard_path, "w").write("# قواعد إضافية محلية إن احتاجها R8 لاحقاً — قواعد المستهلك المرفقة\n# مع كل مكتبة (Firebase/AdMob/...) تُطبَّق تلقائياً بلا حاجة لتكرارها هنا.\n")
+
           text = open(app_gradle_path).read()
           if "signingConfigs" not in text:
               if is_kts:
@@ -184,6 +200,9 @@ jobs:
               buildTypes {
                   release {
                       signingConfig = signingConfigs.getByName("release")
+                      isMinifyEnabled = true
+                      isShrinkResources = true
+                      proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
                   }
               }
           }
@@ -202,6 +221,9 @@ jobs:
               buildTypes {
                   release {
                       signingConfig signingConfigs.release
+                      minifyEnabled true
+                      shrinkResources true
+                      proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
                   }
               }
           }
