@@ -158,6 +158,31 @@ jobs:
               open(app_gradle_path, "w").write(text)
           PY
 
+      # حزم firebase_auth/cloud_firestore الأصلية تعتمد داخلياً على Guava
+      # التي تستخدم شروح checker-framework (@UnknownInitialization) في
+      # AbstractFuture ونحوها؛ مُصرِّف Kotlin الأحدث المرفق مع نسخة Flutter
+      # هذه يرفض تلك الشروح بخطأ "type annotation ... is inaccessible" ما
+      # لم يوجد checker-qual صراحةً على مسار الترجمة — مشكلة توافق معروفة
+      # بين Flutter's Built-in Kotlin الجديد وإضافات KGP القديمة في هذه
+      # الحزم، حلّها المعتمد هو إضافة الاعتماد صراحة.
+      - name: Work around Kotlin/checker-qual classpath issue in Firebase plugins
+        working-directory: flutter_app
+        run: |
+          python3 - <<'PY'
+          import os
+
+          app_gradle_path = "android/app/build.gradle.kts" if os.path.exists("android/app/build.gradle.kts") else "android/app/build.gradle"
+          is_kts = app_gradle_path.endswith(".kts")
+          text = open(app_gradle_path).read()
+          if "checker-qual" not in text:
+              if is_kts:
+                  block = '\ndependencies {\n    implementation("org.checkerframework:checker-qual:3.43.0")\n}\n'
+              else:
+                  block = '\ndependencies {\n    implementation "org.checkerframework:checker-qual:3.43.0"\n}\n'
+              text += block
+              open(app_gradle_path, "w").write(text)
+          PY
+
       - name: Add AdMob App ID to AndroidManifest.xml
         working-directory: flutter_app
         env:
