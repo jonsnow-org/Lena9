@@ -162,25 +162,46 @@ jobs:
       # التي تستخدم شروح checker-framework (@UnknownInitialization) في
       # AbstractFuture ونحوها؛ مُصرِّف Kotlin الأحدث المرفق مع نسخة Flutter
       # هذه يرفض تلك الشروح بخطأ "type annotation ... is inaccessible" ما
-      # لم يوجد checker-qual صراحةً على مسار الترجمة — مشكلة توافق معروفة
-      # بين Flutter's Built-in Kotlin الجديد وإضافات KGP القديمة في هذه
-      # الحزم، حلّها المعتمد هو إضافة الاعتماد صراحة.
+      # لم يوجد checker-qual صراحةً على مسار الترجمة.
+      #
+      # ⚠️ محاولة أولى وضعت هذا الاعتماد في android/app/build.gradle.kts
+      # (مشروع التطبيق) وفشلت بنفس الخطأ بالضبط — لأن firebase_auth يُترجَم
+      # كمشروع Gradle فرعي منفصل (:firebase_auth) له classpath ترجمة خاص
+      # به، لا يتأثر بتبعيات مشروع :app إطلاقاً. الإصلاح الصحيح يفرض
+      # الاعتماد على كل المشاريع الفرعية معاً عبر resolutionStrategy.force
+      # في ملف Gradle الجذري (android/build.gradle[.kts])، لا في app فقط.
       - name: Work around Kotlin/checker-qual classpath issue in Firebase plugins
         working-directory: flutter_app
         run: |
           python3 - <<'PY'
           import os
 
-          app_gradle_path = "android/app/build.gradle.kts" if os.path.exists("android/app/build.gradle.kts") else "android/app/build.gradle"
-          is_kts = app_gradle_path.endswith(".kts")
-          text = open(app_gradle_path).read()
+          root_gradle_path = "android/build.gradle.kts" if os.path.exists("android/build.gradle.kts") else "android/build.gradle"
+          is_kts = root_gradle_path.endswith(".kts")
+          text = open(root_gradle_path).read()
           if "checker-qual" not in text:
               if is_kts:
-                  block = '\ndependencies {\n    implementation("org.checkerframework:checker-qual:3.43.0")\n}\n'
+                  block = '''
+          allprojects {
+              configurations.all {
+                  resolutionStrategy {
+                      force("org.checkerframework:checker-qual:3.43.0")
+                  }
+              }
+          }
+          '''
               else:
-                  block = '\ndependencies {\n    implementation "org.checkerframework:checker-qual:3.43.0"\n}\n'
+                  block = '''
+          allprojects {
+              configurations.all {
+                  resolutionStrategy {
+                      force 'org.checkerframework:checker-qual:3.43.0'
+                  }
+              }
+          }
+          '''
               text += block
-              open(app_gradle_path, "w").write(text)
+              open(root_gradle_path, "w").write(text)
           PY
 
       - name: Add AdMob App ID to AndroidManifest.xml
