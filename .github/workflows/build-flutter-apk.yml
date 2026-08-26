@@ -65,39 +65,6 @@ jobs:
             flutter create --platforms=android --org=studio.ai.literium --project-name=literium_app .
           fi
 
-      # الإصدار الافتراضي لـ Kotlin الذي يختاره flutter-plugin-loader هنا هو
-      # 2.2.20/2.2.21 — مُصرِّف K2 الجديد فيه أكثر صرامة في التحقق من شروح
-      # الأنواع القادمة من كود Java (مثل @UnknownInitialization من
-      # checker-framework التي يستخدمها Guava داخلياً في AbstractFuture)،
-      # ويفشل بخطأ "type annotation ... is inaccessible" عند ترجمة
-      # firebase_auth رغم وجود checker-qual فعلياً على classpath (جُرِّب في
-      # خطوة سابقة ولم يُصلح شيئاً — الخطأ نفسه تكرر حرفياً مرتين). تثبيت
-      # إصدار Kotlin أقدم (2.0.21) يتفادى هذا السلوك الصارم الجديد تماماً.
-      - name: Pin an older, more compatible Kotlin Gradle Plugin version
-        working-directory: flutter_app
-        run: |
-          python3 - <<'PY'
-          import os, re
-
-          settings_path = "android/settings.gradle.kts" if os.path.exists("android/settings.gradle.kts") else "android/settings.gradle"
-          is_kts = settings_path.endswith(".kts")
-          text = open(settings_path).read()
-          pattern = (
-              r'id\("org\.jetbrains\.kotlin\.android"\) version "[^"]+"'
-              if is_kts else
-              r'id "org\.jetbrains\.kotlin\.android" version "[^"]+"'
-          )
-          replacement = (
-              'id("org.jetbrains.kotlin.android") version "2.0.21"'
-              if is_kts else
-              'id "org.jetbrains.kotlin.android" version "2.0.21"'
-          )
-          new_text, count = re.subn(pattern, replacement, text)
-          if count == 0:
-              raise SystemExit(f"لم يُعثر على سطر إضافة Kotlin Gradle Plugin المتوقع في {settings_path}")
-          open(settings_path, "w").write(new_text)
-          PY
-
       # منذ إصدارات Flutter الحديثة (٣.٤٧+ ضمن هذا السير) يولّد flutter create
       # مشروع Gradle بصيغة Kotlin DSL افتراضياً (settings.gradle.kts،
       # build.gradle.kts) بدل صيغة Groovy القديمة (.gradle) التي كتبت لها هذه
@@ -197,12 +164,15 @@ jobs:
       # هذه يرفض تلك الشروح بخطأ "type annotation ... is inaccessible" ما
       # لم يوجد checker-qual صراحةً على مسار الترجمة.
       #
-      # ⚠️ محاولة أولى وضعت هذا الاعتماد في android/app/build.gradle.kts
-      # (مشروع التطبيق) وفشلت بنفس الخطأ بالضبط — لأن firebase_auth يُترجَم
-      # كمشروع Gradle فرعي منفصل (:firebase_auth) له classpath ترجمة خاص
-      # به، لا يتأثر بتبعيات مشروع :app إطلاقاً. الإصلاح الصحيح يفرض
-      # الاعتماد على كل المشاريع الفرعية معاً عبر resolutionStrategy.force
-      # في ملف Gradle الجذري (android/build.gradle[.kts])، لا في app فقط.
+      # ⚠️ محاولتان سابقتان فشلتا بنفس الخطأ حرفياً:
+      # 1. وضع الاعتماد في android/app/build.gradle.kts (مشروع :app) — لا
+      #    يؤثر على :firebase_auth الذي يُترجَم كمشروع Gradle فرعي منفصل.
+      # 2. resolutionStrategy.force في الجذر — force يُعيد اختيار الإصدار
+      #    فقط بين تبعيات موجودة أصلاً في رسم التبعيات؛ إن لم يكن
+      #    checker-qual جزءاً من classpath الترجمة لـ :firebase_auth أصلاً
+      #    (Guava قد لا تُصدّره تعدياً ضمن compile scope)، فـ force لا يضيف
+      #    شيئاً فعلياً. الإصلاح الصحيح هو إضافة الاعتماد فعلياً (وليس مجرد
+      #    تثبيت إصداره) لكل مشروع فرعي عبر subprojects { dependencies.add(...) }.
       - name: Work around Kotlin/checker-qual classpath issue in Firebase plugins
         working-directory: flutter_app
         run: |
@@ -215,20 +185,20 @@ jobs:
           if "checker-qual" not in text:
               if is_kts:
                   block = '''
-          allprojects {
-              configurations.all {
-                  resolutionStrategy {
-                      force("org.checkerframework:checker-qual:3.43.0")
+          subprojects {
+              afterEvaluate {
+                  configurations.findByName("implementation")?.let {
+                      dependencies.add("implementation", "org.checkerframework:checker-qual:3.43.0")
                   }
               }
           }
           '''
               else:
                   block = '''
-          allprojects {
-              configurations.all {
-                  resolutionStrategy {
-                      force 'org.checkerframework:checker-qual:3.43.0'
+          subprojects {
+              afterEvaluate {
+                  if (configurations.findByName("implementation") != null) {
+                      dependencies.add("implementation", "org.checkerframework:checker-qual:3.43.0")
                   }
               }
           }
