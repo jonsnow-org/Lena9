@@ -214,6 +214,44 @@ jobs:
         working-directory: flutter_app
         run: flutter pub get
 
+      # تجربة أخيرة بعد فشل أربع محاولات متتالية بنفس الخطأ: تفعيل Built-in
+      # Kotlin (الخطوة أعلاه) وحده لا يمنع firebase_auth/firebase_core من
+      # تطبيق نسختيهما الخاصتين من Kotlin Gradle Plugin — الإصلاح الكامل
+      # (حسب دليل Flutter لمؤلفي الإضافات) يتطلب أن تتوقف الإضافة نفسها عن
+      # تطبيق "kotlin-android" لتعتمد على الأداة المركزية بدلاً من ذلك. بما
+      # أننا لا ننتظر تحديثاً من Firebase، نُعدّل نسخة الحزمة المُنزَّلة في
+      # الـ pub cache مباشرة بعد flutter pub get (لا نلمس كود التطبيق نفسه
+      # إطلاقاً، ولا نغيّر أي وظيفة — فقط كيفية ترجمة Kotlin لهذه الوحدة).
+      # الخطوة تطبع محتوى الملفّين أولاً كتشخيص حقيقي، ثم تحاول الإصلاح، ولا
+      # تفشل بصمت إن لم يُطابق النمط المتوقع (تكتفي بتنبيه في السجل).
+      - name: Diagnose and patch firebase_auth/firebase_core's self-applied Kotlin plugin
+        working-directory: flutter_app
+        run: |
+          python3 - <<'PY'
+          import glob, os, re
+
+          pub_cache = os.environ.get("PUB_CACHE", os.path.expanduser("~/.pub-cache"))
+          for pkg in ("firebase_auth", "firebase_core"):
+              candidates = glob.glob(os.path.join(pub_cache, "hosted", "pub.dev", f"{pkg}-*", "android", "build.gradle.kts"))
+              if not candidates:
+                  candidates = glob.glob(os.path.join(pub_cache, "hosted", "pub.dev", f"{pkg}-*", "android", "build.gradle"))
+              if not candidates:
+                  print(f"[{pkg}] لم يُعثر على android/build.gradle(.kts) في pub cache — تخطّي")
+                  continue
+              path = candidates[0]
+              text = open(path).read()
+              print(f"=== {path} (قبل التعديل) ===")
+              print(text)
+              new_text, count = re.subn(r'^\s*id\("kotlin-android"\)\s*\n', '', text, flags=re.MULTILINE)
+              if count == 0:
+                  new_text, count = re.subn(r'^\s*id\("org\.jetbrains\.kotlin\.android"\).*\n', '', text, flags=re.MULTILINE)
+              if count > 0:
+                  open(path, "w").write(new_text)
+                  print(f"[{pkg}] أُزيل تطبيق Kotlin الخاص بالإضافة ({count} تطابق) — ستعتمد الآن على Built-in Kotlin")
+              else:
+                  print(f"[{pkg}] لم يُعثر على سطر تطبيق Kotlin المتوقع — تُرك الملف كما هو")
+          PY
+
       - name: Build signed release APK
         working-directory: flutter_app
         env:
