@@ -65,6 +65,39 @@ jobs:
             flutter create --platforms=android --org=studio.ai.literium --project-name=literium_app .
           fi
 
+      # الإصدار الافتراضي لـ Kotlin الذي يختاره flutter-plugin-loader هنا هو
+      # 2.2.20/2.2.21 — مُصرِّف K2 الجديد فيه أكثر صرامة في التحقق من شروح
+      # الأنواع القادمة من كود Java (مثل @UnknownInitialization من
+      # checker-framework التي يستخدمها Guava داخلياً في AbstractFuture)،
+      # ويفشل بخطأ "type annotation ... is inaccessible" عند ترجمة
+      # firebase_auth رغم وجود checker-qual فعلياً على classpath (جُرِّب في
+      # خطوة سابقة ولم يُصلح شيئاً — الخطأ نفسه تكرر حرفياً مرتين). تثبيت
+      # إصدار Kotlin أقدم (2.0.21) يتفادى هذا السلوك الصارم الجديد تماماً.
+      - name: Pin an older, more compatible Kotlin Gradle Plugin version
+        working-directory: flutter_app
+        run: |
+          python3 - <<'PY'
+          import os, re
+
+          settings_path = "android/settings.gradle.kts" if os.path.exists("android/settings.gradle.kts") else "android/settings.gradle"
+          is_kts = settings_path.endswith(".kts")
+          text = open(settings_path).read()
+          pattern = (
+              r'id\("org\.jetbrains\.kotlin\.android"\) version "[^"]+"'
+              if is_kts else
+              r'id "org\.jetbrains\.kotlin\.android" version "[^"]+"'
+          )
+          replacement = (
+              'id("org.jetbrains.kotlin.android") version "2.0.21"'
+              if is_kts else
+              'id "org.jetbrains.kotlin.android" version "2.0.21"'
+          )
+          new_text, count = re.subn(pattern, replacement, text)
+          if count == 0:
+              raise SystemExit(f"لم يُعثر على سطر إضافة Kotlin Gradle Plugin المتوقع في {settings_path}")
+          open(settings_path, "w").write(new_text)
+          PY
+
       # منذ إصدارات Flutter الحديثة (٣.٤٧+ ضمن هذا السير) يولّد flutter create
       # مشروع Gradle بصيغة Kotlin DSL افتراضياً (settings.gradle.kts،
       # build.gradle.kts) بدل صيغة Groovy القديمة (.gradle) التي كتبت لها هذه
