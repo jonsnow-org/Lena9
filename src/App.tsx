@@ -66,7 +66,6 @@ import { UserProfileView } from './components/UserProfileView';
 import { WalletModal } from './components/WalletModal';
 import { KycModal } from './components/KycModal';
 import { AiAssistantModal } from './components/AiAssistantModal';
-import { ClaudeChatModal } from './components/ClaudeChatModal';
 import { DirectMessagesModal } from './components/DirectMessagesModal';
 import { NotificationsModal } from './components/NotificationsModal';
 import { BetaTesting20Modal } from './components/BetaTesting20Modal';
@@ -443,7 +442,6 @@ export function App() {
   const [isSubscriptionOpen, setIsSubscriptionOpen] = useState(false);
   const [isKycOpen, setIsKycOpen] = useState(false);
   const [isAiAssistantOpen, setIsAiAssistantOpen] = useState(false);
-  const [isClaudeChatOpen, setIsClaudeChatOpen] = useState(false);
   const [isArticleEditorOpen, setIsArticleEditorOpen] = useState(false);
   // المقال المطلوب ترويجه (null = النافذة مغلقة)
   const [promotingArticle, setPromotingArticle] = useState<Article | null>(null);
@@ -4082,7 +4080,6 @@ export function App() {
         onOpenPolicies={(tab) => setLegalSection(tab === 'restricted' ? 'terms' : (tab || 'privacy'))}
         onOpenLegal={(sec) => setLegalSection(sec)}
         onOpenAiAssistant={() => setIsAiAssistantOpen(true)}
-        onOpenClaudeChat={() => setIsClaudeChatOpen(true)}
         onOpenSubscription={() => setIsSubscriptionOpen(true)}
         onOpenProfile={() => {
           setViewingWriterProfile(null);
@@ -4308,30 +4305,6 @@ export function App() {
         onOpenSubscription={() => setIsSubscriptionOpen(true)}
         onConsumeAiQuota={handleConsumeAiQuota}
         guestIdentityUid={guestIdentityUid}
-      />
-
-      {/* Claude Chat Modal */}
-      <ClaudeChatModal
-        isOpen={isClaudeChatOpen}
-        onClose={() => setIsClaudeChatOpen(false)}
-        currentUser={currentUser}
-        onOpenAuth={() => {
-          setIsClaudeChatOpen(false);
-          setIsAuthOpen(true);
-        }}
-        onOpenWallet={() => {
-          setIsClaudeChatOpen(false);
-          setIsWalletOpen(true);
-        }}
-        onBalanceUpdated={(newBal) => {
-          setUsers((prev) =>
-            prev.map((u) =>
-              u.id === currentUser.id
-                ? { ...u, walletBalance: newBal, availableBalance: newBal }
-                : u
-            )
-          );
-        }}
       />
 
       {/* AI Pro Subscription Modal */}
