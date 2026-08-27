@@ -52,7 +52,8 @@ import {
   Radio,
   UserPlus,
   MessageSquare,
-  Star
+  Star,
+  Bot
 } from 'lucide-react';
 import { User, Article, UserRole, AdCampaign, LanguageCode, ArticlePromotion, FraudFlag, Tweet, TweetComment } from '../types';
 import { SocialLinksEditor } from './SocialLinksEditor';
@@ -83,6 +84,7 @@ import { AdminFraudTab } from './admin/AdminFraudTab';
 import { AdminSettingsTab } from './admin/AdminSettingsTab';
 import { AdminAnalyticsTab } from './admin/AdminAnalyticsTab';
 import { AdminChatsTab } from './admin/AdminChatsTab';
+import { AdminBotsTab } from './admin/AdminBotsTab';
 import { BalanceAdjustModal, AdjustableBalanceField } from './admin/BalanceAdjustModal';
 import { KycReviewModal } from './admin/KycReviewModal';
 
@@ -97,7 +99,8 @@ type AdminSection =
   | 'promotions'
   | 'money'
   | 'accounting'
-  | 'settings';
+  | 'settings'
+  | 'bots';
 
 interface UserProfileViewProps {
   currentUser: User;
@@ -224,6 +227,9 @@ interface UserProfileViewProps {
   onTogglePlatformAds?: (enabled: boolean) => void;
   externalAdsConfig?: ExternalAdsConfig;
   onSaveExternalAdsConfig?: (config: ExternalAdsConfig) => void | Promise<void>;
+  publishingBotsEnabled?: boolean;
+  onTogglePublishingBots?: (enabled: boolean) => void | Promise<void>;
+  onSeedBotAccounts?: () => Promise<{ created: number; alreadyExisted: number; total: number }>;
   followersCountByUserId?: Record<string, number>;
   onBroadcastMessage?: (text: string) => Promise<{ sent: number; failed: number }>;
   // نفس نمط initialWriterTab/onWriterTabChange أعلاه، لكن لأقسام الإدارة —
@@ -295,6 +301,9 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   onChangeBackgroundPreset,
   platformAdsEnabled,
   onTogglePlatformAds,
+  publishingBotsEnabled,
+  onTogglePublishingBots,
+  onSeedBotAccounts,
   externalAdsConfig,
   onSaveExternalAdsConfig,
   followersCountByUserId,
@@ -1505,6 +1514,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   { id: 'chats' as const, label: 'مراقبة المحادثات', icon: Eye, badge: 0 },
                   { id: 'users' as const, label: 'المستخدمون وKYC', icon: Users, badge: pendingKycCount },
                   { id: 'fraud' as const, label: 'مكافحة الاحتيال', icon: ShieldAlert, badge: pendingFraudCount },
+                  { id: 'bots' as const, label: 'بوتات النشر والتفاعل', icon: Bot, badge: 0 },
                   { id: 'settings' as const, label: 'إعدادات المنظومة', icon: Settings, badge: 0 }
                 ].map((tab) => {
                   const Icon = tab.icon;
@@ -1635,6 +1645,15 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   onResolveFraudFlag={onResolveFraudFlag}
                   onBanUser={onBanUser}
                   totalBlockedFraudRevenue={adminMetrics.totalBlockedFraudRevenue}
+                />
+              )}
+
+              {effectiveAdminSection === 'bots' && (
+                <AdminBotsTab
+                  users={users}
+                  publishingBotsEnabled={Boolean(publishingBotsEnabled)}
+                  onTogglePublishingBots={onTogglePublishingBots || (() => {})}
+                  onSeedBotAccounts={onSeedBotAccounts || (async () => ({ created: 0, alreadyExisted: 0, total: 8 }))}
                 />
               )}
 

@@ -1297,6 +1297,438 @@ async function startServer() {
     }
   });
 
+  // -------------------------------------------------------------------
+  // بوتات النشر والتفاعل التلقائي
+  // -------------------------------------------------------------------
+  // نظام مستقل تماماً عن أي مستخدم حقيقي: 8 حسابات كتّاب افتراضية (بوتات)
+  // بملفات شخصية كاملة، تنشر مقالاً واحداً وتغريدة واحدة فقط في اليوم
+  // إجمالاً (بالتداول بين الحسابات — كاتب مختلف كل يوم، وليس كل بوت ينشر
+  // يومياً)، ثم تتفاعل فيما بينها (إعجاب + تعليق) على المنشور الجديد. كل
+  // الكتابة تمر عبر Admin SDK (لا حساب Firebase Auth حقيقي لأي بوت)،
+  // ومحمية بمفتاح سرّي مشترك (BOTS_CRON_SECRET) بدل رمز هوية مستخدم — يُستدعى
+  // هذا المسار من سير GitHub Actions مجدول (.github/workflows/bots-daily-cycle.yml)
+  // لا من أي متصفح. isEligibleForMonetization يستبعد كل حسابات isBot=true
+  // من أي احتساب أرباح بصرف النظر عن هذا المسار (انظر creatorEligibility.ts).
+  const BOT_PERSONAS: Array<{
+    id: string;
+    fullName: string;
+    username: string;
+    bio: string;
+    topics: string[];
+  }> = [
+    {
+      id: 'bot_sara_alahmadi',
+      fullName: 'سارة الأحمدي',
+      username: 'sara_alahmadi',
+      bio: 'كاتبة مهتمة بالأدب والفلسفة، تحاول أن تقرأ العالم من زاوية الكلمة.',
+      topics: ['literature', 'philosophy']
+    },
+    {
+      id: 'bot_yousef_alzahrani',
+      fullName: 'يوسف الزهراني',
+      username: 'yousef_alzahrani',
+      bio: 'مهتم بالتقنية والعلوم وأثرهما المتسارع على حياتنا اليومية.',
+      topics: ['technology', 'science']
+    },
+    {
+      id: 'bot_layla_almansouri',
+      fullName: 'ليلى المنصوري',
+      username: 'layla_almansouri',
+      bio: 'شغوفة بالفنون والثقافة، تكتب عن الجمال بوصفه حاجة إنسانية أصيلة.',
+      topics: ['arts', 'literature']
+    },
+    {
+      id: 'bot_omar_alhakimi',
+      fullName: 'عمر الحكيمي',
+      username: 'omar_alhakimi',
+      bio: 'قارئ للتاريخ والسياسة، يؤمن أن فهم الماضي مفتاح لفهم الحاضر.',
+      topics: ['history', 'politics']
+    },
+    {
+      id: 'bot_noor_alsharif',
+      fullName: 'نور الشريف',
+      username: 'noor_alsharif',
+      bio: 'تكتب عن التنمية الذاتية والصحة النفسية من منظور واقعي غير مثالي.',
+      topics: ['health', 'family']
+    },
+    {
+      id: 'bot_khalid_binrashid',
+      fullName: 'خالد بن راشد',
+      username: 'khalid_binrashid',
+      bio: 'مهتم بالأعمال والاقتصاد، يكتب لمن يريد فهم السوق دون تعقيد.',
+      topics: ['business', 'general']
+    },
+    {
+      id: 'bot_hind_alabdali',
+      fullName: 'هند العبدلي',
+      username: 'hind_alabdali',
+      bio: 'مربية ومهتمة بشؤون الأسرة والتعليم، تكتب من واقع تجربة يومية.',
+      topics: ['education', 'family']
+    },
+    {
+      id: 'bot_faisal_alnuaimi',
+      fullName: 'فيصل النعيمي',
+      username: 'faisal_alnuaimi',
+      bio: 'محب للسفر والرياضة، يرى في كليهما مدرسة للانضباط والاكتشاف.',
+      topics: ['sports', 'travel']
+    }
+  ];
+
+  function requireBotsCronSecret(req: express.Request, res: express.Response): boolean {
+    const expected = process.env.BOTS_CRON_SECRET;
+    if (!expected) {
+      res.status(503).json({
+        error: 'not_configured',
+        message: 'لم يُضبط BOTS_CRON_SECRET على الخادم — نظام البوتات غير مفعَّل بعد.'
+      });
+      return false;
+    }
+    const provided = req.headers['x-bots-cron-secret'];
+    if (provided !== expected) {
+      res.status(403).json({ error: 'forbidden', message: 'مفتاح تشغيل البوتات غير صحيح.' });
+      return false;
+    }
+    return true;
+  }
+
+  async function requireAdminCaller(req: express.Request, res: express.Response): Promise<string | null> {
+    try {
+      const { uid } = await verifyRequestAuth(req.headers.authorization);
+      const db = getAdminDb();
+      const callerSnap = await db.collection('users').doc(uid).get();
+      const callerData = callerSnap.exists ? callerSnap.data()! : {};
+      const isAdminCaller =
+        callerData.role === 'admin' ||
+        String(callerData.email || '').toLowerCase() === 'brnardtsho@gmail.com';
+      if (!isAdminCaller) {
+        res.status(403).json({ error: 'forbidden', message: 'هذا الإجراء مخصص لإدارة المنصة فقط.' });
+        return null;
+      }
+      return uid;
+    } catch (err: any) {
+      if (err?.message === 'missing_auth_token') {
+        res.status(401).json({ error: 'auth_required', message: 'يتطلب هذا الإجراء تسجيل الدخول أولاً.' });
+      } else {
+        res.status(500).json({ error: 'auth_check_failed', message: 'تعذر التحقق من الصلاحية.' });
+      }
+      return null;
+    }
+  }
+
+  // ينشئ حسابات البوتات الثمانية إن لم تكن موجودة بعد (idempotent — لا يكرر
+  // الإنشاء أو يطبّق أي بيانات إن كانت موجودة أصلاً، حفاظاً على أي تعديل
+  // يدوي محتمل من الأدمن لاحقاً على الاسم/النبذة).
+  app.post('/api/admin/bots/seed', async (req, res) => {
+    if (!isAdminConfigured()) {
+      return res.status(503).json({ error: 'not_configured', message: 'الخدمة غير مهيأة على الخادم حالياً.' });
+    }
+    if (!(await requireAdminCaller(req, res))) return;
+    try {
+      const db = getAdminDb();
+      const nowIso = new Date().toISOString();
+      let created = 0;
+      let alreadyExisted = 0;
+
+      for (const persona of BOT_PERSONAS) {
+        const ref = db.collection('users').doc(persona.id);
+        const snap = await ref.get();
+        if (snap.exists) {
+          alreadyExisted++;
+          continue;
+        }
+        await ref.set({
+          id: persona.id,
+          email: `${persona.username}@bots.literium.internal`,
+          fullName: persona.fullName,
+          username: persona.username,
+          avatarUrl: `https://api.dicebear.com/9.x/avataaars/svg?seed=${encodeURIComponent(persona.username)}`,
+          role: 'writer',
+          bio: persona.bio,
+          isBot: true,
+          isVerified: false,
+          isKycVerified: false,
+          isBanned: false,
+          followersCount: 0,
+          followingCount: 0,
+          articlesCount: 0,
+          totalViews: 0,
+          walletBalance: 0,
+          availableBalance: 0,
+          pendingEarnings: 0,
+          lifetimeEarnings: 0,
+          joinedDate: nowIso,
+          createdAt: nowIso
+        });
+        created++;
+      }
+
+      res.json({ success: true, created, alreadyExisted, total: BOT_PERSONAS.length });
+    } catch (err: any) {
+      console.error('Bot seed error:', err?.message || err);
+      res.status(500).json({ error: 'seed_failed', message: 'تعذر إنشاء حسابات البوتات.' });
+    }
+  });
+
+  // الدورة اليومية الفعلية: تُستدعى من سير GitHub Actions مجدول، محمية
+  // بمفتاح سرّي مشترك (وليس رمز هوية مستخدم — لا مستخدم حقيقياً يستدعيها).
+  app.post('/api/bots/run-daily-cycle', async (req, res) => {
+    if (!isAdminConfigured()) {
+      return res.status(503).json({ error: 'not_configured', message: 'الخدمة غير مهيأة على الخادم حالياً.' });
+    }
+    if (!requireBotsCronSecret(req, res)) return;
+
+    try {
+      const db = getAdminDb();
+
+      const settingsSnap = await db.collection('settings').doc('publishingBots').get();
+      const enabled = settingsSnap.exists && settingsSnap.data()?.enabled === true;
+      if (!enabled) {
+        return res.json({ success: true, skipped: true, reason: 'bots_disabled' });
+      }
+
+      const botsSnap = await db.collection('users').where('isBot', '==', true).get();
+      const bots = botsSnap.docs.map((d) => ({ id: d.id, ...d.data() } as any));
+      if (bots.length === 0) {
+        return res.json({ success: true, skipped: true, reason: 'no_bots_seeded' });
+      }
+
+      const todayKey = new Date().toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
+      const stateRef = db.collection('botRunState').doc('state');
+      const stateSnap = await stateRef.get();
+      const state = stateSnap.exists
+        ? (stateSnap.data() as any)
+        : { lastRunDate: null, articleRotationIndex: 0, tweetRotationIndex: 0 };
+
+      // ضمان عدم التكرار: لو استُدعي هذا المسار أكثر من مرة في نفس اليوم
+      // (إعادة محاولة يدوية من السير، أو تشغيل يدوي إضافي)، لا يُنشر شيء
+      // إضافي — يكفي مقال وتغريدة واحدة فقط يومياً كما يشترط النظام.
+      if (state.lastRunDate === todayKey) {
+        return res.json({ success: true, skipped: true, reason: 'already_ran_today' });
+      }
+
+      const client = getGeminiClient();
+      const articleBot = bots[state.articleRotationIndex % bots.length];
+      const tweetBot = bots[state.tweetRotationIndex % bots.length];
+
+      const articleTopic = (articleBot.topics && articleBot.topics[0]) || 'general';
+      const nowIso = new Date().toISOString();
+      const activityLog: Array<Record<string, any>> = [];
+
+      // 1) توليد ونشر مقال يومي واحد
+      let articleTitle = '';
+      let articleContent = '';
+      if (client) {
+        const prompt = `اكتب مقالاً أدبياً وفكرياً غنياً وعميقاً بالفصحى في قسم (${articleTopic})، لا يقل عن 500 كلمة، بأسلوب راقٍ ومترابط. ابدأ الرد بسطر واحد فقط بالشكل التالي:\nالعنوان: <عنوان جذاب>\nثم اكتب سطر "---" وحده، ثم اكتب محتوى المقال كاملاً بعده.`;
+        const response = await client.models.generateContent({
+          model: 'gemini-3.7-flash',
+          contents: prompt,
+          config: { maxOutputTokens: 2000 }
+        });
+        const raw = response.text || '';
+        const parts = raw.split(/\n-{3,}\n/);
+        const titleLine = (parts[0] || '').replace(/^العنوان:\s*/i, '').trim();
+        articleTitle = titleLine || 'تأملات في المعنى';
+        articleContent = (parts[1] || raw).trim();
+      }
+      if (!articleContent) {
+        articleTitle = articleTitle || 'تأملات في المعنى';
+        articleContent =
+          'ثمة لحظات يتوقف فيها الزمن قليلاً، تتيح لنا أن نعيد النظر في تفاصيل نظنها عابرة، بينما هي في حقيقتها تحمل من المعنى ما يستحق التأمل والكتابة عنه.';
+      }
+
+      const articleId = `bot_article_${Date.now()}`;
+      const articleData = {
+        id: articleId,
+        writerId: articleBot.id,
+        writerName: articleBot.fullName,
+        writerUsername: articleBot.username,
+        writerAvatar: articleBot.avatarUrl,
+        writerIsVerified: false,
+        title: articleTitle,
+        slug: `article-${articleId}`,
+        description: articleContent.slice(0, 150),
+        content: articleContent,
+        featuredImage: `https://picsum.photos/seed/${articleId}/1200/630`,
+        category: articleTopic,
+        isLocked: false,
+        readingTimeMinutes: Math.max(1, Math.round(articleContent.split(/\s+/).length / 200)),
+        status: 'published',
+        viewsCount: 0,
+        likesCount: 0,
+        sharesCount: 0,
+        commentsCount: 0,
+        purchasesCount: 0,
+        rating: 0,
+        ratingsCount: 0,
+        ratingsSum: 0,
+        revenueFromAds: 0,
+        revenueFromSales: 0,
+        totalRevenue: 0,
+        publishedAt: nowIso,
+        tags: [articleTopic]
+      };
+      await db.collection('articles').doc(articleId).set(articleData);
+      activityLog.push({
+        type: 'article',
+        botId: articleBot.id,
+        botName: articleBot.fullName,
+        targetId: articleId,
+        targetType: 'article',
+        summary: articleTitle,
+        createdAt: nowIso
+      });
+
+      // 2) توليد ونشر تغريدة يومية واحدة
+      let tweetContent = '';
+      if (client) {
+        const tweetTopic = (tweetBot.topics && tweetBot.topics[0]) || 'general';
+        const prompt = `اكتب تغريدة قصيرة (أقل من 220 حرفاً) بالفصحى، فكرة أو خاطرة موجزة ومؤثرة حول موضوع (${tweetTopic})، بلا هاشتاغات وبلا علامات اقتباس.`;
+        const response = await client.models.generateContent({
+          model: 'gemini-3.7-flash',
+          contents: prompt,
+          config: { maxOutputTokens: 150 }
+        });
+        tweetContent = (response.text || '').trim().slice(0, 280);
+      }
+      if (!tweetContent) {
+        tweetContent = 'أحياناً لا نحتاج إلى إجابات كثيرة بقدر حاجتنا إلى أسئلة صادقة نطرحها على أنفسنا.';
+      }
+
+      const tweetId = `bot_tweet_${Date.now()}`;
+      const tweetData = {
+        id: tweetId,
+        authorId: tweetBot.id,
+        authorName: tweetBot.fullName,
+        authorUsername: tweetBot.username,
+        authorAvatar: tweetBot.avatarUrl,
+        authorRole: 'writer',
+        content: tweetContent,
+        likesCount: 0,
+        commentsCount: 0,
+        sharesCount: 0,
+        createdAt: nowIso
+      };
+      await db.collection('tweets').doc(tweetId).set(tweetData);
+      activityLog.push({
+        type: 'tweet',
+        botId: tweetBot.id,
+        botName: tweetBot.fullName,
+        targetId: tweetId,
+        targetType: 'tweet',
+        summary: tweetContent.slice(0, 80),
+        createdAt: nowIso
+      });
+
+      // 3) تفاعل تلقائي: بوتات أخرى (غير الناشر) تعجب وتعلّق على كل منشور
+      async function interactWith(
+        targetId: string,
+        targetType: 'article' | 'tweet',
+        authorBotId: string,
+        content: string,
+        topic: string
+      ) {
+        const others = bots.filter((b) => b.id !== authorBotId);
+        if (others.length === 0) return;
+        const shuffled = [...others].sort(() => Math.random() - 0.5);
+        const likers = shuffled.slice(0, Math.min(3, shuffled.length));
+        const commenter = shuffled[0];
+
+        const likesCollection = targetType === 'article' ? 'likes' : 'tweetLikes';
+        const likeFieldId = targetType === 'article' ? 'articleId' : 'tweetId';
+        for (const liker of likers) {
+          const likeId = `${targetId}_${liker.id}`;
+          await db.collection(likesCollection).doc(likeId).set({
+            id: likeId,
+            [likeFieldId]: targetId,
+            userId: liker.id,
+            createdAt: nowIso
+          });
+          activityLog.push({
+            type: 'like',
+            botId: liker.id,
+            botName: liker.fullName,
+            targetId,
+            targetType,
+            summary: '',
+            createdAt: nowIso
+          });
+        }
+        await db
+          .collection(targetType === 'article' ? 'articles' : 'tweets')
+          .doc(targetId)
+          .update({ likesCount: FieldValue.increment(likers.length) });
+
+        let commentText = '';
+        if (client) {
+          const prompt = `اكتب تعليقاً قصيراً وطبيعياً بالفصحى (سطر أو سطرين فقط) كردة فعل حقيقية على المحتوى التالي حول موضوع (${topic}):\n${content.slice(0, 400)}`;
+          const response = await client.models.generateContent({
+            model: 'gemini-3.7-flash',
+            contents: prompt,
+            config: { maxOutputTokens: 120 }
+          });
+          commentText = (response.text || '').trim();
+        }
+        if (!commentText) commentText = 'فكرة تستحق التأمل، شكراً على المشاركة.';
+
+        const commentsCollection = targetType === 'article' ? 'comments' : 'tweetComments';
+        const commentTargetField = targetType === 'article' ? 'articleId' : 'tweetId';
+        const commentId = `bot_comment_${Date.now()}_${commenter.id}`;
+        await db.collection(commentsCollection).doc(commentId).set({
+          id: commentId,
+          [commentTargetField]: targetId,
+          userId: commenter.id,
+          userName: commenter.fullName,
+          userAvatar: commenter.avatarUrl,
+          userRole: 'writer',
+          content: commentText,
+          likesCount: 0,
+          createdAt: nowIso,
+          replies: []
+        });
+        await db
+          .collection(targetType === 'article' ? 'articles' : 'tweets')
+          .doc(targetId)
+          .update({ commentsCount: FieldValue.increment(1) });
+        activityLog.push({
+          type: 'comment',
+          botId: commenter.id,
+          botName: commenter.fullName,
+          targetId,
+          targetType,
+          summary: commentText.slice(0, 80),
+          createdAt: nowIso
+        });
+      }
+
+      await interactWith(articleId, 'article', articleBot.id, articleContent, articleTopic);
+      await interactWith(tweetId, 'tweet', tweetBot.id, tweetContent, (tweetBot.topics && tweetBot.topics[0]) || 'general');
+
+      // 4) تحديث حالة الدورة (منع التكرار اليومي + تدوير الكاتب التالي)
+      await stateRef.set(
+        {
+          lastRunDate: todayKey,
+          articleRotationIndex: (state.articleRotationIndex + 1) % bots.length,
+          tweetRotationIndex: (state.tweetRotationIndex + 1) % bots.length,
+          updatedAt: nowIso
+        },
+        { merge: true }
+      );
+
+      // 5) تسجيل كل الأنشطة في سجل واحد للعرض في لوحة الإدارة
+      const batch = db.batch();
+      for (const entry of activityLog) {
+        const ref = db.collection('botActivityLog').doc(`${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
+        batch.set(ref, entry);
+      }
+      await batch.commit();
+
+      res.json({ success: true, articleId, tweetId, interactions: activityLog.length });
+    } catch (err: any) {
+      console.error('Bot daily cycle error:', err?.message || err);
+      res.status(500).json({ error: 'cycle_failed', message: 'تعذر تنفيذ دورة البوتات اليومية.' });
+    }
+  });
+
   // AI Writing Suite endpoint for writers
   app.post('/api/ai/writing-assistant', async (req, res) => {
     try {

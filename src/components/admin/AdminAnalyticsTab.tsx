@@ -36,7 +36,7 @@ interface AdminAnalyticsTabProps {
 }
 
 export const AdminAnalyticsTab: React.FC<AdminAnalyticsTabProps> = ({
-  users,
+  users: usersWithBots,
   articles,
   campaigns,
   depositRequests = [],
@@ -44,6 +44,9 @@ export const AdminAnalyticsTab: React.FC<AdminAnalyticsTabProps> = ({
   onSelectUser,
   onSelectArticle
 }) => {
+  // استبعاد حسابات بوتات النشر الافتراضية من كل إحصاءات هذه اللوحة —
+  // لا تُحتسب أبداً ضمن المستخدمين المسجَّلين أو الكتّاب أو أي عدّاد آخر هنا.
+  const users = useMemo(() => usersWithBots.filter((u) => !u.isBot), [usersWithBots]);
   const [activeSubTab, setActiveSubTab] = useState<'overview' | 'visitors_stream' | 'signups_log' | 'content_ads'>('overview');
   const [searchQuery, setSearchQuery] = useState('');
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
