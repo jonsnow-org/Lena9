@@ -1530,33 +1530,39 @@ async function startServer() {
 العنوان: <عنوان جذاب لا يتجاوز 65 حرفاً، يتضمن الكلمة المفتاحية الرئيسية بشكل طبيعي>
 الوصف: <وصف تعريفي (meta description) بين 120 و160 حرفاً، يتضمن الكلمة المفتاحية الرئيسية، ويُحفّز على النقر>
 ثم اكتب سطر "---" وحده، ثم محتوى المقال كاملاً بعده مقسّماً لفقرات واضحة.`;
-        const response = await client.models.generateContent({
-          model: 'gemini-3.7-flash',
-          contents: prompt,
-          config: { maxOutputTokens: 2200 }
-        });
-        const raw = response.text || '';
-        const splitIdx = raw.search(/\n-{3,}\n/);
-        const headerBlock = splitIdx >= 0 ? raw.slice(0, splitIdx) : '';
-        const bodyBlock = splitIdx >= 0 ? raw.slice(splitIdx).replace(/^\n-{3,}\n/, '') : raw;
+        try {
+          const response = await client.models.generateContent({
+            model: 'gemini-3.7-flash',
+            contents: prompt,
+            config: { maxOutputTokens: 2200 }
+          });
+          const raw = response.text || '';
+          const splitIdx = raw.search(/\n-{3,}\n/);
+          const headerBlock = splitIdx >= 0 ? raw.slice(0, splitIdx) : '';
+          const bodyBlock = splitIdx >= 0 ? raw.slice(splitIdx).replace(/^\n-{3,}\n/, '') : raw;
 
-        for (const line of headerBlock.split('\n')) {
-          const trimmed = line.trim();
-          if (/^الكلمات المفتاحية:/i.test(trimmed)) {
-            seoKeywords = trimmed
-              .replace(/^الكلمات المفتاحية:\s*/i, '')
-              .split(/[,،]/)
-              .map((k) => k.trim())
-              .filter(Boolean)
-              .slice(0, 6);
-          } else if (/^العنوان:/i.test(trimmed)) {
-            articleTitle = trimmed.replace(/^العنوان:\s*/i, '').trim();
-          } else if (/^الوصف:/i.test(trimmed)) {
-            seoDescription = trimmed.replace(/^الوصف:\s*/i, '').trim();
+          for (const line of headerBlock.split('\n')) {
+            const trimmed = line.trim();
+            if (/^الكلمات المفتاحية:/i.test(trimmed)) {
+              seoKeywords = trimmed
+                .replace(/^الكلمات المفتاحية:\s*/i, '')
+                .split(/[,،]/)
+                .map((k) => k.trim())
+                .filter(Boolean)
+                .slice(0, 6);
+            } else if (/^العنوان:/i.test(trimmed)) {
+              articleTitle = trimmed.replace(/^العنوان:\s*/i, '').trim();
+            } else if (/^الوصف:/i.test(trimmed)) {
+              seoDescription = trimmed.replace(/^الوصف:\s*/i, '').trim();
+            }
           }
+          articleContent = bodyBlock.trim() || raw.trim();
+          articleTitle = articleTitle || 'تأملات في المعنى';
+        } catch (genErr: any) {
+          // فشل Gemini (حصة، فلتر أمان، شبكة) لا يجب أن يُسقط الدورة كلها —
+          // ينزل للمحتوى الاحتياطي الثابت أدناه بدل فشل الطلب بأكمله بـ 500.
+          console.error('Bot article Gemini generation failed, using fallback:', genErr?.message || genErr);
         }
-        articleContent = bodyBlock.trim() || raw.trim();
-        articleTitle = articleTitle || 'تأملات في المعنى';
       }
       if (!articleContent) {
         articleTitle = articleTitle || 'تأملات في المعنى';
@@ -1613,12 +1619,16 @@ async function startServer() {
       if (client) {
         const tweetTopic = (tweetBot.topics && tweetBot.topics[0]) || 'general';
         const prompt = `اكتب تغريدة قصيرة (أقل من 220 حرفاً) بالفصحى، فكرة أو خاطرة موجزة ومؤثرة حول موضوع (${tweetTopic})، بلا هاشتاغات وبلا علامات اقتباس.`;
-        const response = await client.models.generateContent({
-          model: 'gemini-3.7-flash',
-          contents: prompt,
-          config: { maxOutputTokens: 150 }
-        });
-        tweetContent = (response.text || '').trim().slice(0, 280);
+        try {
+          const response = await client.models.generateContent({
+            model: 'gemini-3.7-flash',
+            contents: prompt,
+            config: { maxOutputTokens: 150 }
+          });
+          tweetContent = (response.text || '').trim().slice(0, 280);
+        } catch (genErr: any) {
+          console.error('Bot tweet Gemini generation failed, using fallback:', genErr?.message || genErr);
+        }
       }
       if (!tweetContent) {
         tweetContent = 'أحياناً لا نحتاج إلى إجابات كثيرة بقدر حاجتنا إلى أسئلة صادقة نطرحها على أنفسنا.';
@@ -1691,12 +1701,16 @@ async function startServer() {
         let commentText = '';
         if (client) {
           const prompt = `اكتب تعليقاً قصيراً وطبيعياً بالفصحى (سطر أو سطرين فقط) كردة فعل حقيقية على المحتوى التالي حول موضوع (${topic}):\n${content.slice(0, 400)}`;
-          const response = await client.models.generateContent({
-            model: 'gemini-3.7-flash',
-            contents: prompt,
-            config: { maxOutputTokens: 120 }
-          });
-          commentText = (response.text || '').trim();
+          try {
+            const response = await client.models.generateContent({
+              model: 'gemini-3.7-flash',
+              contents: prompt,
+              config: { maxOutputTokens: 120 }
+            });
+            commentText = (response.text || '').trim();
+          } catch (genErr: any) {
+            console.error('Bot comment Gemini generation failed, using fallback:', genErr?.message || genErr);
+          }
         }
         if (!commentText) commentText = 'فكرة تستحق التأمل، شكراً على المشاركة.';
 
