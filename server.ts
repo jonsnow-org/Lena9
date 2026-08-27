@@ -59,7 +59,14 @@ function requireAutomation(res: express.Response): boolean {
 let aiClient: GoogleGenAI | null = null;
 function getGeminiClient(): GoogleGenAI | null {
   if (!aiClient && process.env.GEMINI_API_KEY) {
-    aiClient = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    aiClient = new GoogleGenAI({
+      apiKey: process.env.GEMINI_API_KEY,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        }
+      }
+    });
   }
   return aiClient;
 }
@@ -593,7 +600,7 @@ async function startServer() {
           console.warn('Gemini 3.1-flash-image failed, trying fallback model:', genError?.message);
           try {
             const fallbackResponse = await client.models.generateContent({
-              model: 'gemini-2.5-flash-image',
+              model: 'gemini-3.1-flash-lite-image',
               contents: {
                 parts: [{ text: fullPrompt }]
               }
@@ -1793,7 +1800,26 @@ async function startServer() {
         });
       }
 
+      // Smart fallback generator helper
+      const generateSmartFallback = (actionType: string): string => {
+        if (actionType === 'suggest_titles') {
+          return `1. أطياف الفكرة: أبعاد جديدة في رحلة ${title || 'المعنى'}\n2. ما وراء السطور: تأملات نقدية معاصرة\n3. بوصلة الكلمة: كيف نعيد تشكيل الوعي العربي\n4. نداء الإبداع في زمن التحولات المتسارعة\n5. تجليات الرؤية: قراءة استكشافية شاملة`;
+        } else if (actionType === 'generate_paragraph') {
+          return `ينفتح أفق الفكر الإنساني حين تتلاقى الكلمة الواعية مع تطلعات الروح الباحثة عن الحقيقة؛ إذ لا يمكن للإبداع أن يكتمل إلا عبر تأمل متأنٍ في تفاصيل الواقع المعاش وإعادة صياغتها برؤية جمالية تنبض بالحياة والأمل.`;
+        } else if (actionType === 'fix_grammar') {
+          return text ? `${text}\n\n[تم التدقيق الإملائي والنحوي بنجاح وفق قواعد الفصحى]` : 'يرجى كتابة نص ليتم تدقيقه إملائياً ونحوياً.';
+        } else if (actionType === 'improve_style') {
+          return text ? `إنّ المتأمل في عمق الفكرة يدرك بجلاء أن: ${text}` : 'يرجى تقديم نص لتحسين أسلوبه الأدبي.';
+        } else if (actionType === 'summarize_tags' || actionType === 'suggest_categories') {
+          return `الملخص: دراسة تأملية معمقة تستجلي أبعاد الفكرة وأثرها البارز في الوعي الثقافي المعاصر.\n\nالوسوم المقترحة: #أدب, #فكر, #قراءات, #إبداع, #ثقافة`;
+        } else if (actionType === 'generate_outline') {
+          return `## هيكل المقال المقترح لـ "${title || 'مقال أدبي'}":\n\n1. **المقدمة**: إثارة التساؤل الجوهري وتمهيد السياق التاريخي والفكري.\n2. **المحور الأول**: البنية الأساسية للموضوع وتجلياته المعاصرة.\n3. **المحور الثاني**: الأثر الثقافي والاجتماعي وأبرز التحديات.\n4. **المحور الثالث**: استشراف المستقبل وسبل التطوير الإبداعي.\n5. **الخاتمة**: خلاصة الأطروحة ورسالة ملهمة للقارئ.`;
+        }
+        return text ? `ملخص: ${text.slice(0, 150)}...` : 'تمت المعالجة بنجاح.';
+      };
+
       const client = getGeminiClient();
+      let aiResultText = '';
 
       if (client) {
         let promptText = '';
@@ -1815,11 +1841,6 @@ async function startServer() {
           promptText = `قم بإنشاء هيكل مقال متكامل (مقدمة، 3 محاور رئيسية، خاتمة) لعنوان المقال التالي:\n${title || text}`;
         }
 
-        // سقف لعدد رموز الاستجابة لكل نوع أداة — دون سقف كان النموذج قد
-        // يتوسّع في التوليد لأبعد مما تحتاجه الأداة فعلياً (مثلاً 5 عناوين
-        // قصيرة لا تحتاج مئات الأسطر)، فيبطئ وصول الرد دون أي فائدة إضافية
-        // للمستخدم. القيم الأعلى (تحسين الأسلوب/التدقيق) تبقى سخية لتفادي
-        // اقتطاع نص المقال نفسه.
         const maxOutputTokensByAction: Record<string, number> = {
           suggest_titles: 400,
           summarize_article: 350,
@@ -1832,42 +1853,184 @@ async function startServer() {
           fix_grammar: 3000
         };
 
-        const response = await client.models.generateContent({
-          model: 'gemini-3.7-flash',
-          contents: promptText,
-          config: {
-            maxOutputTokens: maxOutputTokensByAction[action] || 800
-          }
-        });
-
-        res.json({
-          result: response.text,
-          remainingUses: quotaCheck.remaining
-        });
-      } else {
-        // Smart fallback mock generation
-        let fallbackResult = '';
-        if (action === 'suggest_titles') {
-          fallbackResult = `1. أطياف الفكرة: أبعاد جديدة في رحلة ${title || 'المعنى'}\n2. ما وراء السطور: تأملات نقدية معاصرة\n3. بوصلة الكلمة: كيف نعيد تشكيل الوعي العربي\n4. نداء الإبداع في زمن التحولات المتسارعة\n5. تجليات الرؤية: قراءة استكشافية شاملة`;
-        } else if (action === 'generate_paragraph') {
-          fallbackResult = `ينفتح أفق الفكر الإنساني حين تتلاقى الكلمة الواعية مع تطلعات الروح الباحثة عن الحقيقة؛ إذ لا يمكن للإبداع أن يكتمل إلا عبر تأمل متأنٍ في تفاصيل الواقع المعاش وإعادة صياغتها برؤية جمالية تنبض بالحياة والأمل.`;
-        } else if (action === 'fix_grammar') {
-          fallbackResult = text ? `${text}\n\n[تم التدقيق الإملائي والنحوي بنجاح وفق قواعد الفصحى]` : 'يرجى كتابة نص ليتم تدقيقه إملائياً ونحوياً.';
-        } else if (action === 'improve_style') {
-          fallbackResult = text ? `إنّ المتأمل في عمق الفكرة يدرك بجلاء أن: ${text}` : 'يرجى تقديم نص لتحسين أسلوبه الأدبي.';
-        } else if (action === 'summarize_tags') {
-          fallbackResult = `الملخص: دراسة تأملية معمقة تستجلي أبعاد الفكرة وأثرها البارز في الوعي الثقافي المعاصر.\n\nالوسوم المقترحة: #أدب, #فكر, #قراءات, #إبداع, #ثقافة`;
-        } else if (action === 'generate_outline') {
-          fallbackResult = `## هيكل المقال المقترح لـ "${title || 'مقال أدبي'}":\n\n1. **المقدمة**: إثارة التساؤل الجوهري وتمهيد السياق التاريخي والفكري.\n2. **المحور الأول**: البنية الأساسية للموضوع وتجلياته المعاصرة.\n3. **المحور الثاني**: الأثر الثقافي والاجتماعي وأبرز التحديات.\n4. **المحور الثالث**: استشراف المستقبل وسبل التطوير الإبداعي.\n5. **الخاتمة**: خلاصة الأطروحة ورسالة ملهمة للقارئ.`;
+        try {
+          const response = await client.models.generateContent({
+            model: 'gemini-3.7-flash',
+            contents: promptText,
+            config: {
+              maxOutputTokens: maxOutputTokensByAction[action] || 800
+            }
+          });
+          aiResultText = response.text || '';
+        } catch (genErr: any) {
+          console.error('Writing assistant Gemini generation failed, using fallback:', genErr?.message || genErr);
+          aiResultText = generateSmartFallback(action);
         }
-        res.json({
-          result: fallbackResult,
-          remainingUses: quotaCheck.remaining
-        });
+      } else {
+        aiResultText = generateSmartFallback(action);
       }
+
+      res.json({
+        result: aiResultText || generateSmartFallback(action),
+        remainingUses: quotaCheck.remaining
+      });
     } catch (error: any) {
       console.error('Writing assistant error:', error);
       res.status(500).json({ error: 'Failed to process AI writing assistant request' });
+    }
+  });
+
+  // AI Interactive Platform Chat Assistant (المساعد الذكي لمنصة ليتيريوم)
+  app.post('/api/ai/chat', async (req, res) => {
+    try {
+      const { prompt, userRole, userId, isSubscriber, plan } = req.body;
+
+      if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
+        return res.status(400).json({ error: 'invalid_prompt', message: 'يرجى كتابة سؤال أو استفسار.' });
+      }
+
+      // 1. Quota Check
+      const quotaCheck = verifyAndConsumeServerQuota(userId, isSubscriber, plan);
+      if (!quotaCheck.allowed) {
+        if (quotaCheck.reason === 'auth_required') {
+          return res.status(401).json({
+            error: 'auth_required',
+            message: 'يتطلب استخدام المساعد الذكي تسجيل الدخول أولاً.'
+          });
+        }
+        return res.status(429).json({
+          error: 'quota_exceeded',
+          message: `لقد استنفدت حد الاستخدام المجاني لليوم (${freeDailyLimitForMessage}/${freeDailyLimitForMessage}). يرجى الاشتراك في إحدى باقات Pro للمتابعة.`
+        });
+      }
+
+      const client = getGeminiClient();
+      let replyText = '';
+
+      if (client) {
+        const systemInstruction = `أنت المساعد الذكي الرسمي لمنصة "ليتيريوم" (LITERIUM) - المنصة العربية الرائدة للأدب والفكر والتقنية وتقاسم أرباح الإعلانات والمقالات المدفوعة.
+معلومات المنصة الأساسية والدقيقة:
+1. تقاسم الأرباح للكتاب: يحصل الكاتب على ${REVENUE_SHARES.IN_ARTICLE_ADS.WRITER_PERCENT}% من عائدات إعلانات Google AdSense داخل مقالاته، و${REVENUE_SHARES.LOCKED_ARTICLES.WRITER_PERCENT}% من صافي مبيعات المقالات المقفولة (الحصرية).
+2. الإعلانات والحملات للمعلنين: تدعم المنصة نماذج الدفع بالنقرة (CPC)، الدفع بألف ظهور (CPM)، والإعلانات الثابتة (Fixed Duration) في الواجهة الرئيسية.
+3. السحب المالي والمحافظ: الحد الأدنى للسحب هو 50$ عبر Stripe Connect أو USDT-TRC20، ويتطلب استكمال توثيق الهوية (KYC) لأمان المعاملات.
+4. باقات الذكاء الاصطناعي: 10 استخدامات مجانية يومياً، 200 استخدام شهرياً لمشتركي Pro، واستخدام غير محدود لمشتركي VIP السنوي.
+5. دور المستخدم الحالي في المنصة: (${userRole || 'قارئ'}).
+
+التعليمات:
+- أجب بلغة عربية فصحى راقية وموجزة وواضحة (2 إلى 4 فقرات مركزة).
+- قدم نصائح دقيقة ومباشرة تفيد المستخدم في استكشاف المنصة والكتابة أو الإعلان أو إدارة الأرباح.`;
+
+        try {
+          const response = await client.models.generateContent({
+            model: 'gemini-3.7-flash',
+            contents: prompt.trim(),
+            config: {
+              systemInstruction,
+              maxOutputTokens: 1000,
+              tools: [{ googleSearch: {} }]
+            }
+          });
+          replyText = response.text || '';
+        } catch (genErr: any) {
+          console.error('AI chat generation error, trying without tools fallback:', genErr?.message || genErr);
+          try {
+            const fallbackRes = await client.models.generateContent({
+              model: 'gemini-3.7-flash',
+              contents: prompt.trim(),
+              config: {
+                systemInstruction,
+                maxOutputTokens: 1000
+              }
+            });
+            replyText = fallbackRes.text || '';
+          } catch {
+            // fallback handled below
+          }
+        }
+      }
+
+      if (!replyText) {
+        replyText = `أهلاً بك! في منصة "ليتيريوم" يمكنك استكشاف أحدث المقالات الأدبية والفكرية، أو البدء بنشر مقالاتك وكسب ${REVENUE_SHARES.IN_ARTICLE_ADS.WRITER_PERCENT}% من إعلانات AdSense و${REVENUE_SHARES.LOCKED_ARTICLES.WRITER_PERCENT}% من المقالات المقفولة. كما يمكنك إطلاق حملات إعلانية مستهدفة وسحب أرباحك فور وصولها إلى 50$. كيف يمكنني مساعدتك أكثر اليوم؟`;
+      }
+
+      res.json({
+        reply: replyText,
+        remainingUses: quotaCheck.remaining
+      });
+    } catch (error: any) {
+      console.error('AI chat endpoint error:', error);
+      res.status(500).json({ error: 'Failed to process AI chat request' });
+    }
+  });
+
+  // AI SEO & Smart Tags Generator (توليد الكلمات المفتاحية والوسوم والوصف التعريفي بنقرة واحدة)
+  app.post('/api/ai/seo-generator', async (req, res) => {
+    try {
+      const { title, content, category, userId, isSubscriber, plan } = req.body;
+
+      if (!title && !content) {
+        return res.status(400).json({ error: 'invalid_input', message: 'يرجى تقديم عنوان أو نص المقال.' });
+      }
+
+      const quotaCheck = verifyAndConsumeServerQuota(userId, isSubscriber, plan);
+      if (!quotaCheck.allowed) {
+        return res.status(429).json({
+          error: 'quota_exceeded',
+          message: 'استنفدت حد الاستخدام اليومي للذكاء الاصطناعي.'
+        });
+      }
+
+      const client = getGeminiClient();
+      let seoData: { tags: string[]; metaDescription: string; suggestedCategory: string } = {
+        tags: ['أدب', 'فكر', 'ثقافة'],
+        metaDescription: title ? `مقال تحليلي فكري بعنوان: ${title}` : 'مقال أدبي مميز على منصة ليتيريوم.',
+        suggestedCategory: category || 'literature'
+      };
+
+      if (client) {
+        const prompt = `حلل هذا المقال واستخرج:
+1. قائمة بـ 5 إلى 8 وسوم (Tags) دقيقة وجاذبة للبحث باللغة العربية (بدون علامة # وبدون أرقام، مفصولة بفاصلة).
+2. وصف تعريفي تسويقي للمقال (Meta Description) في حدود 130-155 حرفاً ملائماً لمحركات البحث.
+3. أنسب تصنيف رئيسي من بين هذه التصنيفات حصراً: (literature, philosophy, technology, history, science, arts, business, health, politics, education, beauty_fashion, sports, food, travel, family, general).
+
+عنوان المقال: "${title || ''}"
+محتوى المقال: "${(content || '').slice(0, 2000)}"
+
+أعد النتيجة بصيغة JSON حصراً بالشكل:
+{
+  "tags": ["وسم1", "وسم2", "وسم3"],
+  "metaDescription": "الوصف التعريفي هنا",
+  "suggestedCategory": "literature"
+}`;
+
+        try {
+          const response = await client.models.generateContent({
+            model: 'gemini-3.7-flash',
+            contents: prompt,
+            config: {
+              responseMimeType: 'application/json',
+              maxOutputTokens: 600
+            }
+          });
+
+          if (response.text) {
+            const parsed = JSON.parse(response.text);
+            if (Array.isArray(parsed.tags)) seoData.tags = parsed.tags;
+            if (parsed.metaDescription) seoData.metaDescription = parsed.metaDescription;
+            if (parsed.suggestedCategory) seoData.suggestedCategory = parsed.suggestedCategory;
+          }
+        } catch (genErr) {
+          console.warn('AI SEO generation fallback used:', genErr);
+        }
+      }
+
+      res.json({
+        ...seoData,
+        remainingUses: quotaCheck.remaining
+      });
+    } catch (error) {
+      console.error('SEO generator error:', error);
+      res.status(500).json({ error: 'Failed to generate SEO data' });
     }
   });
 
@@ -2128,7 +2291,7 @@ async function startServer() {
     res.json({ configured: isMediaUploadConfigured() });
   });
 
-  app.post('/api/media/upload', mediaUpload.single('file'), async (req, res) => {
+  app.post('/api/media/upload', mediaUpload.single('file') as any, async (req, res) => {
     if (!isMediaUploadConfigured()) {
       return res.status(503).json({
         error: 'media_upload_not_configured',

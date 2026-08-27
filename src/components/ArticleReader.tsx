@@ -114,6 +114,7 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [audioRate, setAudioRate] = useState(1.0);
   const [showAudioControls, setShowAudioControls] = useState(false);
+  const [audioErrorNotice, setAudioErrorNotice] = useState<string | null>(null);
 
   const isLocked = article.isLocked && !isUnlockedByCurrentUser;
 
@@ -178,8 +179,10 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
 
   // Web Speech API for Arabic audio playback
   const handleToggleAudio = () => {
+    setAudioErrorNotice(null);
     if (!('speechSynthesis' in window)) {
-      alert('ميزة القراءة الصوتية غير مدعومة في متصفحك الحالي.');
+      setAudioErrorNotice('ميزة القراءة الصوتية غير مدعومة في متصفحك الحالي.');
+      setTimeout(() => setAudioErrorNotice(null), 4000);
       return;
     }
 
@@ -188,7 +191,7 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
       setIsPlayingAudio(false);
     } else {
       window.speechSynthesis.cancel();
-      const textToRead = `${article.title}. ${article.description}. ${article.content.replace(/[#*>`]/g, '')}`;
+      const textToRead = `${article.title}. ${article.description || ''}. ${article.content.replace(/[#*>`]/g, '')}`;
       const utterance = new SpeechSynthesisUtterance(textToRead);
       utterance.lang = 'ar-SA';
       utterance.rate = audioRate;
@@ -210,7 +213,7 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
     setAudioRate(newRate);
     if (isPlayingAudio) {
       window.speechSynthesis.cancel();
-      const textToRead = `${article.title}. ${article.description}. ${article.content.replace(/[#*>`]/g, '')}`;
+      const textToRead = `${article.title}. ${article.description || ''}. ${article.content.replace(/[#*>`]/g, '')}`;
       const utterance = new SpeechSynthesisUtterance(textToRead);
       utterance.lang = 'ar-SA';
       utterance.rate = newRate;
@@ -494,23 +497,31 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
           </div>
         </header>
 
+        {/* Audio Error Notice Banner */}
+        {audioErrorNotice && (
+          <div className="px-4 py-2.5 bg-rose-50 dark:bg-rose-950/70 border-b border-rose-200 dark:border-rose-800 flex items-center justify-between text-xs text-rose-700 dark:text-rose-300">
+            <span>{audioErrorNotice}</span>
+            <button onClick={() => setAudioErrorNotice(null)} className="font-bold text-rose-500 hover:text-rose-700">✕</button>
+          </div>
+        )}
+
         {/* Audio Floating Player Widget */}
         {showAudioControls && isPlayingAudio && (
-          <div className="px-4 py-2 bg-gradient-to-r from-amber-500/10 via-teal-500/10 to-transparent border-b border-amber-500/20 flex items-center justify-between gap-3 text-xs">
+          <div className="px-4 py-2 bg-gradient-to-r from-amber-500/10 via-teal-500/10 to-transparent border-b border-amber-500/20 flex items-center justify-between gap-3 text-xs animate-fade-in">
             <div className="flex items-center gap-2 font-bold text-amber-700 dark:text-amber-300">
               <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
-              <span>جاري القراءة الصوتية بالذكاء الاصطناعي...</span>
+              <span>جاري القراءة الصوتية للمقال...</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="text-[11px] text-slate-500">السرعة:</span>
-              {[0.8, 1.0, 1.2].map((rate) => (
+              {[0.75, 1.0, 1.25, 1.5].map((rate) => (
                 <button
                   key={rate}
                   onClick={() => handleAudioRateChange(rate)}
-                  className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                  className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition-all ${
                     audioRate === rate
-                      ? 'bg-amber-500 text-slate-950'
-                      : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                      ? 'bg-amber-500 text-slate-950 shadow-2xs font-black'
+                      : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700'
                   }`}
                 >
                   {rate}x

@@ -26,7 +26,10 @@ import {
   DollarSign,
   ArrowRight,
   TrendingUp,
-  Link as LinkIcon
+  Link as LinkIcon,
+  CheckCheck,
+  ListOrdered,
+  Search
 } from 'lucide-react';
 import { Article, ArticleCategory, User } from '../types';
 import { VideoUrlInput, VideoEmbed } from './VideoEmbed';
@@ -267,6 +270,74 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
     }
   };
 
+  const [isSeoLoading, setIsSeoLoading] = useState(false);
+  const [seoSuccessNotice, setSeoSuccessNotice] = useState<string | null>(null);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+
+  const handleGenerateAiSeo = async () => {
+    setAiErrorMessage(null);
+    setSeoSuccessNotice(null);
+
+    if (!currentUser) {
+      setAiErrorMessage('يتطلب استخدام أدوات الذكاء الاصطناعي تسجيل الدخول أولاً.');
+      onOpenAuth();
+      return;
+    }
+
+    if (isOutOfQuota) {
+      setAiErrorMessage('لقد استنفدت حد الاستخدام المجاني لليوم. اشترك في باقة Pro للمتابعة.');
+      onOpenSubscription();
+      return;
+    }
+
+    if (!title && !content) {
+      setAiErrorMessage('يرجى كتابة عنوان المقال أو جزء من محتواه أولاً لتوليد وسوم وسيو ملائم.');
+      return;
+    }
+
+    const allowed = onConsumeAiQuota();
+    if (!allowed) {
+      onOpenSubscription();
+      return;
+    }
+
+    setIsSeoLoading(true);
+    try {
+      const res = await fetch('/api/ai/seo-generator', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title,
+          content,
+          category,
+          userId: currentUser.id,
+          isSubscriber: !!currentUser.aiQuota?.plan && currentUser.aiQuota.plan !== 'none',
+          plan: currentUser.aiQuota?.plan || 'none'
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        if (Array.isArray(data.tags) && data.tags.length > 0) {
+          setTagsInput(data.tags.join(', '));
+        }
+        if (data.metaDescription && !description) {
+          setDescription(data.metaDescription);
+        }
+        if (data.suggestedCategory) {
+          setCategory(data.suggestedCategory as ArticleCategory);
+        }
+        setSeoSuccessNotice('تم توليد الوسوم والوصف التعريفي والتصنيف الأنسب بالذكاء الاصطناعي بنجاح!');
+        setTimeout(() => setSeoSuccessNotice(null), 4000);
+      } else {
+        setAiErrorMessage(data.message || data.error || 'تعذر توليد الوسوم تلقائياً.');
+      }
+    } catch {
+      setAiErrorMessage('حدث خطأ أثناء توليد وسوم ومفاتيح SEO الذكية.');
+    } finally {
+      setIsSeoLoading(false);
+    }
+  };
+
   const handleApplyAiOutput = () => {
     if (!aiOutput) return;
 
@@ -274,7 +345,7 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
       // Pick first title from list if numbered
       const firstLine = aiOutput.split('\n')[0].replace(/^\d+[\.\-\s]+/, '').replace(/^["']|["']$/g, '');
       setTitle(firstLine);
-    } else if (activeAiTool === 'generate_paragraph') {
+    } else if (activeAiTool === 'generate_paragraph' || activeAiTool === 'generate_outline') {
       setContent((prev) => (prev ? `${prev}\n\n${aiOutput}` : aiOutput));
     } else if (activeAiTool === 'improve_style' || activeAiTool === 'fix_grammar') {
       setContent(aiOutput);
@@ -291,19 +362,22 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
   };
 
   const handleClearDraft = () => {
-    if (window.confirm('هل أنت متأكد من مسح المسودة والبدء من جديد؟')) {
-      localStorage.removeItem(draftKey);
-      setTitle('');
-      setDescription('');
-      setContent('');
-      setTagsInput('أدب, ثقافة');
-      setLastAutoSaved(null);
-    }
+    setShowClearConfirm(true);
+  };
+
+  const confirmClearDraft = () => {
+    localStorage.removeItem(draftKey);
+    setTitle('');
+    setDescription('');
+    setContent('');
+    setTagsInput('أدب, ثقافة');
+    setLastAutoSaved(null);
+    setShowClearConfirm(false);
   };
 
   const handleAction = async (status: 'published' | 'draft') => {
     if (!title.trim() || !content.trim()) {
-      alert('يرجى ملء عنوان المقال ومحتواه الرئيسي.');
+      setSubmitError('يرجى ملء عنوان المقال ومحتواه الرئيسي أولاً قبل الحفظ أو النشر.');
       return;
     }
 
@@ -478,6 +552,26 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
             >
               <Sparkles className="w-3 h-3 text-amber-300" />
               <span>تحسين الأسلوب</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={isAiLoading}
+              onClick={() => handleAiAction('fix_grammar')}
+              className="px-2.5 py-1.5 rounded-xl bg-brand-900/40 hover:bg-brand-800/60 border border-brand-500/30 text-brand-200 font-medium whitespace-nowrap active:scale-95 transition-all flex items-center gap-1"
+            >
+              <CheckCheck className="w-3 h-3 text-emerald-300" />
+              <span>تدقيق لغوي</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={isAiLoading}
+              onClick={() => handleAiAction('generate_outline')}
+              className="px-2.5 py-1.5 rounded-xl bg-brand-900/40 hover:bg-brand-800/60 border border-brand-500/30 text-brand-200 font-medium whitespace-nowrap active:scale-95 transition-all flex items-center gap-1"
+            >
+              <ListOrdered className="w-3 h-3 text-indigo-300" />
+              <span>مخطط مقال</span>
             </button>
 
             <button
@@ -676,46 +770,74 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
               </div>
 
               {/* Category & Tags Selector Row */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                    التصنيف الرئيسي للمقال
-                  </label>
-                  <select
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value as ArticleCategory)}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-slate-200 outline-hidden focus:border-teal-500"
+              <div className="space-y-3 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-200 dark:border-slate-700/60">
+                  <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                    التصنيف والوسوم الذكية (SEO)
+                  </span>
+                  <button
+                    type="button"
+                    disabled={isSeoLoading}
+                    onClick={handleGenerateAiSeo}
+                    className="px-3 py-1.5 rounded-xl bg-teal-50 dark:bg-teal-950/60 border border-teal-500/30 text-teal-600 dark:text-teal-300 hover:bg-teal-100 dark:hover:bg-teal-900/50 text-xs font-bold flex items-center gap-1.5 transition-all shadow-2xs active:scale-95 disabled:opacity-50"
                   >
-                    <option value="literature">الأدب والشعر</option>
-                    <option value="philosophy">الفلسفة والفكر</option>
-                    <option value="technology">التكنولوجيا والذكاء</option>
-                    <option value="history">التاريخ والحضارات</option>
-                    <option value="science">العلوم والمعرفة</option>
-                    <option value="arts">الفنون والنقد</option>
-                    <option value="business">الاقتصاد والأعمال</option>
-                    <option value="health">طب وصحة</option>
-                    <option value="politics">سياسي</option>
-                    <option value="education">تعليمي</option>
-                    <option value="beauty_fashion">مكياج وموضة وجمال</option>
-                    <option value="sports">رياضة</option>
-                    <option value="food">طبخ وأكلات</option>
-                    <option value="travel">سفر وسياحة</option>
-                    <option value="family">تربية وأسرة</option>
-                    <option value="general">عام ودراسات</option>
-                  </select>
+                    {isSeoLoading ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-teal-500" />
+                    ) : (
+                      <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                    )}
+                    <span>توليد وسوم وسيو ذكي بنقرة واحدة (Gemini)</span>
+                  </button>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                    الوسوم (تبدأ بـ #، مفصولة بفواصل)
-                  </label>
-                  <input
-                    type="text"
-                    value={tagsInput}
-                    onChange={(e) => setTagsInput(e.target.value)}
-                    placeholder="مثال: #شعر, #فلسفة, #نقد, #لغة_عربية"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-200 outline-hidden focus:border-teal-500"
-                  />
+                {seoSuccessNotice && (
+                  <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-xs font-medium flex items-center gap-2 animate-fade-in">
+                    <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0" />
+                    <span>{seoSuccessNotice}</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">
+                      التصنيف الرئيسي للمقال
+                    </label>
+                    <select
+                      value={category}
+                      onChange={(e) => setCategory(e.target.value as ArticleCategory)}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-slate-200 outline-hidden focus:border-teal-500"
+                    >
+                      <option value="literature">الأدب والشعر</option>
+                      <option value="philosophy">الفلسفة والفكر</option>
+                      <option value="technology">التكنولوجيا والذكاء</option>
+                      <option value="history">التاريخ والحضارات</option>
+                      <option value="science">العلوم والمعرفة</option>
+                      <option value="arts">الفنون والنقد</option>
+                      <option value="business">الاقتصاد والأعمال</option>
+                      <option value="health">طب وصحة</option>
+                      <option value="politics">سياسي</option>
+                      <option value="education">تعليمي</option>
+                      <option value="beauty_fashion">مكياج وموضة وجمال</option>
+                      <option value="sports">رياضة</option>
+                      <option value="food">طبخ وأكلات</option>
+                      <option value="travel">سفر وسياحة</option>
+                      <option value="family">تربية وأسرة</option>
+                      <option value="general">عام ودراسات</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">
+                      الوسوم (مفصولة بفواصل)
+                    </label>
+                    <input
+                      type="text"
+                      value={tagsInput}
+                      onChange={(e) => setTagsInput(e.target.value)}
+                      placeholder="مثال: شعر, فلسفة, نقد, لغة عربية"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-200 outline-hidden focus:border-teal-500"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -965,6 +1087,41 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Clear Draft Confirmation Modal */}
+        {showClearConfirm && (
+          <div className="absolute inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+            <div className="w-full max-w-sm rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 shadow-2xl text-center space-y-4">
+              <div className="w-12 h-12 rounded-full bg-rose-500/10 text-rose-500 flex items-center justify-center mx-auto">
+                <RotateCcw className="w-6 h-6" />
+              </div>
+              <div>
+                <h4 className="font-extrabold text-base text-slate-900 dark:text-white mb-1">
+                  مسح المسودة والبدء من جديد؟
+                </h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  سيتم حذف النصوص والعناوين المحفوظة محلياً وإعادة ضبط المحرر.
+                </p>
+              </div>
+              <div className="flex items-center justify-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowClearConfirm(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs hover:bg-slate-200 dark:hover:bg-slate-700"
+                >
+                  تراجع
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmClearDraft}
+                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-md shadow-rose-600/30"
+                >
+                  تأكيد المسح
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

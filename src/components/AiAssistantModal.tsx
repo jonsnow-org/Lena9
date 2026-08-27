@@ -166,7 +166,7 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
                 <div className="flex items-center gap-2">
                   <h3 className="font-black text-base">المساعد الذكي ليتيريوم</h3>
                   <span className="px-1.5 py-0.5 rounded-md bg-teal-500/30 text-teal-200 text-[10px] font-mono font-bold">
-                    Gemini 2.5
+                    Gemini 3.7
                   </span>
                 </div>
                 <p className="text-[11px] text-teal-200/90">
