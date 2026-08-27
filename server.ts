@@ -2308,43 +2308,71 @@ async function startServer() {
     // عادي بلا عنوان أو صورة أو وصف، لأن الروبوتات التي تبني معاينة
     // المشاركة لا تُنفِّذ جافاسكربت React أصلاً، فترى فقط وسوم <head>
     // الثابتة العامة لكل الموقع الموجودة في index.html الخام.
+    function injectOgTags(
+      indexPath: string,
+      pageUrl: string,
+      title: string,
+      rawDescription: string,
+      image: string | null,
+      ogType: 'article' | 'website'
+    ): string {
+      const safeTitle = escapeHtmlAttr(title || 'LITERIUM');
+      const cleanDescription = String(rawDescription || '').replace(/\s+/g, ' ').trim();
+      const description = escapeHtmlAttr(
+        cleanDescription.length > 200 ? cleanDescription.slice(0, 197) + '...' : cleanDescription
+      );
+      const safeImage = image && image.startsWith('http') ? image : null;
+
+      let html = fs.readFileSync(indexPath, 'utf-8');
+      html = html.replace(/<title>[\s\S]*?<\/title>/, `<title>${safeTitle} | LITERIUM</title>`);
+      html = html.replace(/<meta name="description"[^>]*>/, `<meta name="description" content="${description}" />`);
+
+      const ogTags = `
+    <meta property="og:type" content="${ogType}" />
+    <meta property="og:site_name" content="LITERIUM" />
+    <meta property="og:title" content="${safeTitle}" />
+    <meta property="og:description" content="${description}" />
+    <meta property="og:url" content="${escapeHtmlAttr(pageUrl)}" />
+    ${safeImage ? `<meta property="og:image" content="${escapeHtmlAttr(safeImage)}" />` : ''}
+    <meta name="twitter:card" content="${safeImage ? 'summary_large_image' : 'summary'}" />
+    <meta name="twitter:title" content="${safeTitle}" />
+    <meta name="twitter:description" content="${description}" />
+    ${safeImage ? `<meta name="twitter:image" content="${escapeHtmlAttr(safeImage)}" />` : ''}
+  </head>`;
+      return html.replace('</head>', ogTags);
+    }
+
     app.get('*', async (req, res) => {
       const indexPath = path.join(distPath, 'index.html');
       try {
         const articleId = typeof req.query.article === 'string' ? req.query.article : null;
+        const tweetId = typeof req.query.tweet === 'string' ? req.query.tweet : null;
+        const pageUrl = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
+
         if (articleId && isAdminConfigured()) {
           const db = getAdminDb();
           const snap = await db.collection('articles').doc(articleId).get();
           if (snap.exists) {
             const art = snap.data() || {};
-            const title = escapeHtmlAttr(art.title || 'LITERIUM');
-            const rawDescription = String(art.description || '').replace(/\s+/g, ' ').trim();
-            const description = escapeHtmlAttr(
-              rawDescription.length > 200 ? rawDescription.slice(0, 197) + '...' : rawDescription
-            );
-            const image = typeof art.featuredImage === 'string' && art.featuredImage.startsWith('http')
-              ? art.featuredImage
-              : null;
-            const pageUrl = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
+            const image = typeof art.featuredImage === 'string' ? art.featuredImage : null;
+            const html = injectOgTags(indexPath, pageUrl, art.title || 'LITERIUM', art.description || '', image, 'article');
+            res.set('Content-Type', 'text/html; charset=utf-8');
+            return res.send(html);
+          }
+        }
 
-            let html = fs.readFileSync(indexPath, 'utf-8');
-            html = html.replace(/<title>[\s\S]*?<\/title>/, `<title>${title} | LITERIUM</title>`);
-            html = html.replace(/<meta name="description"[^>]*>/, `<meta name="description" content="${description}" />`);
-
-            const ogTags = `
-    <meta property="og:type" content="article" />
-    <meta property="og:site_name" content="LITERIUM" />
-    <meta property="og:title" content="${title}" />
-    <meta property="og:description" content="${description}" />
-    <meta property="og:url" content="${escapeHtmlAttr(pageUrl)}" />
-    ${image ? `<meta property="og:image" content="${escapeHtmlAttr(image)}" />` : ''}
-    <meta name="twitter:card" content="${image ? 'summary_large_image' : 'summary'}" />
-    <meta name="twitter:title" content="${title}" />
-    <meta name="twitter:description" content="${description}" />
-    ${image ? `<meta name="twitter:image" content="${escapeHtmlAttr(image)}" />` : ''}
-  </head>`;
-            html = html.replace('</head>', ogTags);
-
+        // نفس منطق المقال تماماً لروابط مشاركة التغريدات (?tweet=) — كانت
+        // مفقودة تماماً من قبل، فأي رابط تغريدة يُشارَك على X/واتساب/
+        // تيليجرام كان يظهر بلا معاينة إطلاقاً لأنه يسقط مباشرة إلى
+        // index.html الافتراضي دون أي وسوم Open Graph مخصصة. التغريدات
+        // لا تملك صورة خاصة بها في المخطط، فتُترَك og:image فارغة عمداً.
+        if (tweetId && isAdminConfigured()) {
+          const db = getAdminDb();
+          const snap = await db.collection('tweets').doc(tweetId).get();
+          if (snap.exists) {
+            const tw = snap.data() || {};
+            const title = tw.authorName ? `تغريدة ${tw.authorName} على LITERIUM` : 'تغريدة على LITERIUM';
+            const html = injectOgTags(indexPath, pageUrl, title, tw.content || '', null, 'website');
             res.set('Content-Type', 'text/html; charset=utf-8');
             return res.send(html);
           }
