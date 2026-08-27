@@ -1514,27 +1514,57 @@ async function startServer() {
       const nowIso = new Date().toISOString();
       const activityLog: Array<Record<string, any>> = [];
 
-      // 1) توليد ونشر مقال يومي واحد
+      // 1) توليد ونشر مقال يومي واحد — مُحسَّن لمحركات البحث (SEO): يختار
+      // Gemini كلمات مفتاحية حقيقية يبحث عنها الناس حول موضوع البوت، ثم يبني
+      // العنوان والوصف (meta description) والمحتوى حولها بشكل طبيعي غير
+      // متكلَّف، بهدف أكبر انتشار ممكن للمقالات في نتائج البحث.
       let articleTitle = '';
       let articleContent = '';
+      let seoDescription = '';
+      let seoKeywords: string[] = [];
       if (client) {
-        const prompt = `اكتب مقالاً أدبياً وفكرياً غنياً وعميقاً بالفصحى في قسم (${articleTopic})، لا يقل عن 500 كلمة، بأسلوب راقٍ ومترابط. ابدأ الرد بسطر واحد فقط بالشكل التالي:\nالعنوان: <عنوان جذاب>\nثم اكتب سطر "---" وحده، ثم اكتب محتوى المقال كاملاً بعده.`;
+        const prompt = `أنت خبير SEO ومحتوى عربي. اكتب مقالاً غنياً وعميقاً بالفصحى في قسم (${articleTopic})، لا يقل عن 550 كلمة، بأسلوب راقٍ ومترابط، ومُحسَّن لمحركات البحث بحيث تتكرر كلماته المفتاحية داخل النص بشكل طبيعي وسلس دون أي حشو أو تكرار مصطنع.
+
+اتبع هذا الشكل بالضبط في بداية ردك (كل عنصر في سطر مستقل):
+الكلمات المفتاحية: <5 كلمات أو عبارات مفتاحية حقيقية يبحث عنها الناس فعلياً حول هذا الموضوع، مفصولة بفواصل>
+العنوان: <عنوان جذاب لا يتجاوز 65 حرفاً، يتضمن الكلمة المفتاحية الرئيسية بشكل طبيعي>
+الوصف: <وصف تعريفي (meta description) بين 120 و160 حرفاً، يتضمن الكلمة المفتاحية الرئيسية، ويُحفّز على النقر>
+ثم اكتب سطر "---" وحده، ثم محتوى المقال كاملاً بعده مقسّماً لفقرات واضحة.`;
         const response = await client.models.generateContent({
           model: 'gemini-3.7-flash',
           contents: prompt,
-          config: { maxOutputTokens: 2000 }
+          config: { maxOutputTokens: 2200 }
         });
         const raw = response.text || '';
-        const parts = raw.split(/\n-{3,}\n/);
-        const titleLine = (parts[0] || '').replace(/^العنوان:\s*/i, '').trim();
-        articleTitle = titleLine || 'تأملات في المعنى';
-        articleContent = (parts[1] || raw).trim();
+        const splitIdx = raw.search(/\n-{3,}\n/);
+        const headerBlock = splitIdx >= 0 ? raw.slice(0, splitIdx) : '';
+        const bodyBlock = splitIdx >= 0 ? raw.slice(splitIdx).replace(/^\n-{3,}\n/, '') : raw;
+
+        for (const line of headerBlock.split('\n')) {
+          const trimmed = line.trim();
+          if (/^الكلمات المفتاحية:/i.test(trimmed)) {
+            seoKeywords = trimmed
+              .replace(/^الكلمات المفتاحية:\s*/i, '')
+              .split(/[,،]/)
+              .map((k) => k.trim())
+              .filter(Boolean)
+              .slice(0, 6);
+          } else if (/^العنوان:/i.test(trimmed)) {
+            articleTitle = trimmed.replace(/^العنوان:\s*/i, '').trim();
+          } else if (/^الوصف:/i.test(trimmed)) {
+            seoDescription = trimmed.replace(/^الوصف:\s*/i, '').trim();
+          }
+        }
+        articleContent = bodyBlock.trim() || raw.trim();
+        articleTitle = articleTitle || 'تأملات في المعنى';
       }
       if (!articleContent) {
         articleTitle = articleTitle || 'تأملات في المعنى';
         articleContent =
           'ثمة لحظات يتوقف فيها الزمن قليلاً، تتيح لنا أن نعيد النظر في تفاصيل نظنها عابرة، بينما هي في حقيقتها تحمل من المعنى ما يستحق التأمل والكتابة عنه.';
       }
+      if (seoKeywords.length === 0) seoKeywords = [articleTopic];
+      if (!seoDescription) seoDescription = articleContent.slice(0, 150);
 
       const articleId = `bot_article_${Date.now()}`;
       const articleData = {
@@ -1546,7 +1576,7 @@ async function startServer() {
         writerIsVerified: false,
         title: articleTitle,
         slug: `article-${articleId}`,
-        description: articleContent.slice(0, 150),
+        description: seoDescription,
         content: articleContent,
         featuredImage: `https://picsum.photos/seed/${articleId}/1200/630`,
         category: articleTopic,
@@ -1565,7 +1595,7 @@ async function startServer() {
         revenueFromSales: 0,
         totalRevenue: 0,
         publishedAt: nowIso,
-        tags: [articleTopic]
+        tags: seoKeywords
       };
       await db.collection('articles').doc(articleId).set(articleData);
       activityLog.push({
