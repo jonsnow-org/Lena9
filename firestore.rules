@@ -471,6 +471,29 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // مفتاح تشغيل/إيقاف بوتات النشر والتفاعل التلقائي — نفس منطق
+    // settings/platformAds تماماً (قراءة عامة، كتابة أدمن فقط). دورة
+    // النشر اليومية الفعلية تعمل على الخادم بصلاحيات Admin SDK فتتجاوز
+    // هذه القاعدة أصلاً، لكن القراءة العامة تلزم لواجهة الإدارة.
+    match /settings/publishingBots {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // سجل نشاط بوتات النشر (مقال/تغريدة/إعجاب/تعليق) — يُكتَب حصرياً من
+    // الخادم عبر Admin SDK (يتجاوز هذه القواعد)، ولا كتابة من العميل
+    // إطلاقاً. قراءة مقصورة على الأدمن لأنه سجل تشغيلي داخلي فقط.
+    match /botActivityLog/{entryId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // حالة تشغيل دورة البوتات اليومية (آخر تشغيلة، إلخ) — يقرأها/يكتبها
+    // الخادم فقط عبر Admin SDK؛ لا حاجة لأي وصول من العميل إطلاقاً.
+    match /botRunState/{docId} {
+      allow read, write: if false;
+    }
+
     // سجلات التحقق الحقيقي من انضمام/اشتراك القارئ (تيليجرام ويوتيوب) —
     // تُكتب حصراً من الخادم عبر Firebase Admin SDK بعد تحقق فعلي عبر واجهة
     // برمجية خارجية (Telegram Bot API / YouTube Data API)، وليس من العميل

@@ -11,6 +11,7 @@ import {
   query,
   where,
   orderBy,
+  limit,
   arrayUnion,
   arrayRemove,
   increment,
@@ -1351,6 +1352,69 @@ export async function setBackgroundPresetInFirestore(backgroundPreset: string, u
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, 'settings/theme');
     throw error;
+  }
+}
+
+// -------------------------------------------------------------------
+// بوتات النشر والتفاعل التلقائي (settings/publishingBots)
+// -------------------------------------------------------------------
+// نفس منطق settings/platformAds تماماً: مستند واحد ثابت المعرّف، قراءة
+// عامة (لعرض حالة التشغيل في لوحة الأدمن فوراً لدى أي جلسة أدمن مفتوحة)،
+// وكتابة مقصورة على الأدمن فقط عبر قواعد أمان Firestore. دورة النشر
+// اليومي الفعلية (server.ts، مُشغَّلة عبر GitHub Actions cron) تقرأ هذا
+// المستند بصلاحيات Admin SDK قبل أي نشر — تعطيله من هنا يوقف كل نشاط
+// البوتات فوراً بلا حاجة لانتظار التشغيلة التالية للسير.
+export function subscribeToPublishingBotsEnabled(
+  onSettings: (enabled: boolean) => void,
+  onError?: (err: any) => void
+) {
+  return onSnapshot(
+    doc(db, 'settings', 'publishingBots'),
+    (snap) => {
+      onSettings(snap.exists() ? Boolean(snap.data().enabled) : false);
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'settings/publishingBots');
+      if (onError) onError(error);
+    }
+  );
+}
+
+export async function setPublishingBotsEnabledInFirestore(enabled: boolean, updatedByUserId: string): Promise<void> {
+  try {
+    await setDoc(
+      doc(db, 'settings', 'publishingBots'),
+      { enabled, updatedAt: new Date().toISOString(), updatedBy: updatedByUserId },
+      { merge: true }
+    );
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'settings/publishingBots');
+    throw error;
+  }
+}
+
+/** آخر نشاطات البوتات (نشر مقال/تغريدة، إعجاب، تعليق) — لعرضها في لوحة
+ *  الإدارة فقط. سجل للقراءة، تُكتَب مُدخَلاته حصرياً من الخادم (Admin SDK)
+ *  عند كل دورة نشر يومية، ولا كتابة من العميل إطلاقاً (انظر firestore.rules). */
+export interface BotActivityLogEntry {
+  id: string;
+  type: 'article' | 'tweet' | 'like' | 'comment';
+  botId: string;
+  botName: string;
+  targetId: string;
+  targetType: 'article' | 'tweet';
+  summary: string;
+  createdAt: string;
+}
+
+export async function fetchRecentBotActivity(limitCount: number = 30): Promise<BotActivityLogEntry[]> {
+  try {
+    const q = query(collection(db, 'botActivityLog'), orderBy('createdAt', 'desc'), limit(limitCount));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as BotActivityLogEntry);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'botActivityLog');
+    return [];
   }
 }
 

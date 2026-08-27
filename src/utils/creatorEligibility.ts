@@ -87,6 +87,10 @@ export function isEligibleForMonetization(
   followersCountOverride?: number
 ): boolean {
   if (!user) return false;
+  // حسابات البوتات (نظام النشر/التفاعل التلقائي) مستبعدة نهائياً من أي
+  // احتساب أرباح، بصرف النظر عن أي شرط آخر — حتى لو استوفت شروط الأهلية
+  // شكلياً لاحقاً. هذا الفحص يسبق حتى تجاوز الأدمن أدناه عمداً.
+  if (user.isBot) return false;
   if (user.role === 'admin') return true;
   return getCreatorEligibility(user, articles, followersCountOverride).isEligible;
 }

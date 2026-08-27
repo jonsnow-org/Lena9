@@ -118,6 +118,11 @@ export interface User {
   blockedUserIds?: string[];
   /** من كتمهم هذا المستخدم — لا يمنع الاستلام، فقط يُخفي شارة غير مقروء/التنبيه */
   mutedUserIds?: string[];
+  /** حساب كاتب افتراضي (بوت) ينشر ويتفاعل تلقائياً — يُنشأ ويُدار حصرياً عبر
+   *  نظام بوتات النشر التلقائي (server.ts + AdminBotsTab)، مستبعَد تماماً من
+   *  أهلية الربح والإحصاءات الداخلية (انظر isEligibleForMonetization
+   *  وAdminAnalyticsTab). لا يُضبَط هذا الحقل يدوياً من أي مسار آخر. */
+  isBot?: boolean;
 }
 
 export interface ReadingHistoryItem {

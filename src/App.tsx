@@ -94,8 +94,11 @@ import {
   setThemePresetInFirestore,
   setBackgroundPresetInFirestore,
   setPlatformAdsEnabledInFirestore,
-  setExternalAdsConfigInFirestore
+  setExternalAdsConfigInFirestore,
+  subscribeToPublishingBotsEnabled,
+  setPublishingBotsEnabledInFirestore
 } from './services/firestoreService';
+import { seedBotAccounts } from './services/botsApi';
 import { PromoteArticleModal } from './components/PromoteArticleModal';
 import { LegalPages, LegalSection } from './components/LegalPages';
 import { SiteFooter } from './components/SiteFooter';
@@ -1556,6 +1559,32 @@ export function App() {
       console.error('تعذر حفظ إعداد إعلانات المنصة:', err);
       alert('تعذر حفظ الإعداد الجديد. تحقق من اتصالك ثم حاول مجدداً.');
     }
+  };
+
+  // مفتاح تشغيل/إيقاف بوتات النشر والتفاعل التلقائي — settings/publishingBots،
+  // نفس منطق platformAdsEnabled أعلاه تماماً. الدورة اليومية الفعلية تعمل
+  // على الخادم (server.ts، مُشغَّلة عبر GitHub Actions cron)، وتقرأ هذا
+  // المستند بنفسها قبل أي نشر — تعطيله من هنا يوقف كل نشاط البوتات فوراً.
+  const [publishingBotsEnabled, setPublishingBotsEnabledState] = useState(false);
+  useEffect(() => {
+    return subscribeToPublishingBotsEnabled(setPublishingBotsEnabledState, (err) =>
+      console.error('تعذر تحميل إعداد بوتات النشر:', err)
+    );
+  }, []);
+
+  const handleTogglePublishingBots = async (enabled: boolean) => {
+    if (currentUser.role !== 'admin') return;
+    setPublishingBotsEnabledState(enabled);
+    try {
+      await setPublishingBotsEnabledInFirestore(enabled, currentUser.id);
+    } catch (err) {
+      console.error('تعذر حفظ إعداد بوتات النشر:', err);
+      alert('تعذر حفظ الإعداد الجديد. تحقق من اتصالك ثم حاول مجدداً.');
+    }
+  };
+
+  const handleSeedBotAccounts = async () => {
+    return seedBotAccounts();
   };
 
   // إعدادات الشبكات الإعلانية الخارجية الاحتياطية — نفس مخزن AdSlot
@@ -3447,6 +3476,9 @@ export function App() {
             onTogglePlatformAds={handleTogglePlatformAds}
             externalAdsConfig={externalAdsConfig}
             onSaveExternalAdsConfig={handleSaveExternalAdsConfig}
+            publishingBotsEnabled={publishingBotsEnabled}
+            onTogglePublishingBots={handleTogglePublishingBots}
+            onSeedBotAccounts={handleSeedBotAccounts}
             initialAdminSection={adminActiveTab}
             onAdminSectionChange={setAdminActiveTab}
             tweets={tweets.filter((t) => t.authorId === currentUser.id)}
@@ -3649,6 +3681,9 @@ export function App() {
             onTogglePlatformAds={handleTogglePlatformAds}
             externalAdsConfig={externalAdsConfig}
             onSaveExternalAdsConfig={handleSaveExternalAdsConfig}
+            publishingBotsEnabled={publishingBotsEnabled}
+            onTogglePublishingBots={handleTogglePublishingBots}
+            onSeedBotAccounts={handleSeedBotAccounts}
             initialAdminSection={adminActiveTab}
             onAdminSectionChange={setAdminActiveTab}
             tweets={tweets.filter((t) => t.authorId === currentUser.id)}
