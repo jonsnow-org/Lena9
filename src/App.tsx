@@ -1579,6 +1579,7 @@ export function App() {
       await setPublishingBotsEnabledInFirestore(enabled, currentUser.id);
     } catch (err) {
       console.error('تعذر حفظ إعداد بوتات النشر:', err);
+      setPublishingBotsEnabledState(!enabled);
       alert('تعذر حفظ الإعداد الجديد. تحقق من اتصالك ثم حاول مجدداً.');
     }
   };
