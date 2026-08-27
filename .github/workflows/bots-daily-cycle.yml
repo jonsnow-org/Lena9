@@ -1,0 +1,33 @@
+name: Bots Daily Publishing Cycle
+
+# يشغّل دورة نشر/تفاعل بوتات الكتّاب الافتراضيين اليومية على الموقع الحي —
+# مقال واحد وتغريدة واحدة (بالتداول بين 8 حسابات)، مع إعجابات وتعليقات
+# تلقائية فيما بينها. الخادم (server.ts) هو من يقرر فعلياً ما إذا كانت
+# الدورة تعمل أم لا (يتحقق من settings/publishingBots ومن عدم تكرار
+# النشر لنفس اليوم) — هذا السير مجرد نبضة يومية تستدعيه، لا أكثر.
+#
+# ملاحظة: نفس درس سير health-check.yml — الجدولة عبر schedule: تعمل فقط
+# من الفرع الافتراضي (main) في GitHub، فلا بد من دمج هذا الملف في main
+# قبل أن تبدأ الجدولة تعمل فعلياً.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * *'
+
+jobs:
+  run-daily-cycle:
+    runs-on: ubuntu-latest
+    steps:
+      - name: POST /api/bots/run-daily-cycle
+        run: |
+          status=$(curl -sS -o /tmp/body.txt -w "%{http_code}" --max-time 60 \
+            -X POST \
+            -H "x-bots-cron-secret: ${{ secrets.BOTS_CRON_SECRET }}" \
+            https://literium.ai.studio/api/bots/run-daily-cycle || echo "000")
+          echo "HTTP $status"
+          cat /tmp/body.txt || true
+          if [ "$status" != "200" ]; then
+            echo "::error::فشل استدعاء دورة البوتات اليومية (HTTP $status)"
+            exit 1
+          fi
