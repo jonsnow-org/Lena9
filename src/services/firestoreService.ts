@@ -1418,6 +1418,61 @@ export async function fetchRecentBotActivity(limitCount: number = 30): Promise<B
   }
 }
 
+/** المقالات والتغريدات المنشورة فعلياً من حسابات البوتات — لعرضها في لوحة
+ *  الإدارة مع إمكانية تحديد عناصر بعينها وحذفها (مقال لم يعجب الأدمن، أو
+ *  مسح كل محتوى البوتات دفعة واحدة لاحقاً). الحذف نفسه يمر عبر نفس مسار
+ *  حذف المقال/التغريدة العادي (deleteArticleFromFirestore/deleteTweetInFirestore)
+ *  الذي تسمح به قواعد Firestore أصلاً للأدمن. */
+export interface BotPublishedItem {
+  id: string;
+  type: 'article' | 'tweet';
+  title: string;
+  createdAt: string;
+}
+
+export async function fetchBotPublishedContent(botIds: string[]): Promise<BotPublishedItem[]> {
+  if (botIds.length === 0) return [];
+  try {
+    const [articlesSnap, tweetsSnap] = await Promise.all([
+      getDocs(query(collection(db, 'articles'), where('writerId', 'in', botIds))),
+      getDocs(query(collection(db, 'tweets'), where('authorId', 'in', botIds)))
+    ]);
+    const articles: BotPublishedItem[] = articlesSnap.docs.map((d) => {
+      const data = d.data();
+      return { id: d.id, type: 'article', title: data.title || '(بلا عنوان)', createdAt: data.publishedAt || '' };
+    });
+    const tweets: BotPublishedItem[] = tweetsSnap.docs.map((d) => {
+      const data = d.data();
+      return { id: d.id, type: 'tweet', title: data.content || '', createdAt: data.createdAt || '' };
+    });
+    return [...articles, ...tweets].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'bot-published-content');
+    return [];
+  }
+}
+
+export async function deleteBotPublishedContentBatch(
+  items: Array<{ id: string; type: 'article' | 'tweet' }>
+): Promise<void> {
+  if (items.length === 0) return;
+  try {
+    const chunkSize = 450; // حد Firestore لعمليات الدفعة الواحدة هو 500
+    for (let i = 0; i < items.length; i += chunkSize) {
+      const batch = writeBatch(db);
+      for (const item of items.slice(i, i + chunkSize)) {
+        batch.delete(doc(db, item.type === 'article' ? 'articles' : 'tweets', item.id));
+      }
+      await batch.commit();
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, 'bot-published-content-batch');
+    throw error;
+  }
+}
+
 // -------------------------------------------------------------------
 // عمليات مشتريات المقالات المقفولة (للأدمن حصراً)
 //

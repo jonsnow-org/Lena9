@@ -1,7 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { Bot, Power, RefreshCw, Users2, Heart, MessageCircle, FileText, Rss } from 'lucide-react';
+import { Bot, Power, RefreshCw, Users2, Heart, MessageCircle, FileText, Rss, Trash2, CheckSquare, Square } from 'lucide-react';
 import { User } from '../../types';
-import { fetchRecentBotActivity, BotActivityLogEntry } from '../../services/firestoreService';
+import {
+  fetchRecentBotActivity,
+  BotActivityLogEntry,
+  fetchBotPublishedContent,
+  deleteBotPublishedContentBatch,
+  BotPublishedItem
+} from '../../services/firestoreService';
 
 interface AdminBotsTabProps {
   users: User[];
@@ -36,6 +42,14 @@ export const AdminBotsTab: React.FC<AdminBotsTabProps> = ({
   const [activity, setActivity] = useState<BotActivityLogEntry[]>([]);
   const [isLoadingActivity, setIsLoadingActivity] = useState(false);
 
+  // محتوى البوتات المنشور فعلياً (مقالات + تغريدات) — قابل للتحديد الفردي
+  // أو الجماعي وحذفه: إما مقال واحد لم يعجب الأدمن، أو مسح كل شيء دفعة
+  // واحدة لاحقاً بعد أن يصبح الموقع مشهوراً ولم تعد الحاجة للمحتوى الوهمي.
+  const [content, setContent] = useState<BotPublishedItem[]>([]);
+  const [isLoadingContent, setIsLoadingContent] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isDeleting, setIsDeleting] = useState(false);
+
   const loadActivity = async () => {
     setIsLoadingActivity(true);
     try {
@@ -46,9 +60,64 @@ export const AdminBotsTab: React.FC<AdminBotsTabProps> = ({
     }
   };
 
+  const loadContent = async (botIds: string[]) => {
+    setIsLoadingContent(true);
+    try {
+      const items = await fetchBotPublishedContent(botIds);
+      setContent(items);
+      setSelectedIds((prev) => {
+        const validIds = new Set(items.map((it) => it.id));
+        return new Set([...prev].filter((id) => validIds.has(id)));
+      });
+    } finally {
+      setIsLoadingContent(false);
+    }
+  };
+
   useEffect(() => {
     loadActivity();
   }, []);
+
+  useEffect(() => {
+    if (bots.length > 0) loadContent(bots.map((b) => b.id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bots.length]);
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const allSelected = content.length > 0 && selectedIds.size === content.length;
+  const toggleSelectAll = () => {
+    setSelectedIds(allSelected ? new Set() : new Set(content.map((it) => it.id)));
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedIds.size === 0) return;
+    const confirmed = window.confirm(
+      `سيتم حذف ${selectedIds.size} عنصر محدد نهائياً (مقالات و/أو تغريدات البوتات). هذا الإجراء لا رجعة فيه. هل تريد المتابعة؟`
+    );
+    if (!confirmed) return;
+    setIsDeleting(true);
+    try {
+      const items = content
+        .filter((it) => selectedIds.has(it.id))
+        .map((it) => ({ id: it.id, type: it.type }));
+      await deleteBotPublishedContentBatch(items);
+      setSelectedIds(new Set());
+      await loadContent(bots.map((b) => b.id));
+    } catch (err) {
+      console.error('Bot content delete failed:', err);
+      alert('تعذر حذف العناصر المحددة. تحقق من اتصالك ثم حاول مجدداً.');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const handleSeed = async () => {
     setIsSeeding(true);
@@ -133,6 +202,78 @@ export const AdminBotsTab: React.FC<AdminBotsTabProps> = ({
               </div>
             ))}
           </div>
+        )}
+      </div>
+
+      {/* المحتوى المنشور — تحديد فردي/جماعي وحذف */}
+      <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <h4 className="font-bold text-white text-sm">
+            المحتوى المنشور ({content.length})
+          </h4>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => loadContent(bots.map((b) => b.id))}
+              disabled={isLoadingContent}
+              className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoadingContent ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+        </div>
+
+        {content.length === 0 ? (
+          <p className="text-xs text-slate-500 text-center py-6">لا يوجد محتوى منشور من البوتات بعد.</p>
+        ) : (
+          <>
+            <div className="flex items-center justify-between gap-2 pb-1">
+              <button
+                onClick={toggleSelectAll}
+                className="flex items-center gap-1.5 text-[11px] font-bold text-slate-300 hover:text-white transition-colors"
+              >
+                {allSelected ? <CheckSquare className="w-4 h-4 text-brand-500" /> : <Square className="w-4 h-4" />}
+                {allSelected ? 'إلغاء تحديد الكل' : 'تحديد الكل'}
+              </button>
+              <button
+                onClick={handleDeleteSelected}
+                disabled={selectedIds.size === 0 || isDeleting}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600/15 hover:bg-red-600/25 text-red-400 text-[11px] font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Trash2 className={`w-3.5 h-3.5 ${isDeleting ? 'animate-pulse' : ''}`} />
+                حذف المحدد ({selectedIds.size})
+              </button>
+            </div>
+            <div className="space-y-2 max-h-96 overflow-y-auto">
+              {content.map((item) => {
+                const isSelected = selectedIds.has(item.id);
+                const Icon = item.type === 'article' ? FileText : Rss;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => toggleSelect(item.id)}
+                    className={`w-full flex items-start gap-2.5 p-2.5 rounded-lg border transition-colors text-right ${
+                      isSelected ? 'bg-red-600/10 border-red-600/40' : 'bg-slate-800/40 border-transparent hover:bg-slate-800/70'
+                    }`}
+                  >
+                    {isSelected ? (
+                      <CheckSquare className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />
+                    ) : (
+                      <Square className="w-4 h-4 text-slate-500 mt-0.5 flex-shrink-0" />
+                    )}
+                    <Icon className="w-3.5 h-3.5 text-brand-500 mt-0.5 flex-shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[11px] text-slate-300 truncate">{item.title}</p>
+                      <p className="text-[10px] text-slate-500 mt-0.5">
+                        {item.createdAt
+                          ? new Date(item.createdAt).toLocaleString('ar', { dateStyle: 'medium', timeStyle: 'short' })
+                          : ''}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
 
