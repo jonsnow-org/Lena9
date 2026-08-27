@@ -21,7 +21,10 @@ jobs:
     steps:
       - name: POST /api/bots/run-daily-cycle
         run: |
-          status=$(curl -sS -o /tmp/body.txt -w "%{http_code}" --max-time 60 \
+          # 280s: الدورة تستدعي Gemini تتابعياً حتى 4 مرات (مقال + تغريدة +
+          # تعليقان)، وقد يتجاوز مجموعها 60 ثانية بسهولة — أثبت ذلك تشغيل
+          # حقيقي فشل بخطأ "curl: (28) Operation timed out after 60002ms".
+          status=$(curl -sS -o /tmp/body.txt -w "%{http_code}" --max-time 280 \
             -X POST \
             -H "x-bots-cron-secret: ${{ secrets.BOTS_CRON_SECRET }}" \
             https://literium.ai.studio/api/bots/run-daily-cycle || echo "000")
