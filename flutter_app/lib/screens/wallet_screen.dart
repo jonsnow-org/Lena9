@@ -1,7 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
+import 'kyc_screen.dart';
 
 /// عرض الرصيد الحي فقط — الإيداع/السحب عبر Stripe غير مفعّل هنا حالياً
 /// (لا يوجد حساب Stripe/PayPal حقيقي مُعدّ لهذا التطبيق بعد). الموقع
@@ -22,6 +24,8 @@ class WalletScreen extends StatelessWidget {
         }
         final data = snapshot.data!.data() ?? {};
         final available = (data['availableBalance'] as num?) ?? (data['walletBalance'] as num?) ?? 0;
+        final isKycVerified = (data['isKycVerified'] ?? false) as bool;
+        final kycStatus = (data['kycDetails'] as Map<String, dynamic>?)?['status'] as String?;
 
         return Center(
           child: Column(
@@ -41,6 +45,23 @@ class WalletScreen extends StatelessWidget {
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey),
                 ),
+              ),
+              const SizedBox(height: 20),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  final idToken = await FirebaseAuth.instance.currentUser?.getIdToken();
+                  if (idToken == null || !context.mounted) return;
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => KycScreen(uid: uid, idToken: idToken)),
+                  );
+                },
+                icon: Icon(isKycVerified ? Icons.verified_outlined : Icons.shield_outlined,
+                    color: isKycVerified ? Colors.teal : null),
+                label: Text(isKycVerified
+                    ? 'حسابك موثق ✓'
+                    : kycStatus == 'pending'
+                        ? 'طلب التوثيق قيد المراجعة'
+                        : 'توثيق الهوية (KYC)'),
               ),
             ],
           ),
