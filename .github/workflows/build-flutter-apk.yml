@@ -27,6 +27,30 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # آخر محاولتين فشلتا بنمط متطابق: البناء يتقدّم بنجاح حتى منتصف مهمة
+      # Gradle الثقيلة assembleRelease (بعد رسالة "Already watching path")
+      # ثم يتجمّد بصمت لعدة دقائق قبل أن يصل خطأ من مُشغّل GitHub نفسه
+      # ("received a shutdown signal") يُنهي العملية قسراً — وليس خطأ برمجياً
+      # (pub get ينجح تماماً في كلتا المرتين). تحققنا أن هذا ليس بسبب تجاوز
+      # حد استخدام GitHub Actions المجاني (لوحة الفوترة تُظهر الاستخدام
+      # بالكامل ضمن الباقة المجانية). النمط يطابق مشكلة شائعة وموثّقة في بناء
+      # تطبيقات اندرويد على مشغّلات GitHub القياسية (~14 جيجا فقط): امتلاء
+      # مساحة القرص أثناء مرحلة R8/ضغط الكود الثقيلة (مفعّلة عمداً هنا لحل
+      # مشكلة انهيار التطبيق)، فيتجمّد Gradle ثم يُعتبر المُشغّل غير سليم
+      # ويُقتل خارجياً. هذه الخطوة تحرّر مساحة إضافية كبيرة (إزالة أدوات غير
+      # مستخدَمة هنا مثل .NET/Haskell/حزم ضخمة/صور Docker) قبل البناء —
+      # android: false يحافظ على SDK اندرويد لأننا نحتاجه فعلياً.
+      - name: Free disk space (prevent runner disk exhaustion during Gradle assembleRelease)
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          android: false
+          tool-cache: false
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
       # مثبَّت على إصدار محدد بدل channel: stable وحدها — قناة stable انتقلت
       # مؤخراً جداً (خلال آخر يوم أو يومين) إلى Flutter 3.47 الذي يفعّل AGP 9
       # بدعم Kotlin مدمَج جديد كلياً؛ 3.44 كانت الإصدار المستقر منذ أشهر (مايو
