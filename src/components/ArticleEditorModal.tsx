@@ -155,6 +155,18 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
   const [activeAiTool, setActiveAiTool] = useState<string | null>(null);
   const [aiErrorMessage, setAiErrorMessage] = useState<string | null>(null);
 
+  // مولّد وسوم/وصف/تصنيف SEO بالذكاء الاصطناعي + تأكيد مسح المسودة — كانت
+  // هذه الثلاثة معرَّفة بعد `if (!isOpen) return null` أدناه، فتُستدعى فقط
+  // في الإطارات التي isOpen=true. React يقارن عدد الخطافات بين كل إطار
+  // متتالٍ لنفس المكوّن (وهذا المكوّن مثبَّت دوماً في App.tsx بغض النظر عن
+  // isOpen)، فأول ضغطة على "كتابة مقال" تنقل isOpen من false إلى true
+  // وتستدعي 3 خطافات useState لم تُستدعَ في الإطار السابق — خطأ فادح
+  // ("Rendered more hooks than during the previous render") يُسقط الشجرة
+  // بأكملها لشاشة بيضاء فوراً. نقلها هنا قبل الشرط يضمن استدعاءها دائماً.
+  const [isSeoLoading, setIsSeoLoading] = useState(false);
+  const [seoSuccessNotice, setSeoSuccessNotice] = useState<string | null>(null);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+
   // Word count
   const wordCount = content.trim() ? content.trim().split(/\s+/).length : 0;
 
@@ -269,10 +281,6 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
       setIsAiLoading(false);
     }
   };
-
-  const [isSeoLoading, setIsSeoLoading] = useState(false);
-  const [seoSuccessNotice, setSeoSuccessNotice] = useState<string | null>(null);
-  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   const handleGenerateAiSeo = async () => {
     setAiErrorMessage(null);
