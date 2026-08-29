@@ -23,7 +23,8 @@ import {
   Moon,
   Users,
   Compass,
-  ArrowUpRight
+  ArrowUpRight,
+  MessageSquare
 } from 'lucide-react';
 import { Article, User, UserRole } from '../types';
 import { REVENUE_SHARES } from '../constants/revenueShares';
@@ -59,7 +60,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   onToggleLanguage = () => {},
   onOpenLegal = (_s) => {}
 }) => {
-  const [activeFeatureTab, setActiveFeatureTab] = useState<'readers' | 'writers' | 'advertisers'>('readers');
+  const [activeFeatureTab, setActiveFeatureTab] = useState<'readers' | 'writers' | 'social' | 'advertisers'>('readers');
   const [previewCategory, setPreviewCategory] = useState<string>('all');
 
   const isUserLoggedIn = isAuthenticated && currentUser && currentUser.id !== 'guest';
@@ -243,14 +244,16 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               منظومة متكاملة تلبي تطلعات الجميع
             </h2>
             <p className="mt-3 text-sm sm:text-base text-slate-400">
-              صُممت ليتيريوم بدقة لتقديم تجربة فريدة لكل من يبحث عن المعرفة، الإبداع، أو الاستثمار الإعلامي
+              قراءة ونشر مقالات، تغريد وتفاعل اجتماعي فوري، وإعلانات — كلها في منصة واحدة، ودون أي حاجة للتسجيل لمعاينتها
             </p>
 
-            {/* Pillar Selector Tabs */}
-            <div className="flex items-center justify-center gap-2 mt-8 p-1.5 rounded-2xl bg-slate-950/80 border border-slate-800 max-w-md mx-auto">
+            {/* Pillar Selector Tabs — للتنقل السريع والتمييز البصري فقط،
+                لم تعد تُخفي أي بطاقة؛ الأربع جميعاً ظاهرة دوماً أدناه حتى
+                يلاحظ الزائر كل ميزات المنصة فور دخوله دون أي تسجيل. */}
+            <div className="flex items-center justify-center gap-1.5 mt-8 p-1.5 rounded-2xl bg-slate-950/80 border border-slate-800 max-w-xl mx-auto overflow-x-auto scrollbar-none">
               <button
                 onClick={() => setActiveFeatureTab('readers')}
-                className={`flex-1 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 transition-all ${
+                className={`flex-1 py-2.5 px-2 rounded-xl text-[11px] sm:text-sm font-bold flex items-center justify-center gap-1.5 transition-all whitespace-nowrap ${
                   activeFeatureTab === 'readers'
                     ? 'bg-brand-600 text-white shadow-md'
                     : 'text-slate-400 hover:text-white'
@@ -261,7 +264,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               </button>
               <button
                 onClick={() => setActiveFeatureTab('writers')}
-                className={`flex-1 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 transition-all ${
+                className={`flex-1 py-2.5 px-2 rounded-xl text-[11px] sm:text-sm font-bold flex items-center justify-center gap-1.5 transition-all whitespace-nowrap ${
                   activeFeatureTab === 'writers'
                     ? 'bg-teal-600 text-white shadow-md'
                     : 'text-slate-400 hover:text-white'
@@ -271,8 +274,19 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 <span>للكتّاب</span>
               </button>
               <button
+                onClick={() => setActiveFeatureTab('social')}
+                className={`flex-1 py-2.5 px-2 rounded-xl text-[11px] sm:text-sm font-bold flex items-center justify-center gap-1.5 transition-all whitespace-nowrap ${
+                  activeFeatureTab === 'social'
+                    ? 'bg-blue-600 text-white shadow-md'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <MessageSquare className="w-4 h-4" />
+                <span>للتغريد</span>
+              </button>
+              <button
                 onClick={() => setActiveFeatureTab('advertisers')}
-                className={`flex-1 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 transition-all ${
+                className={`flex-1 py-2.5 px-2 rounded-xl text-[11px] sm:text-sm font-bold flex items-center justify-center gap-1.5 transition-all whitespace-nowrap ${
                   activeFeatureTab === 'advertisers'
                     ? 'bg-cyan-600 text-white shadow-md'
                     : 'text-slate-400 hover:text-white'
@@ -284,13 +298,15 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             </div>
           </div>
 
-          {/* 3 Interactive Pillar Cards Grid.
-              On mobile only the active tab's card shows (tabs now actually
-              filter content, not just highlight it). Desktop keeps all 3 side by side. */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
+          {/* 4 Pillar Cards Grid — الأربع ظاهرة دوماً لكل الزوار (لا تُخفى
+              حسب التبويب النشط ولا حسب حجم الشاشة)، حتى يلاحظ أي مستخدم
+              جديد بمجرد وصوله للصفحة أن المنصة تتيح: القراءة والنشر، التغريد
+              والتفاعل الاجتماعي، والإعلان — دون أي تسجيل مسبق. التبويب
+              أعلاه يميّز بصرياً فقط أي بطاقة "مميَّزة" حالياً. */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-6">
             {/* 1. Readers Card */}
             <div
-              className={`${activeFeatureTab === 'readers' ? 'block' : 'hidden md:block'} p-6 sm:p-8 rounded-3xl transition-all border ${
+              className={`p-6 sm:p-8 rounded-3xl transition-all border ${
                 activeFeatureTab === 'readers'
                   ? 'bg-gradient-to-b from-brand-950/60 to-slate-900 border-brand-500/50 ring-2 ring-brand-500/20 shadow-2xl'
                   : 'bg-slate-900/40 border-slate-800 opacity-90'
@@ -332,7 +348,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 
             {/* 2. Writers Card */}
             <div
-              className={`${activeFeatureTab === 'writers' ? 'block' : 'hidden md:block'} p-6 sm:p-8 rounded-3xl transition-all border ${
+              className={`p-6 sm:p-8 rounded-3xl transition-all border ${
                 activeFeatureTab === 'writers'
                   ? 'bg-gradient-to-b from-teal-950/60 to-slate-900 border-teal-500/50 ring-2 ring-teal-500/20 shadow-2xl'
                   : 'bg-slate-900/40 border-slate-800 opacity-90'
@@ -374,9 +390,51 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               </button>
             </div>
 
-            {/* 3. Advertisers Card */}
+            {/* 3. Social / Tweets Card */}
             <div
-              className={`${activeFeatureTab === 'advertisers' ? 'block' : 'hidden md:block'} p-6 sm:p-8 rounded-3xl transition-all border ${
+              className={`p-6 sm:p-8 rounded-3xl transition-all border ${
+                activeFeatureTab === 'social'
+                  ? 'bg-gradient-to-b from-blue-950/60 to-slate-900 border-blue-500/50 ring-2 ring-blue-500/20 shadow-2xl'
+                  : 'bg-slate-900/40 border-slate-800 opacity-90'
+              }`}
+            >
+              <div className="w-12 h-12 rounded-2xl bg-blue-600/20 text-blue-400 border border-blue-500/30 flex items-center justify-center mb-5">
+                <MessageSquare className="w-6 h-6" />
+              </div>
+              <h3 className="text-xl font-black text-white mb-2">3. تغريد وتفاعل اجتماعي فوري</h3>
+              <p className="text-xs sm:text-sm text-slate-300 leading-relaxed mb-6">
+                شارك خواطر وأفكاراً قصيرة في خلاصة تغريد مستقلة داخل نفس حسابك، وتفاعل مع المجتمع لحظياً.
+              </p>
+              <ul className="space-y-3 text-xs text-slate-300">
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-blue-400 shrink-0" />
+                  <span>منشورات قصيرة فورية (280 حرفاً) بجانب المدونة مباشرة</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-blue-400 shrink-0" />
+                  <span>إعجاب وتعليق ومشاركة فورية على تغريدات أي عضو</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-blue-400 shrink-0" />
+                  <span>متابعة الكتّاب والأصدقاء ورؤية آخر ما يفكرون فيه</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-blue-400 shrink-0" />
+                  <span>يمكنك تصفح التغريدات فوراً كزائر دون أي تسجيل</span>
+                </li>
+              </ul>
+              <button
+                onClick={onStartReading}
+                className="mt-6 w-full py-2.5 rounded-xl bg-blue-600/30 hover:bg-blue-600 border border-blue-500/40 text-blue-200 hover:text-white font-bold text-xs transition-all flex items-center justify-center gap-1.5"
+              >
+                <span>تصفح التغريدات الآن</span>
+                <ArrowLeft className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* 4. Advertisers Card */}
+            <div
+              className={`p-6 sm:p-8 rounded-3xl transition-all border ${
                 activeFeatureTab === 'advertisers'
                   ? 'bg-gradient-to-b from-cyan-950/60 to-slate-900 border-cyan-500/50 ring-2 ring-cyan-500/20 shadow-2xl'
                   : 'bg-slate-900/40 border-slate-800 opacity-90'
@@ -385,7 +443,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               <div className="w-12 h-12 rounded-2xl bg-cyan-600/20 text-cyan-400 border border-cyan-500/30 flex items-center justify-center mb-5">
                 <Megaphone className="w-6 h-6" />
               </div>
-              <h3 className="text-xl font-black text-white mb-2">3. للمعلنين: وصول مباشر لجمهور نخبوي</h3>
+              <h3 className="text-xl font-black text-white mb-2">4. للمعلنين: وصول مباشر لجمهور نخبوي</h3>
               <p className="text-xs sm:text-sm text-slate-300 leading-relaxed mb-6">
                 أعلن عن خدماتك أو منتجاتك بحرية وسهولة من داخل حسابك، مستهدفاً جمهوراً عربياً مثقفاً وعالي التفاعل.
               </p>
