@@ -105,3 +105,21 @@ export function pickActiveExternalNetwork(config: ExternalAdsConfig): ExternalAd
   if (isEligible(config.taboola)) return config.taboola;
   return null;
 }
+
+/**
+ * كل الشبكات الخارجية المؤهّلة فعلياً (مفعّلة + كود حقيقي + متوافقة مع
+ * بيئة التشغيل الحالية) — وليس أولها فقط كما في pickActiveExternalNetwork
+ * أعلاه. تُستخدم لبناء تجمّع دوران عادل في <AdSlot> يشمل الحملات الداخلية
+ * والشبكات الخارجية معاً، بدل ترتيب أولوية ثابت يفوز فيه طرف واحد دوماً.
+ */
+export function getAllEligibleExternalNetworks(config: ExternalAdsConfig): ExternalAdNetworkConfig[] {
+  const insideNativeApp = isRunningInNativeApp();
+  const isEligible = (net: ExternalAdNetworkConfig) =>
+    net.enabled && net.snippet.trim() && (!insideNativeApp || net.appSafe);
+
+  const result: ExternalAdNetworkConfig[] = [];
+  if (isEligible(config.propellerAds)) result.push(config.propellerAds);
+  if (isEligible(config.adsterra)) result.push(config.adsterra);
+  if (isEligible(config.taboola)) result.push(config.taboola);
+  return result;
+}

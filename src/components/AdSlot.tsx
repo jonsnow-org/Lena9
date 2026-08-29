@@ -9,6 +9,7 @@ import {
   subscribeExternalAdsConfig,
   getExternalAdsConfig,
   pickActiveExternalNetwork,
+  getAllEligibleExternalNetworks,
   ExternalAdNetworkConfig
 } from '../utils/externalAdsStore';
 import { ExternalAdScript } from './ExternalAdScript';
@@ -42,21 +43,19 @@ interface SlotConfig {
   sponsorOnly?: boolean;
   /**
    * true = يُعرض المعلن الداخلي أولاً (والشبكة الخارجية احتياط فقط عند
-   * غياب معلن داخلي مناسب) — هذا محصور عمداً بموضعين اثنين فقط حسب
-   * الخطة الأصلية: بانر الصفحة الرئيسية العلوي، وموضع الملف الشخصي.
-   * بقية مواضع المنصة العامة false (أو محذوفة) عمداً: الشبكة الخارجية
-   * أولاً، والداخلي يملأ الفراغ فقط إن لم توجد شبكة خارجية مفعَّلة — حتى
-   * لا يبقى أي موضع فارغاً أبداً. لا قيمة لهذا الحقل في مواضع الكاتب
-   * (beneficiary: 'writer') لأن الشبكات الخارجية مستبعدة منها أصلاً
-   * (انظر externalCandidate أدناه) فتبقى داخلية دائماً بغض النظر عنه.
+   * غياب معلن داخلي مناسب). يُقرأ الآن فقط لمواضع الكاتب
+   * (beneficiary: 'writer') — حماية لعائد الكاتب المتوقَّع من حملات
+   * المعلنين الداخليين التي تدفع تحديداً مقابل الظهور داخل المقالات.
+   * لمواضع المنصة العامة (beneficiary: 'platform') هذا الحقل بلا أثر:
+   * تلك المواضع تستخدم تجمّع دوران عادل يضمّ الحملات الداخلية والشبكات
+   * الخارجية معاً بالتساوي (انظر rotationPool في AdSlot.tsx) بدل أي
+   * أولوية ثابتة لطرف على آخر.
    */
   internalPriority?: boolean;
 }
 
 export const SLOT_CONFIG: Record<AdSlotId, SlotConfig> = {
-  // الموضع الوحيد على الصفحة الرئيسية بأولوية للمعلن الداخلي — البانر
-  // العلوي فقط، حسب الخطة الأصلية.
-  home_hero: { beneficiary: 'platform', writerShare: 0, internalPriority: true },
+  home_hero: { beneficiary: 'platform', writerShare: 0 },
   home_feed_1: { beneficiary: 'platform', writerShare: 0 },
   home_feed_2: { beneficiary: 'platform', writerShare: 0 },
   category_banner: { beneficiary: 'platform', writerShare: 0, sponsorOnly: true },
@@ -66,10 +65,7 @@ export const SLOT_CONFIG: Record<AdSlotId, SlotConfig> = {
   article_bottom: { beneficiary: 'writer', writerShare: 0.55, internalPriority: true },
   writer_profile_top: { beneficiary: 'writer', writerShare: 0.5, internalPriority: true },
   writer_profile_feed: { beneficiary: 'writer', writerShare: 0.5, internalPriority: true },
-  // موضع الملف الشخصي المخصَّص بأولوية للمعلن الداخلي — ملفّك الشخصي
-  // أنت تحديداً (وليس ملفات مستخدمين آخرين، تلك مواضع writer_profile_*
-  // أعلاه وهي "بقية المواضع" ذات أولوية الشبكة الخارجية).
-  reader_profile: { beneficiary: 'platform', writerShare: 0, internalPriority: true },
+  reader_profile: { beneficiary: 'platform', writerShare: 0 },
   // قسم التعليقات مرتبط مباشرة بمقال الكاتب ونقاشه، فحصته من العائد
   // تطابق بقية مواضع داخل المقال (55% كاتب / 45% منصة) بدل تركه بلا أي
   // استفادة كما كان الحال (لم تكن مساحة التعليقات مستثمرة إعلانياً إطلاقاً).
@@ -151,16 +147,23 @@ export const AdSlot: React.FC<AdSlotProps> = ({
     return subscribeExternalAdsConfig(setExternalAdsConfig);
   }, []);
 
+  const isSponsorSlot = Boolean(config.sponsorOnly);
+  const isPlatformSlot = config.beneficiary === 'platform';
+
   /**
-   * مرشَّح المعلن الداخلي (بمعزل عن الأولوية) — حملة معلن داخلية نشطة
-   * مناسبة للموضع، أو حملة راعي القسم لموضع category_banner تحديداً.
+   * مرشَّح المعلن الداخلي — يُستخدم مباشرة لموضع راعي القسم (حصري بطبيعته،
+   * لا ينافسه فيه أي شيء آخر إطلاقاً — منتج مدفوع "بانر واحد للقسم كاملاً
+   * طوال مدة الحملة") ولمواضع الكاتب (article_*, writer_profile_*,
+   * comments_feed — انظر تعليق rotationPool أدناه لسبب استثنائها). لمواضع
+   * المنصة العامة، لا يُستخدم مباشرة؛ تجمّع rotationPool أدناه يعيد بناء
+   * قائمته الخاصة ليضمّ الشبكات الخارجية معه في نفس الدوران.
    */
   const internalCandidate = useMemo(() => {
-    if (config.beneficiary === 'platform' && !platformAdsEnabled) return null;
+    if (isPlatformSlot && !platformAdsEnabled) return null;
     const active = campaigns.filter((c) => c.status === 'active');
     if (active.length === 0) return null;
 
-    if (config.sponsorOnly) {
+    if (isSponsorSlot) {
       // راعي القسم: حملة من نوع رعاية تطابق التصنيف الحالي
       return (
         active.find(
@@ -174,19 +177,13 @@ export const AdSlot: React.FC<AdSlotProps> = ({
     // استبعاد حملات رعاية الأقسام من المواضع العادية
     const eligible = active.filter((c: any) => c.placementType !== 'category_sponsor');
     if (eligible.length === 0) return null;
-
-    // ترتيب يتغيّر مع كل شاشة (rotationSeed) مضافاً لترتيب الموضع على نفس
-    // الشاشة (slotIndex) — يمنع تكرار نفس الإعلان مرتين في نفس الصفحة كما
-    // كان، لكنه أيضاً يوزّع الحملات فعلياً بمرور الوقت بدل تجميد نفس
-    // الحملة الأولى على كل موضع أول إلى الأبد.
     return eligible[(slotIndex + rotationSeed) % eligible.length] || null;
-  }, [campaigns, config.sponsorOnly, config.beneficiary, platformAdsEnabled, category, slotIndex, rotationSeed]);
+  }, [campaigns, isSponsorSlot, isPlatformSlot, platformAdsEnabled, category, slotIndex, rotationSeed]);
 
   /**
-   * مرشَّح الشبكة الخارجية (بمعزل عن الأولوية) — متاح الآن لكل المواضع
-   * بما فيها مواضع الكاتب: عائد الكاتب من مشاهدات الشبكة الخارجية هناك
-   * يُحتسب لاحقاً بسعر تقديري ثابت عبر تتبّع trackExternalWriterView أدناه
-   * (لم يعد مستبعداً كلياً كما كان سابقاً).
+   * مرشَّح الشبكة الخارجية الوحيد (بمعزل عن الأولوية) — يُستخدم فقط لمواضع
+   * الكاتب أدناه (احتياط عند غياب حملة داخلية). لمواضع المنصة، انظر
+   * rotationPool الذي يضمّ كل الشبكات المؤهَّلة معاً وليس أولها فقط.
    */
   const externalCandidate: ExternalAdNetworkConfig | null = useMemo(() => {
     if (!platformAdsEnabled) return null;
@@ -194,21 +191,54 @@ export const AdSlot: React.FC<AdSlotProps> = ({
   }, [platformAdsEnabled, externalAdsConfig]);
 
   /**
-   * أولوية العرض النهائية:
-   * - مواضع internalPriority=true (الرئيسية العلوي + الملف الشخصي +
-   *   راعي القسم + كل مواضع الكاتب): معلن داخلي أولاً، والشبكة الخارجية
-   *   احتياط فقط عند غيابه.
-   * - بقية مواضع المنصة العامة: الشبكة الخارجية أولاً (إن فُعِّلت)، والمعلن
-   *   الداخلي يملأ الفراغ فقط عند غياب شبكة خارجية مفعَّلة — حتى لا يبقى
-   *   أي موضع فارغاً أبداً.
+   * تجمّع دوران عادل — لمواضع "منصة" العامة فقط (home_hero, home_feed_1/2,
+   * category_feed, reader_profile, tweet_feed)، باستثناء راعي القسم
+   * الحصري: كل حملة معلن داخلية نشطة + كل شبكة خارجية مؤهَّلة فعلياً
+   * (Adsterra/Monetag/Taboola) تدخل معاً في قائمة واحدة تُختار منها عبر
+   * نفس إزاحة الدوران (slotIndex + rotationSeed)، بدل "أولوية ثابتة" —
+   * إما الداخلي يفوز دوماً (كما كان الحال في البانر الرئيسي وملف القارئ)
+   * أو الخارجي يفوز دوماً (بقية المواضع). ذاك التصميم كان يعني عملياً أن
+   * وجود ولو حملة داخلية نشطة واحدة يُقصي كل شبكة خارجية إلى الأبد من
+   * بعض المواضع، والعكس تماماً في مواضع أخرى — بالضبط "التصادم" الذي لا
+   * نريده. الآن الجميع يتناوب فعلياً بمرور الوقت عبر كل هذه المواضع معاً،
+   * فلا يُقصى أي طرف — لا معلن داخلي ولا شبكة خارجية — بشكل دائم من أي
+   * موضع منها.
+   *
+   * مواضع الكاتب (article_*, writer_profile_*, comments_feed) مستثناة
+   * عمداً من هذا التجمّع وتبقى بالنظام القديم (الداخلي أولاً، والشبكة
+   * الخارجية احتياط فقط) — تلك مساحة كتبها الكاتب نفسه، وحصته المالية
+   * منها (55%) مرتبطة تحديداً بحملات المعلنين الداخليين الذين يدفعون فعلاً
+   * لتلك المساحة تحديداً؛ إعطاؤهم الأولوية هناك حماية لعائد الكاتب
+   * المتوقَّع، وليس "تضارباً" يحتاج حلاً كمواضع المنصة العامة.
    */
-  const internalPriority = config.sponsorOnly || (config.internalPriority ?? false);
-  const selectedCampaign = internalPriority
+  const rotationPool = useMemo(() => {
+    type PoolItem = { campaign?: AdCampaign; network?: ExternalAdNetworkConfig };
+    if (isSponsorSlot || !isPlatformSlot || !platformAdsEnabled) return [] as PoolItem[];
+    const eligibleCampaigns = campaigns.filter(
+      (c) => c.status === 'active' && (c as any).placementType !== 'category_sponsor'
+    );
+    const pool: PoolItem[] = eligibleCampaigns.map((c) => ({ campaign: c }));
+    getAllEligibleExternalNetworks(externalAdsConfig).forEach((net) => pool.push({ network: net }));
+    return pool;
+  }, [campaigns, isSponsorSlot, isPlatformSlot, platformAdsEnabled, externalAdsConfig]);
+
+  const selectedPoolItem = rotationPool.length > 0 ? rotationPool[(slotIndex + rotationSeed) % rotationPool.length] : null;
+
+  const selectedCampaign = isSponsorSlot
+    ? internalCandidate
+    : isPlatformSlot
+    ? selectedPoolItem?.campaign || null
+    : config.internalPriority
     ? internalCandidate
     : externalCandidate
     ? null
     : internalCandidate;
-  const externalNetwork: ExternalAdNetworkConfig | null = internalPriority
+
+  const externalNetwork: ExternalAdNetworkConfig | null = isSponsorSlot
+    ? null
+    : isPlatformSlot
+    ? selectedPoolItem?.network || null
+    : config.internalPriority
     ? internalCandidate
       ? null
       : externalCandidate
