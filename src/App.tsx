@@ -199,6 +199,8 @@ import {
 import { onAuthStateChanged } from 'firebase/auth';
 import {
   subscribeToArticles,
+  fetchArticlesOnce,
+  fetchTweetsOnce,
   subscribeToCampaigns,
   subscribeToUsers,
   subscribeToEarnings,
@@ -1745,11 +1747,26 @@ export function App() {
     touchStartPosRef.current = 0;
   };
 
-  const handleRefreshFeed = () => {
+  // كانت هذه الدالة عرضاً بصرياً فقط (مؤشر دوران 750ms ثم يختفي) بلا أي طلب
+  // شبكة فعلي — الاشتراك الحي (subscribeToArticles/subscribeToTweets) يُفترض
+  // أن يدفع أي محتوى جديد تلقائياً، لكن اتصال onSnapshot قد ينقطع بصمت على
+  // الجوال (تبديل شبكة، تعليق تطبيق TWA في الخلفية لفترة طويلة) دون إعادة
+  // اتصال فورية، فتبقى البطاقات القديمة ظاهرة مهما ضغط المستخدم "تحديث" لأن
+  // لا شيء كان يطلب بيانات جديدة أصلاً. الآن تجلب نسخة طازجة حقيقية دائماً.
+  const handleRefreshFeed = async () => {
     setIsRefreshing(true);
-    setTimeout(() => {
+    try {
+      const [freshArticles, freshTweets] = await Promise.all([
+        fetchArticlesOnce(),
+        fetchTweetsOnce()
+      ]);
+      setArticles(freshArticles);
+      setTweets(freshTweets);
+    } catch (err) {
+      console.error('تعذر تحديث الخلاصة:', err);
+    } finally {
       setIsRefreshing(false);
-    }, 750);
+    }
   };
 
   // Follow / Unfollow Writer

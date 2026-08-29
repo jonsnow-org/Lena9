@@ -61,6 +61,24 @@ export function subscribeToArticles(
   );
 }
 
+/**
+ * جلب فوري لمرة واحدة (بلا اشتراك حي) — لزر/سحبة "تحديث" الصريحة. الاشتراك
+ * الحي (subscribeToArticles) يُفترض أن يدفع أي محتوى جديد تلقائياً، لكن
+ * اتصال onSnapshot قد ينقطع بصمت على الجوال (تبديل شبكة، إغلاق الشاشة
+ * لفترة طويلة، تعليق تطبيق TWA في الخلفية) دون أن يُعيد Firestore الاتصال
+ * فوراً بالضرورة — فيبدو للمستخدم أن "تحديث" لا يفعل شيئاً لأن لا طلب شبكة
+ * حقيقياً يحدث أصلاً عند الضغط عليه. هذه الدالة تفرض طلباً حقيقياً جديداً.
+ */
+export async function fetchArticlesOnce(): Promise<Article[]> {
+  const snapshot = await getDocs(collection(db, 'articles'));
+  const list: Article[] = [];
+  snapshot.forEach((docSnap) => {
+    list.push({ id: docSnap.id, ...docSnap.data() } as Article);
+  });
+  list.sort((a, b) => new Date(b.publishedAt || 0).getTime() - new Date(a.publishedAt || 0).getTime());
+  return list;
+}
+
 export async function saveArticleToFirestore(
   article: Partial<Article>,
   isNew: boolean = false
@@ -1865,6 +1883,16 @@ export function subscribeToTweets(
       if (onError) onError(error);
     }
   );
+}
+
+/** جلب فوري لمرة واحدة — نفس فكرة fetchArticlesOnce تماماً، لزر/سحبة
+ *  "تحديث" في خلاصة التغريدات. */
+export async function fetchTweetsOnce(): Promise<Tweet[]> {
+  const snapshot = await getDocs(collection(db, 'tweets'));
+  const list: Tweet[] = [];
+  snapshot.forEach((d) => list.push({ id: d.id, ...(d.data() as any) } as Tweet));
+  list.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+  return list;
 }
 
 export async function addTweetToFirestore(tweet: Tweet): Promise<void> {
