@@ -1,20 +1,67 @@
-import React from 'react';
-import { UserCheck, X, CheckCircle2, AlertTriangle, ShieldCheck, User as UserIcon } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import {
+  UserCheck,
+  X,
+  CheckCircle2,
+  XCircle,
+  ShieldCheck,
+  Loader2,
+  Sparkles,
+  AlertTriangle
+} from 'lucide-react';
 import { User } from '../../types';
+import { fetchKycDocumentForReview, KycDocumentReview } from '../../services/kycApi';
 
 interface KycReviewModalProps {
   isOpen: boolean;
   onClose: () => void;
   user: User | null;
   onApproveKyc?: (userId: string) => void;
+  onRejectKyc?: (userId: string) => void;
 }
+
+const CONFIDENCE_LABEL: Record<string, string> = {
+  high: 'مرتفعة جداً',
+  medium: 'متوسطة',
+  low: 'منخفضة',
+  none: 'لا تطابق'
+};
 
 export const KycReviewModal: React.FC<KycReviewModalProps> = ({
   isOpen,
   onClose,
   user,
-  onApproveKyc
+  onApproveKyc,
+  onRejectKyc
 }) => {
+  const [doc, setDoc] = useState<KycDocumentReview | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isOpen || !user) {
+      setDoc(null);
+      setError(null);
+      return;
+    }
+    let cancelled = false;
+    setIsLoading(true);
+    setError(null);
+    fetchKycDocumentForReview(user.id)
+      .then((result) => {
+        if (!cancelled) setDoc(result);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err?.message || 'تعذر جلب وثيقة المراجعة.');
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, user?.id]);
+
   if (!isOpen || !user) return null;
 
   const kyc = user.kycDetails;
@@ -87,23 +134,61 @@ export const KycReviewModal: React.FC<KycReviewModalProps> = ({
             </div>
           )}
 
-          {kyc?.selfieUrl && (
+          {isLoading && (
+            <div className="flex items-center gap-2 text-xs text-slate-400 py-4 justify-center">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              جاري جلب صورة الوثيقة وتحليل الذكاء الاصطناعي...
+            </div>
+          )}
+
+          {error && (
+            <div className="p-3 rounded-xl bg-red-950/40 border border-red-800 text-xs text-red-200 flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+              <p>{error}</p>
+            </div>
+          )}
+
+          {doc?.imageUrl && (
             <div>
-              <div className="text-[10px] text-slate-400 mb-1.5">صورة الوثيقة المرفوعة:</div>
-              <div className="rounded-xl overflow-hidden border border-slate-800 max-h-48 flex items-center justify-center bg-slate-900">
+              <div className="text-[10px] text-slate-400 mb-1.5">صورة الوثيقة المرفوعة (للأدمن فقط):</div>
+              <div className="rounded-xl overflow-hidden border border-slate-800 max-h-56 flex items-center justify-center bg-slate-900">
                 <img
-                  src={kyc.selfieUrl}
-                  alt="KYC Document"
+                  src={doc.imageUrl}
+                  alt="وثيقة KYC"
                   referrerPolicy="no-referrer"
                   className="w-full h-full object-contain"
                 />
               </div>
             </div>
           )}
+
+          {doc && (
+            <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+              <div className="flex items-center gap-1.5 text-[11px] font-bold text-brand-300">
+                <Sparkles className="w-3.5 h-3.5" />
+                نتيجة تحليل الذكاء الاصطناعي
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div>
+                  <div className="text-[10px] text-slate-400">الاسم المستخرَج من الوثيقة</div>
+                  <div className="font-bold text-white mt-0.5">{doc.extractedName || 'تعذّرت القراءة'}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] text-slate-400">درجة المطابقة مع اسم الحساب</div>
+                  <div className="font-bold text-white mt-0.5">
+                    {CONFIDENCE_LABEL[doc.matchConfidence || 'none'] || doc.matchConfidence}
+                  </div>
+                </div>
+              </div>
+              {doc.aiReasoning && (
+                <p className="text-[11px] text-slate-400 leading-relaxed">{doc.aiReasoning}</p>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Action Buttons */}
-        <div className="flex items-center gap-3 pt-2">
+        <div className="flex items-center gap-2 pt-2">
           <button
             type="button"
             onClick={onClose}
@@ -111,6 +196,19 @@ export const KycReviewModal: React.FC<KycReviewModalProps> = ({
           >
             إغلاق
           </button>
+          {onRejectKyc && !user.isKycVerified && (
+            <button
+              type="button"
+              onClick={() => {
+                onRejectKyc(user.id);
+                onClose();
+              }}
+              className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-extrabold text-xs transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-red-600/20"
+            >
+              <XCircle className="w-4 h-4" />
+              <span>رفض الطلب</span>
+            </button>
+          )}
           {onApproveKyc && !user.isKycVerified && (
             <button
               type="button"
@@ -121,7 +219,7 @@ export const KycReviewModal: React.FC<KycReviewModalProps> = ({
               className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-600/20"
             >
               <ShieldCheck className="w-4 h-4" />
-              <span>اعتماد وتوثيق الهوية الآن ✓</span>
+              <span>اعتماد وتوثيق</span>
             </button>
           )}
         </div>

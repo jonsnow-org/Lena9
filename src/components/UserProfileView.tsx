@@ -201,6 +201,7 @@ interface UserProfileViewProps {
   onUpdateUserRole?: (userId: string, newRole: User['role']) => void;
   onToggleUserVerified?: (userId: string) => void;
   onApproveKyc?: (userId: string) => void;
+  onRejectKyc?: (userId: string) => void;
   onBanUser?: (userId: string) => void;
   onUpdateCampaignStatus?: (campaignId: string, status: AdCampaign['status']) => void;
   onReviewCampaign?: (campaignId: string, decision: 'approve' | 'reject') => void;
@@ -288,6 +289,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   onUpdateUserRole,
   onToggleUserVerified,
   onApproveKyc,
+  onRejectKyc,
   onBanUser,
   onUpdateCampaignStatus,
   onReviewCampaign,
@@ -1603,6 +1605,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   onUpdateUserRole={onUpdateUserRole}
                   onToggleUserVerified={onToggleUserVerified}
                   onApproveKyc={onApproveKyc}
+                  onRejectKyc={onRejectKyc}
                   onBanUser={onBanUser}
                   onSelectUser={onSelectUser}
                   onBroadcastMessage={onBroadcastMessage}
@@ -1654,6 +1657,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
             user={selectedUserForKyc}
             onClose={() => setSelectedUserForKyc(null)}
             onApproveKyc={onApproveKyc}
+            onRejectKyc={onRejectKyc}
           />
         </div>
       )}
