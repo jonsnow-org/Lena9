@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { Article, User, UserRole } from '../types';
 import { REVENUE_SHARES } from '../constants/revenueShares';
+import { CREATOR_ELIGIBILITY_THRESHOLDS } from '../utils/creatorEligibility';
 
 interface LandingPageProps {
   articles?: Article[];
@@ -365,7 +366,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 <li className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-teal-400 shrink-0" />
                   <span>
-                    <strong>ربح يصل إلى 70%</strong> من مبيعات المقالات المقفولة وعوائد الإعلانات
+                    <strong>ربح يصل إلى {REVENUE_SHARES.LOCKED_ARTICLES.WRITER_PERCENT}%</strong> من مبيعات المقالات المقفولة، و{REVENUE_SHARES.IN_ARTICLE_ADS.WRITER_PERCENT}% من عوائد إعلانات مقالاتك
                   </span>
                 </li>
                 <li className="flex items-center gap-2">
@@ -374,7 +375,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 </li>
                 <li className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-teal-400 shrink-0" />
-                  <span>شروط انضمام واضحة (10 مقالات، 100 متابع، 1,000 قراءة)</span>
+                  <span>
+                    شروط انضمام واضحة ({CREATOR_ELIGIBILITY_THRESHOLDS.MIN_PUBLISHED_ARTICLES} مقالات، {CREATOR_ELIGIBILITY_THRESHOLDS.MIN_FOLLOWERS} متابع، {CREATOR_ELIGIBILITY_THRESHOLDS.MIN_VALID_VIEWS.toLocaleString('ar-EG')} قراءة)
+                  </span>
                 </li>
                 <li className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-teal-400 shrink-0" />

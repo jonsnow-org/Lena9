@@ -147,7 +147,7 @@ export const AdminOverviewTab: React.FC<AdminOverviewTabProps> = ({
             ${metrics.netPlatformRevenue.toFixed(2)}
           </div>
           <div className="mt-2 text-[11px] text-slate-400">
-            شامل إعلانات المنصة 100% + حصة الكُتّاب 45% + المبيعات 15%
+            شامل إعلانات المنصة 100% + حصة المنصة من إعلانات المقالات {REVENUE_SHARES.IN_ARTICLE_ADS.PLATFORM_PERCENT}% + من المبيعات {REVENUE_SHARES.LOCKED_ARTICLES.PLATFORM_PERCENT}%
           </div>
         </div>
 
