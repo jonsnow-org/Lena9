@@ -1710,7 +1710,14 @@ export function App() {
         if (pullRafRef.current === null) {
           pullRafRef.current = requestAnimationFrame(() => {
             pullRafRef.current = null;
-            setPullDistance(dampened);
+            // إن رُفع الإصبع (أو أُلغيت اللمسة) بين جدولة هذا الإطار وتنفيذه،
+            // يكون handleTouchEnd/Cancel قد صفّر touchStartPosRef بالفعل —
+            // فتطبيق dampened القديمة هنا كان "يُحيي" شريط السحب من جديد فوق
+            // الصفر الذي صفّره التحرير للتو، وهذا بالضبط ما جعله يبدو عالقاً
+            // للأسفل بلا عودة تلقائية رغم رفع الإصبع.
+            if (touchStartPosRef.current > 0) {
+              setPullDistance(dampened);
+            }
           });
         }
       } else if (diff < -5) {
@@ -1724,6 +1731,13 @@ export function App() {
   };
 
   const handleTouchEnd = () => {
+    // إلغاء أي إطار rAF لا يزال بانتظار التنفيذ من آخر touchmove قبل الرفع
+    // مباشرة — بدونه كان يُنفَّذ في الإطار التالي ويكتب فوق التصفير أدناه
+    // بقيمة سحب قديمة غير صفرية، فيبقى الشريط ظاهراً رغم انتهاء اللمسة.
+    if (pullRafRef.current !== null) {
+      cancelAnimationFrame(pullRafRef.current);
+      pullRafRef.current = null;
+    }
     if (pullDistance > 55) {
       handleRefreshFeed();
     }
@@ -3434,6 +3448,7 @@ export function App() {
               await setCampaignStatusInFirestore(campaignId, status);
             }}
             onReviewCampaign={handleReviewCampaign}
+            onToggleCampaignStatus={handleToggleCampaignStatus}
             onUpdateArticleStatus={async (articleId, status) => {
               setArticles((prev) =>
                 prev.map((a) => (a.id === articleId ? { ...a, status } : a))
@@ -3644,6 +3659,7 @@ export function App() {
               await setCampaignStatusInFirestore(campaignId, status);
             }}
             onReviewCampaign={handleReviewCampaign}
+            onToggleCampaignStatus={handleToggleCampaignStatus}
             onUpdateArticleStatus={async (articleId, status) => {
               setArticles((prev) =>
                 prev.map((a) => (a.id === articleId ? { ...a, status } : a))
@@ -4326,6 +4342,7 @@ export function App() {
         isOpen={isWalletOpen}
         onClose={() => setIsWalletOpen(false)}
         balance={currentUser.availableBalance || 0}
+        spendableBalance={currentUser.walletBalance || 0}
         pendingBalance={currentUser.pendingEarnings || 0}
         transactions={transactions}
         onDeposit={handleDeposit}

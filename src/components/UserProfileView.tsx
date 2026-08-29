@@ -79,6 +79,7 @@ import { ExternalAdsConfig } from '../utils/externalAdsStore';
 import { AdminOverviewTab } from './admin/AdminOverviewTab';
 import { AdminFinanceTab } from './admin/AdminFinanceTab';
 import { AdminAdsTab } from './admin/AdminAdsTab';
+import { AdvertiserDashboard } from './AdvertiserDashboard';
 import { AdminContentTab } from './admin/AdminContentTab';
 import { AdminUsersTab } from './admin/AdminUsersTab';
 import { AdminFraudTab } from './admin/AdminFraudTab';
@@ -203,6 +204,7 @@ interface UserProfileViewProps {
   onBanUser?: (userId: string) => void;
   onUpdateCampaignStatus?: (campaignId: string, status: AdCampaign['status']) => void;
   onReviewCampaign?: (campaignId: string, decision: 'approve' | 'reject') => void;
+  onToggleCampaignStatus?: (campaignId: string) => void;
   onUpdateArticleStatus?: (articleId: string, status: Article['status']) => void;
   onResolveFraudFlag?: (flagId: string, action: 'resolved' | 'dismissed') => void;
   onSelectUser?: (user: User) => void;
@@ -289,6 +291,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   onBanUser,
   onUpdateCampaignStatus,
   onReviewCampaign,
+  onToggleCampaignStatus,
   onUpdateArticleStatus,
   onResolveFraudFlag,
   onSelectUser,
@@ -746,7 +749,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-750 text-slate-800 dark:text-slate-200 text-xs font-bold border border-slate-200 dark:border-slate-700 transition-all flex items-center gap-1.5"
                 >
                   <Wallet className="w-3.5 h-3.5 text-brand-500" />
-                  <span>المحفظة (${(currentUser.availableBalance ?? currentUser.walletBalance ?? 0).toFixed(2)})</span>
+                  <span>المحفظة (${(currentUser.walletBalance ?? 0).toFixed(2)})</span>
                 </button>
               )}
             </div>
@@ -1009,64 +1012,19 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
             </div>
           )}
 
-          {/* Writer Tab: إعلاناتي وترويجي */}
+          {/* Writer Tab: إعلاناتي وترويجي — يعيد استخدام AdvertiserDashboard
+              نفسه (نفس المكوّن الظاهر في تبويب "campaigns" العلوي للمعلنين)
+              بدل نسخة مصغّرة مكرَّرة كانت تكرر نفس القائمة وزر "إنشاء حملة
+              جديدة" بواجهة وسلوك مختلفين قليلاً عن الأصل. */}
           {writerTab === 'control_panel' && controlPanelSubView === 'ads' && (
-            <div className="space-y-4">
-              <div className="p-6 rounded-3xl bg-gradient-to-r from-cyan-950/60 to-slate-900 border border-cyan-500/30 flex flex-col sm:flex-row items-center justify-between gap-4">
-                <div>
-                  <h4 className="font-extrabold text-base text-white flex items-center gap-2">
-                    <Megaphone className="w-5 h-5 text-cyan-400" />
-                    <span>إعلاناتي وترويجي في المنصة</span>
-                  </h4>
-                  <p className="text-xs text-slate-300 mt-1">
-                    يمكنك إنشاء حملات إعلانية مباشرة والترويج لمشروعك أمام مجتمع ليتيريوم.
-                  </p>
-                </div>
-                <button
-                  onClick={onOpenNewCampaign || onOpenWallet}
-                  className="px-5 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white font-extrabold text-xs shadow-md active:scale-95 transition-all flex items-center gap-1.5 shrink-0"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>إنشاء حملة جديدة</span>
-                </button>
-              </div>
-
-              {myCampaigns.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {myCampaigns.map((camp) => (
-                    <div
-                      key={camp.id}
-                      className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-slate-900 dark:text-white line-clamp-1">
-                          {camp.campaignName}
-                        </span>
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                          camp.status === 'active'
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                            : 'bg-slate-500/20 text-slate-300 border border-slate-500/30'
-                        }`}>
-                          {camp.status === 'active' ? 'نشطة الآن' : 'منتهية'}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-400 line-clamp-2">{camp.description}</p>
-                      <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500">
-                        <span>المشاهدات: {camp.impressionsCount.toLocaleString()}</span>
-                        <span>النقرات: {camp.clicksCount.toLocaleString()}</span>
-                        <span>الميزانية: {(camp.totalBudget ?? 0).toFixed(2)}$</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-10 rounded-3xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 space-y-2">
-                  <Megaphone className="w-10 h-10 text-slate-400 mx-auto" />
-                  <h4 className="font-bold text-sm text-slate-900 dark:text-white">لا توجد حملات إعلانية نشطة حالياً</h4>
-                  <p className="text-xs text-slate-400">ابدأ حملتك الأولى للوصول لآلاف المهتمين بالأدب والتقنية</p>
-                </div>
-              )}
-            </div>
+            <AdvertiserDashboard
+              campaigns={myCampaigns}
+              onOpenNewCampaign={onOpenNewCampaign || onOpenWallet}
+              onToggleCampaignStatus={onToggleCampaignStatus || (() => {})}
+              advertiserBalance={currentUser.walletBalance || 0}
+              onOpenDeposit={onOpenWallet}
+              activeUsersCount={Math.max((users || []).length, 1)}
+            />
           )}
 
           {/* Writer Tab 1: Articles & Drafts */}

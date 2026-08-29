@@ -47,8 +47,7 @@ export const PromoteArticleModal: React.FC<PromoteArticleModalProps> = ({
 
   // الرصيد المتاح للكاتب — يُقرأ من بيانات المستخدم الفعلية.
   // إن لم يكن هناك رصيد، يُعرض صفر ولا يُخترع أي رقم.
-  const availableBalance =
-    (currentUser as any).availableBalance ?? (currentUser as any).walletBalance ?? 0;
+  const availableBalance = (currentUser as any).walletBalance ?? 0;
   const hasEnoughBalance = availableBalance >= cost;
 
   const handleSubmit = async () => {
