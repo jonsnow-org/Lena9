@@ -260,7 +260,7 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
                     <span>المحفظة والأرباح</span>
                   </div>
                   <span className="text-[11px] text-emerald-400 font-mono font-bold">
-                    ${(currentUser.availableBalance ?? currentUser.walletBalance ?? 0).toFixed(2)}
+                    ${(currentUser.walletBalance ?? 0).toFixed(2)}
                   </span>
                 </button>
               )}

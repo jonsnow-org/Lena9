@@ -85,7 +85,7 @@ export const ImageStudioModal: React.FC<ImageStudioModalProps> = ({
 
   const isGuest = currentUser.id === 'guest';
   const isOwner = (currentUser.email || '').toLowerCase() === 'brnardtsho@gmail.com';
-  const walletBalance = Number(currentUser.availableBalance ?? currentUser.walletBalance ?? 0);
+  const walletBalance = Number(currentUser.walletBalance ?? 0);
 
   const handleGenerate = async () => {
     setErrorMessage(null);

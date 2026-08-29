@@ -37,6 +37,12 @@ interface WalletModalProps {
   isOpen: boolean;
   onClose: () => void;
   balance: number;
+  // رصيد الإنفاق (walletBalance) — يُستخدم لإنشاء الحملات وشراء المقالات
+  // والاشتراكات، منفصل تماماً عن balance (أرباح قابلة للسحب). كانت هذه
+  // النافذة تعرض balance فقط تحت عنوان "متاح للسحب والاستخدام" فيبدو
+  // للمستخدم أن رصيده اختفى إن كان لديه رصيد إنفاق حقيقي بلا أي أرباح
+  // قابلة للسحب بعد (الحالة الشائعة لكل قارئ/معلن لم يصبح كاتباً بعد).
+  spendableBalance: number;
   pendingBalance: number;
   transactions: Transaction[];
   onDeposit: (amount: number, method: PaymentMethod, ref: string) => void;
@@ -54,6 +60,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
   isOpen,
   onClose,
   balance,
+  spendableBalance,
   pendingBalance,
   transactions,
   onDeposit,
@@ -329,26 +336,30 @@ export const WalletModal: React.FC<WalletModalProps> = ({
             <div className="space-y-6">
               {/* Balance Big Card */}
               <div className="p-6 rounded-3xl bg-gradient-to-br from-slate-950 via-teal-950 to-slate-900 text-white shadow-xl relative overflow-hidden border border-teal-800/40">
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center justify-between mb-1.5">
                   <span className="text-xs font-bold text-teal-200">
-                    الرصيد المتاح للسحب والاستخدام
+                    رصيد الإنفاق (للحملات، المقالات، الاشتراكات)
                   </span>
                   <ShieldCheck className="w-5 h-5 text-emerald-400" />
                 </div>
 
-                <div className="flex items-baseline gap-2 mb-6">
-                  <span className="text-3xl sm:text-4xl font-black">{balance.toFixed(2)}</span>
+                <div className="flex items-baseline gap-2 mb-4">
+                  <span className="text-3xl sm:text-4xl font-black">{spendableBalance.toFixed(2)}</span>
                   <span className="text-lg font-bold text-teal-300">USD</span>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4 pt-4 border-t border-teal-800/60 text-xs">
+                <div className="grid grid-cols-3 gap-3 pt-4 border-t border-teal-800/60 text-xs">
                   <div>
-                    <span className="text-teal-300 block mb-0.5">الرصيد المعلق</span>
+                    <span className="text-teal-300 block mb-0.5">قابل للسحب</span>
+                    <span className="font-bold text-sm text-emerald-300">{balance.toFixed(2)}$</span>
+                  </div>
+                  <div>
+                    <span className="text-teal-300 block mb-0.5">معلّق (30 يوماً)</span>
                     <span className="font-bold text-sm text-amber-300">{pendingBalance.toFixed(2)}$</span>
                   </div>
                   <div>
                     <span className="text-teal-300 block mb-0.5">الحد الأدنى للسحب</span>
-                    <span className="font-bold text-sm text-emerald-300">{MIN_PAYOUT_USD.toFixed(2)}$</span>
+                    <span className="font-bold text-sm text-slate-300">{MIN_PAYOUT_USD.toFixed(2)}$</span>
                   </div>
                 </div>
               </div>
