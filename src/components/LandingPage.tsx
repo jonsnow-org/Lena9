@@ -376,7 +376,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 <li className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-teal-400 shrink-0" />
                   <span>
-                    شروط انضمام واضحة ({CREATOR_ELIGIBILITY_THRESHOLDS.MIN_PUBLISHED_ARTICLES} مقالات، {CREATOR_ELIGIBILITY_THRESHOLDS.MIN_FOLLOWERS} متابع، {CREATOR_ELIGIBILITY_THRESHOLDS.MIN_VALID_VIEWS.toLocaleString('ar-EG')} قراءة)
+                    نظام تأهيل واضح ومتكامل: {CREATOR_ELIGIBILITY_THRESHOLDS.MIN_PUBLISHED_ARTICLES} مقالات منشورة، {CREATOR_ELIGIBILITY_THRESHOLDS.MIN_FOLLOWERS} متابع، {CREATOR_ELIGIBILITY_THRESHOLDS.MIN_VALID_VIEWS.toLocaleString('ar-EG')} مشاهدة موثوقة، عمر حساب {CREATOR_ELIGIBILITY_THRESHOLDS.MIN_ACCOUNT_AGE_DAYS} يوماً، وتحقق هوية (KYC) — لضمان جدية الأرباح ومطابقة معايير برامج الإعلانات
                   </span>
                 </li>
                 <li className="flex items-center gap-2">

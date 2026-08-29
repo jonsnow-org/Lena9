@@ -86,8 +86,18 @@ export const SLOT_CONFIG: Record<AdSlotId, SlotConfig> = {
  */
 export const MAX_ADS_PER_PAGE = 3;
 let renderedAdsOnPage = 0;
+// إزاحة دوران عشوائية تتغيّر مع كل انتقال شاشة (انظر resetAdSlotCounter) —
+// دون هذه الإزاحة كان اختيار الحملة الداخلية "eligible[slotIndex % length]"
+// يعتمد فقط على ترتيب الموضع على الصفحة (0، 1، 2...)، وبما أن أول موضع
+// إعلاني على أي شاشة يحمل دوماً slotIndex=0 لكل مستخدم وكل تحميل صفحة، كانت
+// نفس الحملة (الأولى في ترتيب campaigns الثابت) تفوز دوماً بكل موضع أول —
+// فحملات أخرى نشطة (كترويج قناة يوتيوب) لا تظهر إطلاقاً إلا إن عُرضت
+// مواضع إعلانية متعددة معاً على نفس الشاشة. بإضافة إزاحة عشوائية تتجدد مع
+// كل شاشة، تتوزّع الحملات على المواضع بالتناوب فعلياً بمرور الوقت.
+let adRotationSeed = Math.floor(Math.random() * 997);
 export function resetAdSlotCounter() {
   renderedAdsOnPage = 0;
+  adRotationSeed = Math.floor(Math.random() * 997);
 }
 /** يحجز الرقم التالي في عدّاد الإعلانات المشترك — يُستخدم من أي مكوّن
  *  إعلاني آخر خارج <AdSlot> نفسه (مثل SmartAdBanner) حتى يخضع لنفس الحد
@@ -123,6 +133,7 @@ export const AdSlot: React.FC<AdSlotProps> = ({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const hasLoggedImpression = useRef(false);
   const [slotIndex] = useState(() => renderedAdsOnPage++);
+  const [rotationSeed] = useState(() => adRotationSeed);
   const [platformAdsEnabled, setPlatformAdsEnabled] = useState(getPlatformAdsEnabled());
   const [externalAdsConfig, setExternalAdsConfig] = useState(getExternalAdsConfig());
 
@@ -164,9 +175,12 @@ export const AdSlot: React.FC<AdSlotProps> = ({
     const eligible = active.filter((c: any) => c.placementType !== 'category_sponsor');
     if (eligible.length === 0) return null;
 
-    // اختيار ثابت حسب ترتيب الموضع، لمنع ظهور نفس الإعلان مرتين في الصفحة
-    return eligible[slotIndex % eligible.length] || null;
-  }, [campaigns, config.sponsorOnly, config.beneficiary, platformAdsEnabled, category, slotIndex]);
+    // ترتيب يتغيّر مع كل شاشة (rotationSeed) مضافاً لترتيب الموضع على نفس
+    // الشاشة (slotIndex) — يمنع تكرار نفس الإعلان مرتين في نفس الصفحة كما
+    // كان، لكنه أيضاً يوزّع الحملات فعلياً بمرور الوقت بدل تجميد نفس
+    // الحملة الأولى على كل موضع أول إلى الأبد.
+    return eligible[(slotIndex + rotationSeed) % eligible.length] || null;
+  }, [campaigns, config.sponsorOnly, config.beneficiary, platformAdsEnabled, category, slotIndex, rotationSeed]);
 
   /**
    * مرشَّح الشبكة الخارجية (بمعزل عن الأولوية) — متاح الآن لكل المواضع

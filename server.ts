@@ -16,6 +16,7 @@ import {
 import {
   isMediaUploadConfigured,
   uploadMediaBuffer,
+  getSignedKycImageUrl,
   MAX_IMAGE_BYTES,
   MAX_VIDEO_BYTES
 } from './server/mediaUpload';
@@ -1504,6 +1505,23 @@ async function startServer() {
     }
   });
 
+  // بوابة جودة على أي نص يولّده Gemini قبل نشره كتغريدة/مقال/تعليق بوت.
+  // لوحظ فعلياً في الإنتاج أن الاستجابة قد تُقطَع منتصف الجملة (حد
+  // maxOutputTokens الصغير المضبوط عمداً لتوفير التكلفة)، أو نادراً ما
+  // "تتسرّب" شذرة إنجليزية أو رمزية لا علاقة لها بالطلب — فينشر نص
+  // كـ"، والآتي صف" أو "/value of experience" وهو مبتور أو غير عربي بالكامل.
+  // بدل محاولة تفسير كل سبب ممكن، نتحقق من "شكل" النص الناتج فقط: طول
+  // كافٍ، لا يبدأ بعلامة ترقيم مجردة (دليل قطع منتصف جملة)، وغالبيته أحرف
+  // عربية فعلية — أي نص يفشل هذا الفحص يُستبدل بالنص الاحتياطي الثابت
+  // بدل نشره كما هو.
+  function isLikelyValidBotText(text: string, minLength = 12): boolean {
+    const trimmed = text.trim();
+    if (trimmed.length < minLength) return false;
+    if (/^[\p{P}\p{S}]/u.test(trimmed)) return false;
+    const arabicChars = (trimmed.match(/[؀-ۿ]/g) || []).length;
+    return arabicChars / trimmed.length >= 0.4;
+  }
+
   // الدورة اليومية الفعلية: تُستدعى من سير GitHub Actions مجدول، محمية
   // بمفتاح سرّي مشترك (وليس رمز هوية مستخدم — لا مستخدم حقيقياً يستدعيها).
   app.post('/api/bots/run-daily-cycle', async (req, res) => {
@@ -1591,8 +1609,9 @@ async function startServer() {
               seoDescription = trimmed.replace(/^الوصف:\s*/i, '').trim();
             }
           }
-          articleContent = bodyBlock.trim() || raw.trim();
-          articleTitle = articleTitle || 'تأملات في المعنى';
+          const candidateContent = bodyBlock.trim() || raw.trim();
+          articleContent = isLikelyValidBotText(candidateContent, 100) ? candidateContent : '';
+          articleTitle = isLikelyValidBotText(articleTitle, 4) ? articleTitle : '';
         } catch (genErr: any) {
           // فشل Gemini (حصة، فلتر أمان، شبكة) لا يجب أن يُسقط الدورة كلها —
           // ينزل للمحتوى الاحتياطي الثابت أدناه بدل فشل الطلب بأكمله بـ 500.
@@ -1660,7 +1679,8 @@ async function startServer() {
             contents: prompt,
             config: { maxOutputTokens: 150 }
           });
-          tweetContent = (response.text || '').trim().slice(0, 280);
+          const candidateTweet = (response.text || '').trim().slice(0, 280);
+          tweetContent = isLikelyValidBotText(candidateTweet) ? candidateTweet : '';
         } catch (genErr: any) {
           console.error('Bot tweet Gemini generation failed, using fallback:', genErr?.message || genErr);
         }
@@ -1742,7 +1762,8 @@ async function startServer() {
               contents: prompt,
               config: { maxOutputTokens: 120 }
             });
-            commentText = (response.text || '').trim();
+            const candidateComment = (response.text || '').trim();
+            commentText = isLikelyValidBotText(candidateComment, 6) ? candidateComment : '';
           } catch (genErr: any) {
             console.error('Bot comment Gemini generation failed, using fallback:', genErr?.message || genErr);
           }
@@ -2365,6 +2386,230 @@ async function startServer() {
           : err?.message || 'تعذر رفع الملف.';
       console.error('media/upload error:', err?.message || err);
       res.status(status).json({ error: 'upload_failed', message });
+    }
+  });
+
+  // ------------------------------------------------------------------
+  // التحقق من الهوية (KYC) — فحص آلي حقيقي بمطابقة الاسم على الوثيقة
+  // ------------------------------------------------------------------
+  // كان طلب KYC نصياً بحتاً (نوع الوثيقة + رقمها فقط) بلا أي صورة إطلاقاً،
+  // ينتظر مراجعة يدوية للأبد بلا أي أساس فعلي يبني عليه الأدمن قراره. الآن:
+  // يرفع المستخدم صورة الوثيقة فعلياً، يقرأها Gemini (رؤية + نص) ويستخرج
+  // الاسم المطبوع عليها ويقارنه باسم الحساب المسجَّل، ويُعتمد تلقائياً فقط
+  // عند تطابق عالي الثقة — أي شيء أقل من ذلك (صورة غير واضحة، عدم تطابق
+  // جزئي، فشل القراءة) يبقى "قيد المراجعة" لمراجعة بشرية فعلية بدل رفض
+  // تلقائي أعمى قد يحرم مستخدماً حقيقياً بسبب صورة رديئة الإضاءة فحسب.
+  //
+  // الصورة نفسها لا تُخزَّن أبداً في مستند المستخدم العام (users/{uid} قابل
+  // للقراءة من الجميع في قواعد الأمان) — بل في مجموعة kycDocuments منفصلة
+  // مقصورة قراءتها على الأدمن فقط، وبنوع رفع Cloudinary "authenticated" لا
+  // يعمل رابطه المباشر لأي أحد حتى لو تسرّب، ولا يُنشأ رابط موقَّع صالح لها
+  // إلا عند طلب الأدمن الفعلي لمراجعتها. صاحب الحساب نفسه لا يملك أي مسار
+  // في الكود لاسترجاع هذه الصورة بعد رفعها — تحسباً لأي أمور قانونية مستقبلية.
+  app.post('/api/kyc/submit', mediaUpload.single('document') as any, async (req, res) => {
+    if (!isAdminConfigured()) {
+      return res.status(503).json({ error: 'not_configured', message: 'الخدمة غير مهيأة على الخادم حالياً.' });
+    }
+    if (!isMediaUploadConfigured()) {
+      return res.status(503).json({ error: 'media_upload_not_configured', message: 'رفع المستندات غير مفعّل على هذا الخادم بعد.' });
+    }
+    try {
+      const { uid } = await verifyRequestAuth(req.headers.authorization);
+      const file = req.file;
+      const idType = String(req.body?.idType || '').trim();
+      const idNumber = String(req.body?.idNumber || '').trim();
+
+      if (!file) {
+        return res.status(400).json({ error: 'no_file', message: 'يرجى إرفاق صورة واضحة للوثيقة الرسمية.' });
+      }
+      if (!file.mimetype.startsWith('image/')) {
+        return res.status(400).json({ error: 'unsupported_type', message: 'يجب أن تكون الوثيقة صورة (JPG أو PNG).' });
+      }
+      if (file.size > MAX_IMAGE_BYTES) {
+        return res.status(400).json({ error: 'file_too_large', message: 'حجم الصورة يتجاوز 8 ميغابايت.' });
+      }
+      if (!idType || !idNumber) {
+        return res.status(400).json({ error: 'missing_fields', message: 'يرجى إدخال نوع الوثيقة ورقمها.' });
+      }
+
+      const db = getAdminDb();
+      const userRef = db.collection('users').doc(uid);
+      const userSnap = await userRef.get();
+      if (!userSnap.exists) {
+        return res.status(404).json({ error: 'user_not_found', message: 'تعذر العثور على حسابك.' });
+      }
+      const userData = userSnap.data()!;
+      const registeredName: string = userData.fullName || userData.displayName || '';
+
+      // 1. رفع الوثيقة إلى Cloudinary بنوع "authenticated" — غير عام إطلاقاً.
+      const upload = await uploadMediaBuffer(file.buffer, {
+        folder: `literium/kyc/${uid}`,
+        resourceType: 'image',
+        type: 'authenticated'
+      });
+
+      // 2. تحليل الوثيقة بالذكاء الاصطناعي (رؤية) — استخراج الاسم ومطابقته.
+      let extractedName = '';
+      let matchConfidence: 'high' | 'medium' | 'low' | 'none' = 'none';
+      let aiReasoning = 'تعذر تشغيل التحليل الآلي — الوثيقة بانتظار المراجعة اليدوية.';
+
+      const client = getGeminiClient();
+      if (client && registeredName) {
+        try {
+          const base64Data = file.buffer.toString('base64');
+          const verificationPrompt = `أنت نظام تحقق من الهوية. سأعرض عليك صورة وثيقة رسمية (بطاقة هوية أو جواز سفر أو رخصة قيادة أو سجل تجاري)، ومعها الاسم المسجَّل في حساب المستخدم: "${registeredName}".
+
+اقرأ الاسم الكامل المطبوع على الوثيقة بدقة (بالعربية أو الإنجليزية كما هو مكتوب)، ثم قارنه بالاسم المسجَّل أعلاه مع مراعاة الفروق الطبيعية (ترتيب الاسم الأول/الأخير، الألقاب، اختلاف بسيط في النقحرة بين العربية والإنجليزية، وجود/غياب اسم الأب أو الجد).
+
+أجب حصراً بكائن JSON صالح بلا أي نص إضافي قبله أو بعده، بهذا الشكل بالضبط:
+{"extractedName": "الاسم كما قرأته من الوثيقة، أو فارغ إن تعذّرت القراءة", "matchConfidence": "high أو medium أو low أو none", "reasoning": "جملة أو جملتان تشرحان قرارك"}
+
+معايير الثقة:
+- high: الاسمان متطابقان بوضوح تام (حتى لو باختلاف ترتيب بسيط)
+- medium: تشابه قوي لكن ليس تطابقاً كاملاً (حرف مختلف، اسم جزئي)
+- low: تشابه جزئي فقط أو الصورة غير واضحة بما يكفي للجزم
+- none: لا علاقة بين الاسمين، أو الصورة ليست وثيقة هوية أصلاً، أو تعذّرت قراءتها كلياً`;
+
+          const response = await client.models.generateContent({
+            model: 'gemini-3.7-flash',
+            contents: {
+              parts: [
+                { inlineData: { mimeType: file.mimetype, data: base64Data } },
+                { text: verificationPrompt }
+              ]
+            }
+          });
+
+          const rawText = (response.text || '').trim();
+          const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const parsed = JSON.parse(jsonMatch[0]);
+            extractedName = String(parsed.extractedName || '').trim();
+            const conf = String(parsed.matchConfidence || '').toLowerCase();
+            matchConfidence = (['high', 'medium', 'low', 'none'] as const).includes(conf as any)
+              ? (conf as any)
+              : 'none';
+            aiReasoning = String(parsed.reasoning || '').trim() || aiReasoning;
+          }
+        } catch (aiErr: any) {
+          console.error('KYC AI verification error:', aiErr?.message || aiErr);
+          // فشل التحليل لا يمنع تقديم الطلب — يبقى قيد المراجعة اليدوية فقط.
+        }
+      }
+
+      const decision: 'auto_verified' | 'pending_review' = matchConfidence === 'high' ? 'auto_verified' : 'pending_review';
+      const submittedAt = new Date().toISOString();
+
+      // 3. حفظ الوثيقة وتحليلها في مجموعة مقصورة على الأدمن — لا صلة لها
+      // بمستند المستخدم العام إطلاقاً.
+      await db.collection('kycDocuments').doc(uid).set({
+        idImagePublicId: upload.publicId,
+        idType,
+        idNumber,
+        extractedName,
+        matchConfidence,
+        aiReasoning,
+        decision,
+        submittedAt,
+        reviewedAt: decision === 'auto_verified' ? submittedAt : null,
+        reviewedBy: decision === 'auto_verified' ? 'ai_auto' : null
+      });
+
+      // 4. تحديث حالة التوثيق العامة على حساب المستخدم — بلا أي أثر لصورة
+      // الوثيقة أو الاسم المستخرَج هنا (هذا المستند قابل للقراءة من الجميع).
+      await userRef.update({
+        kycDetails: { idType, idNumber, status: decision === 'auto_verified' ? 'verified' : 'pending', submittedAt },
+        ...(decision === 'auto_verified' ? { isKycVerified: true } : {})
+      });
+
+      // 5. إشعارات — للمستخدم دائماً، وللأدمن فقط إن احتاج الطلب مراجعة بشرية.
+      const notifBase = { isRead: false, createdAt: new Date().toISOString() };
+      await db.collection('notifications').add({
+        ...notifBase,
+        userId: uid,
+        type: 'system',
+        title: decision === 'auto_verified' ? 'تم توثيق هويتك تلقائياً ✓' : 'طلب توثيق الهوية قيد المراجعة',
+        message:
+          decision === 'auto_verified'
+            ? 'طابقت وثيقتك اسم حسابك بنجاح، وتم توثيق هويتك فوراً.'
+            : 'استلمنا وثيقتك وسيراجعها فريق ليتيريوم يدوياً خلال 24 إلى 48 ساعة.'
+      });
+
+      if (decision === 'pending_review') {
+        const adminsSnap = await db.collection('users').where('role', '==', 'admin').get();
+        await Promise.all(
+          adminsSnap.docs.map((adminDoc) =>
+            db.collection('notifications').add({
+              ...notifBase,
+              userId: adminDoc.id,
+              actorId: uid,
+              type: 'system',
+              title: 'طلب توثيق هوية جديد بانتظار المراجعة',
+              message: `قدّم ${registeredName || 'مستخدم'} وثيقة توثيق تحتاج مراجعة يدوية (ثقة المطابقة الآلية: ${matchConfidence}).`
+            })
+          )
+        );
+      }
+
+      res.json({
+        success: true,
+        status: decision === 'auto_verified' ? 'verified' : 'pending',
+        message:
+          decision === 'auto_verified'
+            ? 'تم توثيق هويتك تلقائياً بنجاح ✓'
+            : 'تم إرسال طلبك وهو الآن قيد المراجعة اليدوية.'
+      });
+    } catch (err: any) {
+      if (err?.message === 'missing_auth_token') {
+        return res.status(401).json({ error: 'auth_required', message: 'يتطلب التوثيق تسجيل الدخول أولاً.' });
+      }
+      console.error('KYC submit error:', err?.message || err);
+      res.status(500).json({ error: 'kyc_submit_failed', message: 'تعذر إرسال طلب التوثيق. حاول مجدداً.' });
+    }
+  });
+
+  // مراجعة الأدمن لصورة الوثيقة + تحليل الذكاء الاصطناعي — لا يُنشئ رابطاً
+  // موقّعاً صالحاً للصورة إلا لطلب أدمن مصادَق عليه فعلياً في هذه اللحظة.
+  app.get('/api/kyc/document/:userId', async (req, res) => {
+    if (!isAdminConfigured()) {
+      return res.status(503).json({ error: 'not_configured' });
+    }
+    try {
+      const { uid } = await verifyRequestAuth(req.headers.authorization);
+      const db = getAdminDb();
+
+      const callerSnap = await db.collection('users').doc(uid).get();
+      const callerData = callerSnap.exists ? callerSnap.data()! : {};
+      const isAdminCaller =
+        callerData.role === 'admin' ||
+        String(callerData.email || '').toLowerCase() === 'brnardtsho@gmail.com';
+      if (!isAdminCaller) {
+        return res.status(403).json({ error: 'forbidden', message: 'مراجعة وثائق التوثيق للأدمن فقط.' });
+      }
+
+      const docSnap = await db.collection('kycDocuments').doc(req.params.userId).get();
+      if (!docSnap.exists) {
+        return res.status(404).json({ error: 'not_found', message: 'لا توجد وثيقة توثيق لهذا المستخدم.' });
+      }
+      const data = docSnap.data()!;
+      const imageUrl = getSignedKycImageUrl(data.idImagePublicId);
+
+      res.json({
+        imageUrl,
+        idType: data.idType,
+        idNumber: data.idNumber,
+        extractedName: data.extractedName,
+        matchConfidence: data.matchConfidence,
+        aiReasoning: data.aiReasoning,
+        decision: data.decision,
+        submittedAt: data.submittedAt
+      });
+    } catch (err: any) {
+      if (err?.message === 'missing_auth_token') {
+        return res.status(401).json({ error: 'auth_required' });
+      }
+      console.error('KYC document fetch error:', err?.message || err);
+      res.status(500).json({ error: 'fetch_failed', message: 'تعذر جلب بيانات الوثيقة.' });
     }
   });
 

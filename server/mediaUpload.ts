@@ -59,7 +59,17 @@ export interface UploadResult {
  */
 export function uploadMediaBuffer(
   buffer: Buffer,
-  opts: { folder: string; resourceType: 'image' | 'video'; maxDurationSeconds?: number }
+  opts: {
+    folder: string;
+    resourceType: 'image' | 'video';
+    maxDurationSeconds?: number;
+    // 'authenticated': لا يُصلَح الملف عبر رابطه المباشر إطلاقاً — أي طلب له
+    // بلا توقيع صالح (يُنشأ فقط من السيرفر عبر مفتاح API السري) يُرفض من
+    // Cloudinary نفسها. يُستخدم حصرياً لوثائق KYC كي لا يبقى الملف "علنياً
+    // بمجرد معرفة الرابط" ولو لم يُعرض في أي واجهة — بخلاف النوع الافتراضي
+    // 'upload' المناسب للوسائط العامة (صور المقالات والإعلانات).
+    type?: 'upload' | 'authenticated';
+  }
 ): Promise<UploadResult> {
   tryConfigure();
   if (!configured) {
@@ -70,7 +80,8 @@ export function uploadMediaBuffer(
     const stream = cloudinary.uploader.upload_stream(
       {
         folder: opts.folder,
-        resource_type: opts.resourceType
+        resource_type: opts.resourceType,
+        type: opts.type || 'upload'
       },
       async (err, result) => {
         if (err || !result) {
@@ -107,5 +118,28 @@ export function uploadMediaBuffer(
       }
     );
     stream.end(buffer);
+  });
+}
+
+/**
+ * رابط موقَّع (صالح لدقائق معدودة) لعرض صورة وثيقة KYC مرفوعة بنوع
+ * 'authenticated' — لا يمكن توليده إلا من السيرفر (يحتاج مفتاح API السري)،
+ * ولا يُستدعى إلا من نقطة مراجعة الأدمن. هذا ما يضمن فعلياً أن لا أحد غير
+ * السيرفر والأدمن المصادَق عليه يستطيع الوصول لصورة الوثيقة، بخلاف مجرد
+ * عدم عرض الرابط في الواجهة (لو كان الملف 'upload' عادياً لبقي رابطه
+ * يعمل لأي أحد يخمّنه أو يسرّبه، بصرف النظر عمّا تعرضه الواجهة).
+ */
+export function getSignedKycImageUrl(publicId: string): string | null {
+  tryConfigure();
+  if (!configured) return null;
+  // sign_url يعتمد فقط على مفتاح API السري (متاح دوماً بأي باقة Cloudinary،
+  // بلا حاجة لتفعيل ميزة "Token-based authentication" الإضافية) — لا يُنشئ
+  // هذا التوقيع إلا كود يملك المفتاح السري، أي السيرفر فقط، ولا يُستدعى هنا
+  // إلا عند فتح الأدمن لمراجعة الطلب، ولا يُخزَّن الرابط الناتج في أي مكان.
+  return cloudinary.url(publicId, {
+    type: 'authenticated',
+    resource_type: 'image',
+    sign_url: true,
+    secure: true
   });
 }

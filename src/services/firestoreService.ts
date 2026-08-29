@@ -475,25 +475,10 @@ export async function setUserVerifiedInFirestore(userId: string, isVerified: boo
   }
 }
 
-/**
- * حفظ طلب توثيق هوية (KYC) بحالة "قيد المراجعة" فعلياً في Firestore —
- * لا يُصادَق عليه أبداً من جانب المستخدم نفسه (isVerified/isKycVerified
- * محميان بقواعد الأمان، لا يقدر أي مستخدم عادي تغييرهما بنفسه)، وينتظر
- * اعتماداً حقيقياً من الأدمن عبر setUserKycApprovedInFirestore.
- */
-export async function submitKycRequestInFirestore(
-  userId: string,
-  kycDetails: { idType: string; idNumber: string; submittedAt: string }
-) {
-  try {
-    await updateDoc(doc(db, 'users', userId), {
-      kycDetails: { ...kycDetails, status: 'pending' }
-    });
-  } catch (e) {
-    handleFirestoreError(e, OperationType.UPDATE, `users/${userId}`);
-    throw e;
-  }
-}
+// ملاحظة: إرسال طلب KYC نفسه (رفع صورة الوثيقة + التحليل الآلي بالذكاء
+// الاصطناعي) يمر حصراً عبر POST /api/kyc/submit على السيرفر الآن — وليس
+// عبر كتابة Firestore مباشرة من المتصفح — لأنه يحتاج معالجة صورة ورفعها
+// إلى Cloudinary واستدعاء Gemini، وكلها لا يمكن تنفيذها من العميل بأمان.
 
 export async function setUserKycApprovedInFirestore(userId: string) {
   try {
@@ -504,6 +489,37 @@ export async function setUserKycApprovedInFirestore(userId: string) {
   } catch (e) {
     handleFirestoreError(e, OperationType.UPDATE, `users/${userId}`);
     throw e;
+  }
+}
+
+export async function setUserKycRejectedInFirestore(userId: string) {
+  try {
+    await updateDoc(doc(db, 'users', userId), {
+      isKycVerified: false,
+      'kycDetails.status': 'rejected'
+    });
+  } catch (e) {
+    handleFirestoreError(e, OperationType.UPDATE, `users/${userId}`);
+    throw e;
+  }
+}
+
+/** يسجّل قرار الأدمن اليدوي على مستند kycDocuments (سجل تدقيق منفصل عن
+ *  users/{userId} العام) — بعد أن يكون قد راجع صورة الوثيقة فعلياً. */
+export async function markKycDocumentReviewed(
+  userId: string,
+  decision: 'approved' | 'rejected',
+  reviewerId: string
+) {
+  try {
+    await updateDoc(doc(db, 'kycDocuments', userId), {
+      decision: decision === 'approved' ? 'manually_approved' : 'rejected',
+      reviewedAt: new Date().toISOString(),
+      reviewedBy: reviewerId
+    });
+  } catch (e) {
+    // سجل تدقيق ثانوي — فشل تحديثه لا يجب أن يمنع اعتماد/رفض الحساب نفسه.
+    console.error('تعذر تسجيل قرار مراجعة وثيقة KYC:', e);
   }
 }
 

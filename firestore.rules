@@ -106,6 +106,20 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // وثائق التحقق من الهوية (KYC) — منفصلة تماماً عن users/{userId} لأن
+    // ذاك المستند "allow read: if true" أي مقروء علنياً لأي زائر؛ تخزين
+    // مرجع صورة الهوية هناك كان سيجعلها متاحة عملياً لأي أحد. هنا: القراءة
+    // للأدمن فقط، والإنشاء ممنوع بالكامل من العميل (يتم حصراً عبر
+    // Firebase Admin SDK من السيرفر بعد رفع الصورة والتحقق منها بالذكاء
+    // الاصطناعي)، والتعديل مقصور على الأدمن (لتسجيل قرار المراجعة اليدوية
+    // فقط)، والحذف ممنوع تماماً — لا يجوز لأي طرف حذف سجل مراجعة هوية.
+    match /kycDocuments/{userId} {
+      allow read: if isAdmin();
+      allow create: if false;
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+
     match /articles/{articleId} {
 
       allow read: if true;

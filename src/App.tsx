@@ -212,7 +212,8 @@ import {
   logFraudFlagToFirestore,
   setUserVerifiedInFirestore,
   setUserKycApprovedInFirestore,
-  submitKycRequestInFirestore,
+  setUserKycRejectedInFirestore,
+  markKycDocumentReviewed,
   setUserBannedInFirestore,
   setCampaignStatusInFirestore,
   setArticleStatusInFirestore,
@@ -2812,32 +2813,37 @@ export function App() {
   };
 
   // KYC Save
-  // ⚠️ كان هذا يمنح "isKycVerified: true" فوراً بمجرد الضغط على إرسال،
-  // محلياً فقط وبدون أي حفظ حقيقي في Firestore أو مراجعة فعلية من الأدمن
-  // — أي مستخدم كان "يوثّق" نفسه بنفسه بصورة وهمية. الآن يُرسَل الطلب
-  // فعلياً بحالة "قيد المراجعة" فقط، ولا يتحقق الحساب إلا بعد اعتماد
-  // حقيقي من الأدمن (onApproveKyc → setUserKycApprovedInFirestore).
-  const handleSaveKyc = async (kyc: KycDetails) => {
-    if (!requireAuth()) return;
-    const submittedAt = new Date().toISOString();
-
+  // إرسال الطلب نفسه (رفع صورة الوثيقة + التحليل الآلي بمطابقة الاسم) يتم
+  // بالكامل داخل KycModal عبر POST /api/kyc/submit — يحتاج معالجة ملف
+  // ورفعه واستدعاء Gemini، لا يمكن تنفيذها من هنا. هذه الدالة تُستدعى بعد
+  // نجاح ذلك الطلب فقط، بالحالة الفعلية التي أعادها السيرفر (قد تكون
+  // "verified" فوراً إن طابقت الوثيقة اسم الحساب بثقة عالية، أو "pending"
+  // بانتظار مراجعة بشرية) — لتحديث الحالة محلياً فقط دون أي كتابة إضافية.
+  const handleSaveKyc = (kyc: KycDetails) => {
     setUsers((prev) =>
       prev.map((u) =>
         u.id === currentUser.id
-          ? { ...u, kycDetails: { idType: kyc.idType, idNumber: kyc.idNumber, status: 'pending', submittedAt } }
+          ? {
+              ...u,
+              kycDetails: kyc,
+              isKycVerified: kyc.status === 'verified' ? true : u.isKycVerified
+            }
           : u
       )
     );
+  };
 
+  // KYC Reject — رفض يدوي من الأدمن بعد مراجعة صورة الوثيقة فعلياً.
+  const handleRejectKyc = async (userId: string) => {
+    setUsers((prev) =>
+      prev.map((u) => (u.id === userId ? { ...u, isKycVerified: false, kycDetails: u.kycDetails ? { ...u.kycDetails, status: 'rejected' } : u.kycDetails } : u))
+    );
     try {
-      await submitKycRequestInFirestore(currentUser.id, {
-        idType: kyc.idType,
-        idNumber: kyc.idNumber,
-        submittedAt
-      });
+      await setUserKycRejectedInFirestore(userId);
+      await markKycDocumentReviewed(userId, 'rejected', currentUser.id);
     } catch (err) {
-      console.error('تعذر إرسال طلب توثيق الهوية:', err);
-      alert('تعذر إرسال طلب التوثيق. تحقق من اتصالك ثم حاول مجدداً.');
+      console.error('تعذر رفض طلب توثيق الهوية:', err);
+      alert('تعذر تسجيل قرار الرفض.');
     }
   };
 
@@ -3449,7 +3455,9 @@ export function App() {
                 )
               );
               await setUserKycApprovedInFirestore(userId);
+              await markKycDocumentReviewed(userId, 'approved', currentUser.id);
             }}
+            onRejectKyc={handleRejectKyc}
             onBanUser={async (userId) => {
               const target = users.find((u) => u.id === userId);
               const nextBanned = !(target?.isBanned);
@@ -3660,7 +3668,9 @@ export function App() {
                 )
               );
               await setUserKycApprovedInFirestore(userId);
+              await markKycDocumentReviewed(userId, 'approved', currentUser.id);
             }}
+            onRejectKyc={handleRejectKyc}
             onBanUser={async (userId) => {
               const target = users.find((u) => u.id === userId);
               const nextBanned = !(target?.isBanned);
@@ -4061,16 +4071,23 @@ export function App() {
                     <React.Fragment key={article.id}>
                     {/* home_feed_1/2 لوضعية "كل الأقسام" فقط، وcategory_feed
                         عند تصفح قسم محدد — بدل عرض موضع الصفحة الرئيسية
-                        بالخطأ داخل كل تصنيف. */}
-                    {selectedCategory === 'all' && (idx === 6 || idx === 12) && (
+                        بالخطأ داخل كل تصنيف.
+                        ⚠️ كانت هذه المواضع مربوطة سابقاً بـ idx===6/12 —
+                        أي تتطلب 7 مقالات فأكثر قبل أن يظهر أول موضع إعلاني
+                        هنا إطلاقاً. لمنصة حديثة بعدد مقالات أقل من ذلك (وهو
+                        الحال الفعلي)، كانت هذه المواضع (وبالتبعية أي إعلان
+                        شبكة خارجية أولويتها هنا) لا تُركَّب في الصفحة أبداً،
+                        بصرف النظر عن أي إعداد إداري صحيح. عتبات أخفض تضمن
+                        ظهورها فعلياً حتى مع محتوى قليل. */}
+                    {selectedCategory === 'all' && (idx === 2 || idx === 8) && (
                       <AdSlot
-                        slotId={idx === 6 ? 'home_feed_1' : 'home_feed_2'}
+                        slotId={idx === 2 ? 'home_feed_1' : 'home_feed_2'}
                         campaigns={campaigns}
                         viewerId={currentUserId || null}
                         adFree={false}
                       />
                     )}
-                    {selectedCategory !== 'all' && idx === 6 && (
+                    {selectedCategory !== 'all' && idx === 2 && (
                       <AdSlot
                         slotId="category_feed"
                         campaigns={campaigns}
