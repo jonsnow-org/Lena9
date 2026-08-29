@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { UploadCloud, Link2, X, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { fetchMediaUploadStatus, uploadAdMedia } from '../services/mediaApi';
 import { VideoPlayer } from './VideoPlayer';
+import { isValidVideoUrl } from '../utils/videoEmbed';
 
 let cachedConfigured: boolean | null = null;
 let inFlight: Promise<boolean> | null = null;
@@ -49,6 +50,13 @@ export const MediaUploadInput: React.FC<MediaUploadInputProps> = (props) => {
   const [showUrlField, setShowUrlField] = useState(false);
   const [status, setStatus] = useState<'idle' | 'uploading' | 'error' | 'done'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
+  // تحذير خاص بحقل "رابط جاهز" في حقول الفيديو فقط: رابط صفحة يوتيوب/Vimeo
+  // (وليس ملف فيديو مباشر) لا يمكن تشغيله عبر وسم <video> إطلاقاً — كان
+  // قبوله هنا بلا أي تنبيه يُنتج مشغّلاً فارغاً/معطوباً (عناصر تحكم متصفح
+  // ظاهرة، بلا أي محتوى فعلي) لأن المتصفح يحاول تفسير صفحة HTML كملف
+  // فيديو. الحقل الصحيح لروابط يوتيوب/Vimeo هو "مقطع تعريفي" المنفصل
+  // (VideoUrlInput) الذي يبني تضميناً (iframe) حقيقياً بدل تشغيل مباشر.
+  const [videoUrlWarning, setVideoUrlWarning] = useState('');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -124,6 +132,17 @@ export const MediaUploadInput: React.FC<MediaUploadInputProps> = (props) => {
   // لا يزال يتحقق من حالة الخادم — لا نعرض شيئاً بعد لتفادي الوميض
   if (configured === null) return null;
 
+  const checkVideoPageLink = () => {
+    if (kind === 'video' && value.trim() && isValidVideoUrl(value.trim())) {
+      setVideoUrlWarning(
+        'هذا رابط صفحة (يوتيوب/Vimeo) وليس ملف فيديو مباشراً، فلن يعمل هنا. إن كنت تقصد مقطعاً تعريفياً من يوتيوب/Vimeo استخدم حقل "مقطع تعريفي" المخصص أسفل هذا القسم بدلاً من هذا الحقل، أو ارفع ملف فيديو حقيقي (mp4) من جهازك.'
+      );
+    } else {
+      setVideoUrlWarning('');
+    }
+  };
+  const isVideoPageLink = kind === 'video' && Boolean(value.trim()) && isValidVideoUrl(value.trim());
+
   // الرفع غير مفعّل على الخادم: حقل رابط خارجي فقط (السلوك السابق)
   if (!configured) {
     return (
@@ -136,10 +155,17 @@ export const MediaUploadInput: React.FC<MediaUploadInputProps> = (props) => {
           type="url"
           value={value}
           onChange={(e) => onChange(e.target.value)}
+          onBlur={checkVideoPageLink}
           placeholder="https://..."
           dir="ltr"
           className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs outline-hidden focus:border-cyan-500 text-start"
         />
+        {videoUrlWarning && (
+          <div className="flex items-start gap-1.5 text-[11px] text-amber-600 dark:text-amber-400 font-medium">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            <span>{videoUrlWarning}</span>
+          </div>
+        )}
       </div>
     );
   }
@@ -161,14 +187,23 @@ export const MediaUploadInput: React.FC<MediaUploadInputProps> = (props) => {
       </div>
 
       {showUrlField ? (
-        <input
-          type="url"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder="https://..."
-          dir="ltr"
-          className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs outline-hidden focus:border-cyan-500 text-start"
-        />
+        <div className="space-y-1.5">
+          <input
+            type="url"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            onBlur={checkVideoPageLink}
+            placeholder="https://..."
+            dir="ltr"
+            className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs outline-hidden focus:border-cyan-500 text-start"
+          />
+          {videoUrlWarning && (
+            <div className="flex items-start gap-1.5 text-[11px] text-amber-600 dark:text-amber-400 font-medium">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+              <span>{videoUrlWarning}</span>
+            </div>
+          )}
+        </div>
       ) : (
         <div>
           <input
@@ -187,6 +222,17 @@ export const MediaUploadInput: React.FC<MediaUploadInputProps> = (props) => {
             <div className="relative rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700">
               {kind === 'image' ? (
                 <img src={value} alt="" className="w-full max-h-40 object-cover" />
+              ) : isVideoPageLink ? (
+                // رابط صفحة يوتيوب/Vimeo وُضع هنا بالخطأ (عبر "أو ضع رابطاً
+                // جاهزاً") — تشغيله عبر <video> مستحيل تقنياً (ليس ملف فيديو
+                // مباشراً)، فكان يظهر مشغّلاً فارغاً معطوباً بلا أي تفسير.
+                // نعرض تنبيهاً واضحاً بدل ذلك.
+                <div className="p-4 bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 text-[11px] font-medium leading-relaxed flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>
+                    هذا رابط صفحة (يوتيوب/Vimeo) وليس ملف فيديو مباشراً، فلن يعمل هنا. احذفه وارفع ملف فيديو حقيقي، أو استخدم حقل "مقطع تعريفي" المخصص لروابط يوتيوب/Vimeo.
+                  </span>
+                </div>
               ) : (
                 <VideoPlayer src={value} className="w-full max-h-40" />
               )}
