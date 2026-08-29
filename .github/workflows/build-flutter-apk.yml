@@ -343,11 +343,23 @@ jobs:
         working-directory: flutter_app
         run: flutter pub get
 
+      # خمس محاولات فشلت جميعها بنفس نمط "shutdown signal"/exit 143 رغم
+      # استبعاد الفوترة والقرص وVFS watch وحتى تحديد ذاكرة JVM صراحة —
+      # كل الأدلة (عمليتا java يتيمتان، ضغط أثناء R8/dexing تحديداً) تشير
+      # لحجم عمل حقيقي أكبر من طاقة المُشغّل، لا مجرد إعداد قابل للضبط.
+      # هذا الأمر كان يبني APK "سميناً" واحداً يحوي الكود الأصلي لكل
+      # المعماريات الأربع المدعومة (arm64-v8a, armeabi-v7a, x86, x86_64)
+      # معاً في عملية R8/dexing واحدة — وهذا يُضاعف الحمل الفعلي تقريباً
+      # أربع مرات بلا أي داعٍ عملي: أجهزة اندرويد الحقيقية شبه كلها منذ
+      # سنوات طويلة على معمارية arm64-v8a وحدها (لا يوجد مستخدمون حقيقيون
+      # على x86/x86_64 أو armeabi-v7a القديمة لهذا التطبيق). تقييد البناء
+      # على arm64-v8a فقط يقلّص العمل الفعلي بدل تقييد الذاكرة المسموحة له
+      # فقط — حل مجاني بالكامل ومباشر، لا يتطلب أي بنية تحتية أو تكلفة.
       - name: Build signed release APK
         working-directory: flutter_app
         env:
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-        run: flutter build apk --release
+        run: flutter build apk --release --target-platform android-arm64
 
       - name: Upload signed APK
         uses: actions/upload-artifact@v4
