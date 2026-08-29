@@ -178,7 +178,7 @@ import {
   adminReleaseEarnings,
   EarningRecord
 } from './services/firestoreService';
-import { unlockArticle as requestArticleUnlock, fundCampaign } from './services/paymentsApi';
+import { unlockArticle as requestArticleUnlock, reviewCampaign } from './services/paymentsApi';
 import { trackVisit } from './services/analyticsApi';
 import {
   auth,
@@ -2645,14 +2645,10 @@ export function App() {
 
   // Advertiser Create Campaign
   /**
-   * إنشاء حملة إعلانية — فورية التمويل.
-   *
-   * كانت تُنشأ بحالة 'draft' بلا أي مسار فعلي لاعتمادها لاحقاً (لوحة
-   * التحكم لا تعرض للاعتماد إلا حملات بحالة 'pending'، فتبقى كل حملة
-   * عالقة للأبد بميزانية صفر — خلل حقيقي مكتشف). الآن: تُنشأ بحالة
-   * 'pending' (تطابق النوع المُعرَّف فعلياً)، ثم تُموَّل فوراً عبر
-   * /api/campaigns/fund الذي يخصم المعلن نفسه ويُفعِّلها ضمن معاملة واحدة
-   * ذرية — بنفس نمط فتح المقالات المقفلة، بدل انتظار اعتماد يدوي.
+   * إنشاء حملة إعلانية — بحالة 'pending' بانتظار مراجعة الأدمن (تطابق قاعدة
+   * الأمان في firestore.rules التي كانت تشترط خطأً 'draft' فترفض كل عملية
+   * إنشاء بصمت). لا تُموَّل ولا تُفعَّل هنا إطلاقاً — الأدمن وحده يقرر
+   * الموافقة/الرفض عبر /api/campaigns/:id/review (انظر AdminAdsTab).
    */
   const handleCreateCampaign = async (campData: Partial<AdCampaign>) => {
     if (!requireAuth()) return;
@@ -2678,6 +2674,15 @@ export function App() {
       campaignName: campData.campaignName || '',
       description: campData.description || '',
       imageUrl: campData.imageUrl || '',
+      // كانت هذه الحقول الثلاثة تُملأ في نموذج الإنشاء (NewCampaignModal)
+      // ثم تُهمَل هنا كلياً عند إعادة بناء newCamp من الصفر — فيُحفظ فيديو
+      // الإعلان دائماً فارغاً، وأهم من ذلك: نوع "ترويج قناة/حساب اجتماعي"
+      // بأكمله (promotionKind) يضيع فتُحفظ الحملة كإعلان موقع عادي، رغم أن
+      // AdSlot.tsx وSocialPromoCta.tsx يعتمدان عليه فعلياً لعرض واجهة الترويج
+      // الصحيحة.
+      videoUrl: campData.videoUrl,
+      uploadedVideoUrl: campData.uploadedVideoUrl,
+      promotionKind: campData.promotionKind,
       destinationUrl: campData.destinationUrl || '',
       type: campData.type || pricingModel,
       pricingModel,
@@ -2716,16 +2721,41 @@ export function App() {
     });
 
     try {
-      const campaignId = await saveCampaignToFirestore(newCamp);
-      const result = await fundCampaign(campaignId);
-      if (result.alreadyFunded) {
-        alert('تم إنشاء الحملة.');
-      } else {
-        alert(`تم إطلاق حملتك الإعلانية فوراً! خُصم $${result.budget.toFixed(2)} من رصيدك.`);
-      }
+      await saveCampaignToFirestore(newCamp);
+      alert('تم إرسال حملتك الإعلانية إلى الإدارة للمراجعة، وستصلك رسالة فور الموافقة عليها أو رفضها.');
+
+      // إخطار كل حسابات الأدمن بطلب حملة جديدة بانتظار المراجعة — بلا هذا
+      // الإشعار كانت الحملة تصل لقاعدة البيانات دون أن يعلم الأدمن إطلاقاً
+      // إلا بفتح لوحة الإعلانات يدوياً كل مرة.
+      users
+        .filter((u) => u.role === 'admin')
+        .forEach((admin) => {
+          createNotificationInFirestore({
+            userId: admin.id,
+            actorId: currentUser.id,
+            type: 'campaign',
+            title: 'حملة إعلانية جديدة بانتظار المراجعة',
+            message: `أرسل ${currentUser.fullName} حملة إعلانية جديدة "${newCamp.campaignName}" بانتظار موافقتك.`
+          }).catch((err) => console.error('تعذر إخطار الأدمن بالحملة الجديدة:', err));
+        });
     } catch (err: any) {
-      console.error('تعذر حفظ/تمويل الحملة:', err);
+      console.error('تعذر حفظ الحملة:', err);
       alert(err?.message || 'تعذر حفظ الحملة. تحقق من اتصالك ثم حاول مجدداً.');
+    }
+  };
+
+  // Admin Approve/Reject Pending Campaign
+  const handleReviewCampaign = async (campaignId: string, decision: 'approve' | 'reject') => {
+    try {
+      const result = await reviewCampaign(campaignId, decision);
+      setCampaigns((prev) =>
+        prev.map((c) =>
+          c.id === campaignId ? { ...c, status: result.decision === 'approve' ? 'active' : 'rejected' } : c
+        )
+      );
+    } catch (err: any) {
+      console.error('تعذر معالجة قرار مراجعة الحملة:', err);
+      alert(err?.message || 'تعذر معالجة القرار. حاول مجدداً.');
     }
   };
 
@@ -3402,6 +3432,7 @@ export function App() {
               );
               await setCampaignStatusInFirestore(campaignId, status);
             }}
+            onReviewCampaign={handleReviewCampaign}
             onUpdateArticleStatus={async (articleId, status) => {
               setArticles((prev) =>
                 prev.map((a) => (a.id === articleId ? { ...a, status } : a))
@@ -3611,6 +3642,7 @@ export function App() {
               );
               await setCampaignStatusInFirestore(campaignId, status);
             }}
+            onReviewCampaign={handleReviewCampaign}
             onUpdateArticleStatus={async (articleId, status) => {
               setArticles((prev) =>
                 prev.map((a) => (a.id === articleId ? { ...a, status } : a))

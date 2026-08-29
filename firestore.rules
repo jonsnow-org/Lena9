@@ -146,9 +146,14 @@ service cloud.firestore {
 
       allow read: if true;
 
+      // ملاحظة: الحقل يجب أن يطابق الحالة الفعلية التي يرسلها كود الإنشاء
+      // (App.tsx/NewCampaignModal.tsx) وهي 'pending' — كانت هذه القاعدة
+      // تشترط 'draft' رغم أن لا مكان في الكود يرسل هذه القيمة إطلاقاً، فكان
+      // كل إنشاء حملة يُرفض بصمت من Firestore (permission-denied) قبل حتى
+      // وصوله لصفحة الأدمن.
       allow create: if isSignedIn()
         && request.resource.data.advertiserId == request.auth.uid
-        && request.resource.data.status == 'draft'
+        && request.resource.data.status == 'pending'
         && (!('totalSpent' in request.resource.data) || request.resource.data.totalSpent == 0)
         && (!('totalBudget' in request.resource.data) || request.resource.data.totalBudget == 0)
         && (!('impressionsCount' in request.resource.data) || request.resource.data.impressionsCount == 0)
@@ -439,12 +444,17 @@ service cloud.firestore {
       // يمنع انتحال إشعار مزيف (مثلاً "تم إيداع $$$ في محفظتك") من مستخدم عادي:
       // إشعارات التفاعل الاجتماعي يجب أن يكون actorId هو نفس منشئ الطلب فعلاً،
       // وإشعارات المال/النظام لا يُنشئها إلا الأدمن (تُطابق تدفق لوحة الإدارة الفعلي).
+      // 'campaign' انتقل لمجموعة "الفاعل نفسه" (لا يبقى حصرياً للأدمن): يحتاجه
+      // المعلن لإخطار الأدمن بحملة جديدة بانتظار المراجعة، ويحتاجه الأدمن
+      // لإخطار المعلن بالموافقة/الرفض — كلاهما بلا أي تأثير مالي حقيقي (تغيير
+      // حالة/رصيد الحملة الفعلي يمر حصراً عبر isAdmin() أو معاملة السيرفر في
+      // /api/campaigns/:id/approve)، فهو بنفس مستوى ثقة إشعار "أعجب بمنشورك".
       allow create: if isSignedIn()
         && request.resource.data.type in ['like', 'comment', 'follow', 'earning', 'withdrawal', 'campaign', 'system', 'share', 'reply']
         && (
-          (request.resource.data.type in ['like', 'comment', 'follow', 'share', 'reply']
+          (request.resource.data.type in ['like', 'comment', 'follow', 'share', 'reply', 'campaign']
             && request.resource.data.actorId == request.auth.uid)
-          || (request.resource.data.type in ['earning', 'withdrawal', 'campaign', 'system'] && isAdmin())
+          || (request.resource.data.type in ['earning', 'withdrawal', 'system'] && isAdmin())
         );
     }
 

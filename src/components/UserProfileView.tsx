@@ -201,6 +201,7 @@ interface UserProfileViewProps {
   onApproveKyc?: (userId: string) => void;
   onBanUser?: (userId: string) => void;
   onUpdateCampaignStatus?: (campaignId: string, status: AdCampaign['status']) => void;
+  onReviewCampaign?: (campaignId: string, decision: 'approve' | 'reject') => void;
   onUpdateArticleStatus?: (articleId: string, status: Article['status']) => void;
   onResolveFraudFlag?: (flagId: string, action: 'resolved' | 'dismissed') => void;
   onSelectUser?: (user: User) => void;
@@ -286,6 +287,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   onApproveKyc,
   onBanUser,
   onUpdateCampaignStatus,
+  onReviewCampaign,
   onUpdateArticleStatus,
   onResolveFraudFlag,
   onSelectUser,
@@ -1607,6 +1609,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   externalAdsConfig={externalAdsConfig}
                   onSaveExternalAdsConfig={onSaveExternalAdsConfig}
                   onUpdateCampaignStatus={onUpdateCampaignStatus}
+                  onReviewCampaign={onReviewCampaign}
                   onUpdatePromotionStatus={onUpdatePromotionStatus}
                   initialSubTab={adsSubTab}
                 />

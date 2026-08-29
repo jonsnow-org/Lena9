@@ -150,25 +150,21 @@ export async function unlockArticle(articleId: string): Promise<UnlockArticleRes
   return data;
 }
 
-export interface FundCampaignResult {
-  success: boolean;
-  alreadyFunded: boolean;
-  budget: number;
-  newBalance: number | null;
-}
-
 /**
- * تمويل/تفعيل حملة إعلانية فور إنشائها — يخصم المعلن نفسه ميزانيتها
- * المطلوبة فوراً (بدل انتظار اعتماد يدوي من الأدمن لم يعد له مسار فعلي).
+ * قرار الأدمن على حملة إعلانية بانتظار المراجعة — اعتماد (يخصم ميزانية
+ * المعلن ويُفعِّلها) أو رفض. للأدمن فقط (السيرفر يتحقق من الصلاحية).
  */
-export async function fundCampaign(campaignId: string): Promise<FundCampaignResult> {
+export async function reviewCampaign(
+  campaignId: string,
+  decision: 'approve' | 'reject'
+): Promise<{ success: boolean; decision: 'approve' | 'reject' }> {
   const headers = await authHeaders();
-  const res = await fetch('/api/campaigns/fund', {
+  const res = await fetch(`/api/campaigns/${encodeURIComponent(campaignId)}/review`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ campaignId })
+    body: JSON.stringify({ decision })
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data?.message || 'تعذر تمويل الحملة.');
+  if (!res.ok) throw new Error(data?.message || 'تعذر معالجة قرار المراجعة.');
   return data;
 }

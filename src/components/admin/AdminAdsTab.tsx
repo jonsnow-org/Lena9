@@ -25,6 +25,7 @@ interface AdminAdsTabProps {
   externalAdsConfig?: ExternalAdsConfig;
   onSaveExternalAdsConfig?: (config: ExternalAdsConfig) => void | Promise<void>;
   onUpdateCampaignStatus?: (campaignId: string, status: AdCampaign['status']) => void;
+  onReviewCampaign?: (campaignId: string, decision: 'approve' | 'reject') => void;
   onUpdatePromotionStatus?: (promotionId: string, status: 'approved' | 'rejected') => void;
   initialSubTab?: 'ad_campaigns' | 'promotions' | 'external_networks';
 }
@@ -38,9 +39,23 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
   externalAdsConfig,
   onSaveExternalAdsConfig,
   onUpdateCampaignStatus,
+  onReviewCampaign,
   onUpdatePromotionStatus,
   initialSubTab = 'ad_campaigns'
 }) => {
+  // معرّف الحملة قيد المعالجة حالياً (موافقة/رفض) — يمنع ضغطاً مزدوجاً قد
+  // يخصم المعلن مرتين بسبب معاملة سيرفر تفتح مباشرة عند أول ضغطة.
+  const [reviewingCampaignId, setReviewingCampaignId] = useState<string | null>(null);
+
+  const handleReviewClick = async (campaignId: string, decision: 'approve' | 'reject') => {
+    if (!onReviewCampaign || reviewingCampaignId) return;
+    setReviewingCampaignId(campaignId);
+    try {
+      await onReviewCampaign(campaignId, decision);
+    } finally {
+      setReviewingCampaignId(null);
+    }
+  };
   const [subTab, setSubTab] = useState<'ad_campaigns' | 'promotions' | 'external_networks'>(
     initialSubTab
   );
@@ -375,11 +390,31 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
                     </div>
 
                     {/* Actions */}
-                    {onUpdateCampaignStatus && (
+                    {camp.status === 'pending' && onReviewCampaign && (
                       <div className="flex items-center gap-2 pt-2 border-t border-slate-800/60">
-                        {camp.status === 'pending' && (
+                        <button
+                          onClick={() => handleReviewClick(camp.id, 'approve')}
+                          disabled={reviewingCampaignId === camp.id}
+                          className="flex-1 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs transition-colors flex items-center justify-center gap-1"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>{reviewingCampaignId === camp.id ? 'جارٍ التنفيذ...' : 'موافقة وتفعيل'}</span>
+                        </button>
+                        <button
+                          onClick={() => handleReviewClick(camp.id, 'reject')}
+                          disabled={reviewingCampaignId === camp.id}
+                          className="py-1.5 px-3 rounded-xl bg-slate-800 hover:bg-rose-600 disabled:opacity-50 text-slate-300 hover:text-white font-bold text-xs transition-colors flex items-center justify-center gap-1"
+                        >
+                          <XCircle className="w-3.5 h-3.5" />
+                          <span>رفض</span>
+                        </button>
+                      </div>
+                    )}
+                    {onUpdateCampaignStatus && !(camp.status === 'pending' && onReviewCampaign) && (
+                      <div className="flex items-center gap-2 pt-2 border-t border-slate-800/60">
+                        {camp.status === 'pending' && !onReviewCampaign && (
                           <p className="flex-1 text-[11px] text-amber-400 leading-relaxed">
-                            الحملة بانتظار أن يموّلها المعلن نفسه من محفظته — لا يمكن تفعيلها إدارياً بلا رصيد حقيقي مخصوم.
+                            الحملة بانتظار مراجعة الإدارة.
                           </p>
                         )}
                         {camp.status === 'paused' && (
@@ -400,7 +435,7 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
                             <span>إيقاف مؤقت</span>
                           </button>
                         )}
-                        {camp.status !== 'rejected' && (
+                        {camp.status !== 'rejected' && !(camp.status === 'pending' && onReviewCampaign) && (
                           <button
                             onClick={() => onUpdateCampaignStatus(camp.id, 'rejected')}
                             className="py-1.5 px-3 rounded-xl bg-slate-800 hover:bg-rose-600 text-slate-400 hover:text-white font-bold text-xs transition-colors"
