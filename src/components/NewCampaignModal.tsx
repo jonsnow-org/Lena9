@@ -24,7 +24,7 @@ import { MediaUploadInput } from './MediaUploadInput';
 // البانر العادي ($0.08) لأنها زر دعوة بسيط لا مساحة بانر كاملة، ولأن
 // المعلن يشحن رصيده دفعة واحدة (حد أدنى $50) فلا داعي لتحميل كل نقرة
 // برسوم تحويل الدفع — تلك تُدفع مرة واحدة عند الشحن فقط.
-const SOCIAL_PROMO_CPC_RATE = 0.05;
+const SOCIAL_PROMO_CPC_RATE = 0.02;
 
 const PROMOTION_PLATFORMS: { id: Exclude<PromotionKind, 'website'>; label: string; urlHint: string }[] = [
   { id: 'telegram', label: 'قناة تيليجرام', urlHint: 'https://t.me/channel_username' },
@@ -106,6 +106,31 @@ export const NewCampaignModal: React.FC<NewCampaignModalProps> = ({
   const estimatedCost =
     pricingModel === 'fixed' ? fixedDurationPrices[durationHours] || 9 : totalBudget;
 
+  // إعادة الحقول لقيمها الافتراضية بعد إرسال ناجح — هذه النافذة مثبَّتة
+  // دائماً في App.tsx (isOpen يتحكم فقط بالعرض عبر return null أعلاه، لا
+  // تُفكَّك من الشجرة)، فكانت حالتها الداخلية تبقى محفوظة بين فتحة وأخرى:
+  // يفتح المعلن النافذة بعد إرسال حملة سابقة فيجد بيانات تلك الحملة نفسها
+  // لا تزال معبَّأة، رغم أنها أُرسلت وحُفظت بالفعل.
+  const resetForm = () => {
+    setCampaignName('');
+    setDescription('');
+    setAdText('');
+    setImageUrl(PRESET_BANNERS[0].url);
+    setCustomImageInput('');
+    setVideoUrl('');
+    setUploadedVideoUrl('');
+    setMediaMode('image');
+    setPromotionKind('website');
+    setDestinationUrl('https://literium.app');
+    setPricingModel('cpc');
+    setPlacementType('writer');
+    setDurationHours(48);
+    setCpcRate(0.08);
+    setCpmRate(1.0);
+    setTotalBudget(20);
+    setTargetCategory('all');
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
@@ -151,10 +176,10 @@ export const NewCampaignModal: React.FC<NewCampaignModalProps> = ({
         durationHours: pricingModel === 'fixed' ? durationHours : undefined,
         cpcRate: pricingModel === 'cpc' ? cpcRate : undefined,
         cpmRate: pricingModel === 'cpm' ? cpmRate : undefined,
-        // القيم أدناه غير مؤثرة فعلياً — handleCreateCampaign في App.tsx
-        // يبني الحملة من الصفر بحالة 'pending' وميزانية صفر دائماً، ثم
-        // يموّلها فوراً من محفظة المعلن نفسه عبر /api/campaigns/fund بعد
-        // الحفظ مباشرة (بلا اعتماد إداري يدوي).
+        // القيم أدناه غير مؤثرة فعلياً — handleCreateCampaign في App.tsx يبني
+        // الحملة من الصفر بحالة 'pending' وميزانية صفر دائماً، بانتظار أن
+        // يعتمدها الأدمن (موافقة أو رفض) عبر /api/campaigns/:id/review، وهو
+        // من يخصم ميزانية المعلن الفعلية عند الموافقة فقط.
         requestedBudget: estimatedCost,
         totalBudget: 0,
         totalSpent: 0,
@@ -173,6 +198,7 @@ export const NewCampaignModal: React.FC<NewCampaignModalProps> = ({
         confetti({ particleCount: 60, spread: 60 });
       } catch {}
 
+      resetForm();
       onClose();
     } catch (err: any) {
       setErrorMsg(err?.message || 'حدث خطأ أثناء حفظ الحملة. يرجى المحاولة مرة أخرى.');
