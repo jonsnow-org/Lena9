@@ -249,6 +249,33 @@ export async function updateCampaignStatsInFirestore(
   }
 }
 
+/**
+ * يضيف مبلغاً ذرّياً (increment) لإنفاق الحملة بدل كتابة رقم مطلق محسوب
+ * من نسخة محلية قديمة من الحملة — مطلوب لأن server.ts (مكافأة التحقق
+ * الاجتماعي في recordVerificationAndReward) يزيد نفس الحقل ذرّياً في نفس
+ * الوقت المحتمل؛ لو كتبت هذه الدالة رقماً مطلقاً بدل increment كان يمكن
+ * أن تُلغي (تكتب فوق) زيادة server.ts الذرّية لو تزامن الاثنان. حالة
+ * markCompletedIfBudgetExceeded تُقيَّم على أفضل تقدير متاح محلياً (قد
+ * تتأخر دورة واحدة نادراً عن اللحظة الفعلية لتجاوز الميزانية، دون أي خطر
+ * مالي حقيقي — خصم محفظة المعلن منفصل تماماً ومحمي بحده الأدنى صفر).
+ */
+export async function incrementCampaignSpendInFirestore(
+  campaignId: string,
+  spendDelta: number,
+  markCompleted: boolean
+) {
+  try {
+    const campRef = doc(db, 'campaigns', campaignId);
+    await updateDoc(campRef, {
+      totalSpent: increment(spendDelta),
+      ...(markCompleted ? { status: 'completed' } : {})
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `campaigns/${campaignId}`);
+    throw error;
+  }
+}
+
 // 3. Ads Collection (Ad units / creative placements)
 export function subscribeToAds(
   onAds: (ads: any[]) => void,

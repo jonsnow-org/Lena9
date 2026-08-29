@@ -218,6 +218,7 @@ import {
   setCampaignStatusInFirestore,
   deleteCampaignInFirestore,
   updateCampaignStatsInFirestore,
+  incrementCampaignSpendInFirestore,
   setArticleStatusInFirestore,
   resolveFraudFlagInFirestore
 } from './services/firestoreService';
@@ -940,17 +941,15 @@ export function App() {
       for (const [campId, spend] of Object.entries(campaignSpend)) {
         const camp: any = campaigns.find((c: any) => c.id === campId);
         if (!camp) continue;
-        const newTotalSpent = Number(((camp.totalSpent || 0) + spend).toFixed(4));
-        const budgetExhausted = camp.totalBudget > 0 && newTotalSpent >= camp.totalBudget;
+        const roundedSpend = Number(spend.toFixed(4));
+        const estimatedNewTotal = (camp.totalSpent || 0) + roundedSpend;
+        const budgetExhausted = camp.totalBudget > 0 && estimatedNewTotal >= camp.totalBudget;
         try {
-          await updateCampaignStatsInFirestore(campId, {
-            totalSpent: newTotalSpent,
-            ...(budgetExhausted ? { status: 'completed' } : {})
-          });
+          await incrementCampaignSpendInFirestore(campId, roundedSpend, budgetExhausted);
           setCampaigns((prev) =>
             prev.map((c) =>
               c.id === campId
-                ? { ...c, totalSpent: newTotalSpent, status: budgetExhausted ? 'completed' : c.status }
+                ? { ...c, totalSpent: (c.totalSpent || 0) + roundedSpend, status: budgetExhausted ? 'completed' : c.status }
                 : c
             )
           );

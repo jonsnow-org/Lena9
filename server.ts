@@ -2277,12 +2277,6 @@ async function startServer() {
         return res.status(403).json({ error: 'kyc_required', message: 'يجب إتمام التحقق من الهوية (KYC) قبل السحب.' });
       }
 
-      // الرصيد يُقرأ من Firestore مباشرة — لا نثق بأي رقم يرسله العميل.
-      const available = Number(userData.availableBalance || 0);
-      if (amount > available) {
-        return res.status(400).json({ error: 'insufficient_balance', message: 'المبلغ يتجاوز رصيدك المتاح للسحب.' });
-      }
-
       const accountId = userData.stripeConnectedAccountId as string | undefined;
       if (!accountId) {
         return res.status(409).json({ error: 'payout_account_not_connected', message: 'يجب ربط حساب استلام الأموال أولاً.' });
@@ -2292,16 +2286,43 @@ async function startServer() {
         return res.status(409).json({ error: 'payout_account_not_ready', message: 'حساب استلام الأموال لم يكتمل تفعيله بعد.' });
       }
 
+      // ⚠️ حجز المبلغ ذرّياً (خصمه فوراً) قبل استدعاء Stripe مباشرة — وليس
+      // بعده. كان الكود سابقاً يتحقق من الرصيد بقراءة عادية بلا أي قفل ثم
+      // ينفّذ التحويل الحقيقي فوراً، والخصم الفعلي من availableBalance
+      // يحدث فقط بعد نجاح التحويل. ضغطتان متزامنتان (نقر مزدوج، أو تبويبان)
+      // كانتا تقرآن نفس الرصيد المتاح قبل أن يخصمه أي منهما، فتمرّان معاً
+      // من فحص الرصيد وتُنفّذان تحويلين حقيقيين عبر Stripe يتجاوز مجموعهما
+      // رصيد المستخدم الفعلي — خسارة مالية حقيقية للمنصة لا يمكن التراجع
+      // عنها. الآن: الحجز (الخصم) يحدث أولاً ضمن معاملة Firestore واحدة
+      // (تُسلسل تلقائياً أي طلبين متزامنين لنفس المستخدم فيفشل الثاني هنا
+      // فوراً قبل وصوله لـ Stripe إطلاقاً)، ثم يُستدعى التحويل الحقيقي، وإن
+      // فشل التحويل تُعاد الحجز إلى رصيد المستخدم (معاملة تعويضية).
+      try {
+        await db.runTransaction(async (tx) => {
+          const freshSnap = await tx.get(userRef);
+          if (!freshSnap.exists) throw new Error('user_not_found');
+          const freshAvailable = Number(freshSnap.data()?.availableBalance || 0);
+          if (amount > freshAvailable) {
+            throw new Error('insufficient_balance');
+          }
+          tx.update(userRef, { availableBalance: Number((freshAvailable - amount).toFixed(2)) });
+        });
+      } catch (reserveErr: any) {
+        if (reserveErr?.message === 'insufficient_balance') {
+          return res.status(400).json({ error: 'insufficient_balance', message: 'المبلغ يتجاوز رصيدك المتاح للسحب.' });
+        }
+        throw reserveErr;
+      }
+
       const payout = await activeProvider.createPayout({ accountId, amount, currency: 'usd', uid });
       if (!payout.ok) {
+        // فشل التحويل الفعلي — إعادة المبلغ المحجوز لرصيد المستخدم فوراً
+        // (increment ذرّي، بمعزل عن أي تغيّر آخر طرأ على الرصيد في الأثناء).
+        await userRef.update({ availableBalance: FieldValue.increment(amount) });
         return res.status(502).json({ error: 'payout_failed', message: payout.reason || 'فشل تنفيذ التحويل.' });
       }
 
-      // خصم الرصيد وتسجيل الحركة ذرّياً معاً بعد نجاح التحويل الفعلي فقط.
       await db.runTransaction(async (tx) => {
-        const freshSnap = await tx.get(userRef);
-        const freshAvailable = Number(freshSnap.data()?.availableBalance || 0);
-        tx.update(userRef, { availableBalance: Number(Math.max(0, freshAvailable - amount).toFixed(2)) });
         tx.set(db.collection('payoutRequests').doc(), {
           userId: uid,
           amount,
