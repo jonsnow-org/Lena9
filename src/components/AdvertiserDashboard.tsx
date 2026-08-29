@@ -47,7 +47,10 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
   const totalClicks = campaigns.reduce((acc, c) => acc + c.clicksCount, 0);
   const totalSpent = campaigns.reduce((acc, c) => acc + c.totalSpent, 0);
   const avgCtr = totalImpressions > 0 ? ((totalClicks / totalImpressions) * 100).toFixed(2) : '0.00';
-  const totalFraudBlocked = campaigns.reduce((acc, c) => acc + (c.fraudBlockedCount || 0), 0);
+  // كانت تقرأ camp.fraudBlockedCount — حقل غير موجود إطلاقاً في AdCampaign
+  // (types.ts يعرّف blockedFraudClicks فقط)، فتظهر البطاقة صفراً دائماً
+  // مهما بلغ عدد النقرات المحظورة فعلياً.
+  const totalFraudBlocked = campaigns.reduce((acc, c) => acc + (c.blockedFraudClicks || 0), 0);
 
   return (
     <div className="space-y-6 animate-fade-in pb-16">
@@ -230,8 +233,8 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
                         <span className="text-brand-300">الظهور: {camp.impressionsCount}</span>
                         <span className="text-cyan-300">النقرات: {camp.clicksCount}</span>
                         <span className="text-emerald-400">الإنفاق: ${camp.totalSpent.toFixed(2)} / ${camp.totalBudget.toFixed(2)}</span>
-                        {camp.fraudBlockedCount !== undefined && camp.fraudBlockedCount > 0 && (
-                          <span className="text-rose-400 font-bold">حظر {camp.fraudBlockedCount} نقرة مشبوهة 🛡️</span>
+                        {camp.blockedFraudClicks !== undefined && camp.blockedFraudClicks > 0 && (
+                          <span className="text-rose-400 font-bold">حظر {camp.blockedFraudClicks} نقرة مشبوهة 🛡️</span>
                         )}
                       </div>
                     </div>
