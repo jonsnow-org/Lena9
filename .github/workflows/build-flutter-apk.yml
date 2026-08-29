@@ -267,7 +267,19 @@ jobs:
       # FlutterFire فعلياً منذ شهور طويلة. هذا عكس ما فعلته الخطوة السابقة
       # تماماً (كانت تُفعّل true بدل false) — كانت مبنية على قراءة خاطئة
       # لتحذير غامض قبل أن يتوفر سجل الخطأ الصريح هذا.
-      - name: Disable AGP 9 built-in Kotlin (official Gradle-suggested workaround)
+      # آخر ثلاث محاولات فشلت جميعها بنمط متطابق تماماً: البناء يتقدّم بنجاح
+      # حتى يصل إلى رسالة "Caught exception: Already watching path" من
+      # Gradle نفسه، ثم يتجمّد بصمت لعدة دقائق قبل أن يُقتل خارجياً من
+      # مُشغّل GitHub ("received a shutdown signal"). استبعدنا تجاوز حد
+      # استخدام GitHub Actions (لوحة الفوترة تُظهر الاستخدام ضمن الباقة
+      # المجانية بالكامل) وامتلاء القرص (السجل نفسه يُظهر ٢٩ جيجا متاحة قبل
+      # البناء، وحتى بعد تحرير ١٦ جيجا إضافية لم يتغيّر شيء) — فتكرار العطل
+      # عند نفس رسالة Gradle بالضبط ثلاث مرات يشير لمشكلة حقيقية في ميزة
+      # مراقبة نظام الملفات الخاصة بـ Gradle (VFS watch) نفسها، لا علاقة لها
+      # بالموارد. لا فائدة من هذه الميزة أصلاً في بناء CI (بناء واحد كامل من
+      # الصفر في كل مرة، لا بناءات متكررة تستفيد من المراقبة الحية) — تعطيلها
+      # صراحة هو الحل المستهدف بدل تخمين آخر.
+      - name: Disable AGP 9 built-in Kotlin (official Gradle-suggested workaround) + Gradle VFS watch (hang workaround)
         working-directory: flutter_app
         run: |
           python3 - <<'PY'
@@ -275,7 +287,7 @@ jobs:
 
           path = "android/gradle.properties"
           text = open(path).read() if os.path.exists(path) else ""
-          for key, value in (("android.builtInKotlin", "false"), ("android.newDsl", "false")):
+          for key, value in (("android.builtInKotlin", "false"), ("android.newDsl", "false"), ("org.gradle.vfs.watch", "false")):
               pattern = rf'^{re.escape(key)}=.*$'
               line = f'{key}={value}'
               if re.search(pattern, text, re.MULTILINE):
