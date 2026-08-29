@@ -49,14 +49,13 @@ export const LiveClock: React.FC = () => {
       <div className="flex items-center gap-1 sm:gap-1.5 font-mono text-[11px] sm:text-xs font-black text-slate-900 dark:text-emerald-300 tracking-tight" dir="ltr">
         {sameTime ? (
           <span title="توقيت تركيا وسوريا الموحد (UTC+3)" className="flex items-center gap-1">
-            <span className="text-[10px] opacity-90">🇹🇷🇸🇾</span>
             <span className="text-teal-700 dark:text-teal-300 font-bold">{turkeyTime}</span>
           </span>
         ) : (
           <span className="flex items-center gap-1">
-            <span title="توقيت تركيا">🇹🇷 {turkeyTime}</span>
+            <span title="توقيت تركيا">{turkeyTime}</span>
             <span className="text-slate-400 dark:text-slate-600 font-normal">|</span>
-            <span title="توقيت سوريا">🇸🇾 {syriaTime}</span>
+            <span title="توقيت سوريا">{syriaTime}</span>
           </span>
         )}
       </div>

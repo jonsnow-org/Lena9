@@ -61,6 +61,7 @@ import { EditProfileModal } from './EditProfileModal';
 import { TweetCard } from './TweetCard';
 import { AdSlot } from './AdSlot';
 import { auth, resendVerificationEmail, checkAndReloadEmailVerification, OWNER_ADMIN_EMAIL } from '../firebase';
+import { onAuthStateChanged } from 'firebase/auth';
 import { MailWarning } from 'lucide-react';
 import { getCreatorEligibility } from '../utils/creatorEligibility';
 import { CreatorEligibilityCard } from './CreatorEligibilityCard';
@@ -453,7 +454,17 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
       }
     };
 
-    verifyCurrentStatus();
+    // كان الفحص الأولي يعتمد فقط على auth.currentUser عند أول تشغيل لهذا
+    // الأثر — لكن currentUserId يُقرأ من localStorage فوراً عند إقلاع
+    // التطبيق (قبل أن يُعيد Firebase Auth تأكيد الجلسة فعلياً)، فيُشغَّل هذا
+    // الأثر مرة واحدة و auth.currentUser لا يزال null، فيبقى الشرط أعلاه
+    // دائم الفشل ويظل شريط "لم يتم تأكيد بريدك" ظاهراً دائماً حتى لمستخدم
+    // مؤكَّد فعلاً، إلى أن يبدّل نافذة المتصفح ويعود (focus) بمحض الصدفة.
+    // الاشتراك في onAuthStateChanged يضمن إعادة الفحص فوراً بمجرد أن يصبح
+    // auth.currentUser جاهزاً فعلياً، بلا انتظار أي حدث خارجي.
+    const unsubscribeAuth = onAuthStateChanged(auth, () => {
+      verifyCurrentStatus();
+    });
 
     const onFocus = () => {
       verifyCurrentStatus();
@@ -461,6 +472,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
     window.addEventListener('focus', onFocus);
     return () => {
       isMounted = false;
+      unsubscribeAuth();
       window.removeEventListener('focus', onFocus);
     };
   }, [currentUser.id, isOwnerOrAdmin]);

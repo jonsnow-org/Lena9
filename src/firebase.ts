@@ -226,6 +226,20 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
 // Firestore User Operations
 // ----------------------------------------------------
 
+/** يتحقق مما إذا كان هناك مستند مستخدم موجود بالفعل بهذا البريد (بحث عبر
+ *  مجموعة users بدل الاعتماد فقط على قيد "بريد واحد لكل حساب" في إعدادات
+ *  Firebase Auth نفسها — بعض المشاريع تُبقيه معطَّلاً، فيسمح عندها
+ *  createUserWithEmailAndPassword بإنشاء حساب Auth منفصل تماماً لنفس
+ *  البريد بمجرد تغيير كلمة المرور، رغم أن Firestore يبقى المصدر الفعلي
+ *  لهوية المستخدم في هذا التطبيق). يُستخدم قبل التسجيل مباشرة لمنع هذا. */
+export async function emailHasExistingAccount(email: string): Promise<boolean> {
+  const normalized = email.trim().toLowerCase();
+  if (!normalized) return false;
+  const q = query(collection(db, 'users'), where('email', '==', normalized));
+  const snap = await getDocs(q);
+  return !snap.empty;
+}
+
 export async function fetchUserFromFirestore(uid: string): Promise<User | null> {
   const userDocRef = doc(db, 'users', uid);
   const snap = await getDoc(userDocRef);
@@ -551,6 +565,16 @@ export async function registerWithEmail(
   role: UserRole,
   profileData: Partial<User>
 ): Promise<User> {
+  // فحص مسبق عبر Firestore قبل أي محاولة إنشاء حساب — كان بالإمكان سابقاً
+  // إنشاء حساب Auth منفصل تماماً لنفس البريد بمجرد تغيير حرف واحد في كلمة
+  // المرور (auth/email-already-in-use لا يُرفع دائماً حسب إعداد المشروع)،
+  // فيصبح للبريد الواحد أكثر من حساب/كلمة مرور فعلية. الآن يُرفض التسجيل
+  // صراحة إن كان البريد مرتبطاً بحساب قائم بالفعل، ويُوجَّه المستخدم لتسجيل
+  // الدخول أو استعادة كلمة المرور بدل إنشاء حساب مكرر.
+  if (await emailHasExistingAccount(email)) {
+    throw new Error('هذا البريد الإلكتروني مسجَّل بحساب قائم بالفعل. سجّل الدخول به، أو استخدم "نسيت كلمة المرور؟" لاستعادة الوصول إليه.');
+  }
+
   // createUserWithEmailAndPassword fires the global onAuthStateChanged
   // listener (in App.tsx) essentially immediately — which races against
   // this function's own createOrUpdateUserDoc call below and may create
