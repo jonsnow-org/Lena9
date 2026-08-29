@@ -540,7 +540,7 @@ async function startServer() {
 
       // Check balance if charge is required
       if (shouldCharge) {
-        const currentBalance = Number(userData.availableBalance ?? userData.walletBalance ?? 0);
+        const currentBalance = Number(userData.walletBalance ?? 0);
         if (currentBalance < IMAGE_GENERATION_COST) {
           return res.status(402).json({
             error: 'insufficient_balance',
@@ -668,10 +668,12 @@ async function startServer() {
         try {
           const batch = db.batch();
 
-          // Deduct from User
+          // Deduct from User — من walletBalance (رصيد الإنفاق) فقط. كانت تُخصم
+          // أيضاً من availableBalance (أرباح الكاتب القابلة للسحب، مفهوم منفصل
+          // تماماً) رغم أن الفحص أعلاه يتحقق من walletBalance وحده الآن — أي
+          // إنفاق هنا كان يُنقص أرباحاً حقيقية غير متعلقة بالعملية إطلاقاً.
           batch.update(userDocRef, {
-            walletBalance: FieldValue.increment(-IMAGE_GENERATION_COST),
-            availableBalance: FieldValue.increment(-IMAGE_GENERATION_COST)
+            walletBalance: FieldValue.increment(-IMAGE_GENERATION_COST)
           });
 
           // Credit Owner
@@ -797,14 +799,13 @@ async function startServer() {
           if (!buyerSnap.exists) throw new Error('buyer_not_found');
 
           const buyerData = buyerSnap.data()!;
-          const currentBalance = Number(buyerData.availableBalance ?? buyerData.walletBalance ?? 0);
+          const currentBalance = Number(buyerData.walletBalance ?? 0);
           if (currentBalance < price) {
             throw new Error('insufficient_balance');
           }
 
           tx.update(buyerRef, {
-            walletBalance: FieldValue.increment(-price),
-            availableBalance: FieldValue.increment(-price)
+            walletBalance: FieldValue.increment(-price)
           });
           tx.set(purchaseRef, {
             buyerId: uid,
@@ -917,7 +918,7 @@ async function startServer() {
             if (raceData?.status !== 'pending') throw new Error('already_reviewed');
 
             const advertiserData = advertiserSnap.data()!;
-            const currentBalance = Number(advertiserData.availableBalance ?? advertiserData.walletBalance ?? 0);
+            const currentBalance = Number(advertiserData.walletBalance ?? 0);
             if (currentBalance < requestedBudget) {
               throw new Error('insufficient_balance');
             }
@@ -927,8 +928,7 @@ async function startServer() {
             const endDate = new Date(startDate.getTime() + durationHours * 60 * 60 * 1000);
 
             tx.update(advertiserRef, {
-              walletBalance: FieldValue.increment(-requestedBudget),
-              availableBalance: FieldValue.increment(-requestedBudget)
+              walletBalance: FieldValue.increment(-requestedBudget)
             });
             tx.update(campaignRef, {
               status: 'active',
