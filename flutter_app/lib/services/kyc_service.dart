@@ -14,7 +14,48 @@ class KycSubmitResult {
   KycSubmitResult({required this.success, this.status, required this.message});
 }
 
+class KycDocumentReview {
+  final String? imageUrl;
+  final String idType;
+  final String idNumber;
+  final String extractedName;
+  final String matchConfidence;
+  final String aiReasoning;
+
+  KycDocumentReview({
+    this.imageUrl,
+    required this.idType,
+    required this.idNumber,
+    required this.extractedName,
+    required this.matchConfidence,
+    required this.aiReasoning,
+  });
+}
+
 class KycService {
+  /// انعكاس مباشر لـ fetchKycDocumentForReview في kycApi.ts — للأدمن فقط
+  /// (GET /api/kyc/document/:userId، يتحقق الخادم من صلاحية الأدمن نفسه).
+  Future<KycDocumentReview?> fetchDocumentForReview({required String idToken, required String userId}) async {
+    try {
+      final res = await http.get(
+        Uri.parse('$kApiBaseUrl/api/kyc/document/$userId'),
+        headers: {'Authorization': 'Bearer $idToken'},
+      );
+      if (res.statusCode != 200) return null;
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      return KycDocumentReview(
+        imageUrl: data['imageUrl'] as String?,
+        idType: (data['idType'] ?? '') as String,
+        idNumber: (data['idNumber'] ?? '') as String,
+        extractedName: (data['extractedName'] ?? '') as String,
+        matchConfidence: (data['matchConfidence'] ?? 'none') as String,
+        aiReasoning: (data['aiReasoning'] ?? '') as String,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<KycSubmitResult> submitKycDocument({
     required String idToken,
     required String idType,

@@ -57,4 +57,70 @@ class ArticleService {
       return UnlockResult(success: false, alreadyUnlocked: false, message: 'تعذر الاتصال بالخادم. تحقق من اتصالك بالإنترنت.');
     }
   }
+
+  /// انعكاس مباشر لـ saveArticleToFirestore (مسار المقال الجديد فقط) في
+  /// firestoreService.ts — كتابة مباشرة على Firestore، بنفس القيم
+  /// الافتراضية للعدّادات (كلها صفر، تماماً كما تشترط firestore.rules
+  /// على allow create). status إما 'draft' أو 'published' فقط، كما في
+  /// محرر الموقع تماماً (لا حالة 'pending' من هذا المسار).
+  Future<String> publishArticle({
+    required String writerId,
+    required String writerName,
+    required String writerUsername,
+    required String writerAvatar,
+    required String title,
+    required String description,
+    required String content,
+    required String featuredImage,
+    required String category,
+    required List<String> tags,
+    required bool isLocked,
+    double? lockedPrice,
+    required String status, // 'draft' | 'published'
+  }) async {
+    final now = DateTime.now().toIso8601String();
+    final slug = title
+            .trim()
+            .toLowerCase()
+            .replaceAll(RegExp(r'\s+'), '-')
+            .replaceAll(RegExp(r'[^؀-ۿa-z0-9\-]'), '') +
+        '-${DateTime.now().millisecondsSinceEpoch}';
+    final wordCount = content.trim().isEmpty ? 0 : content.trim().split(RegExp(r'\s+')).length;
+    final readingTime = wordCount == 0 ? 1 : (wordCount / 180).ceil().clamp(1, 999);
+
+    final docRef = _db.collection('articles').doc();
+    await docRef.set({
+      'writerId': writerId,
+      'writerName': writerName,
+      'writerUsername': writerUsername,
+      'writerAvatar': writerAvatar,
+      'writerIsVerified': false,
+      'title': title,
+      'slug': slug,
+      'description': description,
+      'content': content,
+      'featuredImage': featuredImage,
+      'category': category,
+      'isLocked': isLocked,
+      'lockedPrice': isLocked ? (lockedPrice ?? 3.0) : null,
+      'readingTimeMinutes': readingTime,
+      'status': status,
+      'viewsCount': 0,
+      'likesCount': 0,
+      'sharesCount': 0,
+      'commentsCount': 0,
+      'purchasesCount': 0,
+      'rating': 0,
+      'ratingsCount': 0,
+      'revenueFromAds': 0,
+      'revenueFromSales': 0,
+      'totalRevenue': 0,
+      'publishedAt': status == 'draft' ? '' : now,
+      'tags': tags,
+      'id': docRef.id,
+      'createdAt': now,
+      'updatedAt': now,
+    });
+    return docRef.id;
+  }
 }

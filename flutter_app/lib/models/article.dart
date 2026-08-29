@@ -6,7 +6,7 @@ class Article {
   final String id;
   final String title;
   final String description;
-  final String content; // HTML، نفس محتوى محرر المقالات في الموقع
+  final String content; // نص عادي (plain text) — لا يوجد محرر HTML/Markdown في الموقع نفسه
   final String featuredImage;
   final String writerName;
   final String writerAvatar;

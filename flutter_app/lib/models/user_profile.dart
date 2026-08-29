@@ -12,6 +12,7 @@ class UserProfile {
   final bool isVerified;
   final bool isKycVerified;
   final bool isBanned;
+  final String role;
 
   UserProfile({
     required this.id,
@@ -22,6 +23,7 @@ class UserProfile {
     required this.isVerified,
     required this.isKycVerified,
     required this.isBanned,
+    this.role = '',
   });
 
   factory UserProfile.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -35,6 +37,7 @@ class UserProfile {
       isVerified: (data['isVerified'] ?? false) as bool,
       isKycVerified: (data['isKycVerified'] ?? false) as bool,
       isBanned: (data['isBanned'] ?? false) as bool,
+      role: (data['role'] ?? '') as String,
     );
   }
 }

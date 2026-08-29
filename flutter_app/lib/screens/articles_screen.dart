@@ -1,8 +1,10 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../models/article.dart';
 import '../services/article_service.dart';
 import 'article_detail_screen.dart';
+import 'article_editor_screen.dart';
 
 class ArticlesScreen extends StatefulWidget {
   const ArticlesScreen({super.key});
@@ -27,38 +29,54 @@ class _ArticlesScreenState extends State<ArticlesScreen> {
     await fresh;
   }
 
+  Future<void> _openEditor() async {
+    final published = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => const ArticleEditorScreen()),
+    );
+    if (published == true) _onRefresh();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<List<Article>>(
-      future: _articlesFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (snapshot.hasError) {
-          return _ErrorState(onRetry: _onRefresh);
-        }
-        final articles = snapshot.data ?? [];
-        if (articles.isEmpty) {
+    return Scaffold(
+      body: FutureBuilder<List<Article>>(
+        future: _articlesFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return _ErrorState(onRetry: _onRefresh);
+          }
+          final articles = snapshot.data ?? [];
+          if (articles.isEmpty) {
+            return RefreshIndicator(
+              onRefresh: _onRefresh,
+              child: ListView(
+                children: const [
+                  SizedBox(height: 120),
+                  Center(child: Text('لا توجد مقالات منشورة بعد')),
+                ],
+              ),
+            );
+          }
           return RefreshIndicator(
             onRefresh: _onRefresh,
-            child: ListView(
-              children: const [
-                SizedBox(height: 120),
-                Center(child: Text('لا توجد مقالات منشورة بعد')),
-              ],
+            child: ListView.builder(
+              padding: const EdgeInsets.all(12),
+              itemCount: articles.length,
+              itemBuilder: (context, index) => _ArticleCard(article: articles[index]),
             ),
           );
-        }
-        return RefreshIndicator(
-          onRefresh: _onRefresh,
-          child: ListView.builder(
-            padding: const EdgeInsets.all(12),
-            itemCount: articles.length,
-            itemBuilder: (context, index) => _ArticleCard(article: articles[index]),
-          ),
-        );
-      },
+        },
+      ),
+      floatingActionButton: FirebaseAuth.instance.currentUser == null
+          ? null
+          : FloatingActionButton(
+              tooltip: 'كتابة مقال',
+              onPressed: _openEditor,
+              child: const Icon(Icons.edit_note),
+            ),
     );
   }
 }
