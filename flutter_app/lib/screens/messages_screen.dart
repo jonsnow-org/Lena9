@@ -5,6 +5,7 @@ import '../models/conversation.dart';
 import '../services/auth_service.dart';
 import '../services/message_service.dart';
 import 'chat_screen.dart';
+import 'user_profile_screen.dart';
 
 class MessagesScreen extends StatelessWidget {
   const MessagesScreen({super.key});
@@ -60,9 +61,16 @@ class _ConversationTile extends StatelessWidget {
         final isTyping = conversation.isPartnerTyping(myUid);
 
         return ListTile(
-          leading: CircleAvatar(
-            backgroundImage: avatar.isNotEmpty ? NetworkImage(avatar) : null,
-            child: avatar.isEmpty ? const Icon(Icons.person) : null,
+          leading: GestureDetector(
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => UserProfileScreen(userId: partnerId, myUid: myUid)),
+              );
+            },
+            child: CircleAvatar(
+              backgroundImage: avatar.isNotEmpty ? NetworkImage(avatar) : null,
+              child: avatar.isEmpty ? const Icon(Icons.person) : null,
+            ),
           ),
           title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
           subtitle: Text(
