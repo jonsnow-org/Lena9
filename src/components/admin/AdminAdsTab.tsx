@@ -11,7 +11,8 @@ import {
   Play,
   Layers,
   AlertTriangle,
-  FileText
+  FileText,
+  Trash2
 } from 'lucide-react';
 import { User, AdCampaign, ArticlePromotion } from '../../types';
 import { ExternalAdsConfig } from '../../utils/externalAdsStore';
@@ -25,6 +26,7 @@ interface AdminAdsTabProps {
   externalAdsConfig?: ExternalAdsConfig;
   onSaveExternalAdsConfig?: (config: ExternalAdsConfig) => void | Promise<void>;
   onUpdateCampaignStatus?: (campaignId: string, status: AdCampaign['status']) => void;
+  onDeleteCampaign?: (campaignId: string) => void;
   onReviewCampaign?: (campaignId: string, decision: 'approve' | 'reject') => void;
   onUpdatePromotionStatus?: (promotionId: string, status: 'approved' | 'rejected') => void;
   initialSubTab?: 'ad_campaigns' | 'promotions' | 'external_networks';
@@ -39,6 +41,7 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
   externalAdsConfig,
   onSaveExternalAdsConfig,
   onUpdateCampaignStatus,
+  onDeleteCampaign,
   onReviewCampaign,
   onUpdatePromotionStatus,
   initialSubTab = 'ad_campaigns'
@@ -443,6 +446,17 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
                             رفض
                           </button>
                         )}
+                      </div>
+                    )}
+                    {onDeleteCampaign && (
+                      <div className="flex items-center justify-end pt-2 border-t border-slate-800/60">
+                        <button
+                          onClick={() => onDeleteCampaign(camp.id)}
+                          className="py-1.5 px-3 rounded-xl bg-slate-800 hover:bg-rose-600 text-slate-400 hover:text-white font-bold text-xs transition-colors flex items-center gap-1.5"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>حذف الحملة نهائياً</span>
+                        </button>
                       </div>
                     )}
                   </div>

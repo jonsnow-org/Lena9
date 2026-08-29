@@ -206,6 +206,7 @@ interface UserProfileViewProps {
   onUpdateCampaignStatus?: (campaignId: string, status: AdCampaign['status']) => void;
   onReviewCampaign?: (campaignId: string, decision: 'approve' | 'reject') => void;
   onToggleCampaignStatus?: (campaignId: string) => void;
+  onDeleteCampaign?: (campaignId: string) => void;
   onUpdateArticleStatus?: (articleId: string, status: Article['status']) => void;
   onResolveFraudFlag?: (flagId: string, action: 'resolved' | 'dismissed') => void;
   onSelectUser?: (user: User) => void;
@@ -294,6 +295,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   onUpdateCampaignStatus,
   onReviewCampaign,
   onToggleCampaignStatus,
+  onDeleteCampaign,
   onUpdateArticleStatus,
   onResolveFraudFlag,
   onSelectUser,
@@ -1023,6 +1025,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
               campaigns={myCampaigns}
               onOpenNewCampaign={onOpenNewCampaign || onOpenWallet}
               onToggleCampaignStatus={onToggleCampaignStatus || (() => {})}
+              onDeleteCampaign={onDeleteCampaign}
               advertiserBalance={currentUser.walletBalance || 0}
               onOpenDeposit={onOpenWallet}
               activeUsersCount={Math.max((users || []).length, 1)}
@@ -1581,6 +1584,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   externalAdsConfig={externalAdsConfig}
                   onSaveExternalAdsConfig={onSaveExternalAdsConfig}
                   onUpdateCampaignStatus={onUpdateCampaignStatus}
+                  onDeleteCampaign={onDeleteCampaign}
                   onReviewCampaign={onReviewCampaign}
                   onUpdatePromotionStatus={onUpdatePromotionStatus}
                   initialSubTab={adsSubTab}

@@ -541,6 +541,17 @@ export async function setCampaignStatusInFirestore(campaignId: string, status: s
   }
 }
 
+// firestore.rules تسمح بالحذف لصاحب الحملة نفسه أو الأدمن فقط
+// (resource.data.advertiserId == request.auth.uid || isAdmin()).
+export async function deleteCampaignInFirestore(campaignId: string) {
+  try {
+    await deleteDoc(doc(db, 'campaigns', campaignId));
+  } catch (e) {
+    handleFirestoreError(e, OperationType.DELETE, `campaigns/${campaignId}`);
+    throw e;
+  }
+}
+
 export async function setArticleStatusInFirestore(articleId: string, status: string) {
   try {
     await updateDoc(doc(db, 'articles', articleId), { status });
