@@ -18,7 +18,8 @@ import {
   CheckCircle2,
   BarChart3,
   Layers,
-  HelpCircle
+  HelpCircle,
+  Trash2
 } from 'lucide-react';
 import { AdCampaign } from '../types';
 import { SmartAiGuidanceCard } from './SmartAiGuidanceCard';
@@ -28,6 +29,7 @@ interface AdvertiserDashboardProps {
   campaigns: AdCampaign[];
   onOpenNewCampaign: () => void;
   onToggleCampaignStatus: (campaignId: string) => void;
+  onDeleteCampaign?: (campaignId: string) => void;
   advertiserBalance: number;
   onOpenDeposit: () => void;
   activeUsersCount?: number;
@@ -37,6 +39,7 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
   campaigns,
   onOpenNewCampaign,
   onToggleCampaignStatus,
+  onDeleteCampaign,
   advertiserBalance,
   onOpenDeposit,
   activeUsersCount
@@ -271,6 +274,16 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
                     >
                       <ExternalLink className="w-4 h-4" />
                     </a>
+
+                    {onDeleteCampaign && (
+                      <button
+                        onClick={() => onDeleteCampaign(camp.id)}
+                        className="p-2 rounded-xl bg-slate-800 hover:bg-rose-600 text-slate-300 hover:text-white transition-colors"
+                        title="حذف الحملة نهائياً"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
               ))

@@ -216,6 +216,8 @@ import {
   markKycDocumentReviewed,
   setUserBannedInFirestore,
   setCampaignStatusInFirestore,
+  deleteCampaignInFirestore,
+  updateCampaignStatsInFirestore,
   setArticleStatusInFirestore,
   resolveFraudFlagInFirestore
 } from './services/firestoreService';
@@ -889,6 +891,11 @@ export function App() {
       // 1) حساب المستحقات من الأحداث الصالحة فقط
       const writerEarnings: Record<string, number> = {};
       const advertiserSpend: Record<string, number> = {};
+      // ⚠️ لم يكن أي شيء يكتب هذا لمستند الحملة نفسه سابقاً — totalSpent
+      // الظاهر للمعلن في لوحته كان يبقى صفراً عملياً إلى الأبد رغم خصم
+      // المبلغ فعلياً من محفظته هنا، ولم يكن هناك أي طريقة لتوقّف الحملة
+      // تلقائياً عند استنفاد ميزانيتها.
+      const campaignSpend: Record<string, number> = {};
 
       valid.forEach((ev: any) => {
         const camp: any = campaigns.find((c: any) => c.id === ev.campaignId);
@@ -899,6 +906,7 @@ export function App() {
         if (camp.advertiserId) {
           advertiserSpend[camp.advertiserId] = (advertiserSpend[camp.advertiserId] || 0) + cost;
         }
+        campaignSpend[camp.id] = (campaignSpend[camp.id] || 0) + cost;
         // ⚠️ لا تُحتسب حصة الكاتب إلا إذا استوفى شروط منشئ المحتوى (متابعون
         // + مشاهدات صالحة + عمر حساب + عدد مقالات) وتحقق هويته (KYC) معاً.
         // الإعلان نفسه يستمر بالعرض بشكل طبيعي — القيد هنا على "احتساب"
@@ -923,6 +931,32 @@ export function App() {
         await adminAdjustUserBalance(advId, {
           walletBalance: Number(Math.max(0, current - spend).toFixed(2))
         });
+      }
+
+      // 2.5) تحديث الإنفاق الفعلي على مستند كل حملة + إيقافها تلقائياً
+      // ("مكتملة") فور استنفاد ميزانيتها بالكامل — بدون هذه الخطوة كان
+      // totalSpent يبقى صفراً في قاعدة البيانات مهما بلغ الإنفاق الحقيقي،
+      // ولا يوجد أي آلية توقف الحملة عند نفاد رصيدها.
+      for (const [campId, spend] of Object.entries(campaignSpend)) {
+        const camp: any = campaigns.find((c: any) => c.id === campId);
+        if (!camp) continue;
+        const newTotalSpent = Number(((camp.totalSpent || 0) + spend).toFixed(4));
+        const budgetExhausted = camp.totalBudget > 0 && newTotalSpent >= camp.totalBudget;
+        try {
+          await updateCampaignStatsInFirestore(campId, {
+            totalSpent: newTotalSpent,
+            ...(budgetExhausted ? { status: 'completed' } : {})
+          });
+          setCampaigns((prev) =>
+            prev.map((c) =>
+              c.id === campId
+                ? { ...c, totalSpent: newTotalSpent, status: budgetExhausted ? 'completed' : c.status }
+                : c
+            )
+          );
+        } catch (err) {
+          console.error(`تعذر تحديث إنفاق الحملة ${campId}:`, err);
+        }
       }
 
       // 3) إضافة حصص الكتّاب إلى الأرباح المجمّدة + تسجيلها
@@ -1769,6 +1803,35 @@ export function App() {
       setIsRefreshing(false);
     }
   };
+
+  // إنهاء تلقائي للحملات المنتهية زمنياً (endDate) رغم بقاء status='active'.
+  // بدون هذا، حملة انتهت مدتها تبقى تُعرض في كل المواضع (AdSlot يفلتر فقط
+  // على status==='active') إلى الأبد حتى يلاحظها الأدمن يدوياً. مقصورة على
+  // جلسة الأدمن فقط لأن قواعد Firestore لا تسمح لغير الأدمن/صاحب الحملة
+  // بتعديل status، وصاحب الحملة نفسه ممنوع صراحة من تعديله (انظر
+  // firestore.rules) — فتُترك هذه العملية لأول جلسة أدمن متصلة تلاحظها.
+  const expiredCampaignsSweepRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (currentUser.role !== 'admin') return;
+    const now = Date.now();
+    const expired = campaigns.filter(
+      (c) =>
+        c.status === 'active' &&
+        c.endDate &&
+        new Date(c.endDate).getTime() < now &&
+        !expiredCampaignsSweepRef.current.has(c.id)
+    );
+    if (expired.length === 0) return;
+    expired.forEach((c) => {
+      expiredCampaignsSweepRef.current.add(c.id);
+      updateCampaignStatsInFirestore(c.id, { status: 'completed' }).catch((err) =>
+        console.error(`تعذر إنهاء الحملة المنتهية ${c.id} تلقائياً:`, err)
+      );
+    });
+    setCampaigns((prev) =>
+      prev.map((c) => (expired.some((e) => e.id === c.id) ? { ...c, status: 'completed' } : c))
+    );
+  }, [campaigns, currentUser.role]);
 
   // Follow / Unfollow Writer
   // المتابعة: تُحفظ الآن في Firestore (مجموعة follows) بدلاً من الحالة
@@ -2812,6 +2875,30 @@ export function App() {
     }
   };
 
+  // حذف حملة إعلانية — متاح لصاحبها (المعلن) أو الأدمن فقط، مطابقةً
+  // لقواعد Firestore (allow delete: advertiserId == uid || isAdmin()).
+  const handleDeleteCampaign = async (campaignId: string) => {
+    const target = campaigns.find((c) => c.id === campaignId);
+    if (!target) return;
+    const isOwner = target.advertiserId === currentUser.id;
+    if (!isOwner && currentUser.role !== 'admin') {
+      alert('يمكن حذف الحملة من صاحبها أو إدارة المنصة فقط.');
+      return;
+    }
+    if (!window.confirm(`هل تريد حذف حملة "${target.campaignName}" نهائياً؟ لا يمكن التراجع عن هذا الإجراء.`)) {
+      return;
+    }
+    setCampaigns((prev) => prev.filter((c) => c.id !== campaignId));
+    try {
+      await deleteCampaignInFirestore(campaignId);
+    } catch (err) {
+      console.error('تعذر حذف الحملة:', err);
+      alert('تعذر حذف الحملة. حاول مجدداً.');
+      // استرجاع محلي عند فشل الحذف الفعلي
+      setCampaigns((prev) => (prev.some((c) => c.id === campaignId) ? prev : [...prev, target]));
+    }
+  };
+
   // KYC Save
   // إرسال الطلب نفسه (رفع صورة الوثيقة + التحليل الآلي بمطابقة الاسم) يتم
   // بالكامل داخل KycModal عبر POST /api/kyc/submit — يحتاج معالجة ملف
@@ -3474,6 +3561,7 @@ export function App() {
             }}
             onReviewCampaign={handleReviewCampaign}
             onToggleCampaignStatus={handleToggleCampaignStatus}
+            onDeleteCampaign={handleDeleteCampaign}
             onUpdateArticleStatus={async (articleId, status) => {
               setArticles((prev) =>
                 prev.map((a) => (a.id === articleId ? { ...a, status } : a))
@@ -3687,6 +3775,7 @@ export function App() {
             }}
             onReviewCampaign={handleReviewCampaign}
             onToggleCampaignStatus={handleToggleCampaignStatus}
+            onDeleteCampaign={handleDeleteCampaign}
             onUpdateArticleStatus={async (articleId, status) => {
               setArticles((prev) =>
                 prev.map((a) => (a.id === articleId ? { ...a, status } : a))
@@ -3783,6 +3872,7 @@ export function App() {
             campaigns={campaigns.filter((c) => c.advertiserId === currentUser.id)}
             onOpenNewCampaign={() => setIsNewCampaignOpen(true)}
             onToggleCampaignStatus={handleToggleCampaignStatus}
+            onDeleteCampaign={handleDeleteCampaign}
             advertiserBalance={currentUser.walletBalance || 0}
             onOpenDeposit={() => setIsWalletOpen(true)}
             activeUsersCount={Math.max(users.length, 1)}
