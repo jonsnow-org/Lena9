@@ -3320,6 +3320,7 @@ export function App() {
           onGoogleSignIn={(role: UserRole = 'reader') => {
             handleRealGoogleSignIn(role);
           }}
+          campaigns={campaigns}
         />
 
         {/* Auth Modal Triggered on Landing.
@@ -3666,6 +3667,8 @@ export function App() {
             followedWriterIds={followedWriterIds}
             onToggleBookmark={handleToggleBookmark}
             bookmarkedArticleIds={bookmarkedArticleIds}
+            campaigns={campaigns}
+            viewerId={currentUserId || null}
           />
         ) : (activeTab === 'articles' || activeTab === 'saved') && currentUser.id !== 'guest' ? (
           <UserProfileView
@@ -4476,6 +4479,8 @@ export function App() {
           setIsWalletOpen(false);
           setIsKycOpen(true);
         }}
+        campaigns={campaigns}
+        viewerId={currentUserId || null}
       />
 
       {/* نافذة الإيداع والسحب */}
@@ -4588,6 +4593,7 @@ export function App() {
             }
           }}
           onClose={() => setFollowListModal(null)}
+          campaigns={campaigns}
         />
       )}
 
@@ -4639,6 +4645,8 @@ export function App() {
             }
           }
         }}
+        campaigns={campaigns}
+        viewerId={currentUserId || null}
       />
 
       {/* Google Play 20-Tester Beta Modal */}

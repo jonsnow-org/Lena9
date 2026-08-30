@@ -15,9 +15,10 @@ import {
   Eye,
   MessageSquare
 } from 'lucide-react';
-import { Article, User } from '../types';
+import { Article, AdCampaign, User } from '../types';
 import { formatDateTimeAr } from '../utils/dateFormat';
 import { normalizeArabicSearch } from '../utils/arabicSearch';
+import { AdTickerBar } from './AdTickerBar';
 
 interface ExploreViewProps {
   articles: Article[];
@@ -28,6 +29,8 @@ interface ExploreViewProps {
   followedWriterIds: string[];
   onToggleBookmark: (articleId: string) => void;
   bookmarkedArticleIds: string[];
+  campaigns?: AdCampaign[];
+  viewerId?: string | null;
 }
 
 export const ExploreView: React.FC<ExploreViewProps> = ({
@@ -38,7 +41,9 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   onFollowWriter,
   followedWriterIds,
   onToggleBookmark,
-  bookmarkedArticleIds
+  bookmarkedArticleIds,
+  campaigns = [],
+  viewerId = null
 }) => {
   const [exploreQuery, setExploreQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<'trending' | 'top_rated' | 'writers' | 'locked'>('trending');
@@ -222,6 +227,8 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
           </p>
         )}
       </div>
+
+      <AdTickerBar slotId="explore_feed" campaigns={campaigns} viewerId={viewerId} externalPriority minHeightPx={68} />
 
       {/* Trending Tags Cloud */}
       {dynamicTrendingTags.length > 0 && (

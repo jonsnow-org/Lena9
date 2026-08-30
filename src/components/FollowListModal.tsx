@@ -1,6 +1,7 @@
 import React from 'react';
 import { X, Users, CheckCircle2 } from 'lucide-react';
-import { User } from '../types';
+import { User, AdCampaign } from '../types';
+import { AdTickerBar } from './AdTickerBar';
 
 interface FollowListModalProps {
   title: string;
@@ -10,6 +11,7 @@ interface FollowListModalProps {
   onToggleFollow: (userId: string) => void;
   onSelectUser: (user: User) => void;
   onClose: () => void;
+  campaigns?: AdCampaign[];
 }
 
 /** نافذة عرض قائمة "متابِعون" أو "يتابع" — قائمة حقيقية من مستندات
@@ -22,7 +24,8 @@ export const FollowListModal: React.FC<FollowListModalProps> = ({
   followedWriterIds,
   onToggleFollow,
   onSelectUser,
-  onClose
+  onClose,
+  campaigns = []
 }) => {
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-xs p-0 sm:p-4" onClick={onClose}>
@@ -42,6 +45,11 @@ export const FollowListModal: React.FC<FollowListModalProps> = ({
         </div>
 
         <div className="overflow-y-auto p-3 space-y-1">
+          {users.length > 0 && (
+            <div className="mb-1">
+              <AdTickerBar slotId="follow_list" campaigns={campaigns} viewerId={currentUserId} externalPriority minHeightPx={68} />
+            </div>
+          )}
           {users.length === 0 ? (
             <div className="text-center py-12">
               <Users className="w-8 h-8 text-slate-300 dark:text-slate-700 mx-auto mb-2" />

@@ -17,8 +17,9 @@ import {
   ExternalLink
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { Transaction, PaymentMethod } from '../types';
+import { Transaction, PaymentMethod, AdCampaign } from '../types';
 import { REVENUE_SHARES } from '../constants/revenueShares';
+import { AdTickerBar } from './AdTickerBar';
 import { MIN_DEPOSIT_USD, MIN_PAYOUT_USD } from '../constants/payoutRules';
 import {
   fetchPaymentStatus,
@@ -50,6 +51,8 @@ interface WalletModalProps {
   userRole: 'reader' | 'writer' | 'advertiser' | 'admin';
   isKycVerified?: boolean;
   onOpenKyc?: () => void;
+  campaigns?: AdCampaign[];
+  viewerId?: string | null;
 }
 
 // أي طلب سحب فوق هذا المبلغ يُطلب تأكيده مرتين — حماية من خطأ كتابي
@@ -67,7 +70,9 @@ export const WalletModal: React.FC<WalletModalProps> = ({
   onWithdraw,
   userRole,
   isKycVerified = false,
-  onOpenKyc
+  onOpenKyc,
+  campaigns = [],
+  viewerId = null
 }) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'deposit' | 'withdraw' | 'history'>('overview');
 
@@ -804,6 +809,9 @@ export const WalletModal: React.FC<WalletModalProps> = ({
           {/* History Tab */}
           {activeTab === 'history' && (
             <div className="space-y-3">
+              {transactions.length > 0 && (
+                <AdTickerBar slotId="wallet_history" campaigns={campaigns} viewerId={viewerId} minHeightPx={68} />
+              )}
               {transactions.length === 0 ? (
                 <p className="text-center py-8 text-xs text-slate-400">لا توجد عمليات سابقة</p>
               ) : (

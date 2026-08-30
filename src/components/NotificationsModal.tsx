@@ -12,7 +12,8 @@ import {
   Megaphone,
   Reply
 } from 'lucide-react';
-import { AppNotification } from '../types';
+import { AppNotification, AdCampaign } from '../types';
+import { AdTickerBar } from './AdTickerBar';
 
 interface NotificationsModalProps {
   isOpen: boolean;
@@ -25,6 +26,8 @@ interface NotificationsModalProps {
   /** الضغط على متن الإشعار (غير زر الحذف) — ينقل لوجهته الفعلية حسب
    *  نوعه ويعلّمه كمقروء معاً، بدل الاكتفاء بتعليمه كمقروء بلا أي وجهة. */
   onNotificationClick?: (notif: AppNotification) => void;
+  campaigns?: AdCampaign[];
+  viewerId?: string | null;
 }
 
 /** وقت نسبي مختصر (منذ...) بدل عرض التاريخ الخام ISO كما هو. */
@@ -50,7 +53,9 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
   onMarkOneAsRead,
   onDeleteOne,
   onClearAll,
-  onNotificationClick
+  onNotificationClick,
+  campaigns = [],
+  viewerId = null
 }) => {
   if (!isOpen) return null;
 
@@ -94,6 +99,9 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
+          {notifications.length > 0 && (
+            <AdTickerBar slotId="notifications_list" campaigns={campaigns} viewerId={viewerId} minHeightPx={68} />
+          )}
           {notifications.length === 0 ? (
             <div className="p-8 text-center text-xs text-slate-400">
               لا توجد إشعارات جديدة حالياً

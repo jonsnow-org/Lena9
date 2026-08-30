@@ -26,9 +26,10 @@ import {
   ArrowUpRight,
   MessageSquare
 } from 'lucide-react';
-import { Article, User, UserRole } from '../types';
+import { Article, User, UserRole, AdCampaign } from '../types';
 import { REVENUE_SHARES } from '../constants/revenueShares';
 import { CREATOR_ELIGIBILITY_THRESHOLDS } from '../utils/creatorEligibility';
+import { AdTickerBar } from './AdTickerBar';
 
 interface LandingPageProps {
   articles?: Article[];
@@ -44,6 +45,7 @@ interface LandingPageProps {
   language?: 'ar' | 'en';
   onToggleLanguage?: () => void;
   onOpenLegal?: (section: 'privacy' | 'terms' | 'about' | 'contact') => void;
+  campaigns?: AdCampaign[];
 }
 
 export const LandingPage: React.FC<LandingPageProps> = ({
@@ -59,7 +61,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   onToggleTheme = () => {},
   language = 'ar',
   onToggleLanguage = () => {},
-  onOpenLegal = (_s) => {}
+  onOpenLegal = (_s) => {},
+  campaigns = []
 }) => {
   const [activeFeatureTab, setActiveFeatureTab] = useState<'readers' | 'writers' | 'social' | 'advertisers'>('readers');
   const [previewCategory, setPreviewCategory] = useState<string>('all');
@@ -479,6 +482,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           </div>
         </div>
       </section>
+
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 relative z-10">
+        <AdTickerBar slotId="landing_page" campaigns={campaigns} viewerId={null} minHeightPx={68} />
+      </div>
 
       {/* Why Register - Additional Incentive Cards Section */}
       <section className="py-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto relative z-10">
