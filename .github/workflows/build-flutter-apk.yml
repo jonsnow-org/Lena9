@@ -600,3 +600,50 @@ jobs:
           name: Literium-flutter-signed-apk
           path: flutter_app/build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
+
+      # ⚠️ خطوة تشخيصية مستقلة تماماً عن التسليم أعلاه (الذي اكتمل بالفعل) —
+      # المستخدم لا يملك حاسوباً ولا adb، فلا وسيلة لديه لمعرفة سبب الانهيار
+      # الفوري على جهازه الحقيقي مباشرة. الحل: ننقل adb إلى هنا بدلاً من ذلك.
+      # نُشغّل نفس ملف APK الموقَّع (الحقيقي المُسلَّم أعلاه بالضبط) على محاكي
+      # اندرويد داخل هذا التشغيل نفسه، ونلتقط سجل logcat الحقيقي — الذي يكشف
+      # ليس فقط استثناءات Java (يلتقطها معالج العطل المُضاف أعلاه أيضاً) بل
+      # أيضاً الانهيارات الأصلية (native/SIGSEGV) التي لا يستطيع أي معالج
+      # Java على الإطلاق التقاطها مهما بكّرنا تثبيته — تتكفّل بها أداة
+      # debuggerd الخاصة بنظام اندرويد نفسه وتظهر في logcat تلقائياً بلا أي
+      # كود إضافي منا. صورة نظام x86_64 بمستوى API 35 تدعم ترجمة ABI
+      # للتطبيقات المبنية arm64 فقط (مؤكَّد من تجارب مجتمع GitHub Actions)،
+      # فنشغّل نفس APK الحقيقي مباشرة بلا حاجة لبناء نسخة x64 منفصلة.
+      # continue-on-error: true لأن هذه خطوة تشخيص إضافي فقط — تعثّرها (مثلاً
+      # فشل إقلاع المحاكي) يجب ألا يُظهر البناء الناجح فعلياً كفاشل.
+      - name: Enable KVM for the diagnostic emulator
+        continue-on-error: true
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Diagnostic run on emulator — capture real crash log (no user phone/adb needed)
+        continue-on-error: true
+        timeout-minutes: 12
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot
+          disable-animations: true
+          script: |
+            echo "===== إصدار/معمارية النظام داخل المحاكي ====="
+            adb shell getprop ro.build.version.release
+            adb shell getprop ro.product.cpu.abi
+            adb logcat -c
+            echo "===== تثبيت APK الحقيقي المُسلَّم (نفس الملف بالضبط) ====="
+            adb install -r flutter_app/build/app/outputs/flutter-apk/app-release.apk
+            echo "===== تشغيل التطبيق ====="
+            adb shell am start -n studio.ai.literium.literium_app/studio.ai.literium.literium_app.MainActivity
+            sleep 25
+            echo "===== هل العملية ما زالت حية بعد 25 ثانية؟ ====="
+            adb shell ps | grep literium || echo "لا توجد عملية بهذا الاسم — انهارت، أو لم تبدأ إطلاقاً."
+            echo "===== سجل logcat الكامل منذ التثبيت (يشمل انهيارات Java والانهيارات الأصلية/native معاً) ====="
+            adb logcat -d
