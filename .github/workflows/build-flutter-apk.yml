@@ -529,8 +529,18 @@ jobs:
 
           open(manifest_path, "w").write(text)
 
-          application_tag_line = next((l for l in text.split(chr(10)) if "<application" in l or 'android:name="studio.ai.literium' in l), "")
-          print("منطق التحقق: سطر وسم <application> بعد الحقن ->", application_tag_line.strip())
+          # ⚠️ الطباعة السابقة كانت تبحث سطراً سطراً عن "<application" فتلتقط
+          # فقط بداية الوسم (وسم <application> في قالب Flutter يمتد لعدة
+          # أسطر، وandroid:name يقع في سطر لاحق منفصل) — فلا تثبت شيئاً فعلياً
+          # عن نجاح الاستبدال. هذه المرة نبحث عن الوسم كاملاً عبر الأسطر
+          # (re.DOTALL) ونطبعه بالكامل — دليل قاطع لا لبس فيه.
+          full_tag_match = _re.search(r'<application.*?>', text, _re.DOTALL)
+          full_tag = full_tag_match.group(0) if full_tag_match else "!! لم يُعثر على وسم <application> إطلاقاً !!"
+          print("===== وسم <application> الكامل بعد الحقن =====")
+          print(full_tag)
+          print("===== يحتوي CrashHandlerApplication؟ ->", "CrashHandlerApplication" in full_tag, "=====")
+          if "CrashHandlerApplication" not in full_tag:
+              raise SystemExit("فشل حقن CrashHandlerApplication في وسم <application> — أوقف البناء بدل المتابعة بصمت.")
 
           proguard_path = "android/app/proguard-rules.pro"
           rules = open(proguard_path).read() if os.path.exists(proguard_path) else ""
