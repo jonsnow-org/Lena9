@@ -622,6 +622,41 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      # ⚠️ محاولة سابقة كتبت منطق if/then/fi مباشرة داخل حقل script: أدناه —
+      # فشلت بخطأ صياغة غامض ("end of file unexpected (expecting fi")،
+      # واتضح من السجل أن reactivecircus/android-emulator-runner ينفّذ كل
+      # سطر من script: في استدعاء `sh -c` منفصل تماماً (سطر بسطر)، لا كسكربت
+      # bash متصل واحد — فأي بنية تحتاج أكثر من سطر (if/then/fi، أو متغيّر
+      # يُقرأ في سطر لاحق) تتفكك ولا تعمل. الحل: كتابة المنطق كاملاً في ملف
+      # سكربت حقيقي أولاً (bash عادي يعمل بشكل طبيعي تماماً)، ثم استدعاؤه من
+      # script: كسطر واحد فقط — يتفادى القيد كلياً.
+      - name: Write emulator diagnostic script
+        run: |
+          mkdir -p /tmp/diag
+          cat > /tmp/diag/run.sh <<'DIAGSH'
+          #!/bin/bash
+          set -x
+          echo "DIAG: نظام $(adb shell getprop ro.build.version.release), معمارية $(adb shell getprop ro.product.cpu.abi)"
+          adb logcat -c
+          echo "DIAG_INSTALL_START"
+          adb install -r flutter_app/build/app/outputs/flutter-apk/app-release.apk 2>&1 | tail -5
+          echo "DIAG_INSTALL_END"
+          echo "DIAG_LAUNCH_START"
+          adb shell am start -n studio.ai.literium.literium_app/studio.ai.literium.literium_app.MainActivity 2>&1 | tail -5
+          echo "DIAG_LAUNCH_END"
+          sleep 25
+          PSOUT=$(adb shell ps | grep literium || true)
+          if [ -z "$PSOUT" ]; then
+            echo "DIAG_RESULT: انهارت العملية أو لم تبدأ — غير موجودة بعد 25 ثانية"
+          else
+            echo "DIAG_RESULT: العملية ما زالت حية بعد 25 ثانية -> $PSOUT"
+          fi
+          echo "DIAG_FILTERED_LOGCAT_START"
+          adb logcat -d | grep -iE "literium|FATAL EXCEPTION|AndroidRuntime|Fatal signal|backtrace|DEBUG.*pid|Process.*died|ActivityManager: (Start proc|Force finishing|Killing|Displayed)|ANR in|Unable to instantiate|ClassNotFoundException|UnsatisfiedLinkError|NoClassDefFoundError" || echo "لا توجد أي أسطر مطابقة — لا FATAL ولا ذِكر لاسم الحزمة إطلاقاً في كامل السجل."
+          echo "DIAG_FILTERED_LOGCAT_END"
+          DIAGSH
+          chmod +x /tmp/diag/run.sh
+
       - name: Diagnostic run on emulator — capture real crash log (no user phone/adb needed)
         continue-on-error: true
         timeout-minutes: 12
@@ -633,30 +668,4 @@ jobs:
           force-avd-creation: false
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot
           disable-animations: true
-          script: |
-            # ⚠️ التفريغ الكامل لـ "adb logcat -d" كان أول محاولة، لكن تبيّن أنه
-            # ضخم جداً (عشرات آلاف الأسطر من ضجيج خدمات اندرويد العامة —
-            # AiAiFed وGetConfigSnapshotOp وfederatedcompute وغيرها، لا علاقة
-            # لها بتطبيقنا) — أداة قراءة سجلات CI المتاحة لي تعرض فقط جزءاً
-            # محدوداً من نهاية سجل الوظيفة كاملة، فكان هذا الضجيج يطغى تماماً
-            # على مخرجاتنا الفعلية (نتيجة adb install/ps وأي سطر عطل حقيقي)
-            # ويدفعها خارج النافذة المتاحة. هذه المرة: تصفية logcat مباشرة هنا
-            # (grep) قبل الطباعة، فلا يخرج من هذه الخطوة إلا القليل المهم.
-            echo "DIAG: نظام $(adb shell getprop ro.build.version.release), معمارية $(adb shell getprop ro.product.cpu.abi)"
-            adb logcat -c
-            echo "DIAG_INSTALL_START"
-            adb install -r flutter_app/build/app/outputs/flutter-apk/app-release.apk 2>&1 | tail -5
-            echo "DIAG_INSTALL_END"
-            echo "DIAG_LAUNCH_START"
-            adb shell am start -n studio.ai.literium.literium_app/studio.ai.literium.literium_app.MainActivity 2>&1 | tail -5
-            echo "DIAG_LAUNCH_END"
-            sleep 25
-            PSOUT=$(adb shell ps | grep literium || true)
-            if [ -z "$PSOUT" ]; then
-              echo "DIAG_RESULT: انهارت العملية أو لم تبدأ — غير موجودة بعد 25 ثانية"
-            else
-              echo "DIAG_RESULT: العملية ما زالت حية بعد 25 ثانية -> $PSOUT"
-            fi
-            echo "DIAG_FILTERED_LOGCAT_START"
-            adb logcat -d | grep -iE "literium|FATAL EXCEPTION|AndroidRuntime|Fatal signal|backtrace|DEBUG.*pid|Process.*died|ActivityManager: (Start proc|Force finishing|Killing|Displayed)|ANR in|Unable to instantiate|ClassNotFoundException|UnsatisfiedLinkError|NoClassDefFoundError" || echo "لا توجد أي أسطر مطابقة — لا FATAL ولا ذِكر لاسم الحزمة إطلاقاً في كامل السجل."
-            echo "DIAG_FILTERED_LOGCAT_END"
+          script: bash /tmp/diag/run.sh
