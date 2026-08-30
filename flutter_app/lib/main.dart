@@ -120,7 +120,22 @@ class _WebShellScreenState extends State<WebShellScreen> {
   }
 
   WebViewController _buildController() {
-    final controller = WebViewController()
+    // ⚠️ بلا هذا التحديد الصريح يستخدم WebView على أندرويد وضع "Virtual
+    // Display" الافتراضي — يرسم المحتوى كصورة/texture ثابتة أثناء السحب
+    // ولا يحدّثها إلا بعد توقف اللمس تماماً، وهذا بالضبط سبب "التكسر" الذي
+    // يظهر أثناء السحب للأعلى ثم يُصلَح فجأة عند التوقف. "Hybrid
+    // Composition" يُركِّب WebView كطبقة Android حقيقية (hardware layer)
+    // بدل صورة مُلتقَطة، فيُحدَّث بصرياً بشكل مستمر أثناء السحب — يُفترض أن
+    // يُحسِّن أيضاً الثقل العام في التنقل، لا فقط مشكلة السحب.
+    late final PlatformWebViewControllerCreationParams params;
+    if (WebViewPlatform.instance is AndroidWebViewPlatform) {
+      params = AndroidWebViewControllerCreationParams(
+        displayWithHybridComposition: true,
+      );
+    } else {
+      params = const PlatformWebViewControllerCreationParams();
+    }
+    final controller = WebViewController.fromPlatformCreationParams(params)
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       // ⚠️ عامل المستخدم الافتراضي لأي WebView على أندرويد يحتوي علامة
       // "; wv)" التي تكشف لخوادم Google (تسجيل الدخول بحساب Google، وهو
