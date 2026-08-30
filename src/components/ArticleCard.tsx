@@ -63,24 +63,24 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
 
         {/* Top Badges */}
         <div className="absolute top-3 inset-x-3 flex items-center justify-between pointer-events-none">
-          <span className="inline-flex items-center gap-1 rounded-full bg-slate-950/75 backdrop-blur-md px-3 py-1 text-[11px] font-bold text-teal-300 border border-teal-500/20 shadow-xs">
+          <span className="inline-flex items-center gap-1 rounded-full bg-slate-950/90 px-3 py-1 text-[11px] font-bold text-teal-300 border border-teal-500/20 shadow-xs">
             {getCategoryLabel(article.category)}
           </span>
 
           {article.isLocked ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 backdrop-blur-md px-3 py-1 text-xs font-black text-slate-950 shadow-md">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 px-3 py-1 text-xs font-black text-slate-950 shadow-md">
               <Lock className="w-3.5 h-3.5 stroke-[2.5]" />
               <span>مقال حصري ({article.lockedPrice || 2.99}$)</span>
             </span>
           ) : (
-            <span className="inline-flex items-center gap-1 rounded-full bg-teal-600/90 backdrop-blur-md px-2.5 py-0.5 text-[11px] font-black text-white shadow-xs">
+            <span className="inline-flex items-center gap-1 rounded-full bg-teal-600 px-2.5 py-0.5 text-[11px] font-black text-white shadow-xs">
               قراءة مجانية
             </span>
           )}
         </div>
 
         {/* Publish Date & Time — تاريخ وساعة النشر بدقة واضحة للقارئ */}
-        <div className="absolute bottom-2.5 start-3 flex items-center gap-1.5 rounded-xl bg-slate-950/85 backdrop-blur-md px-2.5 py-1 text-[11px] font-bold text-teal-300 border border-teal-500/30 shadow-sm">
+        <div className="absolute bottom-2.5 start-3 flex items-center gap-1.5 rounded-xl bg-slate-950/95 px-2.5 py-1 text-[11px] font-bold text-teal-300 border border-teal-500/30 shadow-sm">
           <Clock className="w-3 h-3 text-teal-400" />
           <span>{formatDateTimeAr(article.publishedAt)}</span>
         </div>

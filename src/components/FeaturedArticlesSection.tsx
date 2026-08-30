@@ -89,7 +89,7 @@ export const FeaturedArticlesSection: React.FC<FeaturedArticlesSectionProps> = (
 
                 {/* Top Badges */}
                 <div className="absolute top-3 inset-x-3 flex items-center justify-between">
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900/85 backdrop-blur-md text-[11px] font-extrabold text-teal-300 border border-teal-500/30 shadow-xs">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900/95 text-[11px] font-extrabold text-teal-300 border border-teal-500/30 shadow-xs">
                     <Star className="w-3 h-3 text-amber-400 fill-amber-400" />
                     <span>مختار للتحرير</span>
                   </span>
@@ -100,7 +100,7 @@ export const FeaturedArticlesSection: React.FC<FeaturedArticlesSectionProps> = (
                       <span>{article.lockedPrice || 2.99}$</span>
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-teal-600/90 backdrop-blur-md text-[11px] font-bold text-white shadow-xs">
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-teal-600 text-[11px] font-bold text-white shadow-xs">
                       مجاني
                     </span>
                   )}
@@ -108,7 +108,7 @@ export const FeaturedArticlesSection: React.FC<FeaturedArticlesSectionProps> = (
 
                 {/* Category & Publish Date over image */}
                 <div className="absolute bottom-3 inset-x-3 flex items-center justify-between text-xs text-white/90">
-                  <span className="px-2.5 py-0.5 rounded-lg bg-teal-950/80 backdrop-blur-sm text-[11px] font-bold text-teal-300 border border-teal-500/20">
+                  <span className="px-2.5 py-0.5 rounded-lg bg-teal-950/92 text-[11px] font-bold text-teal-300 border border-teal-500/20">
                     {getCategoryLabel(article.category)}
                   </span>
 

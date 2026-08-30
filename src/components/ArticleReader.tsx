@@ -334,11 +334,11 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
   const getThemeHeaderClass = () => {
     switch (readerTheme) {
       case 'sepia':
-        return 'bg-[#faf3e0]/95 text-[#382b22] border-[#e8dcc4]';
+        return 'bg-[#faf3e0]/98 text-[#382b22] border-[#e8dcc4]';
       case 'charcoal':
-        return 'bg-[#0b0f17]/95 text-[#e2e8f0] border-[#1e293b]';
+        return 'bg-[#0b0f17]/98 text-[#e2e8f0] border-[#1e293b]';
       default:
-        return 'bg-white/95 dark:bg-slate-900/95 text-slate-900 dark:text-slate-100 border-slate-200/80 dark:border-slate-800';
+        return 'bg-white/98 dark:bg-slate-900/98 text-slate-900 dark:text-slate-100 border-slate-200/80 dark:border-slate-800';
     }
   };
 
@@ -354,7 +354,7 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
         </div>
 
         {/* Sticky Header Bar */}
-        <header className={`sticky top-0 z-30 flex items-center justify-between px-3.5 sm:px-6 py-3 backdrop-blur-md border-b transition-colors ${getThemeHeaderClass()}`}>
+        <header className={`sticky top-0 z-30 flex items-center justify-between px-3.5 sm:px-6 py-3 border-b transition-colors ${getThemeHeaderClass()}`}>
           <button
             onClick={onClose}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-teal-500 hover:text-white text-slate-700 dark:text-slate-300 font-bold text-xs sm:text-sm transition-all active:scale-95 touch-manipulation"
