@@ -491,6 +491,8 @@ jobs:
           open(os.path.join(pkg_dir, "CrashHandlerApplication.kt"), "w").write(dedent(application_kt))
           open(os.path.join(pkg_dir, "CrashReportActivity.kt"), "w").write(dedent(activity_kt))
 
+          import re as _re
+
           manifest_path = "android/app/src/main/AndroidManifest.xml"
           text = open(manifest_path).read()
 
@@ -498,8 +500,24 @@ jobs:
               idx = text.find("<application")
               if idx == -1:
                   raise SystemExit("لم يُعثر على وسم <application> في AndroidManifest.xml")
-              if "android:name" not in text[idx:text.find(">", idx)]:
-                  text = text[:idx + len("<application")] + ' android:name="studio.ai.literium.literium_app.CrashHandlerApplication"' + text[idx + len("<application"):]
+              tag_end = text.find(">", idx)
+              tag = text[idx:tag_end]
+              # ⚠️ قالب Flutter الافتراضي يضع بالفعل android:name="${applicationName}"
+              # (متغيّر Gradle يُحلَّل عادة إلى android.app.Application العادية) —
+              # فحص "هل يوجد android:name؟" وحده كان يجدها موجودة فعلاً ويتجاوز
+              # الحقن تماماً، فتبقى فئتنا مُصرَّفة داخل APK لكن غير مربوطة أبداً
+              # كفئة التطبيق الفعلية. يجب استبدال القيمة الموجودة دائماً، لا
+              # تخطي الحقن لمجرد وجود أي قيمة سابقة.
+              if "android:name=" in tag:
+                  tag = _re.sub(
+                      r'android:name="[^"]*"',
+                      'android:name="studio.ai.literium.literium_app.CrashHandlerApplication"',
+                      tag,
+                      count=1,
+                  )
+              else:
+                  tag = tag + ' android:name="studio.ai.literium.literium_app.CrashHandlerApplication"'
+              text = text[:idx] + tag + text[tag_end:]
 
           if "CrashReportActivity" not in text:
               activity_tag = (
@@ -510,6 +528,9 @@ jobs:
               text = text.replace("</application>", activity_tag + "    </application>")
 
           open(manifest_path, "w").write(text)
+
+          application_tag_line = next((l for l in text.split(chr(10)) if "<application" in l or 'android:name="studio.ai.literium' in l), "")
+          print("منطق التحقق: سطر وسم <application> بعد الحقن ->", application_tag_line.strip())
 
           proguard_path = "android/app/proguard-rules.pro"
           rules = open(proguard_path).read() if os.path.exists(proguard_path) else ""
