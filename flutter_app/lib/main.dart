@@ -136,9 +136,21 @@ class _WebShellScreenState extends State<WebShellScreen> {
       // عرض صفحة تسجيل الدخول برسالة "This browser or app may not be
       // secure" — استبدال عامل المستخدم بسلسلة Chrome عادية (بلا "; wv)")
       // هو الحل العملي المعتاد لهذه المشكلة تحديداً في تطبيقات WebView.
+      //
+      // ⚠️ لكن هذا بالتحديد ألغى قدرة كود الموقع على معرفة أنه يعمل داخل
+      // التطبيق: منطق الكشف القديم (installState.ts) كان مبنياً بالكامل
+      // لمعمارية TWA السابقة (display-mode:standalone، أو referrer بادئته
+      // android-app://) — لا شيء من هذا يتفعّل تلقائياً داخل WebView عادي
+      // مضمَّن هكذا. النتيجة: زر "تحميل التطبيق" (مخصَّص لزوار المتصفح فقط)
+      // وبوابة حماية appSafe لشبكات الإعلانات (تمنع عرض شبكات غير مؤكَّدة
+      // التوافق مع سياسات التطبيقات داخل APK تحديداً) كلاهما كانا يظنان أن
+      // التطبيق "متصفح عادي" دائماً. الحل: إلحاق علامة مخصَّصة لا علاقة لها
+      // بفحص Google بنهاية السلسلة (بعد "Mobile Safari/537.36" — Google
+      // يبحث عن "; wv)" تحديداً، لا عن أي نص إضافي لاحق) يتحقق منها كود
+      // الموقع عبر navigator.userAgent.
       ..setUserAgent(
         'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) '
-        'Chrome/125.0.0.0 Mobile Safari/537.36',
+        'Chrome/125.0.0.0 Mobile Safari/537.36 LiteriumNativeApp/1',
       )
       ..setBackgroundColor(Colors.white)
       ..setNavigationDelegate(

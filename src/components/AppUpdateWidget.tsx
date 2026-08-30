@@ -1,27 +1,18 @@
 import React, {useState} from 'react';
 import {Download, RefreshCw} from 'lucide-react';
 import {useAppUpdate} from '../hooks/useAppUpdate';
+import {isRunningAsInstalledApp} from '../utils/installState';
 
 // عنصر عائم مستقل تماماً عن App (كشاشة البدء SplashScreen) — لا يحتاج أي
-// بيانات من حالة التطبيق الضخمة. يفرّق بين سياقين باستخدام معيار قياسي
-// لاكتشاف تطبيقات TWA/PWA المثبَّتة: display-mode:standalone (أندرويد/كل
-// المتصفحات) أو document.referrer ببادئة android-app:// (خاص بالـ TWA).
+// بيانات من حالة التطبيق الضخمة. يفرّق بين سياقين عبر isRunningAsInstalledApp
+// (installState.ts — نفس دالة الكشف المستخدمة لبوابة حماية appSafe
+// للإعلانات، بدل نسخة محلية منفصلة كانت مكررة هنا وقد تنحرف عنها):
 //
 //  - داخل تطبيق الهاتف المثبَّت: زر "تحديث" فقط، ويظهر فقط عند وجود نسخة
 //    أحدث منشورة، ويختفي تلقائياً (يُفكَّك العنصر بالكامل) بعد تطبيق التحديث
 //    لأن إعادة التحميل تجلب رقم البناء الجديد فتصبح النسختان متطابقتين.
 //  - داخل متصفح عادي (لم يُثبَّت بعد): زر "تحميل التطبيق" يظهر دائماً، ويظهر
 //    بجانبه زر "تحديث" أيضاً لو كانت نسخة الموقع المحمَّلة قديمة.
-function isRunningAsInstalledApp(): boolean {
-  try {
-    if (window.matchMedia('(display-mode: standalone)').matches) return true;
-    if (document.referrer.startsWith('android-app://')) return true;
-    if ((window.navigator as unknown as {standalone?: boolean}).standalone) return true;
-  } catch {
-    // بيئات نادرة قد ترمي هنا (بعض متصفحات الويب فيو) — نتعامل معها كمتصفح عادي
-  }
-  return false;
-}
 
 export const AppUpdateWidget: React.FC = () => {
   const {updateAvailable, applyUpdate} = useAppUpdate();
