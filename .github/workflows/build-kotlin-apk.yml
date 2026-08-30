@@ -1,0 +1,141 @@
+name: Build Kotlin Native Android APK
+
+# يبني تطبيق Literium الأصيل الجديد المكتوب بـKotlin/Jetpack Compose بالكامل
+# (android-native/) — يستبدل نسخة Flutter+WebView السابقة (flutter_app/)
+# لأن تشغيل محركي عرض معاً في نفس العملية (Flutter/Skia وWebView/Chromium)
+# كان يجعل التطبيق أثقل وأبطأ بشكل ملحوظ من الموقع نفسه داخل Chrome —
+# محرك عرض واحد فقط هنا (Compose الأصيل)، بلا أي WebView في أي مكان.
+#
+# يعيد استخدام نفس أسرار GitHub الموجودة فعلاً من مسار flutter_app (نفس
+# تسجيل تطبيق Firebase Android، ونفس مفتاح التوقيع) — بلا حاجة لأي إعداد
+# جديد في Firebase Console أو توليد مفتاح توقيع جديد يكسر التحديث فوق أي
+# تثبيت سابق موجود على جهاز المستخدم.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'android-native/**'
+      - '.github/workflows/build-kotlin-apk.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build-kotlin-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # نفس الدرس المستفاد من flutter_app: تحرير مساحة أدوات غير مستخدَمة
+      # هنا (dotnet/haskell/حزم ضخمة/صور Docker) قبل مرحلة R8 الثقيلة —
+      # android: false يحافظ على SDK اندرويد لأننا نحتاجه فعلياً،
+      # swap-storage: false لأنه يزيل ملف تبادل GitHub الافتراضي بدل إضافة
+      # مساحة، وهذا يُلغي وسادة أمان ذاكرة حقيقية لا داعي للتضحية بها.
+      - name: Free disk space (prevent runner disk exhaustion during Gradle assembleRelease)
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          android: false
+          tool-cache: false
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: false
+
+      - name: Allocate extra swap space
+        run: |
+          free -h
+          sudo fallocate -l 6G /extra-swapfile
+          sudo chmod 600 /extra-swapfile
+          sudo mkswap /extra-swapfile
+          sudo swapon /extra-swapfile
+          free -h
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # ⚠️ بلا wrapper (gradlew/gradle-wrapper.jar) عمداً: gradle-wrapper.jar
+      # ملف ثنائي (binary) لا يمكن كتابته بأمان كنص عادي في هذا المستودع من
+      # بيئة كتابة الكود (لا Gradle مثبَّت هنا لتوليده حقيقياً) — بدلاً من
+      # الالتزام بملف ثنائي مصنوع يدوياً وقد يكون تالفاً، يوفّر setup-gradle
+      # نفسه إصدار Gradle حقيقياً جاهزاً على PATH مباشرة.
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      # نفس سرّ google-services.json المستخدم فعلاً لتطبيق flutter_app —
+      # applicationId مطابق تماماً (studio.ai.literium.literium_app) فهو
+      # صالح بلا أي تعديل لتسجيل Firebase نفسه.
+      - name: Restore google-services.json from secret
+        working-directory: android-native
+        run: |
+          echo "${{ secrets.FLUTTER_GOOGLE_SERVICES_JSON_BASE64 }}" | base64 -d > app/google-services.json
+
+      # نفس مفتاح التوقيع المستخدم فعلاً لكل بنايات flutter_app السابقة —
+      # ضروري ليبقى هذا التطبيق قابلاً للتحديث فوق أي تثبيت APK سابق موقَّع
+      # بنفس المفتاح على جهاز المستخدم بلا الحاجة لحذف يدوي.
+      - name: Restore signing keystore from secret
+        working-directory: android-native
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > app/literium.keystore
+
+      - name: Build signed release APK
+        working-directory: android-native
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        # رقم الإصدار (versionCode) يُشتق من ${{ github.run_number }} عبر
+        # خاصية Gradle project property "versionCode" (يقرأها app/build.gradle.kts)
+        # حتى يبقى دائماً أعلى من أي بناء سابق تلقائياً — نفس الدرس المستفاد
+        # من مشكلة "يجب حذف النسخة السابقة" التي واجهناها مع flutter_app.
+        run: gradle :app:assembleRelease -PversionCode=${{ github.run_number }} --stacktrace
+
+      - name: Verify built APK's actual versionCode
+        run: |
+          AAPT=$(find /usr/local/lib/android/sdk/build-tools -name aapt 2>/dev/null | sort -V | tail -1)
+          if [ -z "$AAPT" ]; then
+            AAPT=$(find "${ANDROID_HOME:-/usr}" "${ANDROID_SDK_ROOT:-/usr}" -name aapt 2>/dev/null | sort -V | tail -1)
+          fi
+          echo "===== معلومات الحزمة الفعلية من aapt ====="
+          "$AAPT" dump badging android-native/app/build/outputs/apk/release/app-release.apk | grep "^package:"
+
+      - name: Upload signed APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Literium-kotlin-signed-apk
+          path: android-native/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+
+      # يبقي زر "تحميل التطبيق" بالموقع (public/downloads/Literium.apk)
+      # مطابقاً دائماً لآخر نسخة Kotlin ناجحة — نفس نمط الخطوة المضافة إلى
+      # build-flutter-apk.yml، والدفع هنا لفرع هذا التشغيل نفسه
+      # (github.ref_name) لأن التسليم الفعلي حالياً عبر حزمة zip من رأس هذا
+      # الفرع، لا عبر main مباشرة.
+      - name: Sync in-app download button with this build
+        run: |
+          cp android-native/app/build/outputs/apk/release/app-release.apk public/downloads/Literium.apk
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add public/downloads/Literium.apk
+          if git diff --cached --quiet; then
+            echo "No change in the built APK — skipping commit."
+            exit 0
+          fi
+          git commit -m "Sync in-app download with latest Kotlin native APK build [skip ci]"
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:${{ github.ref_name }}; then
+              exit 0
+            fi
+            echo "Push rejected (attempt $attempt) — rebasing onto latest origin/${{ github.ref_name }} and retrying..."
+            git fetch origin ${{ github.ref_name }}
+            git rebase origin/${{ github.ref_name }}
+            sleep 3
+          done
+          echo "::error::Failed to push the synced APK after 5 attempts."
+          exit 1

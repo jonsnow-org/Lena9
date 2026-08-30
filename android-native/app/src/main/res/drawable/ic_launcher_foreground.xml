@@ -1,0 +1,16 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- علامة بسيطة (كتاب مفتوح مبسَّط) داخل المنطقة الآمنة لأيقونات
+         Android التكيّفية (دائرة قطرها 66dp في المنتصف) — أيقونة نائبة
+         احترافية بسيطة، قابلة للاستبدال لاحقاً بشعار حقيقي مصمَّم. -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,32 C48,27 38,25 30,26 C28,26.2 26,28 26,30 L26,66 C26,68 28,69.5 30,69.3 C38,68.5 48,70.5 54,75 C60,70.5 70,68.5 78,69.3 C80,69.5 82,68 82,66 L82,30 C82,28 80,26.2 78,26 C70,25 60,27 54,32 Z" />
+    <path
+        android:strokeColor="#0D9488"
+        android:strokeWidth="2"
+        android:pathData="M54,32 L54,75" />
+</vector>
