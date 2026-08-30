@@ -210,15 +210,24 @@ jobs:
           # حاجة لتعديله هنا.
           #
           # ⚠️ minifyEnabled/shrinkResources مُفعَّلان هنا عمداً (لم يكونا
-          # مفعّلين سابقاً): تطبيق فارغ بنفس أدوات البناء بالضبط فتح وعمل
-          # بشكل طبيعي على جهاز المستخدم (37 ضغطة مستقرة)، بينما التطبيق
-          # الحقيقي ينهار فوراً حتى بعد إزالة كل تهيئة Firebase/AdMob
-          # التلقائية — وCrashlytics نفسه (المُدمَج فعلياً) لم يستقبل ولو
-          # جلسة واحدة ناجحة، ما يعني أن العطل يحدث قبل أن يُتاح لأي كود —
-          # حتى مزوّد Crashlytics الأصلي نفسه — فرصة التنفيذ. هذا يطابق
-          # تماماً عطلاً كلاسيكياً في تحميل فئات DEX الأساسية عند عدم تفعيل
-          # R8/الانكماش مع مكتبات ثقيلة متعددة (Firestore + Auth +
-          # Crashlytics + AdMob + Google Sign-In) غير مُصغَّرة بالكامل.
+          # مفعّلين سابقاً في محاولة قديمة، وسبّب غيابهما وقتها شكاً بأنهما
+          # قد يكونان الحل). التشخيص الفعلي (تشغيل حقيقي على محاكي داخل CI،
+          # التقاط adb logcat كاملاً) كشف السبب الحقيقي أخيراً بيقين تام:
+          #   java.lang.RuntimeException: Unable to get provider
+          #   androidx.startup.InitializationProvider: ...:
+          #   Failed to create an instance of androidx.work.impl.WorkDatabase
+          # هذا عطل R8 موثَّق ومعروف: مكتبة WorkManager (تستخدمها Google
+          # Mobile Ads SDK داخلياً) تُنشئ قاعدة بياناتها الداخلية
+          # (WorkDatabase) عبر فئة مولَّدة بواسطة Room تحديداً باسم
+          # WorkDatabase_Impl، والتي تُستدعى فقط بالانعكاس (reflection) وقت
+          # التشغيل — لا استدعاء مباشر بالكود يراه R8 عند تحليله الساكن. لذا
+          # R8 يحذفها بصفتها "غير مستخدَمة" رغم أنها ضرورية فعلاً، فيفشل
+          # WorkManager في تهيئة نفسه فور بدء التطبيق (عبر ContentProvider
+          # تلقائي يعمل قبل أي كود لدينا) وينهار التطبيق فوراً — بالضبط
+          # النمط المُلاحَظ. قواعد consumer-rules المرفقة مع كل مكتبة لا
+          # تكفي هنا (خلافاً للافتراض السابق) لأن هذا النمط تحديداً معروف
+          # بأنه يفلت منها أحياناً حسب إصدار AGP/R8. الحل الموثَّق: قواعد
+          # -keep صريحة لفئات WorkManager/Room المولَّدة.
           python3 - <<'PY'
           import os
 
@@ -227,7 +236,20 @@ jobs:
 
           proguard_path = "android/app/proguard-rules.pro"
           if not os.path.exists(proguard_path):
-              open(proguard_path, "w").write("# قواعد إضافية محلية إن احتاجها R8 لاحقاً — قواعد المستهلك المرفقة\n# مع كل مكتبة (Firebase/AdMob/...) تُطبَّق تلقائياً بلا حاجة لتكرارها هنا.\n")
+              open(proguard_path, "w").write(
+                  "# قواعد إضافية محلية يحتاجها R8 فعلياً رغم قواعد consumer-rules "
+                  "المرفقة مع كل مكتبة.\n"
+                  "# WorkManager (تستخدمه Google Mobile Ads SDK داخلياً) يُنشئ قاعدة "
+                  "بياناته عبر فئة Room مولَّدة تُستدعى بالانعكاس فقط، فيحذفها R8 "
+                  "خطأً ويسبب انهياراً فورياً عند بدء التطبيق (مؤكَّد فعلياً عبر "
+                  "تشغيل حقيقي على محاكي داخل CI والتقاط adb logcat):\n"
+                  "#   Failed to create an instance of androidx.work.impl.WorkDatabase\n"
+                  "-keep class androidx.work.** { *; }\n"
+                  "-keep class * extends androidx.work.ListenableWorker { "
+                  "<init>(android.content.Context, androidx.work.WorkerParameters); }\n"
+                  "-keepclassmembers class * extends androidx.room.RoomDatabase { "
+                  "public static <methods>; }\n"
+              )
 
           text = open(app_gradle_path).read()
           if "signingConfigs" not in text:
