@@ -184,12 +184,14 @@ class _WebShellScreenState extends State<WebShellScreen> {
     try {
       // ⚠️ file_picker 11.0.0+ استبدل FilePicker.platform.pickFiles(...)
       // (كانت طريقة الاستدعاء الوحيدة قبلها) بدوال static مباشرة على الصنف
-      // نفسه — خطأ بناء حقيقي "Member not found: 'platform'" أظهر هذا.
-      final result = await FilePicker.pickFiles(
+      // نفسه، وغيّر أيضاً نوع الإرجاع من FilePickerResult (بخاصية .files)
+      // إلى List<PlatformFile>? مباشرة — خطآ بناء حقيقيان متتاليان أظهرا هذا.
+      final files = await FilePicker.pickFiles(
         type: FileType.any,
         allowMultiple: false,
       );
-      final path = result?.files.single.path;
+      if (files == null || files.isEmpty) return [];
+      final path = files.single.path;
       if (path == null) return [];
       return [Uri.file(path).toString()];
     } catch (_) {
