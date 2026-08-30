@@ -578,42 +578,6 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                       )}
                     </div>
                   )}
-
-                  {/* طرق الإيداع اليدوي الأخرى (PayPal / USDT يدوي / تحويل بنكي)
-                      ما زالت قيد التطوير — لا تعرض للمستخدم أي بيانات حساب فعلية
-                      يُحوّل إليها، ما كان يسمح بإرسال طلب إيداع بلا أي وجهة
-                      حقيقية. تُعرض هنا فقط لإعلام المستخدم أنها قادمة قريباً،
-                      ومعطّلة تماماً حتى تُستكمل ببيانات حساب حقيقية وشاشة
-                      اعتماد إدارية مخصصة لها. */}
-                  <div>
-                    <label className="block text-xs font-bold text-slate-900 dark:text-slate-200 mb-2">
-                      طرق إيداع إضافية:
-                    </label>
-                    <div className="grid grid-cols-2 gap-2">
-                      {[
-                        { id: 'paypal' as PaymentMethod, label: 'باي بال PayPal', desc: 'دفع فوري وآمن' },
-                        { id: 'usdt_crypto' as PaymentMethod, label: 'USDT Tether', desc: 'شبكة TRC20 / BEP20' },
-                        { id: 'bank_wire' as PaymentMethod, label: 'تحويل بنكي IBAN', desc: 'خلال 24-48 ساعة' }
-                      ].map((m) => (
-                        <button
-                          key={m.id}
-                          type="button"
-                          disabled
-                          title="قيد التطوير — سيتم تفعيلها قريباً"
-                          className="relative p-3 rounded-2xl border text-start bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 cursor-not-allowed opacity-70"
-                        >
-                          <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 text-[9px] font-bold">
-                            قيد التطوير
-                          </span>
-                          <span className="block text-xs font-bold">{m.label}</span>
-                          <span className="block text-[10px] text-slate-400">{m.desc}</span>
-                        </button>
-                      ))}
-                    </div>
-                    <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                      هذه الطرق قيد التطوير حالياً وستتوفر قريباً. استخدم الدفع الفوري بالبطاقة أو بالعملة الرقمية أعلاه للإيداع الآن.
-                    </p>
-                  </div>
                 </>
               )}
             </form>
