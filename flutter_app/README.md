@@ -1,80 +1,62 @@
-# Literium — تطبيق Android أصيل (Flutter)
+# Literium — تطبيق Android (غلاف WebView)
 
-نسخة أصيلة كاملة بديلة عن نسخة TWA السابقة (المؤرشفة على فرع
-`archive/twa-final-v1` في هذا المستودع) — واجهة Flutter 100%، بلا أي
-WebView، متصلة بنفس مشروع Firebase (`literium`) الذي يستخدمه الموقع الحي.
+⚠️ **تحديث معماري كامل**: كانت نسخة سابقة من هذا المجلد تعيد بناء واجهة
+Flutter مستقلة تماماً عن الموقع — شاشات Dart خاصة بها (`screens/`)
+تستدعي Firebase/Firestore مباشرة (`services/`) وتعرض محتوى بترتيب وشكل
+مختلفين عن الموقع الحي. عند التجربة الفعلية على جهاز حقيقي، بدا هذا
+كتطبيق مختلف تماماً عن الموقع — وهو فعلاً كذلك، لأنه إعادة بناء منفصلة
+وناقصة (كانت أقسام كاملة مثل الإشعارات/المتابعة/التغريدات/محرر
+المقالات/لوحة الأدمن غير مبنية بعد إطلاقاً في تلك النسخة).
 
-## حالة الميزات
-
-| الميزة | الحالة |
-|---|---|
-| تسجيل الدخول (بريد + Google) | ✅ كامل |
-| عرض المقالات + قراءة | ✅ كامل |
-| فتح مقال مقفول من رصيد المحفظة | ✅ كامل (`/api/articles/unlock` الموجود أصلاً) |
-| إعلانات AdMob (بانر + بيني كل 3 مقالات) | ✅ كامل (بمعرّفات اختبار — انظر أدناه) |
-| المحفظة — عرض الرصيد الحي | ✅ كامل |
-| المحفظة — إيداع/سحب من داخل التطبيق | ⏸️ غير مفعّل عمداً (لا يوجد حساب Stripe/PayPal بعد) — استخدم الموقع حالياً؛ رصيد الموقع نفسه غير متأثر |
-| الرسائل — قائمة المحادثات + مؤشر غير مقروء | ✅ كامل |
-| الرسائل — محادثة حية (إرسال/استقبال فوري) | ✅ كامل |
-| الرسائل — مؤشر "يكتب الآن" | ✅ كامل |
-| الرسائل — إغلاق/كتم/حظر/إبلاغ | ✅ كامل |
-| بدء محادثة جديدة (تصفح/بحث عن مستخدمين) | ❌ غير مبني بعد — يمكن حالياً متابعة محادثات موجودة فقط |
-| التحقق من الهوية (KYC) | ❌ غير مبني بعد |
-| الإشعارات | ❌ غير مبني بعد |
-| المتابعة (Follow/Followers) | ❌ غير مبني بعد |
-| التغريدات (Tweets) | ❌ غير مبني بعد |
-| محرر/نشر المقالات للكاتب | ❌ غير مبني بعد |
-| لوحة تحكم الأدمن | ❌ غير مبني بعد |
-
-الأقسام أعلاه المعلّمة ❌ موجودة في الموقع لكن لم تُبنَ في نسخة Flutter بعد — لم يتم إخفاء ذلك عمداً.
-
-## خطوتان يدويتان مطلوبتان قبل أول بناء ناجح
-
-### 1. `google-services.json`
-1. افتح [Firebase Console](https://console.firebase.google.com) → مشروع **literium**.
-2. أضف تطبيق Android جديداً: Package name = `studio.ai.literium.literium_app`.
-3. نزّل `google-services.json` الناتج.
-4. حوّله لنص Base64 (`base64 -w0 google-services.json`) وأضفه كسرّ GitHub جديد باسم
-   **`FLUTTER_GOOGLE_SERVICES_JSON_BASE64`** في إعدادات هذا المستودع (Settings → Secrets → Actions).
-
-### 2. معرّفات AdMob الحقيقية
-✅ مُفعَّلة بالفعل — الكود يستخدم معرّفات حساب AdMob الحقيقي لتطبيق "Literium":
-- `lib/services/admob_service.dart` — بانر + بيني.
-- `.github/workflows/build-flutter-apk.yml` — `ADMOB_APP_ID`.
-
-لا توجد أي معرّفات اختبار وهمية متبقية في الكود.
-
-## تشغيل السير لأول مرة
-
-بعد إضافة السرّ أعلاه: **Actions → Build Flutter Android APK → Run workflow**.
-
-⚠️ من المتوقع فعلياً أن يفشل التشغيل الأول أو يحتاج تعديلاً بسيطاً — نفس ما
-حدث بالضبط مع سير TWA السابق (`build-apk.yml`) في أول محاولاته. لا يوجد
-Flutter مثبَّت في بيئة كتابة هذا الكود لأختبر خطوة تعديل ملفات Gradle
-تلقائياً قبل التسليم؛ إن فشل السير، أرسل لي سجل الخطأ (Job logs) وسأصلحه
-فوراً بنفس الأسلوب المتبع طوال هذا المشروع.
+الآن: التطبيق **غلاف WebView واحد فقط** يعرض `https://literium.ai.studio`
+كما هو تماماً — نفس المحتوى، نفس الترتيب، نفس الشكل، لأنه هو نفس الموقع
+حرفياً، لا نسخة موازية منه. أي ميزة تُضاف أو تُعدَّل على الموقع تظهر في
+التطبيق فوراً في البناء التالي بلا أي عمل إضافي هنا.
 
 ## البنية
 
 ```
 flutter_app/
   lib/
-    main.dart
-    models/article.dart
-    services/auth_service.dart      # Firebase Auth
-    services/article_service.dart   # قراءة Firestore مباشرة (articles) + فتح المقفول
-    services/admob_service.dart
-    services/payment_api.dart       # إيداع/سحب حقيقيان عبر server.ts
-    services/message_service.dart   # انعكاس كامل لقسم الرسائل في firestoreService.ts
-    models/article.dart
-    models/conversation.dart
-    models/dm_message.dart
-    screens/login_screen.dart
-    screens/home_screen.dart
-    screens/articles_screen.dart
-    screens/article_detail_screen.dart
-    screens/wallet_screen.dart
-    screens/messages_screen.dart
-    screens/chat_screen.dart
-  android/   # يُولَّد تلقائياً عبر flutter create داخل CI — غير موجود محلياً بعد
+    config.dart   # kApiBaseUrl = عنوان الموقع الحي
+    main.dart     # شاشة واحدة: WebView + معالج عطل مبكر (Crashlytics)
+  android/        # يُولَّد تلقائياً عبر flutter create داخل CI — غير موجود محلياً
 ```
+
+## ما يقوم به `main.dart`
+
+- يحمّل `kApiBaseUrl` مباشرة في WebView واحد يملأ الشاشة بالكامل.
+- عامل مستخدم (`User-Agent`) مُعدَّل ليطابق متصفح Chrome عادي (بلا علامة
+  `; wv)` التي يضيفها WebView افتراضياً) — ضروري لأن Google يرفض عرض صفحة
+  "تسجيل الدخول بحساب Google" (طريقة الدخول الوحيدة في الموقع) داخل أي
+  WebView يحمل علامة التضمين الافتراضية.
+- زر الرجوع في أندرويد يتنقل داخل تاريخ تصفح الـWebView أولاً (يشمل
+  التنقل الداخلي بين تبويبات الموقع القائم على `pushState`)، ولا يُغلق
+  التطبيق إلا حين لا يبقى تاريخ رجوع.
+- روابط `tel:`/`mailto:`/إلخ (غير http/https) تُفتح بالتطبيق المناسب خارج
+  الـWebView. كل تنقل http/https (يشمل صفحات تسجيل دخول Google وإعادة
+  التوجيه منها) يبقى داخل نفس الـWebView.
+- لمس أي `<input type="file">` في الموقع (صورة مقال/رسالة، الملف الشخصي،
+  وثيقة KYC) يفتح منتقي ملفات حقيقياً من الجهاز (`file_picker`) عبر
+  `AndroidWebViewController.setOnShowFileSelector`.
+- Firebase Crashlytics ما زال مُهيَّأً كشبكة أمان تشخيصية (يحتاج
+  `google-services.json`، انظر أدناه) — مفيد الآن لتشخيص أي عطل في غلاف
+  الـWebView نفسه (نادر جداً مقارنة بالنسخة السابقة، لأن كل منطق الأعمال
+  الفعلي ينفَّذ في نفس كود الموقع لا في Dart).
+
+## خطوة يدوية واحدة مطلوبة قبل أول بناء
+
+### `google-services.json`
+1. افتح [Firebase Console](https://console.firebase.google.com) → مشروع **literium**.
+2. أضف تطبيق Android جديداً: Package name = `studio.ai.literium.literium_app` (إن لم يكن مُضافاً مسبقاً).
+3. نزّل `google-services.json` الناتج.
+4. حوّله لنص Base64 (`base64 -w0 google-services.json`) وأضفه كسرّ GitHub باسم
+   **`FLUTTER_GOOGLE_SERVICES_JSON_BASE64`** في إعدادات هذا المستودع (Settings → Secrets → Actions).
+
+لم تعد هناك حاجة لأي معرّف AdMob — إعلانات التطبيق هي نفس نظام إعلانات
+الموقع (PropellerAds/Adsterra/Monetag + حملات داخلية)، يعمل تلقائياً
+داخل نفس صفحات الموقع المعروضة في الـWebView.
+
+## تشغيل السير
+
+**Actions → Build Flutter Android APK → Run workflow**.

@@ -367,21 +367,12 @@ jobs:
           open(path, "w").write(text)
           PY
 
-      - name: Add AdMob App ID to AndroidManifest.xml
-        working-directory: flutter_app
-        env:
-          # App ID الحقيقي لتطبيق "Literium" في AdMob Console.
-          ADMOB_APP_ID: "ca-app-pub-8136741145180538~7102233960"
-        run: |
-          python3 - <<PY
-          import re
-          path = "android/app/src/main/AndroidManifest.xml"
-          text = open(path).read()
-          if "com.google.android.gms.ads.APPLICATION_ID" not in text:
-              meta = '        <meta-data\n            android:name="com.google.android.gms.ads.APPLICATION_ID"\n            android:value="${ADMOB_APP_ID}"/>\n'
-              text = text.replace("</application>", meta + "    </application>")
-              open(path, "w").write(text)
-          PY
+      # ⚠️ خطوة "Add AdMob App ID to AndroidManifest.xml" أُزيلت نهائياً: كان
+      # التطبيق يعيد بناء واجهة Dart مستقلة عن الموقع (شاشات منفصلة) تستخدم
+      # AdMob لإعلاناتها الخاصة — استُبدل ذلك بالكامل بغلاف WebView يعرض
+      # الموقع الحي نفسه بالضبط، والموقع له نظام إعلاناته الخاص (PropellerAds/
+      # Adsterra/Monetag + حملات داخلية) الذي يعمل الآن من داخل نفس صفحاته
+      # المعروضة في الـWebView — لا حاجة لأي AdMob SDK منفصل بعد الآن.
 
       # Crashlytics مُوصَّل فعلاً (الخطوة أعلاه) لكنه لم يستقبل ولو تقرير
       # عطل واحد عبر جهازين ومحاولات عديدة — وهذا لا يثبت بالضرورة أن
@@ -596,6 +587,38 @@ jobs:
       # عبر جهازين ومحاولات عديدة. العودة للتهيئة التلقائية الافتراضية
       # (السلوك المُختبَر والموثّق فعلياً لملايين تطبيقات Firebase الأخرى)
       # أكثر أماناً من إبقاء تعديل غير مثبَت الفائدة.
+
+      # ⚠️ إذن INTERNET لم يعد مضموناً بالدمج التلقائي: النسخة السابقة من
+      # التطبيق كانت تعتمد على firebase_auth/cloud_firestore/http/
+      # google_mobile_ads، وكل هذه الحزم تطلب هذا الإذن ضمن AndroidManifest
+      # الخاص بها فيُدمَج تلقائياً. بعد التحول لغلاف WebView فقط (يعرض
+      # الموقع الحي مباشرة بدل إعادة بناء واجهة منفصلة)، لم تعد أي من هذه
+      # الحزم موجودة — فقد التأكيد الضمني على هذا الإذن. بلا هذا الإذن
+      # صراحة، كل تحميل صفحة داخل الـWebView وكل رفع لتقارير Crashlytics
+      # يفشل صامتاً على نسخة الإصدار (Release)، فيبقى التطبيق شاشة بيضاء
+      # للأبد رغم اتصال الجهاز الفعلي بالإنترنت.
+      - name: Ensure INTERNET permission (no longer guaranteed via dependency manifest merge)
+        working-directory: flutter_app
+        run: |
+          python3 - <<'PY'
+          path = "android/app/src/main/AndroidManifest.xml"
+          text = open(path).read()
+          needed = [
+              '<uses-permission android:name="android.permission.INTERNET"/>',
+              '<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>',
+          ]
+          added = [tag for tag in needed if tag.split('"')[1] not in text]
+          if added:
+              idx = text.find("<application")
+              if idx == -1:
+                  raise SystemExit("لم يُعثر على وسم <application> في AndroidManifest.xml")
+              text = text[:idx] + "\n".join(added) + "\n\n    " + text[idx:]
+              open(path, "w").write(text)
+          print("===== أذونات الشبكة بعد التأكيد =====")
+          for line in open(path):
+              if "uses-permission" in line:
+                  print(line.strip())
+          PY
 
       - name: flutter pub get
         working-directory: flutter_app

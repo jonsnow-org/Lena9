@@ -1,43 +1,33 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:google_mobile_ads/google_mobile_ads.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter/services.dart';
+import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 
-import 'services/admob_service.dart';
-import 'services/auth_service.dart';
-import 'screens/home_screen.dart';
-import 'screens/login_screen.dart';
+import 'config.dart';
 
 Future<void> main() async {
-  // كان التطبيق ينهار فوراً عند الفتح بلا أي رسالة، وحتى بعد إضافة try/catch
-  // حول main() لم تظهر شاشة التشخيص إطلاقاً — ما يعني أن الانهيار يحدث قبل
-  // أن يبدأ Dart بالتنفيذ أصلاً (على الأرجح أثناء التهيئة الذاتية الأصلية
-  // لـ Firebase عبر ContentProvider عند إقلاع العملية، قبل main() بوقت
-  // طويل). Firebase Crashlytics يثبّت معالج أعطال أصلياً في وقت مبكر جداً
-  // من إقلاع العملية (عبر ContentProvider خاص به أيضاً)، فهو أفضل أداة
-  // متاحة لالتقاط هذا النوع من الأعطال وإرساله إلى Firebase Console — يمكن
-  // للمستخدم مراجعته من متصفح هاتفه دون أي حاسوب أو ADB.
+  // نفس معالج العطل المبكر من النسخة السابقة — يلتقط أعطال الإقلاع قبل
+  // main() نفسه (عبر ContentProvider الخاص بـ Firebase) ويعرضها كنص قابل
+  // للنسخ بدل اختفاء التطبيق صامتاً، لأن المستخدم لا يملك حاسوباً/ADB.
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
 
     String? startupError;
     try {
-      // يعتمد على google-services.json (وليس على قيم مكتوبة يدوياً هنا) —
-      // انظر flutter_app/README.md لخطوة الحصول عليه من نفس مشروع Firebase
-      // "literium" المستخدم في الموقع الحي.
       await Firebase.initializeApp();
-
       FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
       PlatformDispatcher.instance.onError = (error, stack) {
         FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
         return true;
       };
-
-      await MobileAds.instance.initialize();
     } catch (e, st) {
       startupError = '$e\n\n$st';
     }
@@ -47,23 +37,13 @@ Future<void> main() async {
       return;
     }
 
-    runApp(
-      MultiProvider(
-        providers: [
-          ChangeNotifierProvider(create: (_) => AuthService()),
-          Provider(create: (_) => AdMobService()..loadInterstitial()),
-        ],
-        child: const LiteriumApp(),
-      ),
-    );
+    runApp(const LiteriumApp());
   }, (error, stack) {
     FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
     runApp(_StartupErrorApp(message: '$error\n\n$stack'));
   });
 }
 
-/// شاشة تشخيص تُعرض بدل الانهيار الصامت — نصّها قابل للتحديد والنسخ كي يرسله
-/// المستخدم لتشخيص أي مشكلة تشغيل حقيقية بدل إغلاق التطبيق دون أثر.
 class _StartupErrorApp extends StatelessWidget {
   const _StartupErrorApp({required this.message});
 
@@ -88,11 +68,7 @@ class _StartupErrorApp extends StatelessWidget {
                 const SizedBox(height: 12),
                 const Text('يرجى إرسال النص التالي كاملاً:'),
                 const SizedBox(height: 12),
-                Expanded(
-                  child: SingleChildScrollView(
-                    child: SelectableText(message),
-                  ),
-                ),
+                Expanded(child: SingleChildScrollView(child: SelectableText(message))),
               ],
             ),
           ),
@@ -111,25 +87,169 @@ class LiteriumApp extends StatelessWidget {
       title: 'ليتيريوم',
       debugShowCheckedModeBanner: false,
       locale: const Locale('ar'),
-      // دعم الاتجاه من اليمين لليسار افتراضياً — نفس اتجاه الموقع الحي.
-      builder: (context, child) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: child!,
-      ),
       theme: ThemeData(
         useMaterial3: true,
-        colorSchemeSeed: const Color(0xFF0D9488), // نفس لون العلامة التجارية (teal) في الموقع
-        fontFamily: 'Cairo',
+        colorSchemeSeed: const Color(0xFF0D9488),
+        scaffoldBackgroundColor: Colors.white,
       ),
-      home: Consumer<AuthService>(
-        builder: (context, auth, _) {
-          if (auth.isInitializing) {
-            return const Scaffold(
-              body: Center(child: CircularProgressIndicator()),
-            );
+      home: const WebShellScreen(),
+    );
+  }
+}
+
+/// شاشة واحدة فقط: WebView يعرض الموقع الحي literium.ai.studio كما هو
+/// تماماً — بلا أي شاشات Dart موازية، لأن أي إعادة بناء منفصلة للواجهة
+/// (كما كانت النسخة السابقة من هذا الملف) تنحرف حتماً عن الموقع الحقيقي
+/// في المحتوى والترتيب والشكل، وهذا بالضبط ما رفضه المستخدم.
+class WebShellScreen extends StatefulWidget {
+  const WebShellScreen({super.key});
+
+  @override
+  State<WebShellScreen> createState() => _WebShellScreenState();
+}
+
+class _WebShellScreenState extends State<WebShellScreen> {
+  late final WebViewController _controller;
+  bool _loading = true;
+  String? _loadError;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = _buildController();
+  }
+
+  WebViewController _buildController() {
+    final controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      // ⚠️ عامل المستخدم الافتراضي لأي WebView على أندرويد يحتوي علامة
+      // "; wv)" التي تكشف لخوادم Google (تسجيل الدخول بحساب Google، وهو
+      // طريقة الدخول الوحيدة في هذا التطبيق) أنها داخل WebView مُضمَّن، فترفض
+      // عرض صفحة تسجيل الدخول برسالة "This browser or app may not be
+      // secure" — استبدال عامل المستخدم بسلسلة Chrome عادية (بلا "; wv)")
+      // هو الحل العملي المعتاد لهذه المشكلة تحديداً في تطبيقات WebView.
+      ..setUserAgent(
+        'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) '
+        'Chrome/125.0.0.0 Mobile Safari/537.36',
+      )
+      ..setBackgroundColor(Colors.white)
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onPageStarted: (_) => setState(() {
+            _loading = true;
+            _loadError = null;
+          }),
+          onPageFinished: (_) => setState(() => _loading = false),
+          onWebResourceError: (error) {
+            // أخطاء الموارد الفرعية (صورة/سكربت فشل تحميله) شائعة ولا تعني
+            // فشل الصفحة نفسها — لا تُظهر شاشة خطأ إلا لفشل التنقل الرئيسي.
+            if (error.isForMainFrame ?? true) {
+              setState(() {
+                _loading = false;
+                _loadError = error.description;
+              });
+            }
+          },
+          onNavigationRequest: (request) {
+            final uri = Uri.tryParse(request.url);
+            if (uri == null) return NavigationDecision.navigate;
+            // روابط غير http/https (tel:, mailto:, whatsapp:, intent: ...)
+            // تُفتح بالتطبيق المناسب خارج الـWebView بدل محاولة تحميلها
+            // داخله (ستفشل صامتة لو تُركت للـWebView).
+            if (uri.scheme != 'http' && uri.scheme != 'https') {
+              launchUrl(uri, mode: LaunchMode.externalApplication);
+              return NavigationDecision.prevent;
+            }
+            // كل تنقل http/https (يشمل صفحات تسجيل دخول Google وإعادة
+            // التوجيه منها) يبقى داخل نفس الـWebView — ضروري لإتمام تدفق
+            // OAuth نفسه ضمن نفس الجلسة/الكوكيز.
+            return NavigationDecision.navigate;
+          },
+        ),
+      )
+      ..loadRequest(Uri.parse(kApiBaseUrl));
+
+    // اختيار ملف حقيقي من الجهاز عند لمس <input type="file"> في الموقع
+    // (صورة مقال/رسالة، صورة الملف الشخصي، وثيقة KYC) — بلا هذا الربط لا
+    // يفتح أي منتقي ملفات إطلاقاً على أندرويد عند لمس هذه الحقول.
+    if (controller.platform is AndroidWebViewController) {
+      final android = controller.platform as AndroidWebViewController;
+      android.setOnShowFileSelector(_onShowFileSelector);
+    }
+
+    return controller;
+  }
+
+  Future<List<String>> _onShowFileSelector(FileSelectorParams params) async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.any,
+        allowMultiple: false,
+      );
+      final path = result?.files.single.path;
+      if (path == null) return [];
+      return [Uri.file(path).toString()];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<bool> _handleBack() async {
+    if (await _controller.canGoBack()) {
+      await _controller.goBack();
+      return false;
+    }
+    return true;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithPop: (didPop, result) async {
+        if (didPop) return;
+        final shouldPop = await _handleBack();
+        if (shouldPop && context.mounted) {
+          if (Platform.isAndroid) {
+            SystemNavigator.pop();
           }
-          return auth.isLoggedIn ? const HomeScreen() : const LoginScreen();
-        },
+        }
+      },
+      child: Scaffold(
+        body: SafeArea(
+          child: Stack(
+            children: [
+              if (_loadError == null) WebViewWidget(controller: _controller),
+              if (_loadError != null)
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.wifi_off, size: 48, color: Colors.grey),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'تعذّر الاتصال بالموقع — تحقق من اتصال الإنترنت',
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 16),
+                        FilledButton(
+                          onPressed: () {
+                            setState(() => _loadError = null);
+                            _controller.loadRequest(Uri.parse(kApiBaseUrl));
+                          },
+                          child: const Text('إعادة المحاولة'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              if (_loading && _loadError == null)
+                const Center(child: CircularProgressIndicator()),
+            ],
+          ),
+        ),
       ),
     );
   }
