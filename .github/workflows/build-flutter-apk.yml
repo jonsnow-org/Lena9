@@ -634,16 +634,29 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot
           disable-animations: true
           script: |
-            echo "===== إصدار/معمارية النظام داخل المحاكي ====="
-            adb shell getprop ro.build.version.release
-            adb shell getprop ro.product.cpu.abi
+            # ⚠️ التفريغ الكامل لـ "adb logcat -d" كان أول محاولة، لكن تبيّن أنه
+            # ضخم جداً (عشرات آلاف الأسطر من ضجيج خدمات اندرويد العامة —
+            # AiAiFed وGetConfigSnapshotOp وfederatedcompute وغيرها، لا علاقة
+            # لها بتطبيقنا) — أداة قراءة سجلات CI المتاحة لي تعرض فقط جزءاً
+            # محدوداً من نهاية سجل الوظيفة كاملة، فكان هذا الضجيج يطغى تماماً
+            # على مخرجاتنا الفعلية (نتيجة adb install/ps وأي سطر عطل حقيقي)
+            # ويدفعها خارج النافذة المتاحة. هذه المرة: تصفية logcat مباشرة هنا
+            # (grep) قبل الطباعة، فلا يخرج من هذه الخطوة إلا القليل المهم.
+            echo "DIAG: نظام $(adb shell getprop ro.build.version.release), معمارية $(adb shell getprop ro.product.cpu.abi)"
             adb logcat -c
-            echo "===== تثبيت APK الحقيقي المُسلَّم (نفس الملف بالضبط) ====="
-            adb install -r flutter_app/build/app/outputs/flutter-apk/app-release.apk
-            echo "===== تشغيل التطبيق ====="
-            adb shell am start -n studio.ai.literium.literium_app/studio.ai.literium.literium_app.MainActivity
+            echo "DIAG_INSTALL_START"
+            adb install -r flutter_app/build/app/outputs/flutter-apk/app-release.apk 2>&1 | tail -5
+            echo "DIAG_INSTALL_END"
+            echo "DIAG_LAUNCH_START"
+            adb shell am start -n studio.ai.literium.literium_app/studio.ai.literium.literium_app.MainActivity 2>&1 | tail -5
+            echo "DIAG_LAUNCH_END"
             sleep 25
-            echo "===== هل العملية ما زالت حية بعد 25 ثانية؟ ====="
-            adb shell ps | grep literium || echo "لا توجد عملية بهذا الاسم — انهارت، أو لم تبدأ إطلاقاً."
-            echo "===== سجل logcat الكامل منذ التثبيت (يشمل انهيارات Java والانهيارات الأصلية/native معاً) ====="
-            adb logcat -d
+            PSOUT=$(adb shell ps | grep literium || true)
+            if [ -z "$PSOUT" ]; then
+              echo "DIAG_RESULT: انهارت العملية أو لم تبدأ — غير موجودة بعد 25 ثانية"
+            else
+              echo "DIAG_RESULT: العملية ما زالت حية بعد 25 ثانية -> $PSOUT"
+            fi
+            echo "DIAG_FILTERED_LOGCAT_START"
+            adb logcat -d | grep -iE "literium|FATAL EXCEPTION|AndroidRuntime|Fatal signal|backtrace|DEBUG.*pid|Process.*died|ActivityManager: (Start proc|Force finishing|Killing|Displayed)|ANR in|Unable to instantiate|ClassNotFoundException|UnsatisfiedLinkError|NoClassDefFoundError" || echo "لا توجد أي أسطر مطابقة — لا FATAL ولا ذِكر لاسم الحزمة إطلاقاً في كامل السجل."
+            echo "DIAG_FILTERED_LOGCAT_END"
