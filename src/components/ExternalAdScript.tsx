@@ -42,10 +42,18 @@ export const ExternalAdScript: React.FC<ExternalAdScriptProps> = ({ snippet, cla
     iframe.style.border = '0';
     iframe.style.display = 'block';
     iframe.setAttribute('scrolling', 'no');
-    // allow-scripts/allow-popups: كافيان لتشغيل الإعلان والنقر عليه لفتح
-    // رابط المعلن؛ بلا allow-same-origin أو allow-top-navigation — يمنع
-    // الكود من الوصول لصفحتنا أو التحكم بها، لا يقتصر الأمر على حجمها فقط.
-    iframe.setAttribute('sandbox', 'allow-scripts allow-popups allow-popups-to-escape-sandbox');
+    // ⚠️ allow-same-origin أُعيدت بعد أن ظهرت مساحة فارغة كلياً بلا أي إعلان
+    // في كل المواضع: أغلب شبكات الإعلانات (Adsterra/PropellerAds/Monetag)
+    // تعتمد على الكوكيز وطلبات XHR لجلب الإعلان الفعلي، وإطار sandbox بلا
+    // allow-same-origin يُعامَل كأصل معزول (opaque origin) فتُحظر هذه
+    // الطلبات صامتة فيبقى الصندوق فارغاً — لا خطأ ظاهر، فقط لا إعلان أبداً.
+    // هذا لا يُعيد مشكلة "يغطي الشاشة" الأصلية: تلك كانت بسبب محاولة السكربت
+    // تثبيت نفسه في <body> الصفحة الرئيسية عبر position:fixed خارج أي حاوية؛
+    // العزل الذي يمنع ذلك هو حدود الـ iframe نفسها (أي body داخله محصور
+    // بصرياً بحجمه)، وهذا يبقى قائماً بصرف النظر عن allow-same-origin. بلا
+    // allow-top-navigation/allow-modals — يمنع فتح نوافذ أو حوارات تتحكم
+    // بصفحتنا نفسها.
+    iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox');
     iframe.srcdoc =
       '<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">' +
       '<style>html,body{margin:0;padding:0;overflow:hidden;background:transparent}</style></head><body>' +
