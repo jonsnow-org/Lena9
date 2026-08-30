@@ -182,7 +182,10 @@ class _WebShellScreenState extends State<WebShellScreen> {
 
   Future<List<String>> _onShowFileSelector(FileSelectorParams params) async {
     try {
-      final result = await FilePicker.platform.pickFiles(
+      // ⚠️ file_picker 11.0.0+ استبدل FilePicker.platform.pickFiles(...)
+      // (كانت طريقة الاستدعاء الوحيدة قبلها) بدوال static مباشرة على الصنف
+      // نفسه — خطأ بناء حقيقي "Member not found: 'platform'" أظهر هذا.
+      final result = await FilePicker.pickFiles(
         type: FileType.any,
         allowMultiple: false,
       );
