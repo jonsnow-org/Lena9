@@ -675,12 +675,59 @@ jobs:
         # تشغيل لهذا السير تحديداً، فيضمن رقماً أعلى دائماً بلا أي تتبّع يدوي.
         run: flutter build apk --release --target-platform android-arm,android-arm64 --build-number=${{ github.run_number }}
 
+      # ⚠️ المستخدم أبلغ أن التثبيت ظل يطلب حذف النسخة السابقة حتى بعد إضافة
+      # --build-number أعلاه — بدل افتراض أن الإصلاح فعّال (نفس خطأ "الإصلاح
+      # الصامت غير المتحقَّق منه" الذي تكرر عدة مرات في هذا المشروع)، اطبع
+      # رقم الإصدار الفعلي المُضمَّن في الـAPK الناتج حقاً عبر aapt — دليل
+      # قاطع بدل افتراض.
+      - name: Verify built APK's actual versionCode
+        run: |
+          AAPT=$(find /usr/local/lib/android/sdk/build-tools -name aapt 2>/dev/null | sort -V | tail -1)
+          if [ -z "$AAPT" ]; then
+            AAPT=$(find "${ANDROID_HOME:-/usr}" "${ANDROID_SDK_ROOT:-/usr}" -name aapt 2>/dev/null | sort -V | tail -1)
+          fi
+          echo "===== معلومات الحزمة الفعلية من aapt ====="
+          "$AAPT" dump badging flutter_app/build/app/outputs/flutter-apk/app-release.apk | grep "^package:"
+
       - name: Upload signed APK
         uses: actions/upload-artifact@v4
         with:
           name: Literium-flutter-signed-apk
           path: flutter_app/build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
+
+      # ⚠️ زر "تحميل التطبيق" في الموقع يقدّم public/downloads/Literium.apk
+      # مباشرة — وهذا الملف لم يكن يُحدَّث هنا إطلاقاً منذ هذا السير (build-
+      # flutter-apk.yml) صار مصدر الـAPK الفعلي؛ كان لا يزال يحمل آخر بناء
+      # من سير TWA القديم (build-apk.yml)، أقدم بكثير وغير مرتبط إطلاقاً
+      # بأي عمل حديث على نسخة WebView — أي زائر يضغط الزر كان يحصل على
+      # تطبيق مختلف تماماً عمّا بُني هنا. نفس نمط خطوة "Publish built APK
+      # as the in-app download" في build-apk.yml، لكن الدفع هنا لفرع هذا
+      # التشغيل نفسه (github.ref_name) لا لـ main — لأن التسليم الفعلي لهذا
+      # المشروع حالياً يتم عبر حزمة zip من رأس هذا الفرع تحديداً (AI Studio
+      # لا يسحب من git تلقائياً على أي حال، النشر هناك يدوي دوماً).
+      - name: Sync in-app download button with this build
+        run: |
+          cp flutter_app/build/app/outputs/flutter-apk/app-release.apk public/downloads/Literium.apk
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add public/downloads/Literium.apk
+          if git diff --cached --quiet; then
+            echo "No change in the built APK — skipping commit."
+            exit 0
+          fi
+          git commit -m "Sync in-app download with latest Flutter WebView APK build [skip ci]"
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:${{ github.ref_name }}; then
+              exit 0
+            fi
+            echo "Push rejected (attempt $attempt) — rebasing onto latest origin/${{ github.ref_name }} and retrying..."
+            git fetch origin ${{ github.ref_name }}
+            git rebase origin/${{ github.ref_name }}
+            sleep 3
+          done
+          echo "::error::Failed to push the synced APK after 5 attempts."
+          exit 1
 
       # ⚠️ تصحيح: التشغيل السابق أثبت أن "ترجمة ABI" على صورة x86_64 (حتى
       # بمستوى API 35) لا تعمل فعلياً لتحميل مكتبات .so أصلية عبر dlopen —
