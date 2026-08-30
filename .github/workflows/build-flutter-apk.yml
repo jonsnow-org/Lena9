@@ -49,7 +49,28 @@ jobs:
           haskell: true
           large-packages: true
           docker-images: true
-          swap-storage: true
+          # ⚠️ كانت true سابقاً — لكن القرص لم يكن يوماً السبب الفعلي
+          # (٢٩ جيجا متاحة باستمرار عبر كل المحاولات)، وswap-storage:true
+          # في هذا الأمر لا "يضيف" مساحة تبادل بل "يزيل" ملف التبادل
+          # الافتراضي لدى GitHub لاسترجاع مساحة قرص لم نكن نحتاجها أصلاً —
+          # فكنّا فعلياً نُلغي وسادة أمان حقيقية للذاكرة (swap) بأنفسنا في كل
+          # تشغيل، وهو ما قد يفسّر جزئياً لماذا يتذبذب النجاح: أي ارتفاع
+          # طفيف في استهلاك الذاكرة أثناء R8 لم يعد له أي احتياطي يمتصّه.
+          swap-storage: false
+
+      # إضافة مساحة تبادل يدوية إضافية فوق ما تبقّى من GitHub افتراضياً —
+      # احتياط حقيقي أثناء ذروة استهلاك الذاكرة في R8/dexing (Heap + Native
+      # Memory + Metaspace)، بلا أي تكلفة (تخزين قرص فائض فقط، والقرص متوفر
+      # بكثرة). لا يضر إن كان السقف الفعلي للرام أعلى مما نظن؛ فائدته فقط
+      # إن كنا فعلاً قريبين من الحد.
+      - name: Allocate extra swap space
+        run: |
+          free -h
+          sudo fallocate -l 6G /extra-swapfile
+          sudo chmod 600 /extra-swapfile
+          sudo mkswap /extra-swapfile
+          sudo swapon /extra-swapfile
+          free -h
 
       # مثبَّت على إصدار محدد بدل channel: stable وحدها — قناة stable انتقلت
       # مؤخراً جداً (خلال آخر يوم أو يومين) إلى Flutter 3.47 الذي يفعّل AGP 9
@@ -293,10 +314,17 @@ jobs:
               ("android.builtInKotlin", "false"),
               ("android.newDsl", "false"),
               ("org.gradle.vfs.watch", "false"),
-              ("org.gradle.jvmargs", "-Xmx4096m -XX:+UseG1GC"),
+              # خُفِّض من 4096m إلى 2560m: الـ 4 جيجا كانت للـ heap وحده،
+              # ولا تُحسب معه الذاكرة الأصلية التي يستهلكها R8 والمكوّنات
+              # المساعدة (Metaspace, native memory) — ترك هامش أكبر للنظام
+              # ولهذه الذاكرة الأصلية بدل تخصيص كل شيء تقريباً للـ heap.
+              ("org.gradle.jvmargs", "-Xmx2560m -XX:+UseG1GC -XX:+UnlockExperimentalVMOptions -XX:+UseStringDeduplication"),
               ("org.gradle.daemon", "false"),
               ("org.gradle.parallel", "false"),
-              ("org.gradle.workers.max", "2"),
+              # من 2 إلى 1: يمنع أي احتمال لتشغيل مهمتي R8/dexing في آن
+              # واحد، وهو بالضبط النمط الذي أظهرته السجلات الأخيرة (عمليتا
+              # java يتيمتان معاً وقت القتل).
+              ("org.gradle.workers.max", "1"),
           ):
               pattern = rf'^{re.escape(key)}=.*$'
               line = f'{key}={value}'
@@ -359,6 +387,11 @@ jobs:
         working-directory: flutter_app
         env:
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          # عملية Kotlin daemon منفصلة تماماً عن Gradle daemon (المُعطَّل
+          # أعلاه عبر org.gradle.daemon=false) — هذه عملية JVM إضافية
+          # مستقلة تديرها kotlin-gradle-plugin نفسها للترجمة التزايدية،
+          # لا فائدة منها في بناء CI لمرة واحدة، وتضيف عبء ذاكرة كامل آخر.
+          GRADLE_OPTS: "-Dorg.gradle.kotlin.daemon.enabled=false"
         run: flutter build apk --release --target-platform android-arm64
 
       - name: Upload signed APK
