@@ -666,7 +666,14 @@ jobs:
           # مستقلة تديرها kotlin-gradle-plugin نفسها للترجمة التزايدية،
           # لا فائدة منها في بناء CI لمرة واحدة، وتضيف عبء ذاكرة كامل آخر.
           GRADLE_OPTS: "-Dorg.gradle.kotlin.daemon.enabled=false"
-        run: flutter build apk --release --target-platform android-arm,android-arm64
+        # ⚠️ --build-number مطلوب صراحة هنا: pubspec.yaml يحمل رقم إصدار ثابت
+        # (0.2.0+2) لم يتغيّر عبر كل بنايات نسخة WebView المتتالية، فكانت كل
+        # حزمة APK جديدة تحمل نفس versionCode بالضبط رغم اختلاف محتواها —
+        # أندرويد يرفض تثبيت أي حزمة فوق أخرى مثبَّتة إن لم يكن رقم إصدارها
+        # أعلى صراحة (بصرف النظر عن توقيعها)، فيطلب حذف النسخة القديمة يدوياً
+        # قبل كل تثبيت جديد. ${{ github.run_number }} يتصاعد تلقائياً مع كل
+        # تشغيل لهذا السير تحديداً، فيضمن رقماً أعلى دائماً بلا أي تتبّع يدوي.
+        run: flutter build apk --release --target-platform android-arm,android-arm64 --build-number=${{ github.run_number }}
 
       - name: Upload signed APK
         uses: actions/upload-artifact@v4
