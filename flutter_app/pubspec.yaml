@@ -26,7 +26,12 @@ dependencies:
   # منتقي ملفات حقيقي من الجهاز (معرض/كاميرا/مستندات) يُستدعى من نفس الرد
   # أعلاه — يعتمد على منتقي النظام (Storage Access Framework) فلا يحتاج
   # أي إذن تخزين صريح في AndroidManifest.
-  file_picker: ^8.1.2
+  # ⚠️ ^8.x يُحلَّل إلى 8.3.7 — مبني بـcompileSdk 34، بينما
+  # flutter_plugin_android_lifecycle (تبعية ضمنية من Flutter نفسه) يتطلب
+  # الآن compileSdk 36+ ممن يعتمد عليه. هذا فشل بناء حقيقي فعلياً
+  # ("checkReleaseAarMetadata")، وليس تخميناً — إصدار أحدث (12.x، مبني
+  # بـcompileSdk أحدث) هو الحل.
+  file_picker: ^12.1.2
   # فتح الروابط الخارجية (mailto:, tel:, روابط تخرج عن نطاق الموقع نفسه)
   # في المتصفح/التطبيق المناسب خارج الـWebView بدل محاولة تحميلها داخله.
   url_launcher: ^6.3.1
