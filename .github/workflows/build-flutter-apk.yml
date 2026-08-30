@@ -299,6 +299,58 @@ jobs:
               open(app_gradle_path, "w").write(text)
           PY
 
+      # ⚠️ عطل حقيقي وقع فعلياً على جهاز المستخدم (شاشة معالج العطل التقطته
+      # بنجاح — أول مرة تعمل هذه الشبكة فعلياً): "Could not find 'libflutter.so'.
+      # Looked for: [armeabi-v7a, armeabi], but only found: [arm64-v8a]" —
+      # عطل مختلف كلياً عن مشكلة WorkManager، وموثَّق رسمياً من Flutter نفسه:
+      # منذ Flutter 3.35، تضع Flutter Gradle Plugin تلقائياً abiFilters
+      # افتراضية (armeabi-v7a + arm64-v8a + x86_64) في حزمة APK ما لم تُستخدَم
+      # --split-per-abi — بصرف النظر تماماً عن علم --target-platform الذي
+      # نمرّره فعلياً (android-arm64 فقط). فتُعلن الحزمة دعماً لمعماريات لم
+      # تُصرَّف فعلياً (لا يوجد سوى كود arm64 حقيقي)، وأي محاولة من مسار داخلي
+      # (هنا: تفاعل بين Google Mobile Ads SDK ومحمّل Flutter الأصلي) تفترض
+      # وجود armeabi-v7a بناءً على هذا الإعلان الخاطئ تفشل فوراً. المرجع
+      # الرسمي: docs.flutter.dev/release/breaking-changes/default-abi-filters-android
+      # الحل الموثَّق: مسح abiFilters المُحقَنة تلقائياً وتحديدها يدوياً لتطابق
+      # ما نُصرِّفه فعلاً (arm64-v8a فقط) — بلا أي زيادة في زمن/ذاكرة البناء
+      # (لا نضيف معمارية حقيقية جديدة، فقط نصحّح الإعلان ليطابق الواقع).
+      - name: Fix ABI filters to match the actually-compiled architecture (arm64-v8a only)
+        working-directory: flutter_app
+        run: |
+          python3 - <<'PY'
+          import os
+
+          app_gradle_path = "android/app/build.gradle.kts" if os.path.exists("android/app/build.gradle.kts") else "android/app/build.gradle"
+          is_kts = app_gradle_path.endswith(".kts")
+          text = open(app_gradle_path).read()
+
+          if "abiFilters" not in text:
+              if is_kts:
+                  block = '''
+          android {
+              defaultConfig {
+                  ndk {
+                      abiFilters.clear()
+                      abiFilters.addAll(listOf("arm64-v8a"))
+                  }
+              }
+          }
+          '''
+              else:
+                  block = '''
+          android {
+              defaultConfig {
+                  ndk {
+                      abiFilters.clear()
+                      abiFilters.add("arm64-v8a")
+                  }
+              }
+          }
+          '''
+              text += block
+              open(app_gradle_path, "w").write(text)
+          PY
+
       # كل المحاولات السابقة لتفعيل Built-in Kotlin أو حقن checker-qual كانت
       # في الاتجاه الخاطئ. السجل الحقيقي (تشغيل رقم 15) كشف السبب الفعلي بلا
       # أي لبس: cloud_firestore يطبّق 'kotlin-android' مباشرة (بلا أي شرط)،
