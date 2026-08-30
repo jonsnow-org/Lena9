@@ -2,56 +2,56 @@ import React, { useEffect, useRef } from 'react';
 
 /**
  * يُدرج كود HTML/JS جاهز من شبكة إعلانية خارجية (PropellerAds/Adsterra/
- * Monetag) داخل حاوية معزولة. dangerouslySetInnerHTML وحده لا يُنفّذ وسوم
- * <script> (سلوك متصفح قياسي)، لذا نبني عناصر <script> حقيقية يدوياً
- * وندرجها في DOM كي تُنفَّذ فعلياً — وهذا سبب وجود هذا المكوّن بدل
- * استخدام dangerouslySetInnerHTML مباشرة.
+ * Monetag) داخل <iframe> معزول تماماً بحجم ثابت صغير — وليس مباشرة في DOM
+ * صفحتنا كما كان سابقاً.
  *
- * ⚠️ نفس كود الشبكة الخارجية الواحد يُعاد استخدامه في كل مواضع المنصة
- * المؤهَّلة (AdSlot) دفعة واحدة على نفس الصفحة (حتى 3 مواضع حسب
- * MAX_ADS_PER_PAGE) عندما لا توجد حملة داخلية تملأها. أغلب هذه الشبكات
- * (ومنها تنسيقات Monetag مثل In-Page Push) عبارة عن سكربت "أحادي" يُدرج
- * نفسه في document.body مباشرة ويدير عرضه بنفسه بمعزل عن أي حاوية —
- * فتشغيله أكثر من مرة في نفس تحميل الصفحة يعني تكرار طلب الشبكة وتكرار
- * وحدة الإعلان فعلياً بدل مرة واحدة. لذا نُنفِّذ كل نص كود مطابق حرفياً
- * مرة واحدة فقط لكل تحميل صفحة، بغض النظر عن عدد المواضع التي اختارته.
+ * ⚠️ السبب: أغلب هذه الشبكات (تنسيقات مثل "In-Page Push"/"Social Bar" لدى
+ * Adsterra/Monetag) عبارة عن سكربت يُدرج نفسه في document.body مباشرة
+ * ويتحكم بموضعه وحجمه بنفسه (position: fixed يغطي الشاشة، بمعزل تام عن أي
+ * حاوية CSS نضعه فيها) — لهذا كان يظهر كبطاقة عائمة تغطي أعلى الشاشة بدل
+ * البقاء داخل شريطه المخصَّص. الـ iframe يمنحه صفحة/document منفصلة تماماً
+ * خاصة به: أي "تثبيت نفسه في body" يحدث داخل body الخاص بالـ iframe نفسه لا
+ * body صفحتنا، فيبقى محصوراً فعلياً داخل حجم الصندوق الذي نحدده هنا مهما
+ * حاول الكود تجاوزه.
+ *
+ * كل موضع (AdSlot/AdTickerBar) يحصل الآن على iframe مستقل خاص به — عزل
+ * كامل يعني عدم وجود تعارض بين نسخ متعددة من نفس الشبكة على نفس الصفحة،
+ * فلا حاجة بعد الآن لمنطق "نفّذ الكود مرة واحدة فقط لكل تحميل صفحة" الذي
+ * كان ضرورياً حين كان الجميع يشترك في نفس body الحقيقي.
  */
-const injectedSnippetsThisPageLoad = new Set<string>();
-
 interface ExternalAdScriptProps {
   snippet: string;
   className?: string;
+  /** ارتفاع الحاوية بالبكسل — شريط صغير ثابت الحجم لا يكبر مهما حاول كود
+   *  الشبكة نفسه (افتراضياً 90، مناسب لوحدة بانر قياسية صغيرة). */
+  heightPx?: number;
 }
 
-export const ExternalAdScript: React.FC<ExternalAdScriptProps> = ({ snippet, className }) => {
+export const ExternalAdScript: React.FC<ExternalAdScriptProps> = ({ snippet, className, heightPx = 90 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
     const trimmed = snippet.trim();
     if (!container || !trimmed) return;
-    if (injectedSnippetsThisPageLoad.has(trimmed)) return;
-    injectedSnippetsThisPageLoad.add(trimmed);
 
     container.innerHTML = '';
-    const wrapper = document.createElement('div');
-    wrapper.innerHTML = snippet;
-
-    // ننسخ كل عقدة كما هي، ونستبدل أي <script> بنسخة جديدة قابلة
-    // للتنفيذ فعلياً (نسخ السمات مثل src/async/data-* والمحتوى النصي).
-    Array.from(wrapper.childNodes).forEach((node) => {
-      if (node.nodeName === 'SCRIPT') {
-        const oldScript = node as HTMLScriptElement;
-        const newScript = document.createElement('script');
-        Array.from(oldScript.attributes).forEach((attr) => {
-          newScript.setAttribute(attr.name, attr.value);
-        });
-        newScript.text = oldScript.text;
-        container.appendChild(newScript);
-      } else {
-        container.appendChild(node.cloneNode(true));
-      }
-    });
+    const iframe = document.createElement('iframe');
+    iframe.style.width = '100%';
+    iframe.style.height = '100%';
+    iframe.style.border = '0';
+    iframe.style.display = 'block';
+    iframe.setAttribute('scrolling', 'no');
+    // allow-scripts/allow-popups: كافيان لتشغيل الإعلان والنقر عليه لفتح
+    // رابط المعلن؛ بلا allow-same-origin أو allow-top-navigation — يمنع
+    // الكود من الوصول لصفحتنا أو التحكم بها، لا يقتصر الأمر على حجمها فقط.
+    iframe.setAttribute('sandbox', 'allow-scripts allow-popups allow-popups-to-escape-sandbox');
+    iframe.srcdoc =
+      '<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">' +
+      '<style>html,body{margin:0;padding:0;overflow:hidden;background:transparent}</style></head><body>' +
+      trimmed +
+      '</body></html>';
+    container.appendChild(iframe);
 
     return () => {
       container.innerHTML = '';
@@ -59,5 +59,5 @@ export const ExternalAdScript: React.FC<ExternalAdScriptProps> = ({ snippet, cla
   }, [snippet]);
 
   if (!snippet.trim()) return null;
-  return <div ref={containerRef} className={className} />;
+  return <div ref={containerRef} className={className} style={{ height: heightPx, overflow: 'hidden' }} />;
 };

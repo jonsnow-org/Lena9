@@ -325,7 +325,11 @@ export const AdSlot: React.FC<AdSlotProps> = ({
     return (
       <div ref={containerRef} className={inRead ? 'my-8' : 'my-5'}>
         <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 mb-1.5">إعلان</div>
-        <ExternalAdScript snippet={externalNetwork.snippet} className="w-full flex justify-center overflow-hidden" />
+        <ExternalAdScript
+          snippet={externalNetwork.snippet}
+          className="w-full rounded-xl overflow-hidden border border-slate-200/70 dark:border-slate-700/50"
+          heightPx={90}
+        />
       </div>
     );
   }

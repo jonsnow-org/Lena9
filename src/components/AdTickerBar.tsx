@@ -84,7 +84,7 @@ export const AdTickerBar: React.FC<AdTickerBarProps> = ({ campaigns = [], slotId
   if (!campaign && externalNetwork) {
     return (
       <div className="w-full rounded-xl overflow-hidden border border-slate-200/70 dark:border-slate-700/50 bg-slate-50 dark:bg-slate-800/60">
-        <ExternalAdScript snippet={externalNetwork.snippet} className="w-full flex justify-center" />
+        <ExternalAdScript snippet={externalNetwork.snippet} className="w-full" heightPx={56} />
       </div>
     );
   }
