@@ -120,22 +120,15 @@ class _WebShellScreenState extends State<WebShellScreen> {
   }
 
   WebViewController _buildController() {
-    // ⚠️ بلا هذا التحديد الصريح يستخدم WebView على أندرويد وضع "Virtual
-    // Display" الافتراضي — يرسم المحتوى كصورة/texture ثابتة أثناء السحب
-    // ولا يحدّثها إلا بعد توقف اللمس تماماً، وهذا بالضبط سبب "التكسر" الذي
-    // يظهر أثناء السحب للأعلى ثم يُصلَح فجأة عند التوقف. "Hybrid
-    // Composition" يُركِّب WebView كطبقة Android حقيقية (hardware layer)
-    // بدل صورة مُلتقَطة، فيُحدَّث بصرياً بشكل مستمر أثناء السحب — يُفترض أن
-    // يُحسِّن أيضاً الثقل العام في التنقل، لا فقط مشكلة السحب.
-    late final PlatformWebViewControllerCreationParams params;
-    if (WebViewPlatform.instance is AndroidWebViewPlatform) {
-      params = AndroidWebViewControllerCreationParams(
-        displayWithHybridComposition: true,
-      );
-    } else {
-      params = const PlatformWebViewControllerCreationParams();
-    }
-    final controller = WebViewController.fromPlatformCreationParams(params)
+    // ⚠️ محاولة سابقة هنا مرّرت displayWithHybridComposition صراحة لحل مشكلة
+    // "تكسر" السحب — لكن خطأ بناء حقيقي أثبت أن هذه المعامل حُذفت تماماً من
+    // AndroidWebViewControllerCreationParams في الإصدار الحالي المُحلَّل
+    // (webview_flutter_android 4.14.1): المُنشئ الآن يقبل androidWebStorage
+    // فقط. هذا يعني أن Hybrid Composition لم يعد اختيارياً بل الوضع
+    // الوحيد/الافتراضي غير المشروط في هذا الإصدار (Virtual Display حُذف
+    // كلياً) — أي أن البناء الذي جرّبه المستخدم كان يستخدمه فعلاً بالفعل،
+    // ومشكلة السحب لها سبب آخر غير وضع العرض. العودة للمُنشئ البسيط.
+    final controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       // ⚠️ عامل المستخدم الافتراضي لأي WebView على أندرويد يحتوي علامة
       // "; wv)" التي تكشف لخوادم Google (تسجيل الدخول بحساب Google، وهو

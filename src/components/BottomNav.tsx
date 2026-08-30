@@ -54,7 +54,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
     return (
       <nav
         id="bottom-nav-admin"
-        className="fixed bottom-0 inset-x-0 z-40 bg-white/95 text-slate-900 border-t border-slate-200/90 shadow-xl dark:bg-slate-950/95 dark:text-white dark:border-brand-500/20 backdrop-blur-xl transition-colors pb-safe"
+        className="fixed bottom-0 inset-x-0 z-40 bg-white/98 text-slate-900 border-t border-slate-200/90 shadow-xl dark:bg-slate-950/98 dark:text-white dark:border-brand-500/20 transition-colors pb-safe"
       >
         <div className="max-w-lg mx-auto px-2 h-16 flex items-center justify-around">
           {/* 1. الرئيسية */}
@@ -205,7 +205,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   return (
     <nav
       id="bottom-nav-member"
-      className="fixed bottom-0 inset-x-0 z-40 bg-white/95 text-slate-900 border-t border-slate-200/90 shadow-xl dark:bg-slate-950/95 dark:text-white dark:border-brand-500/20 backdrop-blur-xl transition-colors pb-safe"
+      className="fixed bottom-0 inset-x-0 z-40 bg-white/98 text-slate-900 border-t border-slate-200/90 shadow-xl dark:bg-slate-950/98 dark:text-white dark:border-brand-500/20 transition-colors pb-safe"
     >
       <div className="max-w-lg mx-auto px-3 h-16 flex items-center justify-around">
         {/* 1. الرئيسية */}
