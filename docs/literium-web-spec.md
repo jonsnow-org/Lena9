@@ -44,7 +44,7 @@ Literium ("ليتيريوم") is an Arabic-first (RTL by default) publishing and
 
 - **Frontend:** Vite + React + TypeScript SPA, Tailwind CSS, `lucide-react` icons, RTL-first layout (`dir="rtl"` is the default document direction).
 - **Backend-as-a-service:** Firebase Authentication (Email/Password) + Firestore (NoSQL document database) for almost all reads and client-driven writes, governed by `firestore.rules` (532 lines) as the authoritative access-control and business-rule layer.
-- **Custom backend:** A single Express server (`server.ts`, 2,851 lines) handles everything that must not run in an untrusted client: Firebase Admin SDK–privileged writes (financial approvals, balance adjustments), Stripe/NOWPayments integration, Cloudinary media upload signing, Gemini AI calls, KYC document analysis, social-verification (Telegram/YouTube) callbacks, and analytics aggregation.
+- **Custom backend:** A single Express server (`server.ts`, 2,851 lines) handles AI (Gemini) calls, Stripe/NOWPayments integration, Cloudinary media upload signing, KYC document analysis, social-verification (Telegram/YouTube) callbacks, and analytics aggregation. **Note:** admin financial approvals and balance adjustments (deposit/withdrawal approval, manual balance adjustment, earnings-hold release, ad-event-batch processing) are *not* among the things this server does — see §4.22/§11.9 for the corrected, verified picture: those remain plain client-side Firestore writes gated by `firestore.rules`, not server-side Admin-SDK operations.
 - **Media/storage:** Cloudinary (not Firebase Storage) for all uploaded images/videos/KYC documents, because Firebase Storage is not available on the project's plan.
 - **AI:** Google Gemini — `gemini-3.7-flash` for text/chat/SEO/bot content, `gemini-3.1-flash-image` (with `gemini-3.1-flash-lite-image` fallback) for image generation, and Gemini vision for KYC document analysis.
 
@@ -58,7 +58,18 @@ There is **no rigid "reader vs. writer vs. advertiser" role split** in the sense
 - **Create ad campaigns** (become an "advertiser" for that campaign) — again, no separate application process; anyone with wallet balance can fund a campaign.
 - Message other users, follow/be followed, bookmark, etc.
 
-The stored `role` field on the `User` document (`'reader' | 'writer' | 'admin'`) is largely a legacy/display label and does **not** gate these actions. What *does* gate real monetized earnings is a separate, independently-computed **monetization/creator eligibility** gate (see §12.4) — an account can write and publish freely, but its article-ad and locked-article earnings are only actually credited once it passes 5 concrete criteria including mandatory KYC. This decoupling — "anyone can do everything, but only eligible+verified accounts get paid" — is the single most important architectural fact to preserve in the Kotlin rewrite. Do NOT model this as three separate app modes/roles; model it as one unified account with an eligibility flag.
+The stored `role` field on the `User` document (`'reader' | 'writer' | 'advertiser' | 'admin'`) does **not by itself gate** these actions — every capability above is available to any authenticated account regardless of its current `role` value. What *does* gate real monetized earnings is a separate, independently-computed **monetization/creator eligibility** gate (see §12.4) — an account can write and publish freely, but its article-ad and locked-article earnings are only actually credited once it passes 5 concrete criteria including mandatory KYC. This decoupling — "anyone can do everything, but only eligible+verified accounts get paid" — is the single most important architectural fact to preserve in the Kotlin rewrite. Do NOT model capabilities as gated by three separate app modes/roles; model the capability surface as one unified account with an eligibility flag.
+
+That said, `role` is not merely inert storage — see §1.3a below: the UI does let a user declare an active persona (reader/writer/advertiser) that live-updates some labels/icons app-wide, even though it never gates what the account is allowed to do.
+
+### 1.3a Role-switching (active persona, not a capability gate)
+
+`UserProfileView` exposes an `onSwitchUserRole` callback wired to `handleSwitchRole` in `App.tsx` (`App.tsx:3051`), which lets the current user pick an active persona — `reader`, `writer`, or `advertiser` (never `admin`; the handler explicitly blocks self-assigning `admin` client-side) — and writes it to the `role` field on their own `User` document. This is a pure presentation/labeling switch, not a capability change (per §1.3, capabilities are never gated by `role`), but it does live-update several surfaces immediately:
+- **`DrawerMenu`**'s member-status label (`DrawerMenu.tsx:113`, `getRoleLabel`) — shows "👑 مالك المنصة" for admin, "📢 معلن وشريك أعمال" for advertiser, and for writer/reader shows either "✍️ كاتب شريك ومعتمد" or "📖 قارئ مسجل" depending on actual monetization-eligibility status (§12.4), not on the raw role value.
+- **`EditProfileModal`**'s single name-field label (`EditProfileModal.tsx:25`) — switches between "الاسم المستعار (اسم الكاتب)" (pen name) for `writer`, "اسم الجهة أو الشركة" (company name) for `advertiser`, and "الاسم الكامل" (full name) otherwise, and edits the corresponding underlying field (`penName` / `companyName` / `fullName`).
+- **`WalletModal`** and **`KycModal`** both accept a `userRole` prop and use it to adjust role-conditional copy in their UI.
+
+`handleSwitchRole` also switches the active bottom-nav tab as a side effect (`writer` → profile tab, `advertiser` → campaigns tab, otherwise → feed). The Kotlin app should replicate this as a lightweight, user-chosen "active persona" setting on the profile — cosmetic and label-only, never wired to any permission check.
 
 ### 1.4 Arabic-first / RTL
 
@@ -117,10 +128,16 @@ Guests (`currentUser.id === 'guest'` / not authenticated) can still browse Home,
 
 ### 3.2 Registration flow (`AuthModal`)
 
-`AuthModal` is a single modal with a login/register mode toggle. Registration fields include: display name, username (unique, used in profile URLs/mentions), email, password, and (implicitly) it creates a `User` document with default `role: 'reader'`-equivalent capabilities — but again, this is not a hard gate; the same account can write, tweet, and advertise immediately after registering. There is **no separate "register as a writer" vs "register as a reader" flow** — one registration form for everyone, consistent with the unified capability model in §1.3.
+`AuthModal` is a single modal with a login/register mode toggle.
+
+**⚠️ Corrections, verified against `AuthModal.tsx`:**
+- **No username field is collected at signup.** A grep of `AuthModal.tsx` confirms there is no `username` input anywhere in the registration form. The `username` is instead auto-derived server-side from the email prefix (`src/firebase.ts`, e.g. `data.email.split('@')[0]`), with a fallback to a generated `user_xxxxx` id if no email is available — it is never a value the user types in during registration.
+- **New accounts do NOT default to `role: 'reader'`.** Every registration call actually hardcodes `registerWithEmail(email, password, 'writer', {...})` (`AuthModal.tsx:168`) — new accounts are created with **`role: 'writer'`**, not `'reader'`. (This is consistent with §1.3/§1.3a: the role value is a display label, not a capability gate — a brand-new `'writer'`-role account still cannot earn monetized revenue until it passes the full eligibility gate in §12.4.)
+
+The actual fields collected at signup (per `AuthModal.tsx:168-173`) are: `fullName`, `penName`, `specialties` (selected interest/topic tags), a preset `avatarUrl` (chosen from a fixed gallery, not uploaded), and `bio` (falls back to a default placeholder bio if left blank) — plus, separately, `email` and `password` for the Firebase Auth account itself. There is **no separate "register as a writer" vs "register as a reader" flow** — one registration form for everyone, consistent with the unified capability model in §1.3.
 
 New accounts start with:
-- `walletBalance: 0`, `pendingEarnings: 0`, `availableBalance: 0`, `lifetimeEarnings: 0`.
+- `walletBalance: 0`, `pendingEarnings: 0`, `availableBalance: 0`, `lifetimeEarnings: 0` (explicitly written at registration, per `firebase.ts`) — though note per §10.3 these fields are optional on the `User` type in general (older/other code paths may leave them absent), so the Kotlin model should still treat them as nullable even though fresh registrations do populate them with `0`.
 - Not KYC-verified.
 - Account-age clock starts immediately (used later by the 14-day creator-eligibility threshold).
 - `isBot: false` (only the 8 fixed publishing-bot accounts have `isBot: true`).
@@ -203,9 +220,9 @@ Identity-verification flow:
 - User uploads a photo of an identity document.
 - Client sends it to the server, which stores the raw image in a **separate, admin-only Firestore collection (`kycDocuments`)** — never in the public-readable `users` collection — using Cloudinary's "authenticated" (non-public) upload type, so document images are never publicly reachable; access requires the server to mint a short-lived signed URL on explicit admin request.
 - Server runs Gemini-vision analysis, extracting the name on the document and comparing it against the account's registered display name.
-- **High-confidence match → auto-approved immediately** (`kycStatus` flips to verified without human involvement).
+- **High-confidence match → auto-approved immediately** (`kycDetails.status` — see §10.3 — flips to `'verified'` without human involvement).
 - **Anything less than high confidence → queued for human admin review** (appears in `KycReviewModal` inside the admin panel, §4.19).
-- The modal communicates current status (`not_started / pending / verified / rejected`) and next steps at each stage.
+- The modal communicates current status (`KycDetails.status`: `'none' | 'pending' | 'verified' | 'rejected'` — note the not-yet-started value is `'none'`, not `'not_started'`) and next steps at each stage.
 
 ### 4.8 Wallet Modal (`WalletModal`, 871 lines)
 
@@ -213,7 +230,7 @@ The financial hub — see full detail in §6. Screen shows: current `walletBalan
 
 ### 4.9 Money Request Modal (`MoneyRequestModal`, 347 lines)
 
-The manual deposit/withdrawal request form used when automated payment rails are not available/chosen (always available as a fallback even when they are). Fields: amount (min enforced, `minAmount` prop — tied to `MIN_PAYOUT_USD`), method selector (grid of method chips — bank wire / USDT / Stripe / PayPal-style options depending on context), and either:
+The manual deposit/withdrawal request form used when automated payment rails are not available/chosen (always available as a fallback even when they are). Fields: amount (min enforced via a `minAmount` floor that differs by mode — `MoneyRequestModal.tsx:66`: `isDeposit ? MIN_DEPOSIT_USD : MIN_PAYOUT_USD`, i.e. deposits use the separate, lower **`MIN_DEPOSIT_USD = 20`** constant (`payoutRules.ts:13`) while withdrawals use `MIN_PAYOUT_USD = 50` (§6.3/§12.3) — these are two distinct constants and must not be conflated), method selector (grid of method chips — bank wire / USDT / Stripe / PayPal-style options depending on context), and either:
   - **Deposit path**: a free-text "transaction/transfer reference number" field (the user pastes the reference from their own external transfer for the admin to verify).
   - **Withdrawal path**: a free-text "receiving details" field (account number or wallet address).
 - Inline disclosure box: "Deposit/withdrawal requests are manually reviewed by platform admins within 24–48 hours"; for withdrawals it additionally reminds the user that earnings stay frozen for 30 days from when they were recorded before becoming withdrawable.
@@ -262,17 +279,28 @@ Shows a user's followers or following list (toggle between the two), each row ta
 
 Short-post authoring and display — see §8 for full detail.
 
-### 4.19 User Profile View (`UserProfileView`, 1,690 lines — the largest and structurally most important screen)
+### 4.19 User Profile View (`UserProfileView`, 1,690 lines — the largest and structurally most important screen) — the SELF profile
 
-This single component serves **both** the normal profile screen **and**, for admin accounts, embeds the entire admin dashboard as an internal tab set. Structure:
-- **Header**: cover/avatar, display name, verified badge, bio, follower/following counts (tap-through to `FollowListModal`), join date, Follow/Message/More-actions buttons (when viewing someone else), Edit-profile button (when viewing self).
-- **Tabs** (for a normal profile): Articles authored, Tweets posted, Liked content, Saved/bookmarked (self only).
+This single component takes only a `currentUser` prop (`App.tsx:3458`) — it has no target-user parameter, so it can only ever render the *current, logged-in* user's own profile. It is not used to view someone else's profile (that is `WriterProfileView`, §4.19b). It serves **both** the normal self-profile screen **and**, for admin accounts, embeds the entire admin dashboard as an internal tab set. Structure:
+- **Header**: cover/avatar, display name, verified badge, bio, follower/following counts (tap-through to `FollowListModal`), join date, Edit-profile button.
+- **Tabs**: Articles authored, Tweets posted, Liked content, Saved/bookmarked.
 - **Creator eligibility card** (`CreatorEligibilityCard`) — shown on the self-profile / writer-studio context. If not yet eligible, shows a 2×2 grid of the 4 stat requirements (followers, valid views, account age, published articles) each with a met/unmet checkmark and a live "X/threshold" counter, plus a separate KYC row with a "Verify now" shortcut — all sourced from one shared `getCreatorEligibility()` computation so no screen can show conflicting numbers. If eligible, shows a single congratulatory "Verified Content Creator" card instead.
 - **Admin dashboard tabs** (visible only when `currentUser.role === 'admin'`, rendered inline within this same view rather than as a separate route): Overview, Finance, Ads, Content, Fraud, Users, Chats, Bots, Settings — see §4.20 onward.
+- **Role-switching**: surfaces the active-persona switcher described in §1.3a via its `onSwitchUserRole` prop.
 
 ### 4.19a Edit Profile Modal (`EditProfileModal`) & Social Links Editor (`SocialLinksEditor`)
 
 Standard profile editing (name, bio, avatar upload) plus a dedicated editor for the user's public social links, which is what powers their own outbound social presence on their profile (separate from the ad-campaign social-promotion feature in §4.11a).
+
+### 4.19b Writer Profile View (`WriterProfileView`, 476 lines) — viewing ANOTHER user's profile
+
+The counterpart to §4.19: this is the screen shown when viewing *someone else's* profile. It is gated by the `viewingWriterProfile` state in `App.tsx` (set when the user taps through to another account) and rendered in place of the normal view/tab router (`App.tsx:3436`, `App.tsx:3179`) whenever that state is non-null. It takes the target `writer: User` as a required prop, distinct from `UserProfileView`'s self-only `currentUser` prop. Structure:
+- **Header**: cover photo, avatar (with a verified-checkmark overlay if `writer.isVerified`), full name, a `KYC موثق` badge if `writer.isKycVerified`, a single member-status badge computed via `getMemberStatusLabel(writer.role, creatorEligibility.isEligible)` (never a raw role label — same "reader by default, auto-upgrades to writer once eligible" logic as elsewhere), and `@username`.
+- **Action buttons**: "رسالة مباشرة" (opens a direct-message thread with this writer) and a Follow/Following toggle button, plus a small "يتابعك" (follows you) indicator when applicable.
+- **Stats bar**: real followers/following counts (tappable through to `FollowListModal` via `onShowFollowers`/`onShowFollowing`), published-article count, total views, and an aggregate reader star-rating computed live from the writer's own articles' `ratingsSum`/`ratingsCount` (not a hardcoded placeholder).
+- **Two tabs**: "المقالات المنشورة" (published articles — a filterable list of the writer's own articles, each row tappable through to the `ArticleReader`) and "عن الكاتب والروابط" (About/links — specialties chips and the writer's public social links from `socialLinks`, e.g. website, YouTube, WhatsApp, Telegram, X/Twitter, LinkedIn, Instagram).
+- **Ad slots embedded in the articles tab**: `writer_profile_top` (below the header card) and `writer_profile_feed` (inserted after the 6th article row) — both writer-profile-beneficiary slots at the 50%/50% writer/platform split (§5.6).
+- No "creator-eligibility card" (the full stat grid from §4.19) appears here — only the compact member-status badge in the header, since detailed eligibility stats are self-profile-only information.
 
 ### 4.20 Admin — Overview Tab (`AdminOverviewTab`)
 
@@ -290,7 +318,9 @@ This tab's data comes from the real `/api/analytics/*` server endpoints (§11), 
 
 ### 4.22 Admin — Finance Tab (`AdminFinanceTab`, 784 lines)
 
-The financial control center: lists all pending deposit and withdrawal requests with approve/reject actions (server-authoritative, Admin-SDK-backed, idempotency-guarded against double-approval via the `processingRequestIdsRef` client guard plus server-side atomic transactions), the manual "process ad events" trigger (runs `evaluateAdEventBatch` fraud filtering over recently logged ad impressions/clicks and converts valid ones into actual revenue splits per §12.2), and the 30-day earnings-hold release mechanism (admin can review and release matured `pendingEarnings` into `availableBalance` for eligible accounts once `EARNINGS_HOLD_DAYS` have elapsed). Also embeds `BalanceAdjustModal` for direct manual balance corrections (with mandatory reason/audit note).
+The financial control center: lists all pending deposit and withdrawal requests with approve/reject actions, the manual "process ad events" trigger (runs `evaluateAdEventBatch` fraud filtering over recently logged ad impressions/clicks and converts valid ones into actual revenue splits per §12.2), and the 30-day earnings-hold release mechanism (admin can review and release matured `pendingEarnings` into `availableBalance` for eligible accounts once `EARNINGS_HOLD_DAYS` have elapsed). Also embeds `BalanceAdjustModal` for direct manual balance corrections (with mandatory reason/audit note).
+
+**⚠️ Correction — these are plain client-side Firestore writes, not server-authoritative endpoints.** Despite how this might read at first glance, none of the four actions above (deposit/withdrawal approval, ad-event-batch processing, earnings release, manual balance adjustment) call a backend endpoint or run inside a Firebase-Admin-SDK transaction. They are ordinary `updateDoc`/`addDoc` calls made directly from the admin's browser against Firestore (`setMoneyRequestStatus`, `adminAdjustUserBalance`, `logManualBalanceAdjustment`, `adminReleaseEarnings` in `firestoreService.ts`; `evaluateAdEventBatch` is invoked directly in `App.tsx`'s `handleProcessAdEvents`). The real, current security boundary for all of this is `firestore.rules`' `isAdmin()` predicate (owner email OR `role == 'admin'` on the caller's own user document) — see §11.9 for the full picture and a note on what this means for the Kotlin rewrite.
 
 ### 4.23 Admin — Ads Tab (`AdminAdsTab`, 733 lines)
 
@@ -344,7 +374,17 @@ This is one of the most intricate subsystems and must be replicated carefully �
 
 ### 5.1 Ad slots
 
-There are **13 named ad slots** (`AdSlotId` type), each with a configuration entry (`beneficiary`, `writerShare`, `sponsorOnly`, `internalPriority`) describing: who financially benefits from a fill in that slot (the platform globally, vs. whichever writer's article/profile the slot is embedded in), what share of revenue goes to the writer for that slot type, and whether the slot only accepts internally-sold Literium campaigns (vs. also accepting external ad-network fills).
+There are **13 named ad slots** (`AdSlotId` type), each with a configuration entry (`beneficiary`, `writerShare`, `sponsorOnly`, `internalPriority`) describing: who financially benefits from a fill in that slot (the platform globally, vs. whichever writer's article/profile the slot is embedded in), what share of revenue goes to the writer for that slot type, and whether the slot only accepts internally-sold Literium campaigns (vs. also accepting external ad-network fills). This is implemented by **`AdSlot.tsx`** (442 lines) — the full-card ad-unit component used at each of the 13 named positions.
+
+### 5.1a Ad ticker bar (`AdTickerBar.tsx`, 131 lines) — a second, lightweight ad surface
+
+Alongside `AdSlot`, a second, distinct ad-rendering component exists: **`AdTickerBar`**, a slim, single-line rotating ad strip meant for places where a full ad card would be too heavy (lists, otherwise-empty inline spaces) but the surface should stay ad-monetized in the background. Key behavior:
+- Rotates automatically through all currently-active eligible campaigns (`campaign.status === 'active'`, excluding `category_sponsor` placements) every `rotateMs` (default 5000ms), with a brief fade transition between ads.
+- Falls back to an external ad-network snippet (rendered via the same sandboxed `ExternalAdScript` used by `AdSlot`, §5.5) when no internal campaign is available and an external network is configured/eligible.
+- Takes an `externalPriority` prop: when `true`, internal campaigns are excluded entirely from rotation as long as a qualifying external network is available (external ads take priority); when `false` (the default), internal campaigns rotate first and the external network is only a fallback when none are available. The component's own inline comment notes this flag is meant to be alternated across different ticker placements on the site so that neither internal advertisers nor external networks are permanently excluded from every ticker.
+- Still respects the platform's `MAX_ADS_PER_PAGE` cap: it calls the same `claimAdSlotIndex()` function `AdSlot.tsx` uses to claim a page-level slot index, and renders nothing (`return null`) once that shared counter is exhausted — so `AdTickerBar` instances count against the same per-page ad budget as `AdSlot` instances, not a separate budget.
+- Logs impressions (once per distinct campaign shown, via a `Set` of already-logged ids) and click events (`logAdEvent`) the same way `AdSlot` does, and opens `destinationUrl` in a new tab on click.
+- Has its own free-text `slotId` (not one of the 13 `AdSlotId` enum values) used purely to tag the ad-event log entries with where on the site the ticker appeared.
 
 ### 5.2 Global per-page cap
 
@@ -376,16 +416,20 @@ These exact percentages are referenced live (not hardcoded separately) from the 
 ### 5.7 Anti-fraud — two parallel systems
 
 1. **Client-side `AntiFraudEngine`** (`src/utils/antiFraud.ts`) — used live inside `SmartAdBanner` at the moment of a click/impression to make an immediate accept/reject decision before even sending the event to the server. Enforces: self-click blocking (an article's own author cannot generate revenue by clicking ads on their own article — checked client-side as a first line of defense), rapid-click throttling (clicks in the first ~1.5–2 seconds after page load are treated as accidental/bot and discarded), viewability minimums, and abnormal click-through-rate pattern detection.
-2. **Server/admin-side `evaluateAdEventBatch`** (`src/utils/fraudFilters.ts`) — a second, independent pass run from the admin Finance tab's manual "process ad events" action, re-evaluating logged raw events in batch before converting them into actual credited revenue. This is the authoritative, cannot-be-bypassed-by-a-modified-client layer — the client-side engine is a UX/early-rejection optimization, not the security boundary.
+2. **`evaluateAdEventBatch`** (`src/utils/fraudFilters.ts`) — a second, independent pass triggered from the admin Finance tab's manual "process ad events" action, re-evaluating logged raw events in batch before converting them into actual credited revenue.
 
-Both layers check for the same broad categories (self-click, rapid-click, viewability, CTR anomalies) but are implemented independently and must both be ported — do not assume one client-side check is sufficient; the server-side re-evaluation is what actually gates money movement.
+**⚠️ Correction:** despite its name and role, `evaluateAdEventBatch` is **not** a server-side or "cannot-be-bypassed-by-a-modified-client" layer. It is a plain client-side/browser function, invoked directly from `App.tsx`'s `handleProcessAdEvents` (running in the admin's own browser, not on `server.ts`), which then writes the resulting balance changes to Firestore the same way the other admin financial actions do (§4.22, §11.9) — ordinary client `updateDoc`/`addDoc` calls gated only by `firestore.rules`' `isAdmin()` check. There is no server endpoint anywhere in `server.ts` that runs ad-event evaluation or converts events into revenue. The real security boundary is the Firestore rules engine, not a backend process — see §11.9 for the full accounting and its implication for the Kotlin rewrite.
+
+Both layers check for the same broad categories (self-click, rapid-click, viewability, CTR anomalies) but are implemented independently and both must be ported — do not assume the client-side engine alone is sufficient, since it can be bypassed by a modified client; but also do not assume `evaluateAdEventBatch`'s "batch" pass is running anywhere more trustworthy than the admin's own browser today.
 
 ### 5.8 Pricing models
 
 Campaigns choose one of three pricing models at creation (`NewCampaignModal`, §4.11):
 - **Fixed duration** — flat fee for a time-boxed placement, no per-impression/click metering.
-- **CPM** — billed per 1,000 valid (viewability-gated) impressions.
-- **CPC** — billed per valid (fraud-filtered) click.
+- **CPM** — billed per 1,000 valid (viewability-gated) impressions. Default/pre-filled rate in the campaign wizard: **$1.00** per 1,000 impressions (`NewCampaignModal.tsx:90`, `cpmRate` initial state).
+- **CPC** — billed per valid (fraud-filtered) click. Default/pre-filled rate in the campaign wizard: **$0.08** per click (`NewCampaignModal.tsx:89`, `cpcRate` initial state).
+
+Both rates are editable by the advertiser at campaign-creation time — the values above are the wizard's defaults, not hard floors/ceilings.
 
 ### 5.9 Social-follow-promotion campaigns
 
@@ -416,17 +460,27 @@ Every `User` document carries four **distinct** monetary fields, and the Kotlin 
 
 ### 6.3 Minimum payout
 
-`MIN_PAYOUT_USD` — a minimum withdrawal-request amount (referenced live in `LegalPages`/`PoliciesModal` as $10, and enforced as the `minAmount` floor in `MoneyRequestModal`'s amount field).
+`MIN_PAYOUT_USD = 50` (`src/constants/payoutRules.ts:8`) — the minimum withdrawal-request amount, enforced as the `minAmount` floor in `MoneyRequestModal`'s amount field. The constants file's own comment explains why this is centralized here: this value used to be duplicated and inconsistent across the codebase (`MoneyRequestModal` actually enforced $50 while other UI text elsewhere showed $20 or $10), which confused users seeing different numbers for the same rule; any future change to this number must go through this one constant. See also §4.9 for the separate, lower minimum that applies to deposits.
 
 ### 6.4 Manual (always-available) flow
 
-Both deposits and withdrawals can always be requested manually regardless of whether automated payment rails are configured: `MoneyRequestModal` (§4.9) collects amount + method + a transfer reference (deposit) or receiving details (withdrawal), creating a pending request document. An admin reviews it in the Finance tab and approves/rejects — approval is what actually moves the balance, performed server-side via Firebase Admin SDK (bypassing client Firestore security rules) inside an atomic transaction, guarded against double-processing both client-side (`processingRequestIdsRef` Set, blocks a second click on the same request id before the UI has re-rendered) and server-side (transaction-level idempotency).
+Both deposits and withdrawals can always be requested manually regardless of whether automated payment rails are configured: `MoneyRequestModal` (§4.9) collects amount + method + a transfer reference (deposit) or receiving details (withdrawal), creating a pending request document. An admin reviews it in the Finance tab and approves/rejects.
+
+**⚠️ Correction:** approval is **not** a server-side, Admin-SDK-backed, atomically-transacted operation. `setMoneyRequestStatus` (`firestoreService.ts`) is a plain client-side `updateDoc(...)` call on the request document made directly from the admin's browser, and the balance change itself is a separate plain client-side write (`adminAdjustUserBalance` → `updateDoc` on the user document). The only guard against double-processing is client-side (`processingRequestIdsRef`, which blocks a second click on the same request id before the UI has re-rendered) — there is no server-side transaction or idempotency check backing this. The real authorization boundary is `firestore.rules`' `isAdmin()` predicate, which only the admin's own authenticated Firestore session needs to satisfy. See §11.9 for the full picture and its implication for the Kotlin rewrite.
 
 ### 6.5 Optional automated rails
 
 - **Stripe** — deposit via Stripe Checkout; payout via Stripe Connect Express (creator onboarding + payout). Availability is checked client-side via `GET /api/payments/status`; if not configured, the UI simply doesn't show the automated buttons and falls back to the manual flow — no broken/dead buttons are shown.
-- **NOWPayments** — crypto deposit via a generated invoice, and a direct USDT-TRC20 receiving address option for withdrawals. Availability checked via `GET /api/payments/nowpayments/status`.
-- Both integrations use webhook-based confirmation for deposits, with **webhook deduplication** enforced via `paymentWebhookEvents` marker documents in Firestore (each incoming webhook event id is checked/recorded so a retried webhook delivery cannot double-credit a balance).
+- **NOWPayments — confirmed LIVE and active in production** (ground truth from the app owner, not source-derived: verified via live screenshots). Direct crypto deposit works today end-to-end: the user chooses an asset (e.g. BTC), the app generates a real payment address/QR via a NOWPayments invoice, the USD amount is auto-converted to the chosen crypto's amount, and the wallet balance credits automatically once the network confirms the payment. Availability is checked client-side via `GET /api/payments/nowpayments/status`.
+- **"Instant card payment via external intermediary" — a second, real, currently-live deposit path, distinct from the crypto flow above and not previously documented in this spec.** Implemented in `WalletModal.tsx` (the "Guardarian" / card-bridge block, near the NOWPayments deposit UI). Flow:
+  1. The user taps a button to generate a receiving address (same underlying mechanism as the crypto deposit: a real USDT-TRC20 address minted via NOWPayments), rendered with a copy button.
+  2. The user copies the address, then taps a link that opens **Guardarian** (`guardarian.com`) — an external, third-party site, **not part of this codebase** — in a new tab.
+  3. On Guardarian, the user pastes the copied address, selects USDT on the TRC20/TRON network, and completes a card purchase (Visa/Mastercard) of USDT, which Guardarian sends to the pasted address.
+  4. Guardarian may require its own KYC step before a user's first transaction there — this is Guardarian's own requirement, separate from Literium's KYC (§6.6/§12.4).
+  5. Once the USDT arrives at the generated address, it is picked up the same way as any other NOWPayments-confirmed crypto deposit.
+  This path is explicitly **not fully automated** — the code comment describing it notes that a fully automated card→address flow would require an official Guardarian `partner_api_token` that is not currently available, so the manual copy/paste bridge is the real, intentional design, not a stub or placeholder. The Kotlin app should implement this as its own distinct deposit method (generate address → copy → open Guardarian externally → user completes the card purchase there → balance credits on the same webhook-confirmed-deposit path as regular crypto deposits), not omit it as "coming soon."
+  - **Three additional "coming soon" deposit method chips (PayPal, manual-USDT, bank wire) have been REMOVED from the app.** An inline code comment in `WalletModal.tsx` confirms these three were left disabled/non-functional ("قيد التطوير" / "in development") with no working submit action, and the app owner has confirmed they were deliberately removed. **Do not build these three as placeholder/disabled deposit options in the Kotlin rewrite** — they are not live features and are not planned to become one; the only two working deposit paths today are the direct NOWPayments crypto flow and the Guardarian card-bridge flow above (plus the manual admin-reviewed request flow in §6.4, and Stripe when configured).
+- Both the Stripe and NOWPayments integrations use webhook-based confirmation for deposits, with **webhook deduplication** enforced via `paymentWebhookEvents` marker documents in Firestore (each incoming webhook event id is checked/recorded so a retried webhook delivery cannot double-credit a balance).
 
 ### 6.6 KYC's role in payments (see also §12.4)
 
@@ -491,9 +545,9 @@ type LanguageCode = 'ar' | 'en' | 'fr' | 'es' | 'zh';
 
 ### 10.2 `UserRole`
 ```ts
-type UserRole = 'reader' | 'writer' | 'admin';
+type UserRole = 'reader' | 'writer' | 'advertiser' | 'admin';
 ```
-Note (§1.3, §3.2): this field is largely a display/legacy label; it does not by itself gate write/publish/advertise actions, which are available to any authenticated account.
+(`types.ts:1`.) `'advertiser'` is a real, live value — not a legacy leftover — actively filtered/counted in admin UI (`AdminUsersTab.tsx:178/295`, `AdminOverviewTab.tsx:354`, `AdminAnalyticsTab.tsx:138/689`) and read to drive role-conditional copy in `WalletModal.tsx:51`, `KycModal.tsx:20`, and `EditProfileModal.tsx:25` (see §1.3a). Note (§1.3, §3.2): this field does not by itself gate write/publish/advertise actions, which are available to any authenticated account — but see §1.3a for the real, live role-switching UI that does let a user set this field as a chosen "active persona."
 
 ### 10.3 `User`
 Key fields (grouped by concern):
@@ -501,9 +555,9 @@ Key fields (grouped by concern):
 **Identity & profile:**
 - `id: string`
 - `username: string` (unique)
-- `displayName: string`
+- `fullName: string` (`types.ts:51`) — **not** `displayName`; used as `user.fullName` across 14+ files. Note the `EditProfileModal` name field actually edits `penName`/`companyName`/`fullName` depending on the active role, per §1.3a.
 - `email: string`
-- `avatar: string` (URL)
+- `avatarUrl: string` (URL, `types.ts:53`) — **not** `avatar`.
 - `bio?: string`
 - `role: UserRole`
 - `isVerified?: boolean` (blue-checkmark style verification, distinct from KYC identity verification)
@@ -516,15 +570,16 @@ Key fields (grouped by concern):
 - `followingCount: number`
 (Actual follow relationships are stored in a separate `follows` collection per Firestore service — these counters are denormalized for display; the *real* eligibility check recomputes from the `follows` collection rather than trusting this counter, per `creatorEligibility.ts`.)
 
-**Wallet fields (see §6.1 for full semantics — do not conflate these four):**
-- `walletBalance: number` — spendable, deposit-funded.
-- `pendingEarnings: number` — frozen earnings inside the 30-day hold.
-- `availableBalance: number` — earnings released after the hold, withdrawable.
-- `lifetimeEarnings: number` — cumulative all-time earnings stat, monotonically increasing, not spendable.
+**Wallet fields (see §6.1 for full semantics — do not conflate these four):** all four are **optional** on `User` (`types.ts:88-94` — `?:`, not required fields; a freshly-created or legacy user document may simply lack them, so Kotlin data classes should model these as nullable, not non-null with a default):
+- `walletBalance?: number` — spendable, deposit-funded.
+- `pendingEarnings?: number` — frozen earnings inside the 30-day hold.
+- `availableBalance?: number` — earnings released after the hold, withdrawable.
+- `lifetimeEarnings?: number` — cumulative all-time earnings stat, monotonically increasing, not spendable.
 
-**KYC fields:**
-- `kycStatus: 'not_started' | 'pending' | 'verified' | 'rejected'` (exact literal set as used by `KycModal`/`KycReviewModal`)
-- `kycDetails?: KycDetails` (see §10.10)
+**KYC fields:** there is **no `kycStatus` field on `User`** anywhere in the codebase (confirmed by a repo-wide grep — no match at all). The real mechanism is two-part:
+- `isKycVerified?: boolean` — a direct boolean flag.
+- `kycDetails?: KycDetails` (see §10.11), whose own `status: 'none' | 'pending' | 'verified' | 'rejected'` field (`types.ts:15-21`) carries the granular state — note the not-yet-started value is literally **`'none'`**, not `'not_started'`.
+- The actual verified-check used by the eligibility gate (`creatorEligibility.ts:58`) is `user.isKycVerified || user.kycDetails?.status === 'verified'` — either signal is sufficient; the Kotlin model should carry both fields and replicate this same OR check rather than inventing a single unified `kycStatus` enum.
 
 **AI usage:**
 - Fields tracking daily/lifetime AI usage counters tied to `AiQuota` (§10.11).
@@ -586,7 +641,10 @@ Key fields (grouped by concern):
 - Fields capturing the Gemini-vision extraction result: extracted name, confidence level (`'high' | ...` lower tiers), document image reference (pointing into the separate admin-only `kycDocuments` collection, never inline/public), review outcome/notes when a human admin reviewed it.
 
 ### 10.12 `AiQuota` / `SubscriptionPlan`
-- `AiQuota`: per-user daily chat-message count and limit, lifetime image-generation count and limit, tracked server-side **in-memory** (not persisted to a database) — meaning **it resets whenever the server process restarts**, a genuine limitation to note in §13, not something to silently "fix" by assuming persistence in the Kotlin backend without discussion.
+- `AiQuota`: tracks per-user AI usage across three separate quota mechanisms, which have **different** persistence behavior — do not describe the whole system as uniformly in-memory:
+  - **Daily chat-message quota** (`userQuotas` Map, `server.ts:82`) — server-side, **in-memory only**, resets whenever the server process restarts.
+  - **Subscriber daily image bonus** (`subscriberDailyImageQuotas` Map, `server.ts:463`) — also server-side, **in-memory only**, same reset-on-restart behavior. An inline comment at this line explains it stays in-memory deliberately for now (it's an additional perk on top of the base free quota, and the base quota was the one with the actual bug — see next bullet).
+  - **Lifetime 3-free-images quota** — by contrast, this one **is persisted**, in the `freeImagesUsedTotal` field on the user's Firestore document (`server.ts:499-514`). A code comment at that location explicitly documents this as a deliberate fix: this counter used to live in server memory too, which meant it reset (and granted effectively-unlimited free images) on every server restart — moving it into Firestore closed that gap.
 - `SubscriptionPlan`: `'free' | 'monthly' | 'annual'` with the concrete limits given in §12.5.
 
 ### 10.13 `FraudFlag`
@@ -596,7 +654,7 @@ Key fields (grouped by concern):
 
 ## 11. Backend API Reference
 
-Source: `server.ts` (2,851 lines, full read) plus the supporting `server/*.ts` modules (`firebaseAdmin.ts`, `mediaUpload.ts`, `nowPayments.ts`, `paymentProvider.ts`, `socialVerify.ts`), all read in full. Endpoints below are grouped by concern. All financial/privileged endpoints use the Firebase Admin SDK to bypass client Firestore security rules and perform atomic transactions with idempotency guards.
+Source: `server.ts` (2,851 lines, full read) plus the supporting `server/*.ts` modules (`firebaseAdmin.ts`, `mediaUpload.ts`, `nowPayments.ts`, `paymentProvider.ts`, `socialVerify.ts`), all read in full. Endpoints below are grouped by concern. A full grep of every route registration in `server.ts` confirms the list below is exhaustive — notably, it contains **no** deposit/withdrawal-approval, balance-adjustment, earnings-release, or ad-event-processing route; those admin financial actions are client-side Firestore writes instead, gated by `firestore.rules` — see §11.9 for the corrected accounting (this replaces an earlier, incorrect draft of this section that described those four operations as Admin-SDK-backed atomic endpoints).
 
 ### 11.1 Payments — status/config
 - `GET /api/payments/status` — reports whether Stripe is configured (used by the client to decide whether to show automated deposit/payout buttons, §6.5).
@@ -635,11 +693,18 @@ Source: `server.ts` (2,851 lines, full read) plus the supporting `server/*.ts` m
 ### 11.8 Publishing bots
 - A cron-triggered daily-cycle endpoint, protected by a **shared-secret header check** (not normal user authentication) so it can only be invoked by the GitHub Actions workflow, not by any logged-in user or public caller. On each invocation it: selects the next bot persona in rotation, generates and publishes exactly 1 article and 1 tweet via the same Gemini text pipeline, and triggers cross-bot auto-engagement (other bot accounts auto-like/auto-comment on the newly published content) to seed initial engagement.
 
-### 11.9 Firebase Admin-privileged financial operations
-- Deposit/withdrawal request approve/reject endpoints (admin-only, verified via Firebase Admin SDK token check server-side) — perform the actual atomic balance-changing transaction, guarded against double-processing.
-- Direct balance-adjustment endpoint backing `BalanceAdjustModal` — requires an admin-verified caller and a mandatory reason string, written to an audit trail.
-- Earnings-hold-release endpoint — moves matured `pendingEarnings` into `availableBalance` for accounts past the 30-day hold, admin-triggered from the Finance tab.
-- Ad-event-batch processing endpoint backing the Finance tab's "process ad events" action — runs `evaluateAdEventBatch` server-side and converts validated events into actual writer/platform revenue-share credits per §5.6/§12.2.
+### 11.9 Financial operations — ⚠️ NOT server endpoints; client-side Firestore writes gated by `firestore.rules`
+
+**Major correction to this section.** An earlier draft of this document described deposit/withdrawal approval, balance adjustment, earnings-hold release, and ad-event-batch processing as server-side, Firebase-Admin-SDK-backed, atomic-transaction-protected endpoints. **This is not what the code does.** A full grep of every `app.get/post/put/patch/delete` registration in `server.ts` (list in §11, confirmed exhaustive) turns up **no route at all** for deposit/withdrawal approval, balance adjustment, earnings release, or ad-event processing. All four are, today, plain **client-side Firestore writes** made directly from the admin's browser:
+
+- **Deposit/withdrawal approve/reject** — `setMoneyRequestStatus` (`firestoreService.ts`) → a plain `updateDoc(...)` on the request document.
+- **Direct balance adjustment** (backing `BalanceAdjustModal`) — `logManualBalanceAdjustment` (writes an audit-trail entry via `addDoc`) plus `adminAdjustUserBalance` (`updateDoc` on the user document) — both `firestoreService.ts`.
+- **Earnings-hold release** — `adminReleaseEarnings` (`firestoreService.ts`), which itself just wraps `adminAdjustUserBalance` above (moves an amount from `pendingEarnings` to `availableBalance` via the same client `updateDoc`).
+- **Ad-event-batch processing** ("process ad events" in the Finance tab) — `evaluateAdEventBatch` is invoked directly in `App.tsx`'s `handleProcessAdEvents` (client code, not a server route), which then writes the resulting balance/spend changes to Firestore the same way as the other three.
+
+All four are authorized **only** by `firestore.rules`' `isAdmin()` predicate (`firestore.rules:14-22`): `request.auth.token.email` matches the hardcoded owner email, **or** the caller's own `users/{uid}` document has `role == 'admin'`. There is no server-issued token check and no atomic transaction anywhere in this path — the security boundary is entirely the Firestore rules engine evaluated against the authenticated client's own request.
+
+**Design consideration worth flagging for the Kotlin rewrite:** because these writes are just normal authenticated Firestore calls gated by rules (not a backend that independently re-verifies the caller), a native Android client could in principle attempt the exact same writes directly against Firestore, using an admin-role account and the same rules that gate the web client today. The security boundary the Kotlin app inherits is the rules engine, not a backend endpoint — this is a real property of the current system to design around (e.g., whether to keep relying on Firestore rules as-is, or to introduce a genuine server-verified endpoint for these operations), not something to silently assume is already server-enforced.
 
 ---
 
@@ -651,6 +716,7 @@ Consolidated numeric constants and rules, sourced from `src/constants/revenueSha
 - `MAX_ADS_PER_PAGE = 3` (§5.2).
 - Viewability threshold for a countable impression: **≥50% of the ad unit visible, for a continuous 1 second** (§5.4).
 - Rapid-click / bot-click exclusion window: clicks within roughly the **first 1.5–2 seconds** after page load are discarded (§5.7).
+- Default pricing-model rates pre-filled in the campaign-creation wizard (§5.8): **CPM $1.00** per 1,000 impressions, **CPC $0.08** per click (`NewCampaignModal.tsx:89-90`) — editable by the advertiser, not fixed floors.
 
 ### 12.2 Revenue shares (`REVENUE_SHARES`) — exact table
 See §5.6 for the full table. Restated for consolidation:
@@ -661,7 +727,8 @@ See §5.6 for the full table. Restated for consolidation:
 
 ### 12.3 Payout rules (`payoutRules.ts`)
 - `EARNINGS_HOLD_DAYS = 30` — earnings sit in `pendingEarnings` for 30 days before an admin can release them to `availableBalance` (§6.2).
-- `MIN_PAYOUT_USD` — minimum withdrawal request amount, **$10** (as stated verbatim in the live-linked legal text, §2.4/§6.3).
+- `MIN_PAYOUT_USD = 50` (`payoutRules.ts:8`) — minimum withdrawal request amount. The constant's own comment states it exists because this value used to drift inconsistently across the UI (`MoneyRequestModal` actually enforced $50 while other in-app text showed $20 or $10 for the same rule) — see §6.3.
+- `MIN_DEPOSIT_USD = 20` (`payoutRules.ts:13`) — a separate, lower minimum that applies specifically to deposits (`MoneyRequestModal.tsx:66`: `isDeposit ? MIN_DEPOSIT : MIN_PAYOUT`). The constant's comment explains this was raised from an earlier $10 because $10 fell below NOWPayments' actual minimum for several supported cryptocurrencies (which varies by each coin's network fees), causing the payment page to reject or demand a higher amount even though the app itself had accepted the original request — see §4.9.
 - Withdrawal turnaround target communicated to users: transfers processed **within 24 hours** via approved payment methods (USDT, bank wire, Stripe, PayPal), per the terms text in `PoliciesModal`.
 - Deposit/withdrawal manual-review SLA communicated to users: **24–48 hours** (`MoneyRequestModal`'s inline disclosure).
 
@@ -670,7 +737,7 @@ See §5.6 for the full table. Restated for consolidation:
 2. **≥1,000 valid views** on the account's own published articles.
 3. **≥14 days** account age.
 4. **≥3 published articles.**
-5. **Mandatory KYC verification** (`kycStatus === 'verified'`) — required in addition to the 4 stats above, not a substitute for any of them.
+5. **Mandatory KYC verification** (`user.isKycVerified || user.kycDetails?.status === 'verified'`, per `creatorEligibility.ts:58` — see §10.3 for why there is no single `kycStatus` field) — required in addition to the 4 stats above, not a substitute for any of them.
 
 Exceptions:
 - Bot accounts (`isBot === true`) are **always excluded** from eligibility regardless of how their stats look — bots never earn monetized revenue.
@@ -682,7 +749,7 @@ An account failing this gate can still write, publish, tweet, and use every othe
 - **Free tier**: 10 chat messages/day, 3 lifetime image generations (not daily — a one-time lifetime allowance).
 - **Monthly subscription**: $9.99, 200 AI uses.
 - **Annual subscription**: $79.99, unlimited AI uses.
-- Quota tracking is **server-side, in-memory only** — it resets on every server restart (§10.12; flagged again in §13 as a genuine limitation, not a design goal to silently replicate as "correct" without at least persisting it properly in the Kotlin backend).
+- Quota tracking is **not uniformly in-memory** — see §10.12 for the full breakdown. The daily chat-message quota and the subscriber daily image bonus are server-side, in-memory only, and reset on every server restart (a genuine limitation, flagged again in §13 — not a design goal to silently replicate as "correct" without at least persisting it properly in the Kotlin backend). The lifetime 3-free-images quota, however, is already persisted server-side in Firestore (`freeImagesUsedTotal` on the user document) specifically because the earlier in-memory version of that counter was a confirmed bug (it effectively granted unlimited free images across restarts) — the Kotlin backend should match this field's persisted behavior, not treat it as unsolved.
 
 ### 12.6 Publishing bots
 - **8 fixed AI-persona bot accounts**, `isBot: true`.
@@ -719,8 +786,8 @@ Confirmed superseded by `src/services/analyticsApi.ts` and the real server-side 
 ### 13.3 `src/data/mockData.ts` is confirmed unused/dead
 Grep confirms the only reference to `mockData` in `App.tsx` is a comment explaining it was **deliberately stopped from being loaded into live state**, because doing so let any anonymous guest browsing the site appear as an already-authenticated fake writer account with full dashboard and role-switch access — a real bug that was fixed by starting `users` state empty and sourcing `currentUser` solely from the real Firebase `onAuthStateChanged` listener. Do not port any of the mock data's shape/content as if it reflects real seed data — it doesn't run at all in production.
 
-### 13.4 AI quota tracking resets on server restart
-Covered in §10.12/§12.5. This is an actual limitation of the current system (in-memory counters, no database persistence), not a deliberate design choice worth replicating as "correct" — the Kotlin backend team should decide explicitly whether to persist quota state properly or knowingly accept the same reset-on-restart behavior, rather than have this happen by accident.
+### 13.4 Two of the three AI quota mechanisms reset on server restart — the third is already persisted
+Covered in full in §10.12/§12.5. This limitation applies specifically to the **daily chat-message quota** and the **subscriber daily image bonus** (both server-side `Map` objects in `server.ts`, no database persistence) — not to all AI quota tracking. The **lifetime 3-free-images quota** (`freeImagesUsedTotal` on the user's Firestore document) is already persisted, and a code comment at its implementation (`server.ts:499-514`) documents this as a deliberate fix of exactly the same reset-on-restart bug class, applied to that one counter after it caused a real problem (effectively-unlimited free images across restarts). The Kotlin backend team should decide explicitly whether to persist the remaining two in-memory counters properly or knowingly accept the same reset-on-restart behavior for those two specifically, rather than have this happen by accident — and should replicate the third counter's already-persisted behavior rather than re-introducing the bug it fixed.
 
 ### 13.5 i18n coverage is shallow
 `src/data/translations.ts` exists and 5 `LanguageCode` values are modeled, but the large majority of on-screen Arabic text is hardcoded directly in JSX rather than routed through `t()`. Switching the language selector does **not** translate most of the app's actual content — only a minority of chrome strings (some menu/button labels). Do not assume full multi-language parity exists in the current web app; if the Kotlin app is meant to be genuinely multi-language, that is new scope beyond "faithful port," and should be flagged back to the user rather than assumed.
