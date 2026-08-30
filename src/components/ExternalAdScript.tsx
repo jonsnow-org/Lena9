@@ -42,18 +42,29 @@ export const ExternalAdScript: React.FC<ExternalAdScriptProps> = ({ snippet, cla
     iframe.style.border = '0';
     iframe.style.display = 'block';
     iframe.setAttribute('scrolling', 'no');
-    // ⚠️ allow-same-origin أُعيدت بعد أن ظهرت مساحة فارغة كلياً بلا أي إعلان
-    // في كل المواضع: أغلب شبكات الإعلانات (Adsterra/PropellerAds/Monetag)
-    // تعتمد على الكوكيز وطلبات XHR لجلب الإعلان الفعلي، وإطار sandbox بلا
-    // allow-same-origin يُعامَل كأصل معزول (opaque origin) فتُحظر هذه
-    // الطلبات صامتة فيبقى الصندوق فارغاً — لا خطأ ظاهر، فقط لا إعلان أبداً.
-    // هذا لا يُعيد مشكلة "يغطي الشاشة" الأصلية: تلك كانت بسبب محاولة السكربت
-    // تثبيت نفسه في <body> الصفحة الرئيسية عبر position:fixed خارج أي حاوية؛
-    // العزل الذي يمنع ذلك هو حدود الـ iframe نفسها (أي body داخله محصور
-    // بصرياً بحجمه)، وهذا يبقى قائماً بصرف النظر عن allow-same-origin. بلا
-    // allow-top-navigation/allow-modals — يمنع فتح نوافذ أو حوارات تتحكم
-    // بصفحتنا نفسها.
-    iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox');
+    // ⚠️ allow-same-origin أُزيلت نهائياً — تجربة سابقة أضافتها لحل مشكلة
+    // "الصندوق فارغ" فأعادت فتح مشكلة "يغطي الشاشة" الأصلية بشكل أخطر:
+    // عندما يكون allow-scripts و allow-same-origin معاً على iframe مُقيّد،
+    // فإن srcdoc لا يُعامَل كأصل معزول (opaque) بل يرث أصل صفحتنا الحقيقي —
+    // ما يمنح سكربت الشبكة وصولاً برمجياً حقيقياً إلى window.parent.document
+    // (نفس الأصل تماماً)، فيستطيع حرفياً حقن عناصره مباشرة داخل body صفحتنا
+    // الحقيقية متجاوزاً حدود الـ iframe كلياً — وهذا بالضبط ما رآه المستخدم:
+    // البطاقة عادت تغطي أعلى الشاشة وزر X التابع للشبكة لم يعد يستجيب (لأنه
+    // لم يعد داخل الإطار المعزول أصلاً بل حقيقة في صفحتنا، متعارضاً مع منطق
+    // صفحتنا نفسها).
+    //
+    // الحل الدائم: عزل كامل بلا allow-same-origin (أصل معزول/opaque) — يمنع
+    // نهائياً أي وصول من سكربت الشبكة إلى document.body الحقيقي مهما كان
+    // الكود المُلصَق عدائياً. الأثر الجانبي المقبول: تنسيقات "Social
+    // Bar"/"In-Page Push"/"Popunder" (إشعارات تغطي الشاشة بطبيعتها، وليست
+    // بانرات) قد لا تعرض محتوى داخل هذا الصندوق الصغير إطلاقاً — وهذا ليس
+    // خللاً في الكود، بل لأن هذه التنسيقات مصمَّمة أصلاً لتغطية الشاشة على
+    // أي موقع، لا لتلائم صندوقاً صغيراً. الحل الحقيقي لذلك من جهة المستخدم:
+    // توليد كود الإعلان من نوع "Banner"/"Native Banner" (مقاسات ثابتة مثل
+    // 300x250 أو 320x50) من لوحة الشبكة (Adsterra/PropellerAds/Monetag) بدل
+    // "Social Bar"/"In-Page Push"/"Popunder" — هذه التنسيقات مصمَّمة أصلاً
+    // لتُعرض داخل حاوية بحجم ثابت وتعمل بشكل طبيعي داخل iframe معزول.
+    iframe.setAttribute('sandbox', 'allow-scripts allow-popups allow-popups-to-escape-sandbox');
     iframe.srcdoc =
       '<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">' +
       '<style>html,body{margin:0;padding:0;overflow:hidden;background:transparent}</style></head><body>' +

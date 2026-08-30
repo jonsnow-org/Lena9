@@ -569,6 +569,9 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
             <p className="text-xs text-slate-400 leading-relaxed">
               إذا لم تكن هناك حملات محلية نشطة للمعلنين، يمكن ملء المساحات الشاغرة تلقائياً عبر شبكات خارجية مثل PropellerAds (يشمل Monetag) أو Adsterra أو Taboola لتعظيم الدخل السلبي. الصق كود الإعلان الكامل (وسم &lt;script&gt; كاملاً) كما هو من لوحة الشبكة، ثم فعّل المفتاح.
             </p>
+            <p className="text-[11px] text-amber-400 leading-relaxed bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2">
+              ⚠️ مهم عند توليد الكود من لوحة الشبكة: اختر نوع وحدة إعلانية "Banner" أو "Native Banner" بمقاس ثابت (مثل 300x250 أو 320x50) فقط. لا تستخدم أنواع "Social Bar" / "In-Page Push" / "Popunder" — هذه الأنواع مصمَّمة لتغطية الشاشة كإشعار عائم على أي موقع، وحمايتنا الأمنية (عزل الإعلان داخل إطار معزول تماماً) تمنعها من تغطية الشاشة هنا لكنها قد تظهر فارغة لأنها غير مصمَّمة أصلاً للعرض داخل صندوق صغير.
+            </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-2">
               <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
