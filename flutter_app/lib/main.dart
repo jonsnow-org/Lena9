@@ -206,7 +206,7 @@ class _WebShellScreenState extends State<WebShellScreen> {
   Widget build(BuildContext context) {
     return PopScope(
       canPop: false,
-      onPopInvokedWithPop: (didPop, result) async {
+      onPopInvoked: (didPop) async {
         if (didPop) return;
         final shouldPop = await _handleBack();
         if (shouldPop && context.mounted) {
