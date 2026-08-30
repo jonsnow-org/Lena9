@@ -4,8 +4,8 @@ import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
-import okhttp3.asRequestBody
-import okhttp3.toRequestBody
+import okhttp3.RequestBody.Companion.asRequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import studio.ai.literium.literium_app.data.firebase.FirestoreCollections
 import studio.ai.literium.literium_app.data.remote.KycDocumentResponse
 import studio.ai.literium.literium_app.data.remote.KycSubmitResponse

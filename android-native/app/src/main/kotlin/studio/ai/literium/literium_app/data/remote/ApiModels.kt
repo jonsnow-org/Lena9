@@ -11,9 +11,9 @@ import kotlinx.serialization.Serializable
  * Auth model (important, and NOT uniform across endpoints — ported exactly
  * as the source implements it, not idealized): endpoints that call
  * `verifyRequestAuth(req.headers.authorization)` server-side (unlock,
- * campaign review, analytics summary, all `/api/payments/*`,
- * `/api/media/upload`, `/api/kyc/*`, `/api/social/verify-*`,
- * `/api/ai/generate-image`) derive the caller's uid from a real Firebase ID
+ * campaign review, analytics summary, every endpoint under `/api/payments`,
+ * `/api/media/upload`, every endpoint under `/api/kyc`, the `/api/social`
+ * verify-* endpoints, `/api/ai/generate-image`) derive the caller's uid from a real Firebase ID
  * token and take an `Authorization: Bearer <idToken>` header — those
  * methods below take an explicit `authorization` parameter. The AI
  * chat/writing-assistant/SEO endpoints and `/api/analytics/track-visit`, by
