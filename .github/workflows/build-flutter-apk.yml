@@ -299,57 +299,21 @@ jobs:
               open(app_gradle_path, "w").write(text)
           PY
 
-      # ⚠️ عطل حقيقي وقع فعلياً على جهاز المستخدم (شاشة معالج العطل التقطته
-      # بنجاح — أول مرة تعمل هذه الشبكة فعلياً): "Could not find 'libflutter.so'.
-      # Looked for: [armeabi-v7a, armeabi], but only found: [arm64-v8a]" —
-      # عطل مختلف كلياً عن مشكلة WorkManager، وموثَّق رسمياً من Flutter نفسه:
-      # منذ Flutter 3.35، تضع Flutter Gradle Plugin تلقائياً abiFilters
-      # افتراضية (armeabi-v7a + arm64-v8a + x86_64) في حزمة APK ما لم تُستخدَم
-      # --split-per-abi — بصرف النظر تماماً عن علم --target-platform الذي
-      # نمرّره فعلياً (android-arm64 فقط). فتُعلن الحزمة دعماً لمعماريات لم
-      # تُصرَّف فعلياً (لا يوجد سوى كود arm64 حقيقي)، وأي محاولة من مسار داخلي
-      # (هنا: تفاعل بين Google Mobile Ads SDK ومحمّل Flutter الأصلي) تفترض
-      # وجود armeabi-v7a بناءً على هذا الإعلان الخاطئ تفشل فوراً. المرجع
-      # الرسمي: docs.flutter.dev/release/breaking-changes/default-abi-filters-android
-      # الحل الموثَّق: مسح abiFilters المُحقَنة تلقائياً وتحديدها يدوياً لتطابق
-      # ما نُصرِّفه فعلاً (arm64-v8a فقط) — بلا أي زيادة في زمن/ذاكرة البناء
-      # (لا نضيف معمارية حقيقية جديدة، فقط نصحّح الإعلان ليطابق الواقع).
-      - name: Fix ABI filters to match the actually-compiled architecture (arm64-v8a only)
-        working-directory: flutter_app
-        run: |
-          python3 - <<'PY'
-          import os
-
-          app_gradle_path = "android/app/build.gradle.kts" if os.path.exists("android/app/build.gradle.kts") else "android/app/build.gradle"
-          is_kts = app_gradle_path.endswith(".kts")
-          text = open(app_gradle_path).read()
-
-          if "abiFilters" not in text:
-              if is_kts:
-                  block = '''
-          android {
-              defaultConfig {
-                  ndk {
-                      abiFilters.clear()
-                      abiFilters.addAll(listOf("arm64-v8a"))
-                  }
-              }
-          }
-          '''
-              else:
-                  block = '''
-          android {
-              defaultConfig {
-                  ndk {
-                      abiFilters.clear()
-                      abiFilters.add("arm64-v8a")
-                  }
-              }
-          }
-          '''
-              text += block
-              open(app_gradle_path, "w").write(text)
-          PY
+      # ⚠️ تراجع: خطوة "Fix ABI filters" (تعيين ndk.abiFilters يدوياً عبر
+      # build.gradle) حُذفت. صحيح أنها أصلحت عطل "libflutter.so ... looked
+      # for armeabi-v7a" الذي التقطته شاشة معالج العطل على جهاز المستخدم —
+      # لكنها كسرت التثبيت نفسه فوراً بعدها ("التطبيق ليس مثبتًا"، بلا أي
+      # رسالة أوضح، حتى بعد حذف كامل للنسخة القديمة وإعادة تنزيل الملف من
+      # الصفر — يستبعد فساد التنزيل/بقايا تثبيت قديم كسبب). على الأرجح
+      # تعارضاً بين تعديل abiFilters يدوياً وآلية Flutter Gradle Plugin
+      # الداخلية لتحديد أي مكتبات .so فعلية تُنسَخ فعلاً إلى الحزمة (وليس
+      # مجرد "فلترة" وصفية بلا أثر على المحتوى الفعلي) — أدّى على الأرجح
+      # لحزمة تُعلن معمارية واحدة (arm64-v8a) لكن بلا أي مكتبة أصلية مطابقة
+      # فعلياً بداخلها، فيرفض مثبِّت اندرويد الحزمة بالكامل بدل مجرد فشل وقت
+      # التشغيل. توثيق Flutter نفسه يحذّر من هذا التعارض تحديداً: دمج
+      # abiFilters يدوي مع --split-per-abi "يكسر بناء Gradle". الحل الأصح إذاً
+      # هو استخدام --split-per-abi نفسها (الآلية الرسمية المُختبَرة من Flutter
+      # لهذا الغرض بالضبط) بدل التعديل اليدوي — انظر خطوة البناء أدناه.
 
       # كل المحاولات السابقة لتفعيل Built-in Kotlin أو حقن checker-qual كانت
       # في الاتجاه الخاطئ. السجل الحقيقي (تشغيل رقم 15) كشف السبب الفعلي بلا
@@ -666,13 +630,22 @@ jobs:
           # مستقلة تديرها kotlin-gradle-plugin نفسها للترجمة التزايدية،
           # لا فائدة منها في بناء CI لمرة واحدة، وتضيف عبء ذاكرة كامل آخر.
           GRADLE_OPTS: "-Dorg.gradle.kotlin.daemon.enabled=false"
-        run: flutter build apk --release --target-platform android-arm64
+        # ⚠️ أُضيف --split-per-abi: التعديل اليدوي السابق لـ abiFilters عبر
+        # build.gradle (لحل عطل libflutter.so/armeabi-v7a) أصلح ذلك العطل
+        # فعلاً لكنه كسر التثبيت نفسه بالكامل ("التطبيق ليس مثبتًا" على جهاز
+        # المستخدم، حتى بعد حذف كامل للنسخة القديمة وإعادة تنزيل نظيفة) —
+        # على الأرجح تعارض بين التعديل اليدوي وآلية نسخ المكتبات الأصلية
+        # الداخلية لـ Flutter Gradle Plugin. --split-per-abi هي الآلية
+        # الرسمية المُختبَرة من Flutter نفسها لتضييق المعماريات المُعلَنة —
+        # تُنتج اسم ملف مختلف (app-arm64-v8a-release.apk بدل app-release.apk)
+        # محدَّث في كل الخطوات التالية التي تشير إليه.
+        run: flutter build apk --release --target-platform android-arm64 --split-per-abi
 
       - name: Upload signed APK
         uses: actions/upload-artifact@v4
         with:
           name: Literium-flutter-signed-apk
-          path: flutter_app/build/app/outputs/flutter-apk/app-release.apk
+          path: flutter_app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
           if-no-files-found: error
 
       # ⚠️ تصحيح: التشغيل السابق أثبت أن "ترجمة ABI" على صورة x86_64 (حتى
@@ -691,7 +664,7 @@ jobs:
         env:
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           GRADLE_OPTS: "-Dorg.gradle.kotlin.daemon.enabled=false"
-        run: flutter build apk --release --target-platform android-x64
+        run: flutter build apk --release --target-platform android-x64 --split-per-abi
 
       # ⚠️ خطوة تشخيصية مستقلة تماماً عن التسليم أعلاه (الذي اكتمل بالفعل) —
       # المستخدم لا يملك حاسوباً ولا adb، فلا وسيلة لديه لمعرفة سبب الانهيار
@@ -730,7 +703,7 @@ jobs:
           echo "DIAG: نظام $(adb shell getprop ro.build.version.release), معمارية $(adb shell getprop ro.product.cpu.abi)"
           adb logcat -c
           echo "DIAG_INSTALL_START"
-          adb install -r flutter_app/build/app/outputs/flutter-apk/app-release.apk 2>&1 | tail -5
+          adb install -r flutter_app/build/app/outputs/flutter-apk/app-x86_64-release.apk 2>&1 | tail -5
           echo "DIAG_INSTALL_END"
           echo "DIAG_LAUNCH_START"
           adb shell am start -n studio.ai.literium.literium_app/studio.ai.literium.literium_app.MainActivity 2>&1 | tail -5
