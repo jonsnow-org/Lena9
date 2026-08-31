@@ -18,14 +18,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Reply
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.CornerDownLeft
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.RemoveRedEye
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.BookmarkBorder
@@ -97,7 +97,7 @@ fun ArticleReaderScreen(
             TopAppBar(
                 title = { Text("قراءة المقال", fontSize = 15.sp, fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, contentDescription = "رجوع") }
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "رجوع") }
                 },
                 actions = {
                     IconButton(onClick = viewModel::toggleBookmark) {
@@ -317,7 +317,7 @@ private fun ArticleReaderBody(
                             enabled = commentText.isNotBlank()
                         ) {
                             Text("نشر التعليق", fontWeight = FontWeight.Bold)
-                            Icon(Icons.Filled.Send, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, modifier = Modifier.size(14.dp))
                         }
                     }
                 }
@@ -520,7 +520,7 @@ private fun CommentRow(
                     Text("${comment.likesCount}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Row(modifier = Modifier.clickable(onClick = onToggleReply), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Icon(Icons.Filled.CornerDownLeft, contentDescription = null, tint = BrandTeal, modifier = Modifier.size(14.dp))
+                    Icon(Icons.AutoMirrored.Filled.Reply, contentDescription = null, tint = BrandTeal, modifier = Modifier.size(14.dp))
                     Text("رد", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = BrandTeal)
                 }
             }

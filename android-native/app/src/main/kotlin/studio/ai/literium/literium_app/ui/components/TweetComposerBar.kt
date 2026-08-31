@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -98,7 +98,7 @@ fun TweetComposerBar(
                         enabled = canSubmit
                     ) {
                         Text("تغريد", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = BrandTeal)
-                        Icon(Icons.Filled.Send, contentDescription = null, tint = BrandTeal, modifier = Modifier.size(14.dp))
+                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, tint = BrandTeal, modifier = Modifier.size(14.dp))
                     }
                 }
             }

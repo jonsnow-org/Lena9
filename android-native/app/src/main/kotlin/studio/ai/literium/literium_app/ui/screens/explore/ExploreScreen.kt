@@ -24,7 +24,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Compass
+import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.RemoveRedEye
 import androidx.compose.material.icons.filled.Search
@@ -95,7 +95,7 @@ fun ExploreScreen(
                         modifier = Modifier.size(40.dp).clip(RoundedCornerShape(14.dp)).background(BrandTeal.copy(alpha = 0.12f)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Filled.Compass, contentDescription = null, tint = BrandTeal)
+                        Icon(Icons.Filled.Explore, contentDescription = null, tint = BrandTeal)
                     }
                     Column {
                         Text("استكشف العالم الأدبي", fontSize = 18.sp, fontWeight = FontWeight.Black)

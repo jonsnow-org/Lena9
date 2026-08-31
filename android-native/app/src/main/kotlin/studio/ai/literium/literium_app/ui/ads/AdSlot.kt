@@ -10,10 +10,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.AlternateEmail
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.OpenInNew
-import androidx.compose.material.icons.filled.SmartDisplay
-import androidx.compose.material.icons.filled.Tag
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -452,7 +452,7 @@ private fun AdMediaBlock(campaign: AdCampaign) {
                 .background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center
         ) {
-            Icon(Icons.Filled.SmartDisplay, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         else -> Unit
     }
@@ -471,10 +471,10 @@ private fun AdMediaBlock(campaign: AdCampaign) {
 @Composable
 private fun PromoCtaButton(kind: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val (label, icon, color) = when (kind) {
-        PromotionKind.YOUTUBE -> Triple("اشترك في القناة", Icons.Filled.SmartDisplay, Color(0xFFDC2626))
+        PromotionKind.YOUTUBE -> Triple("اشترك في القناة", Icons.Filled.PlayArrow, Color(0xFFDC2626))
         PromotionKind.TELEGRAM -> Triple("انضم إلى القناة", Icons.AutoMirrored.Filled.Send, Color(0xFF0EA5E9))
         PromotionKind.INSTAGRAM -> Triple("تابعنا على انستغرام", Icons.Filled.CameraAlt, Color(0xFFC026D3))
-        PromotionKind.TWITTER -> Triple("تابعنا على X", Icons.Filled.Tag, Color(0xFF1E293B))
+        PromotionKind.TWITTER -> Triple("تابعنا على X", Icons.Filled.AlternateEmail, Color(0xFF1E293B))
         PromotionKind.FACEBOOK -> Triple("تابع الصفحة", Icons.Filled.ThumbUp, Color(0xFF2563EB))
         else -> Triple("زيارة", Icons.Filled.OpenInNew, Color(0xFF334155))
     }
