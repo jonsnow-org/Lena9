@@ -169,8 +169,66 @@ class AuthViewModel(
         _registerState.update { it.copy(registerSucceeded = false) }
     }
 
-    // ---- Forgot password (spec §3.4 — the `oobCode` email-link half of this flow, verifyResetCode/
-    // confirmNewPassword, is a separate deep-link entry point outside this scope's screen set) ----
+    // ---- Reset password (spec §3.4's `oobCode` email-link half — the deep-link entry point a user
+    // lands on from the reset email `ResetPasswordModal.tsx` sends, independent of AuthModal since the
+    // user arrives from their inbox, not from inside the app) ----
+
+    data class ResetPasswordUiState(
+        val verifying: Boolean = true,
+        val email: String? = null,
+        val linkError: String? = null,
+        val newPassword: String = "",
+        val confirmPassword: String = "",
+        val isSubmitting: Boolean = false,
+        val submitError: String? = null,
+        val success: Boolean = false
+    )
+
+    private val _resetPasswordState = MutableStateFlow(ResetPasswordUiState())
+    val resetPasswordState: StateFlow<ResetPasswordUiState> = _resetPasswordState.asStateFlow()
+
+    /** Call once with the `oobCode` from the incoming deep link — mirrors `ResetPasswordModal`'s own
+     *  verify-on-mount `useEffect`. */
+    fun verifyResetCode(oobCode: String) {
+        viewModelScope.launch {
+            _resetPasswordState.update { it.copy(verifying = true, linkError = null) }
+            authRepository.verifyResetCode(oobCode).fold(
+                onSuccess = { email -> _resetPasswordState.update { it.copy(verifying = false, email = email) } },
+                onFailure = { e -> _resetPasswordState.update { it.copy(verifying = false, linkError = mapAuthError(e)) } }
+            )
+        }
+    }
+
+    fun onNewPasswordChange(value: String) {
+        _resetPasswordState.update { it.copy(newPassword = value, submitError = null) }
+    }
+
+    fun onConfirmPasswordChange(value: String) {
+        _resetPasswordState.update { it.copy(confirmPassword = value, submitError = null) }
+    }
+
+    /** Mirrors `ResetPasswordModal.handleSubmit`'s exact validation order and 6-char minimum. */
+    fun submitNewPassword(oobCode: String) {
+        val state = _resetPasswordState.value
+        if (state.newPassword.length < 6) {
+            _resetPasswordState.update { it.copy(submitError = "كلمة المرور يجب أن تكون 6 أحرف على الأقل.") }
+            return
+        }
+        if (state.newPassword != state.confirmPassword) {
+            _resetPasswordState.update { it.copy(submitError = "كلمتا المرور غير متطابقتين.") }
+            return
+        }
+        viewModelScope.launch {
+            _resetPasswordState.update { it.copy(isSubmitting = true, submitError = null) }
+            authRepository.confirmNewPassword(oobCode, state.newPassword).fold(
+                onSuccess = { _resetPasswordState.update { it.copy(isSubmitting = false, success = true) } },
+                onFailure = { e -> _resetPasswordState.update { it.copy(isSubmitting = false, submitError = mapAuthError(e)) } }
+            )
+        }
+    }
+
+    // ---- Forgot password (spec §3.4 — sends the reset email; [verifyResetCode]/[submitNewPassword]
+    // above are the deep-link half of the same flow) ----
 
     data class ForgotPasswordUiState(
         val email: String = "",

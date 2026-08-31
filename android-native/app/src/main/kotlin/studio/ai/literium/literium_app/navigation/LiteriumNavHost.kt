@@ -6,6 +6,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -25,6 +28,7 @@ import studio.ai.literium.literium_app.ui.screens.article.ArticleReaderScreen
 import studio.ai.literium.literium_app.ui.screens.auth.ForgotPasswordScreen
 import studio.ai.literium.literium_app.ui.screens.auth.LoginScreen
 import studio.ai.literium.literium_app.ui.screens.auth.RegisterScreen
+import studio.ai.literium.literium_app.ui.screens.auth.ResetPasswordScreen
 import studio.ai.literium.literium_app.ui.screens.auth.SplashScreen
 import studio.ai.literium.literium_app.ui.screens.explore.ExploreScreen
 import studio.ai.literium.literium_app.ui.screens.feed.FeedScreen
@@ -45,6 +49,14 @@ import studio.ai.literium.literium_app.ui.screens.tweet.TweetDetailScreen
 import studio.ai.literium.literium_app.ui.screens.wallet.MoneyRequestScreen
 import studio.ai.literium.literium_app.ui.screens.wallet.WalletScreen
 
+/** An incoming intent's resolved deep-link target — see [studio.ai.literium.literium_app.MainActivity]'s
+ *  `resolveDeepLink`, which parses the two shapes App.tsx itself handles at startup: a shared-article
+ *  link (`?article=<id>`) and a Firebase password-reset email link (`?mode=resetPassword&oobCode=...`). */
+sealed class DeepLinkTarget {
+    data class Article(val articleId: String) : DeepLinkTarget()
+    data class ResetPassword(val oobCode: String) : DeepLinkTarget()
+}
+
 /**
  * The real navigation graph — every [Screen] destination wired to its actual screen composable,
  * built once every parallel screen-building workstream had landed (spec §2's overall IA).
@@ -64,7 +76,10 @@ import studio.ai.literium.literium_app.ui.screens.wallet.WalletScreen
  * exact analog here since Compose Navigation is a real back-stack, not app-level state.
  */
 @Composable
-fun LiteriumNavHost() {
+fun LiteriumNavHost(
+    deepLinkTarget: DeepLinkTarget? = null,
+    onDeepLinkConsumed: () -> Unit = {}
+) {
     val navController = rememberNavController()
 
     // Kotlin port of `App.tsx`'s `resetAdSlotCounter()`-on-route-change: keeps AdSlot/AdTickerBar's
@@ -72,6 +87,39 @@ fun LiteriumNavHost() {
     // per process lifetime (see AdPageCounter's own KDoc for why this call belongs here).
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     LaunchedEffect(currentBackStackEntry?.destination?.route) { AdPageCounter.reset() }
+
+    // Deep-link routing (App.tsx's own `?article=`/`?mode=resetPassword` startup handling, spec
+    // §2.1/§3.4). A ResetPassword link is independent of the normal auth/splash resolution — it
+    // navigates immediately, on top of whatever is on screen. An Article link instead waits for
+    // Splash's own auth resolution to land on Feed (guest or signed-in — both routes there per
+    // SplashScreen's KDoc), then pushes the article on top, matching the web's "open article modal
+    // over whatever the home view already resolved to" behavior.
+    var pendingArticleId by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(deepLinkTarget) {
+        when (val target = deepLinkTarget) {
+            is DeepLinkTarget.ResetPassword -> {
+                navController.navigate(Screen.ResetPassword.of(target.oobCode)) { launchSingleTop = true }
+                onDeepLinkConsumed()
+            }
+            is DeepLinkTarget.Article -> {
+                if (navController.currentDestination?.route == Screen.Feed.route) {
+                    navController.navigate(Screen.ArticleReader.of(target.articleId))
+                    onDeepLinkConsumed()
+                } else {
+                    pendingArticleId = target.articleId
+                }
+            }
+            null -> Unit
+        }
+    }
+    LaunchedEffect(currentBackStackEntry?.destination?.route, pendingArticleId) {
+        val articleId = pendingArticleId
+        if (articleId != null && currentBackStackEntry?.destination?.route == Screen.Feed.route) {
+            navController.navigate(Screen.ArticleReader.of(articleId))
+            pendingArticleId = null
+            onDeepLinkConsumed()
+        }
+    }
 
     NavHost(navController = navController, startDestination = Screen.Splash.route) {
         // ---- Auth (no MainScaffold) ----
@@ -114,6 +162,20 @@ fun LiteriumNavHost() {
         }
         composable(Screen.ForgotPassword.route) {
             ForgotPasswordScreen(onNavigateBackToLogin = { navController.popBackStack() })
+        }
+        composable(
+            route = Screen.ResetPassword.route,
+            arguments = listOf(navArgument("oobCode") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val oobCode = backStackEntry.arguments?.getString("oobCode") ?: return@composable
+            ResetPasswordScreen(
+                oobCode = oobCode,
+                onSuccess = {
+                    navController.navigate(Screen.Login.route) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
+            )
         }
 
         // ---- Bottom-nav tab destinations (wrapped in MainScaffold) ----

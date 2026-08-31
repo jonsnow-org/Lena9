@@ -11,6 +11,9 @@ sealed class Screen(val route: String) {
     data object Login : Screen("login")
     data object Register : Screen("register")
     data object ForgotPassword : Screen("forgot_password")
+    data object ResetPassword : Screen("reset_password/{oobCode}") {
+        fun of(oobCode: String) = "reset_password/$oobCode"
+    }
 
     data object Feed : Screen("feed")
     data object Explore : Screen("explore")

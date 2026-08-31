@@ -51,12 +51,11 @@ import studio.ai.literium.literium_app.ui.theme.LiteriumTheme
  * `AuthModal.tsx` (spec §3.4's first half: requesting the reset email via
  * [studio.ai.literium.literium_app.data.repository.AuthRepository.resetPassword]).
  *
- * The second half of spec §3.4 — the standalone `ResetPasswordModal` that opens when the app is
- * launched from the emailed `?mode=resetPassword&oobCode=...` link (`verifyResetCode` +
- * `confirmNewPassword`) — is a distinct deep-link entry point, not a normal in-app navigation
- * destination, and is out of this scope's screen set; [AuthRepository.verifyResetCode] /
- * [AuthRepository.confirmNewPassword] are already available on the repository for whichever future
- * slice wires up deep-link handling.
+ * The second half of spec §3.4 — the standalone reset-confirmation screen that opens when the app is
+ * launched from the emailed `?mode=resetPassword&oobCode=...` link — is
+ * [studio.ai.literium.literium_app.ui.screens.auth.ResetPasswordScreen], a distinct deep-link entry
+ * point reached via [studio.ai.literium.literium_app.MainActivity]'s intent parsing rather than normal
+ * in-app navigation.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
