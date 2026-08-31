@@ -26,13 +26,13 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material.icons.filled.ShieldMoon
+import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Divider
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -244,7 +244,7 @@ private fun ProfileHeader(
             }
         }
     }
-    Divider()
+    HorizontalDivider()
 }
 
 @Composable
@@ -295,7 +295,7 @@ fun CreatorEligibilityCard(eligibility: CreatorEligibility.Status, onOpenKyc: ()
                 }
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(Icons.Filled.ShieldMoon, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary)
+                    Icon(Icons.Filled.HourglassEmpty, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary)
                     Text("شروط تفعيل احتساب الأرباح", fontWeight = FontWeight.Black)
                 }
                 Spacer(Modifier.height(6.dp))

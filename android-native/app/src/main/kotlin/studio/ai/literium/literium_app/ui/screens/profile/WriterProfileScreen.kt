@@ -25,7 +25,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Divider
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -172,7 +172,7 @@ fun WriterProfileScreen(navController: NavController, userId: String) {
                                 }
                             }
                         }
-                        Divider()
+                        HorizontalDivider()
                     }
 
                     item {

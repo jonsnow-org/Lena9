@@ -15,10 +15,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Rocket
+import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.TouchApp
-import androidx.compose.material.icons.filled.Wallet
+import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -178,7 +178,7 @@ fun PromoteArticleScreen(navController: NavController, articleId: String) {
                 Column(Modifier.padding(14.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Filled.Wallet, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Icon(Icons.Filled.AccountBalanceWallet, contentDescription = null, modifier = Modifier.size(14.dp))
                             Spacer(Modifier.width(6.dp))
                             Text("رصيدك المتاح", style = MaterialTheme.typography.labelSmall)
                         }
@@ -218,7 +218,7 @@ fun PromoteArticleScreen(navController: NavController, articleId: String) {
                 if (state.isSubmitting) {
                     CircularProgressIndicator(Modifier.size(18.dp), color = MaterialTheme.colorScheme.onPrimary)
                 } else {
-                    Icon(Icons.Filled.Rocket, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Icon(Icons.Filled.TrendingUp, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
                     Text("إرسال طلب الترويج")
                 }

@@ -18,7 +18,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.Wallet
+import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -158,7 +158,7 @@ fun SubscriptionScreen(navController: NavController, viewModel: SubscriptionView
             if (state.paymentMethod == SubscriptionPaymentMethod.WALLET && !state.isLoading) {
                 Spacer(Modifier.height(10.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Wallet, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Icon(Icons.Filled.AccountBalanceWallet, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
                     Text(
                         "رصيد محفظتك: ${"%.2f".format(state.walletBalance)}$",
