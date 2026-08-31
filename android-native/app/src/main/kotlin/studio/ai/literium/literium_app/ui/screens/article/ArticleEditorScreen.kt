@@ -89,13 +89,19 @@ fun ArticleEditorScreen(
     articleId: String?,
     onBack: () -> Unit,
     onSaved: (String) -> Unit,
-    onOpenImageStudio: () -> Unit
+    onOpenImageStudio: () -> Unit,
+    /** Image Studio's `onImageSelected` result, delivered back via the NavBackStackEntry's
+     *  `SavedStateHandle` (see `LiteriumNavHost.kt`) — applied as the article's cover image the moment
+     *  it arrives, since Compose Navigation preserves this screen's own [viewModel] instance across the
+     *  push-to-ImageStudio-and-pop-back round trip. */
+    selectedImageUrl: String? = null
 ) {
     val viewModel: ArticleEditorViewModel = viewModel()
     val state by viewModel.uiState.collectAsState()
 
     LaunchedEffect(articleId) { viewModel.load(articleId) }
     LaunchedEffect(state.savedArticleId) { state.savedArticleId?.let(onSaved) }
+    LaunchedEffect(selectedImageUrl) { selectedImageUrl?.let { viewModel.setFeaturedImageUrl(it) } }
 
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) viewModel.uploadCoverImage(uri)
