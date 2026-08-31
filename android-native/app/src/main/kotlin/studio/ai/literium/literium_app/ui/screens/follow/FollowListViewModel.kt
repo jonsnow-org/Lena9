@@ -27,6 +27,8 @@ data class FollowListUiState(
     val users: List<User> = emptyList(),
     /** Ids the SIGNED-IN viewer (not [targetUserId]) already follows — drives each row's follow/unfollow button. */
     val followedByMeIds: Set<String> = emptySet(),
+    /** The signed-in viewer's own uid, so the screen can hide the follow button on its own row. */
+    val currentUserId: String = "",
     val errorMessage: String? = null
 )
 
@@ -60,7 +62,7 @@ class FollowListViewModel(
     private val usersFlow = relevantIdsFlow.flatMapLatest { ids -> flow { emit(fetchUsersByIds(ids)) } }
 
     val uiState: StateFlow<FollowListUiState> = combine(usersFlow, myFollowingIdsFlow) { users, followedIds ->
-        FollowListUiState(isLoading = false, users = users, followedByMeIds = followedIds)
+        FollowListUiState(isLoading = false, users = users, followedByMeIds = followedIds, currentUserId = currentUserId)
     }
         .catch { e -> emit(FollowListUiState(isLoading = false, errorMessage = e.message ?: "تعذر تحميل القائمة.")) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), FollowListUiState())

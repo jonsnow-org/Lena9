@@ -250,9 +250,11 @@ private fun ArticleReaderBody(
         } else {
             item { HtmlContent(html = article.content) }
 
-            val wordCount = remember(article.content) {
-                org.jsoup.Jsoup.parse(article.content).text().split(Regex("\\s+")).count { it.isNotBlank() }
-            }
+            // Not `remember { }`: this branch runs directly inside LazyListScope's builder DSL (not
+            // an @Composable context) — only the `item { }` blocks around it are, so `remember` can't
+            // be called here. The computation itself is cheap enough that recomputing it on every
+            // recomposition of this scope is fine.
+            val wordCount = org.jsoup.Jsoup.parse(article.content).text().split(Regex("\\s+")).count { it.isNotBlank() }
             if (wordCount >= 500) {
                 item { AdSlot(slotId = AdSlotId.ARTICLE_MID) }
             }

@@ -30,6 +30,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -62,6 +63,7 @@ private val OfflineGray = Color(0xFF94A3B8)
  * محادثة مفتوحة حتى لا يزعج تدفّق الرسائل").
  */
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 fun MessagesScreen(
     navController: NavController,
     viewModel: MessagesViewModel = viewModel()

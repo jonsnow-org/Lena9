@@ -77,8 +77,9 @@ fun TweetComposerScreen(onBack: () -> Unit, onPosted: () -> Unit) {
         }
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
-            if (state.error != null) {
-                Text(state.error, fontSize = 11.sp, color = Color(0xFFE11D48), modifier = Modifier.padding(bottom = 8.dp))
+            val errorText = state.error
+            if (errorText != null) {
+                Text(errorText, fontSize = 11.sp, color = Color(0xFFE11D48), modifier = Modifier.padding(bottom = 8.dp))
             }
 
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {

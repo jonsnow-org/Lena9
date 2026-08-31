@@ -120,20 +120,22 @@ fun ImageStudioScreen(
                 }
             }
 
-            if (state.errorMessage != null) {
+            val errorMessage = state.errorMessage
+            if (errorMessage != null) {
                 item {
                     Surface(color = Color(0xFFE11D48).copy(alpha = 0.1f), shape = RoundedCornerShape(12.dp)) {
                         Row(Modifier.padding(10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Text(state.errorMessage, fontSize = 11.sp, color = Color(0xFFE11D48), modifier = Modifier.weight(1f))
+                            Text(errorMessage, fontSize = 11.sp, color = Color(0xFFE11D48), modifier = Modifier.weight(1f))
                         }
                     }
                 }
             }
 
-            if (state.successMessage != null) {
+            val successMessage = state.successMessage
+            if (successMessage != null) {
                 item {
                     Surface(color = BrandTeal.copy(alpha = 0.1f), shape = RoundedCornerShape(12.dp)) {
-                        Text(state.successMessage, modifier = Modifier.padding(10.dp), fontSize = 11.sp, color = BrandTeal, fontWeight = FontWeight.Medium)
+                        Text(successMessage, modifier = Modifier.padding(10.dp), fontSize = 11.sp, color = BrandTeal, fontWeight = FontWeight.Medium)
                     }
                 }
             }
