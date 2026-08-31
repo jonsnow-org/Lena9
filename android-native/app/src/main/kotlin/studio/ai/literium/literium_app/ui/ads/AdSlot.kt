@@ -67,6 +67,7 @@ import studio.ai.literium.literium_app.data.repository.AuthRepository
 import studio.ai.literium.literium_app.ui.components.IsolatedWebView
 import studio.ai.literium.literium_app.ui.components.VideoEmbed
 import studio.ai.literium.literium_app.ui.components.VideoPlayer
+import studio.ai.literium.literium_app.ui.components.parseVideoUrl
 import studio.ai.literium.literium_app.util.AntiFraudEngine
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.random.Random
