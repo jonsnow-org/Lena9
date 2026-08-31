@@ -22,8 +22,8 @@ import studio.ai.literium.literium_app.ui.theme.LiteriumTheme
 /** Resolves an incoming intent's `Uri` into a navigation target, mirroring `App.tsx`'s own two
  *  deep-link entry points: `?article=<id>` (shared-article App Link, `getShareUrl`/`ArticleReader.tsx`)
  *  and `?mode=resetPassword&oobCode=<code>` (`getPasswordResetCodeFromUrl`/`firebase.ts`). Both arrive
- *  on the same verified `https://literium.ai.studio/*` App Link host declared in the manifest, so a
- *  single parser distinguishes them by query param rather than by path. */
+ *  on the same verified `literium.ai.studio` App Link host declared in the manifest, so a single
+ *  parser distinguishes them by query param rather than by path. */
 private fun resolveDeepLink(uri: Uri?): DeepLinkTarget? {
     if (uri == null) return null
     val oobCode = uri.getQueryParameter("oobCode")
