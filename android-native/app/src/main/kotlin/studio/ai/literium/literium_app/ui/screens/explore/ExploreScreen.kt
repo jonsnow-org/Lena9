@@ -54,6 +54,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import studio.ai.literium.literium_app.data.model.Article
 import studio.ai.literium.literium_app.data.model.User
+import studio.ai.literium.literium_app.ui.ads.AdTickerBar
 import studio.ai.literium.literium_app.ui.theme.BrandTeal
 import studio.ai.literium.literium_app.util.DateFormatAr
 
@@ -61,11 +62,10 @@ import studio.ai.literium.literium_app.util.DateFormatAr
  * Discovery surface (spec §4.3) — full-fidelity port of `src/components/ExploreView.tsx`: Arabic-
  * normalized search bar, filter tabs (trending/top-rated/writers/locked), a "recommended writers"
  * horizontal strip with inline follow toggles, a trending-tags cloud extracted live from loaded
- * articles' tags, and a ranked article list. The web version also renders an `AdTickerBar` between
- * the writers strip and the tag cloud — that is a second, distinct ad surface from the 13-slot
- * `AdSlot` system this task was scoped against (its `slotId` is free-text, not one of the 13
- * [studio.ai.literium.literium_app.data.model.AdSlotId] values), so it is intentionally omitted here
- * rather than mis-mapped onto an `AdSlot` call — see final report.
+ * articles' tags, and a ranked article list, plus the [AdTickerBar] the web version renders between
+ * the writers strip and the tag cloud (`slotId="explore_feed"`, a second, distinct ad surface from
+ * the 13-slot `AdSlot` system — its `slotId` is free-text, not one of the 13
+ * [studio.ai.literium.literium_app.data.model.AdSlotId] values, matching `ExploreView.tsx`'s own call).
  */
 @Composable
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -165,6 +165,15 @@ fun ExploreScreen(
                     }
                 }
             }
+        }
+
+        item {
+            AdTickerBar(
+                slotId = "explore_feed",
+                externalPriority = true,
+                minHeightDp = 68.dp,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
 
         val tags = state.trendingTags
