@@ -159,6 +159,7 @@ private fun ResultCard(
 }
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 private fun KycForm(
     state: KycUiState,
     viewModel: KycViewModel,
