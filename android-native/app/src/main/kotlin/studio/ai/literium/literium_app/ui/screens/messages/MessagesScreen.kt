@@ -48,7 +48,7 @@ import androidx.navigation.NavController
 import coil3.compose.AsyncImage
 import studio.ai.literium.literium_app.data.model.AdSlotId
 import studio.ai.literium.literium_app.navigation.Screen
-import studio.ai.literium.literium_app.ui.ads.AdSlot
+import studio.ai.literium.literium_app.ui.ads.AdTickerBar
 import studio.ai.literium.literium_app.util.DateFormatAr
 
 private val OnlineGreen = Color(0xFF10B981)

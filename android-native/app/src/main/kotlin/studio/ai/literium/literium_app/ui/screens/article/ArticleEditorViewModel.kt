@@ -264,7 +264,9 @@ class ArticleEditorViewModel(application: Application) : AndroidViewModel(applic
                         title = _uiState.value.title,
                         category = _uiState.value.category,
                         userId = user?.id,
-                        isSubscriber = user?.aiQuota?.plan != null && user.aiQuota?.plan != "none",
+                        // `user` is nullable here (unlike generateAiSeo(), which early-returns on
+                        // null) — both safe calls below are load-bearing, not stylistic.
+                        isSubscriber = user?.aiQuota?.plan != null && user?.aiQuota?.plan != "none",
                         plan = user?.aiQuota?.plan ?: "none"
                     )
                 )

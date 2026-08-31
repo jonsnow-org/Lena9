@@ -67,6 +67,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -395,7 +396,7 @@ fun ChatScreen(
                                 Icon(Icons.Filled.Videocam, contentDescription = "إرسال فيديو قصير (حتى 5 دقائق)")
                             }
                         }
-                        OutlinedTextField(
+                        TextField(
                             value = draftText,
                             onValueChange = { draftText = it; viewModel.onTyping() },
                             placeholder = { Text("اكتب رسالتك...") },
@@ -403,7 +404,9 @@ fun ChatScreen(
                             shape = RoundedCornerShape(16.dp),
                             colors = TextFieldDefaults.colors(
                                 unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant
+                                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                unfocusedIndicatorColor = Color.Transparent,
+                                focusedIndicatorColor = Color.Transparent
                             ),
                             keyboardOptions = KeyboardOptions.Default
                         )
