@@ -2,7 +2,6 @@ package studio.ai.literium.literium_app.ui.screens.article
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,28 +18,27 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.FormatBold
 import androidx.compose.material.icons.filled.FormatItalic
+import androidx.compose.material.icons.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.FormatListNumbered
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Title
 import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenu
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -63,7 +61,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -334,9 +331,9 @@ private fun CategoryAndTagsSection(state: ArticleEditorUiState, viewModel: Artic
                     readOnly = true,
                     label = { Text("التصنيف الرئيسي", fontSize = 11.sp) },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                    modifier = Modifier.fillMaxWidth().menuAnchorCompat()
+                    modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true)
                 )
-                androidx.compose.material3.ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                     ArticleCategory.ALL.forEach { cat ->
                         DropdownMenuItem(text = { Text(articleCategoryLabelAr(cat)) }, onClick = { viewModel.setCategory(cat); expanded = false })
                     }
@@ -352,11 +349,6 @@ private fun CategoryAndTagsSection(state: ArticleEditorUiState, viewModel: Artic
         }
     }
 }
-
-// ExposedDropdownMenuBox scope's menuAnchor() requires the box scope receiver; small shim so the
-// call above stays readable without importing the scope-qualified extension directly at call site.
-@OptIn(ExperimentalMaterial3Api::class)
-private fun Modifier.menuAnchorCompat(): Modifier = this
 
 @Composable
 private fun CoverMediaSection(
@@ -455,7 +447,7 @@ private fun FormattingToolbar(viewModel: ArticleEditorViewModel) {
         ToolbarButton(Icons.Filled.FormatBold, "غامق") { viewModel.applyInlineTag("<b>", "</b>") }
         ToolbarButton(Icons.Filled.FormatItalic, "مائل") { viewModel.applyInlineTag("<i>", "</i>") }
         ToolbarButton(Icons.Filled.Title, "عنوان") { viewModel.applyHeading() }
-        ToolbarButton(Icons.AutoMirrored.Filled.FormatListBulleted, "قائمة نقطية") { viewModel.applyListTag(ordered = false) }
+        ToolbarButton(Icons.Filled.FormatListBulleted, "قائمة نقطية") { viewModel.applyListTag(ordered = false) }
         ToolbarButton(Icons.Filled.FormatListNumbered, "قائمة مرقمة") { viewModel.applyListTag(ordered = true) }
     }
 }

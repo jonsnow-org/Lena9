@@ -231,6 +231,14 @@ class ChatViewModel(
         viewModelScope.launch { messageRepository.hideConversationForMe(conversationId, currentUserId) }
     }
 
+    /** Admin-only permanent delete (firestore.rules) — distinct from [hideConversation]. Uses the
+     *  already-loaded message ids from [uiState] to avoid an extra query, per
+     *  [MessageRepository.deleteConversation]'s own KDoc. */
+    fun deleteConversationAsAdmin() {
+        val messageIds = uiState.value.messages.map { it.id }
+        viewModelScope.launch { messageRepository.deleteConversation(conversationId, messageIds) }
+    }
+
     fun toggleBlock(block: Boolean) {
         viewModelScope.launch { messageRepository.toggleBlockUser(currentUserId, partnerId, block) }
     }
