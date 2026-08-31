@@ -208,11 +208,23 @@ object AdSlotId {
     const val COMMENTS_FEED = "comments_feed"
     const val TWEET_FEED = "tweet_feed"
 
+    /** The 13 formal placements from `AdSlot.tsx`'s `SLOT_CONFIG` — deliberately does NOT include
+     *  [MESSAGES_LIST] (see its own doc) since that one is never a `<AdSlot>` placement in source. */
     val ALL = listOf(
         HOME_HERO, HOME_FEED_1, HOME_FEED_2, CATEGORY_BANNER, CATEGORY_FEED,
         ARTICLE_TOP, ARTICLE_MID, ARTICLE_BOTTOM, WRITER_PROFILE_TOP, WRITER_PROFILE_FEED,
         READER_PROFILE, COMMENTS_FEED, TWEET_FEED
     )
+
+    /**
+     * NOT one of the 13 formal [AdSlot.tsx] placements above — this is the free-text tag
+     * `AdTickerBar.tsx` (a separate, lighter rotating-ticker component, not `<AdSlot>`) is given at
+     * `DirectMessagesModal.tsx:519` (`<AdTickerBar slotId="messages_list" .../>`), shown ONLY above the
+     * conversation list, NEVER inside an open chat thread. Kept here (not in [ALL]) purely so call
+     * sites never hand-type the raw string; the [studio.ai.literium.literium_app.data.model.AdEvent.slotId]
+     * doc already anticipates this ("or a free-text ticker-bar tag").
+     */
+    const val MESSAGES_LIST = "messages_list"
 }
 
 /** Who financially benefits from a fill in a given slot. */
