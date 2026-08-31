@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -41,6 +42,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
@@ -62,6 +64,9 @@ import studio.ai.literium.literium_app.data.model.CampaignStatus
 import studio.ai.literium.literium_app.data.model.PromotionKind
 import studio.ai.literium.literium_app.data.repository.AdCampaignRepository
 import studio.ai.literium.literium_app.data.repository.AuthRepository
+import studio.ai.literium.literium_app.ui.components.IsolatedWebView
+import studio.ai.literium.literium_app.ui.components.VideoEmbed
+import studio.ai.literium.literium_app.ui.components.VideoPlayer
 import studio.ai.literium.literium_app.util.AntiFraudEngine
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.random.Random
@@ -157,16 +162,16 @@ fun AdSlot(
     }
 
     // Whether an external-network fill (PropellerAds/Adsterra/Taboola) would be eligible right now —
-    // see ExternalAdsSettingsStore's KDoc for why this is used ONLY for fair-rotation-pool accounting
-    // below and never to actually render third-party ad content in this native app.
+    // feeds the fair-rotation-pool accounting below; an External turn that actually wins renders via
+    // ExternalAdNetworkView further down (see ExternalAdsSettingsStore's KDoc).
     val hasEligibleExternalNetwork = platformAdsEnabled && ExternalAdsSettingsStore.eligibleCount(externalAdsConfig) > 0
 
     // Fair-rotation pool — platform (non-sponsor) slots only, mirrors AdSlot.tsx's `rotationPool`
     // exactly: internal campaigns and eligible external-network "slots" rotate together so neither
-    // source permanently starves the other. An External turn deliberately renders nothing further down
-    // (this app has no native-safe way to show a third-party ad-network snippet) rather than always
-    // resolving to an internal campaign — that would silently inflate internal campaigns' effective
-    // share of platform-slot impressions beyond what the real rotation math intends.
+    // source permanently starves the other. An External turn always resolving to an internal campaign
+    // instead would silently inflate internal campaigns' effective share of platform-slot impressions
+    // beyond what the real rotation math intends — so it renders the external network it actually won
+    // instead (see below), matching the web's own rotation fairness.
     val rotationPool: List<RotationPoolItem> = remember(campaigns, isSponsorSlot, isPlatformSlot, platformAdsEnabled, externalAdsConfig) {
         if (isSponsorSlot || !isPlatformSlot || !platformAdsEnabled) return@remember emptyList()
         val eligibleCampaigns = campaigns.filter { it.status == CampaignStatus.ACTIVE && it.placementType != AdPlacementType.CATEGORY_SPONSOR }
@@ -186,9 +191,26 @@ fun AdSlot(
     }
 
     if (slotIndex >= MAX_ADS_PER_PAGE) return
-    // No internal campaign won this render — whether because none was eligible, or because the fair
-    // rotation landed on what would have been an external-network turn: render nothing either way. We
-    // never fabricate a view/click event for content the user was never actually shown.
+
+    // The fair-rotation turn landed on an external-network slot rather than an internal campaign —
+    // render whichever eligible network (enabled + appSafe, admin-controlled on/off exactly like a
+    // browser's own ad-network toggle) the same slot/rotation math selects deterministically, via the
+    // one narrowly-scoped WebView this reverses the app's no-WebView default for. See
+    // [ExternalAdNetworkView]'s KDoc for the isolation this still keeps.
+    if (isPlatformSlot && selectedPoolItem is RotationPoolItem.External) {
+        val eligibleNetworks = listOf(
+            externalAdsConfig.propellerAds, externalAdsConfig.adsterra, externalAdsConfig.taboola
+        ).filter { it.enabled && it.snippet.isNotBlank() && it.appSafe }
+        val network = eligibleNetworks.getOrNull((slotIndex + rotationSeed).mod(eligibleNetworks.size.coerceAtLeast(1)))
+        if (network != null) {
+            ExternalAdNetworkView(snippet = network.snippet, modifier = modifier)
+        }
+        return
+    }
+
+    // No internal campaign won this render (none eligible, or non-platform slot deferring to an
+    // external-priority policy with none rendered above): render nothing. We never fabricate a
+    // view/click event for content the user was never actually shown.
     val campaign = selectedCampaign ?: return
 
     AdCreative(
@@ -423,18 +445,22 @@ private fun AdCreative(
 }
 
 /**
- * Image (or, for a pure video creative with no image, a lightweight labeled placeholder) block for an
- * ad creative. `AdSlot.tsx`'s `mediaBlock()` prefers an uploaded video (`VideoPlayer`) over an embedded
- * YouTube/Vimeo URL (`VideoEmbed`) over a plain image — this app has no Compose `VideoPlayer`/
- * `VideoEmbed` equivalent yet (out of this slice's scope; a separate, real gap — see the final report),
- * so video creatives fall back to their [AdCampaign.imageUrl] thumbnail when one exists, or this
- * text-only placeholder when it doesn't. Wire a real video component in ahead of the image branch here
- * once one exists, to restore the source's exact precedence.
+ * Media block for an ad creative — Kotlin port of `AdSlot.tsx`'s `mediaBlock()`, same precedence: an
+ * uploaded video ([VideoPlayer], Media3/ExoPlayer, real Cloudinary-hosted video files) beats an
+ * embedded YouTube/Vimeo URL ([VideoEmbed], the one narrowly-scoped `WebView` use for third-party
+ * iframe embeds this rewrite can't avoid), which beats a plain [AdCampaign.imageUrl] image, which
+ * beats rendering nothing at all — exactly source's own fallback order.
  */
 @Composable
 private fun AdMediaBlock(campaign: AdCampaign) {
-    val hasVideo = !campaign.uploadedVideoUrl.isNullOrBlank() || !campaign.videoUrl.isNullOrBlank()
+    val uploadedVideoUrl = campaign.uploadedVideoUrl
+    val videoUrl = campaign.videoUrl
     when {
+        !uploadedVideoUrl.isNullOrBlank() -> VideoPlayer(
+            src = uploadedVideoUrl,
+            modifier = Modifier.clip(RoundedCornerShape(12.dp))
+        )
+        !videoUrl.isNullOrBlank() && parseVideoUrl(videoUrl) != null -> VideoEmbed(url = videoUrl)
         campaign.imageUrl.isNotBlank() -> AsyncImage(
             model = campaign.imageUrl,
             contentDescription = null,
@@ -444,17 +470,39 @@ private fun AdMediaBlock(campaign: AdCampaign) {
                 .aspectRatio(16f / 9f)
                 .clip(RoundedCornerShape(12.dp))
         )
-        hasVideo -> Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(16f / 9f)
-                .clip(RoundedCornerShape(12.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
         else -> Unit
+    }
+}
+
+/**
+ * Kotlin port of `ExternalAdScript.tsx` — renders one external ad network's raw HTML/JS `snippet`
+ * (PropellerAds/Adsterra/Taboola) inside a small fixed-height, isolated [IsolatedWebView] instead of
+ * the web's sandboxed `srcdoc` iframe. This reverses this rewrite's own "no WebView anywhere" default
+ * specifically and only for this one surface, at explicit request, since the app is not imminently
+ * bound for Play Store review — where raw third-party ad-network script injection in a native app is
+ * a real policy risk worth knowing about before ever submitting there. Fully admin-toggleable exactly
+ * like a browser's own ad-blocker-adjacent on/off switch: each network's `enabled` flag
+ * ([ExternalAdsSettingsStore]) is the kill switch, live via the same Firestore document the admin
+ * panel's external-ads form already writes to.
+ */
+@Composable
+internal fun ExternalAdNetworkView(
+    snippet: String,
+    modifier: Modifier = Modifier,
+    heightDp: Dp = 90.dp
+) {
+    val trimmed = snippet.trim()
+    if (trimmed.isEmpty()) return
+    val html = "<!DOCTYPE html><html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">" +
+        "<style>html,body{margin:0;padding:0;overflow:hidden;background:transparent}</style></head><body>" +
+        trimmed + "</body></html>"
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(heightDp)
+            .clip(RoundedCornerShape(8.dp))
+    ) {
+        IsolatedWebView(html = html)
     }
 }
 
@@ -559,14 +607,14 @@ internal object PlatformAdsSettingsStore {
 /**
  * Kotlin port of `src/utils/externalAdsStore.ts`'s config shape/listener (`settings/externalAds`).
  *
- * The native-app policy decision (see the final report) means [eligibleCount] is used ONLY for
- * fair-rotation-pool accounting in [AdSlot] — never to actually render a PropellerAds/Adsterra/Taboola
- * snippet, since there is no native-safe way to run arbitrary third-party ad-network HTML/JS in this
- * genuine-Compose app the way the web app's sandboxed `srcdoc` iframe (`ExternalAdScript.tsx`, spec
- * §5.5) does. `appSafe` is applied unconditionally (as if `isRunningInNativeApp()` were always true) —
- * that flag's entire purpose in source is exactly "this network's snippet is confirmed safe to run
- * inside an installed native-ish app, not just the open web", which describes this app more strictly
- * than it describes the Capacitor-wrapped WebView build the flag was written for.
+ * [eligibleCount] feeds [AdSlot]'s fair-rotation-pool accounting; when an `External` turn actually
+ * wins the rotation, [AdSlot] renders the chosen network's raw snippet via
+ * [ExternalAdNetworkView]/[studio.ai.literium.literium_app.ui.components.IsolatedWebView] — the one
+ * deliberate, explicitly-requested exception to this app otherwise using zero WebView anywhere.
+ * `appSafe` is applied unconditionally (as if `isRunningInNativeApp()` were always true) — that flag's
+ * entire purpose in source is exactly "this network's snippet is confirmed safe to run inside an
+ * installed native-ish app, not just the open web", which describes this app more strictly than it
+ * describes the Capacitor-wrapped WebView build the flag was originally written for.
  */
 internal object ExternalAdsSettingsStore {
     data class NetworkConfig(val enabled: Boolean = false, val snippet: String = "", val appSafe: Boolean = false)

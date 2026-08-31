@@ -66,12 +66,10 @@ import studio.ai.literium.literium_app.util.AntiFraudEngine
  *
  * @param slotId free-text tag identifying this ticker's placement in logged ad events — NOT one of the
  *   13 [studio.ai.literium.literium_app.data.model.AdSlotId] values, matching source's own distinction.
- * @param externalPriority true = an eligible external network would exclude internal campaigns from
- *   rotation entirely (source's `externalPriority` prop); since this native app never renders external
- *   network content (see [AdSlot]'s / [ExternalAdsSettingsStore]'s KDoc), setting this true on a given
- *   ticker instance can legitimately mean it renders nothing at all whenever a network is eligible —
- *   faithfully reflects the source's intent that some ticker placements should let external inventory
- *   "win" that internal campaigns don't get to fill, it just means "win" now renders blank here.
+ * @param externalPriority true = an eligible external network excludes internal campaigns from
+ *   rotation entirely (source's `externalPriority` prop) — when that network actually wins, it renders
+ *   via [ExternalAdNetworkView] at this ticker's own [minHeightDp], matching `AdTickerBar.tsx`'s own
+ *   `<ExternalAdScript ... heightPx={minHeightPx} />` branch exactly.
  */
 @Composable
 fun AdTickerBar(
@@ -112,11 +110,21 @@ fun AdTickerBar(
     }
     val hasEligibleExternalNetwork = platformAdsEnabled && ExternalAdsSettingsStore.eligibleCount(externalAdsConfig) > 0
     // externalPriority=true excludes internal campaigns entirely while a network is eligible, matching
-    // source; since we never render network content, that combination renders nothing (see file KDoc).
+    // source — that network then renders below instead of an internal campaign (see file KDoc).
     val rotationCampaigns = if (externalPriority && hasEligibleExternalNetwork) emptyList() else active
 
     if (slotIndex >= MAX_ADS_PER_PAGE) return
-    if (rotationCampaigns.isEmpty()) return
+    if (rotationCampaigns.isEmpty()) {
+        if (externalPriority && hasEligibleExternalNetwork) {
+            val eligibleNetworks = listOf(
+                externalAdsConfig.propellerAds, externalAdsConfig.adsterra, externalAdsConfig.taboola
+            ).filter { it.enabled && it.snippet.isNotBlank() && it.appSafe }
+            eligibleNetworks.getOrNull(slotIndex.mod(eligibleNetworks.size.coerceAtLeast(1)))?.let { network ->
+                ExternalAdNetworkView(snippet = network.snippet, modifier = modifier, heightDp = minHeightDp)
+            }
+        }
+        return
+    }
 
     var index by remember { mutableStateOf(0) }
     var visible by remember { mutableStateOf(true) }

@@ -22,6 +22,7 @@ import kotlinx.coroutines.launch
 import studio.ai.literium.literium_app.data.model.UserRole
 import studio.ai.literium.literium_app.navigation.Screen
 import studio.ai.literium.literium_app.ui.theme.BrandTeal
+import studio.ai.literium.literium_app.ui.theme.LiveBackgroundLayer
 
 /**
  * The shared bottom-nav + top-header shell used by every main-tab screen (spec §2.1) — a drop-in
@@ -60,7 +61,7 @@ fun MainScaffold(
         }
     }
 
-    ModalNavigationDrawer(
+    LiveBackgroundLayer { ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
             ModalDrawerSheet {
@@ -78,6 +79,10 @@ fun MainScaffold(
         }
     ) {
         Scaffold(
+            // شفاف عمداً — [LiveBackgroundLayer] (خلفية القالب الجمالي الحيّة المختارة إدارياً) يُرسم
+            // خلفه هنا؛ يبقى مرئياً فقط في هوامش/فراغات كل تبويب (مثل الموقع تماماً، حيث تبقى البطاقات
+            // نفسها بخلفية معتمة bg-white/dark:bg-slate-900).
+            containerColor = Color.Transparent,
             topBar = {
                 TopHeaderBar(
                     isAdmin = isAdmin,
@@ -119,5 +124,5 @@ fun MainScaffold(
                 }
             }
         ) { padding -> content(padding) }
-    }
+    } }
 }

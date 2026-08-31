@@ -113,4 +113,21 @@ dependencies {
     implementation("androidx.activity:activity-ktx:1.9.3")
 
     implementation("androidx.core:core-ktx:1.15.0")
+
+    // ---- تفضيلات محلية على الجهاز (المظهر الداكن/الفاتح، اللغة، الحسابات المحفوظة) —
+    // خاصة بكل مستخدم على جهازه، بلا أي مزامنة حية عبر Firestore، خلافاً لقالب الألوان
+    // الإداري العام أعلاه. ----
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
+
+    // ---- مشغّل فيديو حقيقي (الإبداعات الإعلانية من نوع فيديو، AdSlot.kt) —
+    // Media3 هو خليفة ExoPlayer الرسمي الحالي من Google. media3-ui (وليس
+    // الإصدار التجريبي media3-ui-compose) لأنه الأكثر استقراراً ونضجاً؛
+    // يُستخدم هنا عبر AndroidView التقليدي حول PlayerView. ----
+    implementation("androidx.media3:media3-exoplayer:1.5.1")
+    implementation("androidx.media3:media3-ui:1.5.1")
+
+    // ---- عرض HTML/JS خام لشبكات الإعلانات الخارجية الاحتياطية (PropellerAds/Adsterra/
+    // Taboola) عند تفعيلها إدارياً فقط — WebView واحد صغير معزول لهذا الغرض حصراً، وليس
+    // محرك عرض التطبيق (انظر ExternalAdWebView.kt لتفصيل هذا القرار). ----
+    implementation("androidx.webkit:webkit:1.12.1")
 }

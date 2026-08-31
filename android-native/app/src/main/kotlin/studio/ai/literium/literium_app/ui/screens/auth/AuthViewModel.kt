@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import studio.ai.literium.literium_app.data.model.User
 import studio.ai.literium.literium_app.data.model.UserRole
 import studio.ai.literium.literium_app.data.repository.AuthRepository
 
@@ -40,7 +41,10 @@ class AuthViewModel(
         val password: String = "",
         val isLoading: Boolean = false,
         val errorMessage: String? = null,
-        val loginSucceeded: Boolean = false
+        val loginSucceeded: Boolean = false,
+        /** Populated on success only — lets [LoginScreen] remember this device's saved-account entry
+         *  (spec's `rememberAccount`) without a second fetch. */
+        val loggedInUser: User? = null
     )
 
     private val _loginState = MutableStateFlow(LoginUiState())
@@ -64,7 +68,7 @@ class AuthViewModel(
         viewModelScope.launch {
             _loginState.update { it.copy(isLoading = true, errorMessage = null) }
             authRepository.loginWithEmail(state.email.trim(), state.password).fold(
-                onSuccess = { _loginState.update { it.copy(isLoading = false, loginSucceeded = true) } },
+                onSuccess = { user -> _loginState.update { it.copy(isLoading = false, loginSucceeded = true, loggedInUser = user) } },
                 onFailure = { e -> _loginState.update { it.copy(isLoading = false, errorMessage = mapAuthError(e)) } }
             )
         }
@@ -90,7 +94,10 @@ class AuthViewModel(
         val avatarUrl: String = WRITER_AVATAR_PRESETS.first(),
         val isLoading: Boolean = false,
         val errorMessage: String? = null,
-        val registerSucceeded: Boolean = false
+        val registerSucceeded: Boolean = false,
+        /** Populated on success only — lets [RegisterScreen] remember this device's saved-account
+         *  entry (spec's `rememberAccount`) without a second fetch. */
+        val registeredUser: User? = null
     )
 
     private val _registerState = MutableStateFlow(RegisterUiState())
@@ -159,7 +166,7 @@ class AuthViewModel(
                 avatarUrl = state.avatarUrl,
                 bio = finalBio
             ).fold(
-                onSuccess = { _registerState.update { it.copy(isLoading = false, registerSucceeded = true) } },
+                onSuccess = { user -> _registerState.update { it.copy(isLoading = false, registerSucceeded = true, registeredUser = user) } },
                 onFailure = { e -> _registerState.update { it.copy(isLoading = false, errorMessage = mapAuthError(e)) } }
             )
         }

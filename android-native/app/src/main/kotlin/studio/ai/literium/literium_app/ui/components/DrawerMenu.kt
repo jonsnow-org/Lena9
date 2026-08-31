@@ -28,23 +28,29 @@ import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Verified
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import kotlinx.coroutines.launch
+import studio.ai.literium.literium_app.data.local.UserPreferencesRepository
 import studio.ai.literium.literium_app.data.model.User
 import studio.ai.literium.literium_app.data.model.UserRole
 import studio.ai.literium.literium_app.navigation.Screen
@@ -54,18 +60,16 @@ import studio.ai.literium.literium_app.ui.theme.BrandTeal
  * Slide-in drawer content — port of `DrawerMenu.tsx` (spec §2.1), opened from [TopHeaderBar]'s
  * hamburger button and hosted by [MainScaffold]'s `ModalNavigationDrawer`.
  *
- * Two intentionally simplified spots vs. source, both documented in this scope's final report
- * rather than silently guessed at:
- * - **Member-status label**: source computes "✍️ كاتب شريك ومعتمد" vs "📖 قارئ مسجل" from full
- *   monetization eligibility (spec §1.3a/§12.4 — needs the user's articles + real follower count).
- *   Fetching that just to label a drawer header is unreasonable shell-level work, so this always
- *   shows the safe "📖 قارئ مسجل" default for non-admin/advertiser accounts until the eligibility
- *   figure is actually computed (e.g. by the profile screen, which needs that data anyway).
- * - **Theme/language toggles**: `DrawerMenu.tsx`'s real theme (light/dark) and language switcher
- *   are wired to app-wide state (`App.tsx`) this scope doesn't own (no persisted theme/i18n
- *   controller exists yet in the Kotlin app — [studio.ai.literium.literium_app.ui.theme.LiteriumTheme]
- *   still only reads `isSystemInDarkTheme()`, and no `translations.kt` port exists). The controls
- *   are rendered for visual/IA parity but are session-local, non-persisted stand-ins.
+ * One intentionally simplified spot vs. source, documented in this scope's final report rather than
+ * silently guessed at — **member-status label**: source computes "✍️ كاتب شريك ومعتمد" vs "📖 قارئ
+ * مسجل" from full monetization eligibility (spec §1.3a/§12.4 — needs the user's articles + real
+ * follower count). Fetching that just to label a drawer header is unreasonable shell-level work, so
+ * this always shows the safe "📖 قارئ مسجل" default for non-admin/advertiser accounts until the
+ * eligibility figure is actually computed (e.g. by the profile screen, which needs that data anyway).
+ *
+ * The theme (light/dark) and language toggles below ARE real, [UserPreferencesRepository]-persisted
+ * per-device settings (`App.tsx`'s own `literium_theme`/`literium_lang` `localStorage` keys) — not
+ * live-synced like the admin color palette, matching the web's own local-vs-broadcast split exactly.
  */
 @Composable
 fun DrawerMenuContent(
@@ -79,8 +83,14 @@ fun DrawerMenuContent(
     onLogout: () -> Unit
 ) {
     var showLogoutConfirm by remember { mutableStateOf(false) }
-    var isDarkPreview by remember { mutableStateOf(false) }
-    var selectedLang by remember { mutableStateOf("ar") }
+
+    val context = LocalContext.current
+    val preferencesRepository = remember { UserPreferencesRepository(context) }
+    val coroutineScope = rememberCoroutineScope()
+    val systemDark = isSystemInDarkTheme()
+    val darkModeOverride by preferencesRepository.darkModeOverride.collectAsState(initial = null)
+    val isDarkPreview = darkModeOverride ?: systemDark
+    val selectedLang by preferencesRepository.languageCode.collectAsState(initial = "ar")
 
     Column(
         modifier = Modifier
@@ -183,15 +193,16 @@ fun DrawerMenuContent(
             HorizontalDivider()
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Theme toggle — session-local visual stand-in only, see file KDoc.
+            // Theme toggle — persisted per-device (UserPreferencesRepository), see file KDoc.
             DrawerRow(
                 icon = if (isDarkPreview) Icons.Filled.DarkMode else Icons.Filled.LightMode,
                 iconTint = if (isDarkPreview) BrandTeal else Color(0xFFF59E0B),
                 label = "المظهر: ${if (isDarkPreview) "داكن" else "فاتح"}",
                 trailing = "تبديل"
-            ) { isDarkPreview = !isDarkPreview }
+            ) { coroutineScope.launch { preferencesRepository.setDarkModeOverride(!isDarkPreview) } }
 
-            // Language switcher — session-local visual stand-in only, see file KDoc.
+            // Language switcher — persists the chosen code + flips RTL/LTR (UserPreferencesRepository);
+            // per-string translation coverage itself is out of this scope, see file KDoc.
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -204,7 +215,7 @@ fun DrawerMenuContent(
                         modifier = Modifier
                             .weight(1f)
                             .background(if (selected) Color(0xFF0891B2) else MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp))
-                            .clickable { selectedLang = code }
+                            .clickable { coroutineScope.launch { preferencesRepository.setLanguageCode(code) } }
                             .padding(vertical = 8.dp),
                         contentAlignment = Alignment.Center
                     ) {

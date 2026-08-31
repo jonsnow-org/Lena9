@@ -60,8 +60,10 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
+import studio.ai.literium.literium_app.data.local.SavedAccountsRepository
 import studio.ai.literium.literium_app.ui.theme.BrandTeal
 import studio.ai.literium.literium_app.ui.theme.LiteriumTheme
 import studio.ai.literium.literium_app.util.CreatorEligibility
@@ -73,10 +75,9 @@ import studio.ai.literium.literium_app.util.RevenueShares
  * writer" flow (spec §1.3), every new account is created with `role = 'writer'` in
  * [AuthViewModel.register], and this screen shows the exact same monetization-eligibility
  * conditions card and revenue-split numbers `AuthModal.tsx` renders (sourced live from
- * [CreatorEligibility] / [RevenueShares], never hardcoded separately, so it can't drift).
- *
- * Omits `AuthModal.tsx`'s "saved accounts on this device" picker (spec: see [LoginScreen]'s KDoc —
- * same underlying gap, `savedAccounts.ts` has no Kotlin port yet).
+ * [CreatorEligibility] / [RevenueShares], never hardcoded separately, so it can't drift). Also
+ * remembers the fresh account on this device on success, matching `App.tsx`'s own `rememberAccount`
+ * call in its `onAuthStateChanged` handler (see [LoginScreen] for the picker itself).
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -88,9 +89,17 @@ fun RegisterScreen(
 ) {
     val state by viewModel.registerState.collectAsState()
     var passwordVisible by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val savedAccountsRepository = remember { SavedAccountsRepository(context) }
 
     LaunchedEffect(state.registerSucceeded) {
         if (state.registerSucceeded) {
+            state.registeredUser?.let { user ->
+                savedAccountsRepository.rememberAccount(
+                    uid = user.id, email = user.email, fullName = user.fullName,
+                    avatarUrl = user.avatarUrl, role = user.role
+                )
+            }
             viewModel.consumeRegisterSuccess()
             onRegisterSuccess()
         }

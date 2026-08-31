@@ -6,15 +6,19 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
+import studio.ai.literium.literium_app.data.local.UserPreferencesRepository
 import studio.ai.literium.literium_app.navigation.DeepLinkTarget
 import studio.ai.literium.literium_app.navigation.LiteriumNavHost
 import studio.ai.literium.literium_app.ui.theme.LiteriumTheme
@@ -48,10 +52,21 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val deepLink by deepLinkState
-            // الموقع الحي بالكامل dir="rtl" افتراضياً (عربي أولاً) — نفس
-            // الافتراض هنا بدل انتظار كشف لغة الجهاز، مطابقاً للسلوك الفعلي.
-            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-                LiteriumTheme {
+            val userPreferencesRepository = remember { UserPreferencesRepository(this) }
+            // اللغة تفضيل خاص بهذا الجهاز/المستخدم فقط (بلا مزامنة حية عبر Firestore، خلافاً لقالب
+            // الألوان الإداري) — نفس تفرقة App.tsx بين `literium_lang` (محلي) و`settings/theme`
+            // (عام). عربي (RTL) هو الافتراضي طالما لم يُغيَّر صراحة، مطابقاً لسلوك الموقع.
+            val languageCode by userPreferencesRepository.languageCode.collectAsState(initial = "ar")
+            val layoutDirection = if (languageCode == "ar") LayoutDirection.Rtl else LayoutDirection.Ltr
+
+            // المظهر الداكن/الفاتح تفضيل محلي حقيقي أيضاً (`App.tsx`'s `theme` state) — يتبع نظام
+            // الجهاز افتراضياً حتى يُغيَّر صراحة من القائمة الجانبية، عندها يبقى ثابتاً بصرف النظر
+            // عن نظام الجهاز.
+            val systemDark = isSystemInDarkTheme()
+            val darkModeOverride by userPreferencesRepository.darkModeOverride.collectAsState(initial = null)
+
+            CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
+                LiteriumTheme(darkTheme = darkModeOverride ?: systemDark) {
                     Surface(modifier = Modifier.fillMaxSize()) {
                         LiteriumNavHost(
                             deepLinkTarget = deepLink,
