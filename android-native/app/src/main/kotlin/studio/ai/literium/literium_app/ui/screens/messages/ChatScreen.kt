@@ -119,8 +119,9 @@ private val REPORT_REASONS = listOf(
 
 /**
  * Open-thread view — spec §7 / `DirectMessagesModal.tsx`'s right pane. Deliberately carries NO
- * [studio.ai.literium.literium_app.ui.ads.AdSlot] anywhere on this screen — see [MessagesScreen]'s
- * file KDoc for why that's a preserved, deliberate placement decision, not an oversight.
+ * [studio.ai.literium.literium_app.ui.ads.AdTickerBar] (nor any [studio.ai.literium.literium_app.ui.ads.AdSlot])
+ * anywhere on this screen — see [MessagesScreen]'s file KDoc for why that's a preserved, deliberate
+ * placement decision, not an oversight.
  *
  * Bubble overflow: source has a documented real bug fix here (`min-w-0` on the flex panel — without
  * it, long message content forced the flexbox container past the viewport width because CSS flex

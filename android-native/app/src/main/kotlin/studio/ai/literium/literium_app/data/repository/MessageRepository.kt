@@ -79,7 +79,7 @@ class MessageRepository(
             "conversationId" to conversationId,
             "senderId" to senderId,
             "participants" to participants,
-            "content" to text,
+            "text" to text,
             "isRead" to false,
             "createdAt" to nowIso
         )
@@ -236,7 +236,7 @@ class MessageRepository(
                         "conversationId" to convId,
                         "senderId" to adminId,
                         "participants" to listOf(adminId, recipientId),
-                        "content" to text,
+                        "text" to text,
                         "isRead" to false,
                         "createdAt" to nowIso
                     )

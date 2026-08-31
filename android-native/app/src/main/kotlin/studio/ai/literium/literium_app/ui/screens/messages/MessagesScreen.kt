@@ -100,7 +100,7 @@ fun MessagesScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Box(modifier = Modifier.padding(horizontal = 12.dp).fillMaxWidth()) {
-                        AdSlot(slotId = AdSlotId.MESSAGES_LIST)
+                        AdTickerBar(slotId = AdSlotId.MESSAGES_LIST, viewerId = viewModel.currentUserId)
                     }
                     Spacer(Modifier.height(24.dp))
                     Text("لا توجد محادثات سابقة حالياً", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -109,7 +109,7 @@ fun MessagesScreen(
                     item(key = "ad_ticker") {
                         // شريط إعلاني صغير أعلى قائمة المحادثات فقط — لا يُمرَّر أبداً إلى ChatScreen.
                         Box(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                            AdSlot(slotId = AdSlotId.MESSAGES_LIST)
+                            AdTickerBar(slotId = AdSlotId.MESSAGES_LIST, viewerId = viewModel.currentUserId)
                         }
                     }
                     items(items = state.conversations, key = { it.id }) { conv ->

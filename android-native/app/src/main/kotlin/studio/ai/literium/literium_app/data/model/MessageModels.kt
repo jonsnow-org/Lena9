@@ -1,5 +1,7 @@
 package studio.ai.literium.literium_app.data.model
 
+import com.google.firebase.firestore.PropertyName
+
 /**
  * A single chat message — collection `messages`. Every document carries a
  * `participants` array (enforced by firestore.rules), which is not part of
@@ -16,6 +18,10 @@ data class DirectMessage(
     var recipientId: String? = null,
     /** Both participant uids — required by firestore.rules for read/query authorization. */
     var participants: List<String> = emptyList(),
+    /** Kotlin-side name kept as `content` (used throughout the UI layer); the real Firestore field
+     *  written/read by the live web app (`firestoreService.ts`'s `sendMessageToFirestore`) is `text`,
+     *  not `content` — this mapping is required for real cross-platform message interop, not optional. */
+    @get:PropertyName("text") @set:PropertyName("text")
     var content: String = "",
     var mediaUrl: String? = null,
     /** "image" | "video" | "sticker" — see [MessageMediaType]. For stickers, [content] holds the sticker id. */

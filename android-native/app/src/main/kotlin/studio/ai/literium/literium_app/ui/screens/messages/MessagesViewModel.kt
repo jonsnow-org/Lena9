@@ -71,7 +71,7 @@ class MessagesViewModel(
     private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance()
 ) : ViewModel() {
 
-    private val currentUserId: String = authRepository.currentFirebaseUser?.uid.orEmpty()
+    val currentUserId: String = authRepository.currentFirebaseUser?.uid.orEmpty()
 
     private val conversationsFlow = messageRepository.observeConversations(currentUserId)
     private val messagesFlow = messageRepository.observeMessages(currentUserId)
