@@ -17,6 +17,7 @@ import kotlinx.coroutines.tasks.await
 import studio.ai.literium.literium_app.data.firebase.FirestoreCollections
 import studio.ai.literium.literium_app.data.model.AdCampaign
 import studio.ai.literium.literium_app.data.model.AdEvent
+import studio.ai.literium.literium_app.data.model.AdSlotConfig
 import studio.ai.literium.literium_app.data.model.AiPlanType
 import studio.ai.literium.literium_app.data.model.AiQuota
 import studio.ai.literium.literium_app.data.model.Article
@@ -53,6 +54,9 @@ import studio.ai.literium.literium_app.data.repository.WalletRepository
 import studio.ai.literium.literium_app.util.CreatorEligibility
 import studio.ai.literium.literium_app.util.RevenueShares
 import java.time.Instant
+
+/** Port of `App.tsx`'s `AD_EVENTS_BATCH_SIZE` — used only by [AdminViewModel.processExternalAdRevenue]. */
+private const val EXTERNAL_AD_EVENTS_BATCH_SIZE = 100
 
 /**
  * Backs the whole admin panel ([AdminScreen] + every tab under
@@ -532,6 +536,68 @@ class AdminViewModel(
                 }
                 campaignRepository.markAdEventProcessed(ev.id, isValid = cost > 0)
             }
+        }
+    }
+
+    /**
+     * Port of `App.tsx`'s `handleProcessExternalAdRevenue` — was missing entirely here. Every
+     * [AdEvent] with `isExternalAdView == true` (a viewability-qualified impression on an external
+     * network's fill, PropellerAds/Adsterra/Taboola, in a writer-beneficiary slot) has no
+     * `campaignId`, so [processAdEvents] above always skips it and simply marks it processed as
+     * invalid — the writer's share of that view was silently discarded forever, with no way to
+     * recover it once pressed. Same fixed-CPM-estimate math as source: `estimatedCpmUsd / 1000 *
+     * slotConfig.writerShare` per event, gated by the same [CreatorEligibility] check as
+     * [processAdEvents], batched at [EXTERNAL_AD_EVENTS_BATCH_SIZE] events per call exactly like
+     * source's `AD_EVENTS_BATCH_SIZE` (repeat calls process the next batch).
+     */
+    fun processExternalAdRevenue() {
+        viewModelScope.launch {
+            val allUnprocessed = adEvents.value.filter { it.isExternalAdView == true && !it.processed }
+            if (allUnprocessed.isEmpty()) return@launch
+            val sorted = allUnprocessed.sortedBy { it.createdAt }
+            val unprocessed = sorted.take(EXTERNAL_AD_EVENTS_BATCH_SIZE)
+
+            val estimatedCpmUsd = (externalAdsConfig.value["estimatedCpmUsd"] as? Number)?.toDouble() ?: 2.0
+            val usersById = users.value.associateBy { it.id }
+            val writerEarnings = mutableMapOf<String, Double>()
+            val validEvents = mutableListOf<AdEvent>()
+            val skippedEvents = mutableListOf<AdEvent>()
+
+            for (ev in unprocessed) {
+                val slotConfig = AdSlotConfig.BY_SLOT[ev.slotId]
+                val writerShare = slotConfig?.writerShare ?: 0.0
+                val writer = ev.writerId?.let { usersById[it] }
+                val eligible = writerShare > 0 && writer != null &&
+                    CreatorEligibility.isEligibleForMonetization(writer, articles.value, realFollowersCount(writer.id))
+                if (!eligible) {
+                    skippedEvents.add(ev)
+                    continue
+                }
+                validEvents.add(ev)
+                val amount = (estimatedCpmUsd / 1000.0) * writerShare
+                writerEarnings[ev.writerId!!] = (writerEarnings[ev.writerId!!] ?: 0.0) + amount
+            }
+
+            for ((writerIdKey, amount) in writerEarnings) {
+                val writer = usersById[writerIdKey] ?: continue
+                val roundedAmount = (amount * 10000).toLong() / 10000.0
+                walletRepository.adminAdjustUserBalance(
+                    writerIdKey,
+                    mapOf(
+                        "pendingEarnings" to (writer.pendingEarnings ?: 0.0) + roundedAmount,
+                        "lifetimeEarnings" to (writer.lifetimeEarnings ?: 0.0) + roundedAmount
+                    )
+                )
+                walletRepository.adminLogEarning(
+                    userId = writerIdKey,
+                    amount = roundedAmount,
+                    source = "external_ad_revenue",
+                    description = "حصة من مشاهدات إعلانات شبكة خارجية (سعر تقديري \$${"%.2f".format(estimatedCpmUsd)}/1000 مشاهدة)"
+                )
+            }
+
+            for (ev in validEvents) campaignRepository.markAdEventProcessed(ev.id, isValid = true)
+            for (ev in skippedEvents) campaignRepository.markAdEventProcessed(ev.id, isValid = false)
         }
     }
 
