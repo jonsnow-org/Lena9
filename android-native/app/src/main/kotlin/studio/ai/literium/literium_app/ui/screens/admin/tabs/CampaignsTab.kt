@@ -70,6 +70,7 @@ fun CampaignsTab(
 private fun CampaignsList(viewModel: AdminViewModel, campaigns: List<AdCampaign>, users: List<User>) {
     var filter by remember { mutableStateOf("all") }
     var searchQuery by remember { mutableStateOf("") }
+    val reviewingIds by viewModel.reviewingCampaignIds.collectAsState()
 
     val filtered = campaigns.filter { c ->
         (filter == "all" || c.status == filter) &&
@@ -113,8 +114,15 @@ private fun CampaignsList(viewModel: AdminViewModel, campaigns: List<AdCampaign>
                         Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             when (camp.status) {
                                 "pending" -> {
-                                    Button(onClick = { viewModel.reviewCampaign(camp.id, true) }) { Text("موافقة وتفعيل") }
-                                    OutlinedButton(onClick = { viewModel.reviewCampaign(camp.id, false) }) { Text("رفض") }
+                                    val isReviewing = camp.id in reviewingIds
+                                    Button(
+                                        enabled = !isReviewing,
+                                        onClick = { viewModel.reviewCampaign(camp.id, true) }
+                                    ) { Text(if (isReviewing) "جارٍ المعالجة..." else "موافقة وتفعيل") }
+                                    OutlinedButton(
+                                        enabled = !isReviewing,
+                                        onClick = { viewModel.reviewCampaign(camp.id, false) }
+                                    ) { Text("رفض") }
                                 }
                                 "active" -> OutlinedButton(onClick = { viewModel.setCampaignStatus(camp.id, "paused") }) { Text("إيقاف مؤقت") }
                                 "paused" -> Button(onClick = { viewModel.setCampaignStatus(camp.id, "active") }) { Text("استئناف") }

@@ -667,12 +667,18 @@ internal object ExternalAdsSettingsStore {
             .document(FirestoreCollections.Settings.EXTERNAL_ADS_DOC)
             .addSnapshotListener { snap, _ ->
                 val data: Map<String, Any?> = if (snap != null && snap.exists()) snap.data.orEmpty() else emptyMap()
-                fun parse(key: String): NetworkConfig {
-                    val raw = data[key] as? Map<*, *> ?: return NetworkConfig()
+                // `default` mirrors web's DEFAULT_CONFIG (externalAdsStore.ts): Adsterra's hardcoded,
+                // pre-vetted units default ON (enabled=true, appSafe=true) when the Firestore doc has
+                // no `adsterra` field yet at all, unlike every other network which defaults fully OFF.
+                // This function used to hardcode `false` for every network regardless — which silently
+                // disagreed with the admin UI's own `?: true` fallback for Adsterra (CampaignsTab.kt),
+                // showing "enabled ✓" there while actually rendering nothing here until first saved.
+                fun parse(key: String, default: NetworkConfig = NetworkConfig()): NetworkConfig {
+                    val raw = data[key] as? Map<*, *> ?: return default
                     return NetworkConfig(
-                        enabled = raw["enabled"] as? Boolean ?: false,
-                        snippet = raw["snippet"] as? String ?: "",
-                        appSafe = raw["appSafe"] as? Boolean ?: false
+                        enabled = raw["enabled"] as? Boolean ?: default.enabled,
+                        snippet = raw["snippet"] as? String ?: default.snippet,
+                        appSafe = raw["appSafe"] as? Boolean ?: default.appSafe
                     )
                 }
                 val estimatedCpm = (data["estimatedCpmUsd"] as? Number)?.toDouble()?.takeIf { it >= 0 } ?: 2.0
@@ -682,7 +688,7 @@ internal object ExternalAdsSettingsStore {
                     ?.toMap() ?: emptyMap()
                 _config.value = Config(
                     propellerAds = parse("propellerAds"),
-                    adsterra = parse("adsterra"),
+                    adsterra = parse("adsterra", default = NetworkConfig(enabled = true, snippet = "", appSafe = true)),
                     adsterraUnits = adsterraUnitsRaw,
                     taboola = parse("taboola"),
                     estimatedCpmUsd = estimatedCpm
