@@ -4042,7 +4042,13 @@ export function App() {
               {/* موضع category_banner — أعلى قسم تصنيف محدد، حصري لراعي
                   القسم فقط (sponsorOnly)، لا يشاركه أحد. */}
               {selectedCategory !== 'all' && (
-                <AdSlot slotId="category_banner" campaigns={campaigns} viewerId={currentUserId || null} adFree={false} />
+                <AdSlot
+                  slotId="category_banner"
+                  campaigns={campaigns}
+                  viewerId={currentUserId || null}
+                  adFree={false}
+                  category={selectedCategory}
+                />
               )}
 
               {/* 2. Trending Articles Ranking */}
