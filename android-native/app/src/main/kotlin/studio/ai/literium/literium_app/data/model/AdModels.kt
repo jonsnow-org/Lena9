@@ -1,5 +1,7 @@
 package studio.ai.literium.literium_app.data.model
 
+import com.google.firebase.firestore.PropertyName
+
 /**
  * Ad campaign document — collection `campaigns` (publicly readable;
  * advertiser-owned writes gated by firestore.rules). Any registered account
