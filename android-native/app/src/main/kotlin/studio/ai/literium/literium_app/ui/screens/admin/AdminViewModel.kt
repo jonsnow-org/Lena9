@@ -117,7 +117,7 @@ class AdminViewModel(
     val purchaseRequests: StateFlow<List<PurchaseRequest>> = callbackFlow {
         val reg = purchaseRequestsCol.addSnapshotListener { snap, error ->
             if (error != null) { close(error); return@addSnapshotListener }
-            trySend(snap?.documents?.mapNotNull { it.toObject<PurchaseRequest>()?.copy(id = it.id) }.orEmpty()
+            trySend(snap?.documents?.mapNotNull { runCatching { it.toObject<PurchaseRequest>() }.getOrNull()?.copy(id = it.id) }.orEmpty()
                 .sortedByDescending { it.createdAt })
         }
         awaitClose { reg.remove() }

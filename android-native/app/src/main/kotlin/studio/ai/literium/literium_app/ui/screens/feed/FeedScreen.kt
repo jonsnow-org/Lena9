@@ -1,5 +1,11 @@
 package studio.ai.literium.literium_app.ui.screens.feed
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -27,7 +33,6 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -39,6 +44,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -138,9 +144,7 @@ fun FeedScreen(
                         Text("أحدث المقالات المنشورة", fontSize = 15.sp, fontWeight = FontWeight.Black)
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("${state.articles.size} مقال متاح", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            IconButton(onClick = viewModel::refresh, enabled = !state.isRefreshing) {
-                                Icon(Icons.Filled.Refresh, contentDescription = "تحديث قائمة المقالات", tint = BrandTeal, modifier = Modifier.size(18.dp))
-                            }
+                            RefreshButton(isRefreshing = state.isRefreshing, onClick = viewModel::refresh, contentDescription = "تحديث قائمة المقالات")
                         }
                     }
                 }
@@ -167,9 +171,7 @@ fun FeedScreen(
             } else {
                 item {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        IconButton(onClick = viewModel::refresh, enabled = !state.isRefreshing) {
-                            Icon(Icons.Filled.Refresh, contentDescription = "تحديث التغريدات", tint = BrandTeal, modifier = Modifier.size(18.dp))
-                        }
+                        RefreshButton(isRefreshing = state.isRefreshing, onClick = viewModel::refresh, contentDescription = "تحديث التغريدات")
                     }
                 }
                 val currentUser = state.currentUser
@@ -207,6 +209,41 @@ fun FeedScreen(
             }
         }
         }
+    }
+}
+
+/**
+ * Matches `App.tsx`'s own refresh button exactly (icon + "تحديث" label, spinning while
+ * [isRefreshing]) — the static, unlabeled, non-animated `IconButton` this replaced gave zero visible
+ * feedback on a fast connection (the fetch can complete in well under a second), which is exactly
+ * why a real user reported "pull-to-refresh does nothing, ever": nothing ever visibly changed, even
+ * though the network request genuinely happened every time.
+ */
+@Composable
+private fun RefreshButton(isRefreshing: Boolean, onClick: () -> Unit, contentDescription: String) {
+    val transition = rememberInfiniteTransition(label = "refresh_spin")
+    val rotation by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(animation = tween(800, easing = LinearEasing), repeatMode = RepeatMode.Restart),
+        label = "refresh_spin_angle"
+    )
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .clickable(enabled = !isRefreshing, onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp)
+    ) {
+        Icon(
+            Icons.Filled.Refresh,
+            contentDescription = contentDescription,
+            tint = BrandTeal,
+            modifier = Modifier.size(15.dp).rotate(if (isRefreshing) rotation else 0f)
+        )
+        Text("تحديث", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = BrandTeal)
     }
 }
 
