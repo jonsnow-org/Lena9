@@ -38,6 +38,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -86,6 +87,13 @@ fun ExploreScreen(
     val filteredArticles = state.filteredArticles
     val filteredWriters = state.filteredWriters
 
+    // سحب-للتحديث + زر تحديث — انظر تعليق FeedScreen.kt المطابق (نفس بلاغ المستخدم، ونفس السبب:
+    // observeArticles() قد ينقطع بصمت بلا إعادة اتصال فورية).
+    PullToRefreshBox(
+        isRefreshing = state.isRefreshing,
+        onRefresh = viewModel::refresh,
+        modifier = Modifier.fillMaxSize()
+    ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 14.dp),
@@ -230,6 +238,7 @@ fun ExploreScreen(
                 )
             }
         }
+    }
     }
 }
 

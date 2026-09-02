@@ -23,12 +23,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Article
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.RemoveRedEye
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -62,6 +66,7 @@ import studio.ai.literium.literium_app.ui.theme.BrandTeal
  * main article grid with home_feed_1/home_feed_2 ads interspersed at the same indices the web app
  * uses (idx 2 / idx 8). Tweet mode: composer → tweet list with a tweet_feed ad every 3 tweets.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FeedScreen(
     onArticleClick: (String) -> Unit,
@@ -81,8 +86,17 @@ fun FeedScreen(
             return@Scaffold
         }
 
+        // سحب-للتحديث + جلب حقيقي مرة واحدة من الخادم (مطابق لـ `handleRefreshFeed` في `App.tsx`):
+        // مستمعا observeArticles()/observeTweets() الحيّان قد ينقطعان بصمت (تبديل شبكة، تعليق طويل في
+        // الخلفية) بلا إعادة اتصال فورية، فيبقى المحتوى القديم ظاهراً مهما حاول المستخدم — كان هذا
+        // بلاغ مستخدم حقيقي (لا سحب للتحديث ولا زر تحديث في نسخة APK).
+        PullToRefreshBox(
+            isRefreshing = state.isRefreshing,
+            onRefresh = viewModel::refresh,
+            modifier = Modifier.fillMaxSize().padding(padding)
+        ) {
         LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding),
+            modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
@@ -120,9 +134,14 @@ fun FeedScreen(
                 }
 
                 item {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                         Text("أحدث المقالات المنشورة", fontSize = 15.sp, fontWeight = FontWeight.Black)
-                        Text("${state.articles.size} مقال متاح", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("${state.articles.size} مقال متاح", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            IconButton(onClick = viewModel::refresh, enabled = !state.isRefreshing) {
+                                Icon(Icons.Filled.Refresh, contentDescription = "تحديث قائمة المقالات", tint = BrandTeal, modifier = Modifier.size(18.dp))
+                            }
+                        }
                     }
                 }
 
@@ -146,6 +165,13 @@ fun FeedScreen(
                     }
                 }
             } else {
+                item {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        IconButton(onClick = viewModel::refresh, enabled = !state.isRefreshing) {
+                            Icon(Icons.Filled.Refresh, contentDescription = "تحديث التغريدات", tint = BrandTeal, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                }
                 val currentUser = state.currentUser
                 if (currentUser != null) {
                     item {
@@ -179,6 +205,7 @@ fun FeedScreen(
                     }
                 }
             }
+        }
         }
     }
 }

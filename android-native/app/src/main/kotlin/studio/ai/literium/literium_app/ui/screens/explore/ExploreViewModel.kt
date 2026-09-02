@@ -29,6 +29,7 @@ enum class ExploreFilter { TRENDING, TOP_RATED, WRITERS, LOCKED }
 
 data class ExploreUiState(
     val isLoading: Boolean = true,
+    val isRefreshing: Boolean = false,
     val query: String = "",
     val filter: ExploreFilter = ExploreFilter.TRENDING,
     val articles: List<Article> = emptyList(),
@@ -128,6 +129,18 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                         followedWriterIds = followedIds
                     )
                 }
+        }
+    }
+
+    /** Pull-to-refresh / refresh-button entry point — same rationale as `FeedViewModel.refresh`. */
+    fun refresh() {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isRefreshing = true)
+            val result = articleRepository.fetchArticlesOnce()
+            _uiState.value = _uiState.value.copy(
+                isRefreshing = false,
+                articles = result.getOrNull()?.filter { it.status == ArticleStatus.PUBLISHED } ?: _uiState.value.articles
+            )
         }
     }
 

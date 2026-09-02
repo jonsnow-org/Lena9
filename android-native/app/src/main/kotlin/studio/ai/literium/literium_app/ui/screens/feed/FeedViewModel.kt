@@ -31,6 +31,7 @@ enum class FeedMode { BLOG, TWEET }
 
 data class FeedUiState(
     val isLoading: Boolean = true,
+    val isRefreshing: Boolean = false,
     val mode: FeedMode = FeedMode.BLOG,
     val currentUser: User? = null,
     val articles: List<Article> = emptyList(),
@@ -136,14 +137,24 @@ class FeedViewModel(application: Application) : AndroidViewModel(application) {
     private fun loadBookmarks(): Set<String> =
         prefs.getStringSet("literium_bookmarks", emptySet())?.toSet() ?: emptySet()
 
+    /**
+     * Explicit pull-to-refresh / refresh-button entry point — matches `App.tsx`'s `handleRefreshFeed`:
+     * a real one-shot server fetch, not just a visual spinner, since the live `observeArticles()`/
+     * `observeTweets()` listeners can go silently stale (network switch, long background) without
+     * reconnecting immediately. Uses [FeedUiState.isRefreshing] rather than [FeedUiState.isLoading] so
+     * [FeedScreen] shows the small pull-to-refresh indicator instead of swapping to the full-screen
+     * spinner and losing scroll position.
+     */
     fun refresh() {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
-            articleRepository.fetchArticlesOnce().fold(
-                onSuccess = { list ->
-                    _uiState.value = _uiState.value.copy(isLoading = false, articles = list.filter { it.status == ArticleStatus.PUBLISHED })
-                },
-                onFailure = { e -> _uiState.value = _uiState.value.copy(isLoading = false, error = e.message) }
+            _uiState.value = _uiState.value.copy(isRefreshing = true)
+            val articlesResult = articleRepository.fetchArticlesOnce()
+            val tweetsResult = tweetRepository.fetchTweetsOnce()
+            _uiState.value = _uiState.value.copy(
+                isRefreshing = false,
+                articles = articlesResult.getOrNull()?.filter { it.status == ArticleStatus.PUBLISHED } ?: _uiState.value.articles,
+                tweets = tweetsResult.getOrNull() ?: _uiState.value.tweets,
+                error = articlesResult.exceptionOrNull()?.message ?: tweetsResult.exceptionOrNull()?.message
             )
         }
     }
