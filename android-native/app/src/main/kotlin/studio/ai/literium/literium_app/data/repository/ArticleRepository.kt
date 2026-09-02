@@ -244,6 +244,13 @@ class ArticleRepository(
         Unit
     }
 
+    /** firestore.rules already allows this (own comment or admin) — the actual delete action itself
+     *  was never built on any client, web included. */
+    suspend fun deleteComment(commentId: String): Result<Unit> = safeCall {
+        commentsCol.document(commentId).delete().await()
+        Unit
+    }
+
     suspend fun toggleCommentLike(commentId: String, userId: String, isLiking: Boolean): Result<Unit> = safeCall {
         commentsCol.document(commentId).update(
             mapOf(

@@ -242,6 +242,7 @@ fun FeedScreen(
                                 onDelete = viewModel::deleteTweet,
                                 onAddComment = viewModel::addTweetComment,
                                 onLikeComment = viewModel::likeTweetComment,
+                                onDeleteComment = viewModel::deleteTweetComment,
                                 onReplyToComment = viewModel::replyToTweetComment,
                                 onSelectAuthor = onWriterClick
                             )

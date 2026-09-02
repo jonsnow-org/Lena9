@@ -318,6 +318,17 @@ class FeedViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { tweetRepository.toggleTweetCommentLike(commentId, uid, isLiking) }
     }
 
+    /** Own comment or admin only — matches firestore.rules' delete gate on tweetComments exactly.
+     *  This action existed at the security-rules level but no client (web included) ever built the
+     *  button for it — a real user report. */
+    fun deleteTweetComment(commentId: String) {
+        val uid = _uiState.value.currentUserId ?: return
+        val comment = _uiState.value.tweetComments.find { it.id == commentId } ?: return
+        val isAdmin = _uiState.value.currentUser?.role == UserRole.ADMIN
+        if (comment.userId != uid && !isAdmin) return
+        viewModelScope.launch { tweetRepository.deleteTweetComment(commentId, comment.tweetId) }
+    }
+
     fun replyToTweetComment(commentId: String, content: String) {
         val user = _uiState.value.currentUser ?: return
         viewModelScope.launch {

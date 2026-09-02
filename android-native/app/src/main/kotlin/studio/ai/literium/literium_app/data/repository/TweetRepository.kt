@@ -147,6 +147,14 @@ class TweetRepository(
         Unit
     }
 
+    /** firestore.rules already allows this (own comment or admin) — mirrors addTweetComment's own
+     *  commentsCount increment, in reverse, so the tweet's displayed count stays accurate. */
+    suspend fun deleteTweetComment(commentId: String, tweetId: String): Result<Unit> = safeCall {
+        tweetCommentsCol.document(commentId).delete().await()
+        tweetsCol.document(tweetId).update("commentsCount", FieldValue.increment(-1)).await()
+        Unit
+    }
+
     suspend fun toggleTweetCommentLike(commentId: String, userId: String, isLiking: Boolean): Result<Unit> = safeCall {
         tweetCommentsCol.document(commentId).update(
             mapOf(

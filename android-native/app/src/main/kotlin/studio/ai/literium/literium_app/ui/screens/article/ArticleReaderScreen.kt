@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.RemoveRedEye
@@ -31,6 +32,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.StarBorder
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -64,6 +66,7 @@ import coil3.compose.AsyncImage
 import studio.ai.literium.literium_app.data.model.AdSlotId
 import studio.ai.literium.literium_app.data.model.Comment
 import studio.ai.literium.literium_app.data.model.ReactionType
+import studio.ai.literium.literium_app.data.model.UserRole
 import studio.ai.literium.literium_app.ui.ads.AdSlot
 import studio.ai.literium.literium_app.ui.components.HtmlContent
 import studio.ai.literium.literium_app.ui.theme.BrandAmber
@@ -335,11 +338,13 @@ private fun ArticleReaderBody(
                 CommentRow(
                     comment = comment,
                     currentUserId = state.currentUserId,
+                    canDelete = state.currentUserId == comment.userId || state.currentUser?.role == UserRole.ADMIN,
                     isReplying = replyingToId == comment.id,
                     replyText = replyText,
                     onReplyTextChange = { replyText = it },
                     onToggleReply = { replyingToId = if (replyingToId == comment.id) null else comment.id },
                     onLike = { viewModel.likeComment(comment.id) },
+                    onDelete = { viewModel.deleteComment(comment.id) },
                     onSubmitReply = {
                         if (replyText.isNotBlank()) {
                             viewModel.replyToComment(comment.id, replyText)
@@ -473,14 +478,30 @@ private fun ReactionsAndRatingBar(state: ArticleReaderUiState, viewModel: Articl
 private fun CommentRow(
     comment: Comment,
     currentUserId: String?,
+    canDelete: Boolean,
     isReplying: Boolean,
     replyText: String,
     onReplyTextChange: (String) -> Unit,
     onToggleReply: () -> Unit,
     onLike: () -> Unit,
+    onDelete: () -> Unit,
     onSubmitReply: () -> Unit
 ) {
     val likedByMe = currentUserId != null && comment.likedBy?.contains(currentUserId) == true
+    var confirmingDelete by remember { mutableStateOf(false) }
+    if (confirmingDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmingDelete = false },
+            title = { Text("حذف التعليق") },
+            text = { Text("هل تريد حذف هذا التعليق نهائياً؟") },
+            confirmButton = {
+                TextButton(onClick = { onDelete(); confirmingDelete = false }) {
+                    Text("حذف", color = Color(0xFFE11D48))
+                }
+            },
+            dismissButton = { TextButton(onClick = { confirmingDelete = false }) { Text("إلغاء") } }
+        )
+    }
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = if (comment.isPinned == true) BrandTeal.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
@@ -525,6 +546,12 @@ private fun CommentRow(
                 Row(modifier = Modifier.clickable(onClick = onToggleReply), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     Icon(Icons.AutoMirrored.Filled.Reply, contentDescription = null, tint = BrandTeal, modifier = Modifier.size(14.dp))
                     Text("رد", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = BrandTeal)
+                }
+                if (canDelete) {
+                    Row(modifier = Modifier.clickable { confirmingDelete = true }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Icon(Icons.Filled.DeleteOutline, contentDescription = "حذف التعليق", tint = Color(0xFFE11D48), modifier = Modifier.size(14.dp))
+                        Text("حذف", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = Color(0xFFE11D48))
+                    }
                 }
             }
 

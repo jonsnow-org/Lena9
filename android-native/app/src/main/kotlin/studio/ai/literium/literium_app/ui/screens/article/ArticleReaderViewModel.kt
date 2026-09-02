@@ -18,6 +18,7 @@ import studio.ai.literium.literium_app.data.model.Comment
 import studio.ai.literium.literium_app.data.model.CommentReply
 import studio.ai.literium.literium_app.data.model.NotificationType
 import studio.ai.literium.literium_app.data.model.User
+import studio.ai.literium.literium_app.data.model.UserRole
 import studio.ai.literium.literium_app.data.remote.NetworkModule
 import studio.ai.literium.literium_app.data.remote.UnlockArticleRequest
 import studio.ai.literium.literium_app.data.repository.ArticleRepository
@@ -293,6 +294,17 @@ class ArticleReaderViewModel(application: Application) : AndroidViewModel(applic
                 notifyIfNotSelf(comment.userId, uid, NotificationType.LIKE, "إعجاب بتعليقك", "أعجب ${actorName()} بتعليقك", comment.articleId)
             }
         }
+    }
+
+    /** Own comment or admin only — matches firestore.rules' delete gate exactly (currentUser.id ==
+     *  comment.userId, or admin). This action existed at the security-rules level but no client
+     *  (web included) ever built the button for it — a real user report. */
+    fun deleteComment(commentId: String) {
+        val uid = _uiState.value.currentUserId ?: return
+        val comment = _uiState.value.comments.find { it.id == commentId } ?: return
+        val isAdmin = _uiState.value.currentUser?.role == UserRole.ADMIN
+        if (comment.userId != uid && !isAdmin) return
+        viewModelScope.launch { articleRepository.deleteComment(commentId) }
     }
 
     fun unlockArticle() {

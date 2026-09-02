@@ -160,6 +160,15 @@ class TweetViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { tweetRepository.toggleTweetCommentLike(commentId, uid, isLiking) }
     }
 
+    /** Own comment or admin only — matches firestore.rules' delete gate on tweetComments exactly. */
+    fun deleteComment(commentId: String) {
+        val uid = _detailState.value.currentUserId ?: return
+        val state = _detailState.value
+        val comment = state.comments.find { it.id == commentId } ?: return
+        if (comment.userId != uid && !state.isAdmin) return
+        viewModelScope.launch { tweetRepository.deleteTweetComment(commentId, comment.tweetId) }
+    }
+
     fun replyToComment(commentId: String, content: String) {
         val user = _detailState.value.currentUser ?: return
         viewModelScope.launch {

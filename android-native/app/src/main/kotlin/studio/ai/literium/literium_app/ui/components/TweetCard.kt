@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.ModeComment
 import androidx.compose.material.icons.outlined.StarBorder
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -74,6 +75,7 @@ fun TweetCard(
     onDelete: ((String) -> Unit)? = null,
     onAddComment: (String, String) -> Unit = { _, _ -> },
     onLikeComment: (String, Boolean) -> Unit = { _, _ -> },
+    onDeleteComment: ((String) -> Unit)? = null,
     onReplyToComment: (String, String) -> Unit = { _, _ -> },
     onSelectAuthor: ((String) -> Unit)? = null,
     startExpanded: Boolean = false
@@ -205,11 +207,13 @@ fun TweetCard(
                             TweetCommentRow(
                                 comment = comm,
                                 currentUserId = currentUserId,
+                                canDelete = onDeleteComment != null && (currentUserId == comm.userId || isAdmin),
                                 isReplying = replyingToId == comm.id,
                                 replyText = replyText,
                                 onReplyTextChange = { replyText = it },
                                 onToggleReplying = { replyingToId = if (replyingToId == comm.id) null else comm.id },
                                 onLikeComment = onLikeComment,
+                                onDeleteComment = { onDeleteComment?.invoke(comm.id) },
                                 onSubmitReply = {
                                     if (replyText.isNotBlank()) {
                                         onReplyToComment(comm.id, replyText.trim())
@@ -242,14 +246,30 @@ private fun ActionChip(icon: androidx.compose.ui.graphics.vector.ImageVector, ti
 private fun TweetCommentRow(
     comment: TweetComment,
     currentUserId: String,
+    canDelete: Boolean,
     isReplying: Boolean,
     replyText: String,
     onReplyTextChange: (String) -> Unit,
     onToggleReplying: () -> Unit,
     onLikeComment: (String, Boolean) -> Unit,
+    onDeleteComment: () -> Unit,
     onSubmitReply: () -> Unit
 ) {
     val likedByMe = comment.likedBy?.contains(currentUserId) == true
+    var confirmingDelete by remember { mutableStateOf(false) }
+    if (confirmingDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmingDelete = false },
+            title = { Text("حذف التعليق") },
+            text = { Text("هل تريد حذف هذا التعليق نهائياً؟") },
+            confirmButton = {
+                TextButton(onClick = { onDeleteComment(); confirmingDelete = false }) {
+                    Text("حذف", color = Color(0xFFE11D48))
+                }
+            },
+            dismissButton = { TextButton(onClick = { confirmingDelete = false }) { Text("إلغاء") } }
+        )
+    }
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
         shape = RoundedCornerShape(12.dp)
@@ -289,6 +309,16 @@ private fun TweetCommentRow(
                 ) {
                     Icon(Icons.AutoMirrored.Filled.Reply, contentDescription = null, tint = BrandTeal, modifier = Modifier.size(13.dp))
                     Text("رد", fontSize = 10.sp, fontWeight = FontWeight.Medium, color = BrandTeal)
+                }
+                if (canDelete) {
+                    Row(
+                        modifier = Modifier.clickable { confirmingDelete = true },
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Icon(Icons.Filled.Delete, contentDescription = "حذف التعليق", tint = Color(0xFFE11D48), modifier = Modifier.size(13.dp))
+                        Text("حذف", fontSize = 10.sp, fontWeight = FontWeight.Medium, color = Color(0xFFE11D48))
+                    }
                 }
             }
 
