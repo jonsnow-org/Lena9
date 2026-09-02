@@ -25,26 +25,34 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Article
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.RemoveRedEye
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -57,6 +65,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import studio.ai.literium.literium_app.data.model.AdSlotId
 import studio.ai.literium.literium_app.data.model.Article
+import studio.ai.literium.literium_app.data.model.User
 import studio.ai.literium.literium_app.data.model.UserRole
 import studio.ai.literium.literium_app.ui.ads.AdSlot
 import studio.ai.literium.literium_app.ui.components.ArticleCard
@@ -111,29 +120,65 @@ fun FeedScreen(
             }
 
             if (state.mode == FeedMode.BLOG) {
-                val featured = state.articles.take(4)
-                if (featured.isNotEmpty()) {
+                val searching = state.searchQuery.isNotBlank()
+                val searchedArticles = state.searchedArticles
+
+                // Search bar + refresh row — matches App.tsx's placement exactly (right below the
+                // mode switcher, above the featured carousel), a real gap: this app had no search
+                // affordance anywhere before this.
+                item {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SearchBar(
+                            expanded = state.isSearchExpanded,
+                            query = state.searchQuery,
+                            onExpandedChange = viewModel::setSearchExpanded,
+                            onQueryChange = viewModel::setSearchQuery,
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (!state.isSearchExpanded) {
+                            RefreshButton(isRefreshing = state.isRefreshing, onClick = viewModel::refresh, contentDescription = "تحديث قائمة المقالات")
+                        }
+                    }
+                }
+
+                if (searching && state.matchingUsers.isNotEmpty()) {
                     item {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            SectionHeader("مقالات مختارة للتحرير")
-                            LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                items(featured, key = { "featured_${it.id}" }) { article ->
-                                    FeaturedArticleCard(article, onClick = { onArticleClick(article.id) })
+                            Text("حسابات مطابقة لبحثك:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                items(state.matchingUsers, key = { "match_${it.id}" }) { u ->
+                                    MatchingUserChip(user = u, onClick = { onWriterClick(u.id) })
                                 }
                             }
                         }
                     }
                 }
 
-                item { AdSlot(slotId = AdSlotId.HOME_HERO) }
+                if (!searching) {
+                    val featured = state.articles.take(4)
+                    if (featured.isNotEmpty()) {
+                        item {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                SectionHeader("مقالات مختارة للتحرير")
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    items(featured, key = { "featured_${it.id}" }) { article ->
+                                        FeaturedArticleCard(article, onClick = { onArticleClick(article.id) })
+                                    }
+                                }
+                            }
+                        }
+                    }
 
-                val trending = state.articles.sortedByDescending { it.viewsCount }.take(4)
-                if (trending.isNotEmpty()) {
-                    item {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            SectionHeader("الأكثر رواجاً")
-                            trending.forEachIndexed { idx, article ->
-                                TrendingRow(rank = idx + 1, article = article, onClick = { onArticleClick(article.id) })
+                    item { AdSlot(slotId = AdSlotId.HOME_HERO) }
+
+                    val trending = state.articles.sortedByDescending { it.viewsCount }.take(4)
+                    if (trending.isNotEmpty()) {
+                        item {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                SectionHeader("الأكثر رواجاً")
+                                trending.forEachIndexed { idx, article ->
+                                    TrendingRow(rank = idx + 1, article = article, onClick = { onArticleClick(article.id) })
+                                }
                             }
                         }
                     }
@@ -141,21 +186,18 @@ fun FeedScreen(
 
                 item {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("أحدث المقالات المنشورة", fontSize = 15.sp, fontWeight = FontWeight.Black)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("${state.articles.size} مقال متاح", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            RefreshButton(isRefreshing = state.isRefreshing, onClick = viewModel::refresh, contentDescription = "تحديث قائمة المقالات")
-                        }
+                        Text(if (searching) "نتائج البحث" else "أحدث المقالات المنشورة", fontSize = 15.sp, fontWeight = FontWeight.Black)
+                        Text("${searchedArticles.size} مقال متاح", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
 
-                if (state.articles.isEmpty()) {
-                    item { EmptyState("لا توجد مقالات منشورة بعد.") }
+                if (searchedArticles.isEmpty()) {
+                    item { EmptyState(if (searching) "لا توجد نتائج مطابقة لبحثك." else "لا توجد مقالات منشورة بعد.") }
                 } else {
-                    itemsIndexed(state.articles, key = { _, a -> a.id }) { idx, article ->
+                    itemsIndexed(searchedArticles, key = { _, a -> a.id }) { idx, article ->
                         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                            if (idx == 2) AdSlot(slotId = AdSlotId.HOME_FEED_1)
-                            if (idx == 8) AdSlot(slotId = AdSlotId.HOME_FEED_2)
+                            if (!searching && idx == 2) AdSlot(slotId = AdSlotId.HOME_FEED_1)
+                            if (!searching && idx == 8) AdSlot(slotId = AdSlotId.HOME_FEED_2)
                             ArticleCard(
                                 article = article,
                                 onClick = { onArticleClick(article.id) },
@@ -244,6 +286,87 @@ private fun RefreshButton(isRefreshing: Boolean, onClick: () -> Unit, contentDes
             modifier = Modifier.size(15.dp).rotate(if (isRefreshing) rotation else 0f)
         )
         Text("تحديث", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = BrandTeal)
+    }
+}
+
+/**
+ * Matches `App.tsx`'s blog-mode search bar exactly (spec §4.1): a collapsed "بحث..." pill that
+ * expands into a real text field with a lens icon + close button. This was entirely missing from
+ * the app before — a real user report ("لا يوجد أزرار بحث") — App.tsx's own search filters
+ * articles (title/description/writer/tags) and shows a matching-accounts row, both wired via
+ * [FeedUiState.searchedArticles]/[FeedUiState.matchingUsers] in [FeedViewModel].
+ */
+@Composable
+private fun SearchBar(
+    expanded: Boolean,
+    query: String,
+    onExpandedChange: (Boolean) -> Unit,
+    onQueryChange: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    if (expanded) {
+        val focusRequester = remember { FocusRequester() }
+        LaunchedEffect(Unit) { focusRequester.requestFocus() }
+        Row(
+            modifier = modifier
+                .clip(RoundedCornerShape(16.dp))
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(Icons.Filled.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+            Box(Modifier.weight(1f)) {
+                if (query.isEmpty()) {
+                    Text("ابحث عن مقال، جملة من محتواه، أو اسم مستخدم...", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                BasicTextField(
+                    value = query,
+                    onValueChange = onQueryChange,
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
+                    modifier = Modifier.fillMaxWidth().focusRequester(focusRequester)
+                )
+            }
+            IconButton(onClick = { onQueryChange(""); onExpandedChange(false) }, modifier = Modifier.size(24.dp)) {
+                Icon(Icons.Filled.Close, contentDescription = "إغلاق البحث", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+            }
+        }
+    } else {
+        Row(
+            modifier = modifier
+                .clip(RoundedCornerShape(16.dp))
+                .background(MaterialTheme.colorScheme.surface)
+                .clickable { onExpandedChange(true) }
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(Icons.Filled.Search, contentDescription = "بحث", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+            Text("بحث...", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun MatchingUserChip(user: User, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        AsyncImage(
+            model = user.avatarUrl,
+            contentDescription = null,
+            modifier = Modifier.size(22.dp).clip(RoundedCornerShape(50)),
+            contentScale = ContentScale.Crop
+        )
+        Text(user.fullName, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text("@${user.username}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

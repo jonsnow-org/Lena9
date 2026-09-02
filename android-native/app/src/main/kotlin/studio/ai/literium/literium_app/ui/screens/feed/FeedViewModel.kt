@@ -21,11 +21,13 @@ import studio.ai.literium.literium_app.data.model.Tweet
 import studio.ai.literium.literium_app.data.model.TweetComment
 import studio.ai.literium.literium_app.data.model.User
 import studio.ai.literium.literium_app.data.model.UserRole
+import studio.ai.literium.literium_app.data.repository.AdminRepository
 import studio.ai.literium.literium_app.data.repository.ArticleRepository
 import studio.ai.literium.literium_app.data.repository.AuthRepository
 import studio.ai.literium.literium_app.data.repository.FollowRepository
 import studio.ai.literium.literium_app.data.repository.NotificationRepository
 import studio.ai.literium.literium_app.data.repository.TweetRepository
+import studio.ai.literium.literium_app.util.ArabicSearch
 import java.time.Instant
 import java.util.UUID
 
@@ -44,9 +46,40 @@ data class FeedUiState(
     val tweetComments: List<TweetComment> = emptyList(),
     val likedTweetIds: Set<String> = emptySet(),
     val favoritedTweetIds: Set<String> = emptySet(),
+    val allUsers: List<User> = emptyList(),
+    val searchQuery: String = "",
+    val isSearchExpanded: Boolean = false,
     val error: String? = null
 ) {
     val currentUserId: String? get() = currentUser?.id
+
+    /** Matches `App.tsx`'s article-search `useMemo`: title/description/writer name/username/tags,
+     *  all through [ArabicSearch] so common Arabic spelling variants (alef forms, ta-marbuta, etc.)
+     *  don't silently break search. */
+    val searchedArticles: List<Article>
+        get() {
+            if (searchQuery.isBlank()) return articles
+            return articles.filter { art ->
+                val writer = allUsers.firstOrNull { it.id == art.writerId }
+                ArabicSearch.matches(art.title, searchQuery) ||
+                    ArabicSearch.matches(art.description, searchQuery) ||
+                    ArabicSearch.matches(art.writerName, searchQuery) ||
+                    ArabicSearch.matches(writer?.username ?: "", searchQuery) ||
+                    art.tags.any { ArabicSearch.matches(it, searchQuery) }
+            }
+        }
+
+    /** Matches `App.tsx`'s `matchingUsers` — accounts shown as chips under the search bar. */
+    val matchingUsers: List<User>
+        get() {
+            if (searchQuery.isBlank()) return emptyList()
+            return allUsers.filter { u ->
+                ArabicSearch.matches(u.username, searchQuery) ||
+                    ArabicSearch.matches(u.fullName, searchQuery) ||
+                    ArabicSearch.matches(u.penName ?: "", searchQuery) ||
+                    ArabicSearch.matches(u.companyName ?: "", searchQuery)
+            }.take(10)
+        }
 }
 
 /**
@@ -64,6 +97,7 @@ class FeedViewModel(application: Application) : AndroidViewModel(application) {
     private val followRepository = FollowRepository()
     private val authRepository = AuthRepository()
     private val notificationRepository = NotificationRepository()
+    private val adminRepository = AdminRepository()
 
     private val prefs by lazy {
         getApplication<Application>().getSharedPreferences("literium_prefs", Context.MODE_PRIVATE)
@@ -117,6 +151,26 @@ class FeedViewModel(application: Application) : AndroidViewModel(application) {
                 .catch { }
                 .collect { favIds -> _uiState.value = _uiState.value.copy(favoritedTweetIds = favIds.toSet()) }
         }
+        // Backs the search bar's "matching accounts" row (App.tsx's matchingUsers). Despite the
+        // repository's name, `observeAllUsers()` is a plain, unrestricted Firestore read — firestore.rules
+        // has `allow read: if true` on /users/{userId} for exactly this (public account search on the
+        // web too), not an admin-gated operation.
+        viewModelScope.launch {
+            adminRepository.observeAllUsers().catch { }.collect { list ->
+                _uiState.value = _uiState.value.copy(allUsers = list)
+            }
+        }
+    }
+
+    fun setSearchQuery(query: String) {
+        _uiState.value = _uiState.value.copy(searchQuery = query)
+    }
+
+    fun setSearchExpanded(expanded: Boolean) {
+        _uiState.value = _uiState.value.copy(
+            isSearchExpanded = expanded,
+            searchQuery = if (!expanded) "" else _uiState.value.searchQuery
+        )
     }
 
     fun setMode(mode: FeedMode) {
