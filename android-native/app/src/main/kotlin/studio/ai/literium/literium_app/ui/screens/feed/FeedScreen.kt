@@ -68,11 +68,20 @@ import studio.ai.literium.literium_app.data.model.Article
 import studio.ai.literium.literium_app.data.model.User
 import studio.ai.literium.literium_app.data.model.UserRole
 import studio.ai.literium.literium_app.ui.ads.AdSlot
+import studio.ai.literium.literium_app.data.model.ArticleCategory
 import studio.ai.literium.literium_app.ui.components.ArticleCard
+import studio.ai.literium.literium_app.ui.components.articleCategoryLabelAr
 import studio.ai.literium.literium_app.ui.components.TweetCard
 import studio.ai.literium.literium_app.ui.components.TweetComposerBar
 import studio.ai.literium.literium_app.ui.theme.BrandAmber
 import studio.ai.literium.literium_app.ui.theme.BrandTeal
+
+/** Matches `App.tsx`'s `categoryFilters` array exactly ("جميع المقالات" + the 15 real categories, in
+ *  the same order — [ArticleCategory.GENERAL] is a storage fallback, not a filter option on web
+ *  either). Was entirely missing before — a real gap found by comparing directly against web. */
+private val CATEGORY_FILTERS: List<Pair<String, String>> =
+    listOf("all" to "جميع المقالات") +
+        ArticleCategory.ALL.filter { it != ArticleCategory.GENERAL }.map { it to articleCategoryLabelAr(it) }
 
 /**
  * The home feed (spec §4.1/§4.2) — a single screen that switches between Blog (article) and Tweet
@@ -154,7 +163,18 @@ fun FeedScreen(
                     }
                 }
 
-                if (!searching) {
+                // Category filter chips — matches App.tsx's categoryFilters.map(...) row, placed right
+                // below the search bar. Was entirely missing from the app before this.
+                item {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(CATEGORY_FILTERS, key = { it.first }) { (id, label) ->
+                            CategoryFilterChip(label = label, active = state.selectedCategory == id) { viewModel.setCategory(id) }
+                        }
+                    }
+                }
+
+                val showAllCategorySections = state.selectedCategory == "all" && !searching
+                if (showAllCategorySections) {
                     val featured = state.articles.take(4)
                     if (featured.isNotEmpty()) {
                         item {
@@ -182,11 +202,18 @@ fun FeedScreen(
                             }
                         }
                     }
+                } else if (state.selectedCategory != "all") {
+                    item { AdSlot(slotId = AdSlotId.CATEGORY_BANNER, category = state.selectedCategory) }
                 }
 
                 item {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(if (searching) "نتائج البحث" else "أحدث المقالات المنشورة", fontSize = 15.sp, fontWeight = FontWeight.Black)
+                        val heading = when {
+                            state.selectedCategory != "all" -> CATEGORY_FILTERS.find { it.first == state.selectedCategory }?.second ?: "أحدث المقالات المنشورة"
+                            searching -> "نتائج البحث"
+                            else -> "أحدث المقالات المنشورة"
+                        }
+                        Text(heading, fontSize = 15.sp, fontWeight = FontWeight.Black)
                         Text("${searchedArticles.size} مقال متاح", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
@@ -196,8 +223,9 @@ fun FeedScreen(
                 } else {
                     itemsIndexed(searchedArticles, key = { _, a -> a.id }) { idx, article ->
                         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                            if (!searching && idx == 2) AdSlot(slotId = AdSlotId.HOME_FEED_1)
-                            if (!searching && idx == 8) AdSlot(slotId = AdSlotId.HOME_FEED_2)
+                            if (state.selectedCategory == "all" && idx == 2) AdSlot(slotId = AdSlotId.HOME_FEED_1)
+                            if (state.selectedCategory == "all" && idx == 8) AdSlot(slotId = AdSlotId.HOME_FEED_2)
+                            if (state.selectedCategory != "all" && idx == 2) AdSlot(slotId = AdSlotId.CATEGORY_FEED, category = state.selectedCategory)
                             ArticleCard(
                                 article = article,
                                 onClick = { onArticleClick(article.id) },
@@ -399,6 +427,24 @@ private fun ModePill(label: String, active: Boolean, modifier: Modifier = Modifi
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center
+        )
+    }
+}
+
+@Composable
+private fun CategoryFilterChip(label: String, active: Boolean, onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier.clip(RoundedCornerShape(16.dp)).clickable(onClick = onClick),
+        color = if (active) BrandTeal else MaterialTheme.colorScheme.surface,
+        contentColor = if (active) Color.White else MaterialTheme.colorScheme.onSurface,
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Text(
+            label,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Black,
+            maxLines = 1
         )
     }
 }

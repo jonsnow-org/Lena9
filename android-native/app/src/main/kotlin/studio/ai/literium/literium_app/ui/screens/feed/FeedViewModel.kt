@@ -49,24 +49,25 @@ data class FeedUiState(
     val allUsers: List<User> = emptyList(),
     val searchQuery: String = "",
     val isSearchExpanded: Boolean = false,
+    val selectedCategory: String = "all",
     val error: String? = null
 ) {
     val currentUserId: String? get() = currentUser?.id
 
-    /** Matches `App.tsx`'s article-search `useMemo`: title/description/writer name/username/tags,
-     *  all through [ArabicSearch] so common Arabic spelling variants (alef forms, ta-marbuta, etc.)
-     *  don't silently break search. */
+    /** Matches `App.tsx`'s `filteredArticles` `useMemo` exactly: category AND search both apply
+     *  together (`matchCategory && matchSearch`). Search is [ArabicSearch]-based (title/description/
+     *  writer name/username/tags) so common Arabic spelling variants don't silently break it. */
     val searchedArticles: List<Article>
-        get() {
-            if (searchQuery.isBlank()) return articles
-            return articles.filter { art ->
-                val writer = allUsers.firstOrNull { it.id == art.writerId }
-                ArabicSearch.matches(art.title, searchQuery) ||
-                    ArabicSearch.matches(art.description, searchQuery) ||
-                    ArabicSearch.matches(art.writerName, searchQuery) ||
-                    ArabicSearch.matches(writer?.username ?: "", searchQuery) ||
-                    art.tags.any { ArabicSearch.matches(it, searchQuery) }
-            }
+        get() = articles.filter { art ->
+            val matchesCategory = selectedCategory == "all" || art.category == selectedCategory
+            if (!matchesCategory) return@filter false
+            if (searchQuery.isBlank()) return@filter true
+            val writer = allUsers.firstOrNull { it.id == art.writerId }
+            ArabicSearch.matches(art.title, searchQuery) ||
+                ArabicSearch.matches(art.description, searchQuery) ||
+                ArabicSearch.matches(art.writerName, searchQuery) ||
+                ArabicSearch.matches(writer?.username ?: "", searchQuery) ||
+                art.tags.any { ArabicSearch.matches(it, searchQuery) }
         }
 
     /** Matches `App.tsx`'s `matchingUsers` — accounts shown as chips under the search bar. */
@@ -171,6 +172,10 @@ class FeedViewModel(application: Application) : AndroidViewModel(application) {
             isSearchExpanded = expanded,
             searchQuery = if (!expanded) "" else _uiState.value.searchQuery
         )
+    }
+
+    fun setCategory(category: String) {
+        _uiState.value = _uiState.value.copy(selectedCategory = category)
     }
 
     fun setMode(mode: FeedMode) {
