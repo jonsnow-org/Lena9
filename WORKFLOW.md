@@ -28,8 +28,8 @@
 | SubscriptionModal | subscription/ | ✅ |
 | ImageStudioModal (Gemini) | imagestudio/ | ✅ |
 | PoliciesModal / LegalPages | policies/ | ✅ |
-| AdSlot / AdTickerBar / ExternalAdScript / SmartAdBanner | ads/ | 🔲 قيد إعادة التنظيم (مهام #129 #130 #131) |
-| CreatorEligibilityCard | — | 🔲 التحقق من ترقية قارئ→كاتب التلقائية (مهمة #128) |
+| AdSlot / AdTickerBar / ExternalAdScript / SmartAdBanner | ads/ | 🔲 Adsterra مكتمل (كتالوج وحدات + تبديل فردي)، AdMob لم يبدأ بعد (مهام #129 #130 #131) |
+| CreatorEligibilityCard | — | ✅ منطق الأهلية والترقية التلقائية متطابق ومتحقَّق (مهمة #128) — لكن أُصلح خطأ حقيقي: عائد الإعلانات الداخلية للكاتب كان يُمنح دون تحقق من الشروط إطلاقاً في كوتلين |
 | PromoteArticleModal / SocialPromoCta / NewCampaignModal | ads/ + wallet | 🔲 يحتاج تحقق |
 | AdvertiserDashboard | — | 🔲 تحقق من وجودها لتطبيق كوتلين للمعلنين |
 | AppUpdateWidget | ➖ (APK تُحدَّث عبر متجر/رابط مباشر لا داخل التطبيق) |
@@ -38,17 +38,23 @@
 
 | الويب (`components/admin/`) | كوتلين (`admin/tabs/`) | الحالة |
 |---|---|---|
-| AdminOverviewTab | OverviewTab.kt | 🔲 (مهمة #127) |
-| AdminUsersTab | UsersTab.kt | 🔲 |
-| AdminFinanceTab | FinanceTab.kt | 🔲 — سبب انهيار "المالية" أُصلح جزئياً (توثيق toObject) بحاجة تأكيد كامل |
-| AdminAdsTab | CampaignsTab.kt | 🔲 — سبب انهيار "الإعلانات" + إعادة تنظيم شبكات الإعلان |
-| AdminContentTab | ModerationTab.kt(؟) | 🔲 يحتاج تأكيد التطابق بالاسم والوظيفة |
-| AdminChatsTab | ChatsTab.kt | 🔲 |
-| AdminAnalyticsTab | AnalyticsTab.kt | 🔲 (بند "اليوم" مؤجل بطلب المستخدم) |
-| AdminFraudTab | FraudTab.kt | 🔲 |
-| AdminBotsTab | BotsTab.kt | 🔲 |
-| AdminSettingsTab | SettingsTab.kt | 🔲 |
-| BalanceAdjustModal / KycReviewModal | — | 🔲 تحقق من وجود مكافئ داخل UsersTab/FinanceTab |
+فحص شامل اكتمل (مهمة #127) لكل التبويبات العشرة — لا خطر انهيار متبقٍ في أي
+منها. الحالة التفصيلية:
+
+| الويب (`components/admin/`) | كوتلين (`admin/tabs/`) | الحالة |
+|---|---|---|
+| AdminOverviewTab | OverviewTab.kt | ✅ نظيف |
+| AdminUsersTab | UsersTab.kt | ✅ نظيف |
+| AdminFinanceTab | FinanceTab.kt | ✅ سبب انهيار "المالية" مُصلح ومتحقَّق؛ 🔲 عائد الإعلانات الخارجية للكاتب مفقود كلياً (مهمة #132)؛ ✅ حماية الاعتماد المزدوج على الموافقات المالية أُضيفت |
+| AdminAdsTab | CampaignsTab.kt | ✅ سبب انهيار "الإعلانات" مُصلح؛ ✅ Adsterra مُعاد تنظيمها؛ ✅ حماية الاعتماد المزدوج على موافقة الحملات أُضيفت |
+| AdminContentTab | ModerationTab.kt | ✅ نظيف (فلتر تصنيف واحد مفقود، تجميلي) |
+| AdminChatsTab | ChatsTab.kt | ✅ نظيف (معاينة وسائط مضمّنة مفقودة، تجميلي) |
+| AdminAnalyticsTab | AnalyticsTab.kt | ✅ نظيف — زر التصفير و3 تبويبات فرعية والرسم البياني غائبة عمداً (لا مسار خادم متاح للجوال، موثَّق في الكود نفسه). بند "اليوم" مؤجل بطلب المستخدم |
+| AdminFraudTab | FraudTab.kt | ✅ نظيف (فلتر حالة + بحث نصي مفقودان، تجميلي) |
+| AdminBotsTab | BotsTab.kt | ✅ نظيف — زر "إنشاء 8 حسابات بوت" غائب عمداً (نفس سبب Analytics) |
+| AdminSettingsTab | SettingsTab.kt | ✅ نظيف |
+| BalanceAdjustModal | BalanceAdjustDialog.kt | ✅ موجود ومربوط؛ ✅ تأكيد ثانٍ للمبالغ ≥500$ أُضيف |
+| KycReviewModal | KycReviewDialog.kt | ✅ نظيف |
 
 ## 3. نظام الإعلانات (أولوية حالية)
 
