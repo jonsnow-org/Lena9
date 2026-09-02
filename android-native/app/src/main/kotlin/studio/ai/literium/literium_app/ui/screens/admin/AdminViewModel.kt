@@ -28,6 +28,7 @@ import studio.ai.literium.literium_app.data.model.DepositRequest
 import studio.ai.literium.literium_app.data.model.DirectMessage
 import studio.ai.literium.literium_app.data.model.EarningRecord
 import studio.ai.literium.literium_app.data.model.FraudFlag
+import studio.ai.literium.literium_app.data.model.Follow
 import studio.ai.literium.literium_app.data.model.ManualBalanceAdjustment
 import studio.ai.literium.literium_app.data.model.AppNotification
 import studio.ai.literium.literium_app.data.model.NotificationType
@@ -44,6 +45,7 @@ import studio.ai.literium.literium_app.data.repository.AdCampaignRepository
 import studio.ai.literium.literium_app.data.repository.AdminRepository
 import studio.ai.literium.literium_app.data.repository.ArticleRepository
 import studio.ai.literium.literium_app.data.repository.AuthRepository
+import studio.ai.literium.literium_app.data.repository.FollowRepository
 import studio.ai.literium.literium_app.data.repository.KycRepository
 import studio.ai.literium.literium_app.data.repository.MessageRepository
 import studio.ai.literium.literium_app.data.repository.NotificationRepository
@@ -79,6 +81,7 @@ class AdminViewModel(
     private val messageRepository: MessageRepository = MessageRepository(),
     private val authRepository: AuthRepository = AuthRepository(),
     private val notificationRepository: NotificationRepository = NotificationRepository(),
+    private val followRepository: FollowRepository = FollowRepository(),
     private val api: LiteriumApiService = NetworkModule.api,
     private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance()
 ) : ViewModel() {
@@ -94,6 +97,14 @@ class AdminViewModel(
 
     val users: StateFlow<List<User>> = adminRepository.observeAllUsers().asState(emptyList())
     val articles: StateFlow<List<Article>> = articleRepository.observeArticles().asState(emptyList())
+    /** Real follower counts from the `follows` collection — [CreatorEligibility] must never be called
+     *  with the stale, never-updated `User.followersCount` field at an actual revenue-crediting point
+     *  (see [CreatorEligibility.getCreatorEligibility]'s KDoc); every credit call site below resolves
+     *  the writer's real count from this instead, matching `App.tsx`'s own `followsData.filter(...)`
+     *  at each of its equivalent revenue-crediting call sites. */
+    private val follows: StateFlow<List<Follow>> = followRepository.observeFollows().asState(emptyList())
+
+    private fun realFollowersCount(userId: String): Int = follows.value.count { it.followingId == userId }
     val campaigns: StateFlow<List<AdCampaign>> = campaignRepository.observeCampaigns().asState(emptyList())
     val promotions: StateFlow<List<ArticlePromotion>> =
         campaignRepository.observePromotions(writerId = null, isAdmin = true).asState(emptyList())
@@ -400,7 +411,9 @@ class AdminViewModel(
                     }
                     walletRepository.adminAdjustUserBalance(buyer.id, mapOf("walletBalance" to bal - req.amount))
                 }
-                if (writer != null && CreatorEligibility.isEligibleForMonetization(writer, articles.value)) {
+                if (writer != null &&
+                    CreatorEligibility.isEligibleForMonetization(writer, articles.value, realFollowersCount(writer.id))
+                ) {
                     val share = req.amount * RevenueShares.LOCKED_ARTICLES.writer
                     walletRepository.adminAdjustUserBalance(
                         writer.id,
@@ -456,11 +469,18 @@ class AdminViewModel(
      * ported [studio.ai.literium.literium_app.util.AntiFraudEngine] already ran at event-log time),
      * credits the writer's [RevenueShares] share as a pending (30-day-hold) earning via
      * [WalletRepository.adminLogEarning], and marks every event processed.
+     *
+     * ⚠️ Was crediting every event's writer unconditionally, with no [CreatorEligibility] gate at
+     * all — `App.tsx`'s own equivalent pass (`handleProcessAdRevenue`) only credits a writer who
+     * actually meets the 4 activity thresholds + KYC (spec §12.4); this let ANY writer earn real ad
+     * revenue in this app regardless of eligibility, the exact business rule this whole audit was
+     * asked to verify. Now gated the same way, with the writer's real follower count from [follows].
      */
     fun processAdEvents() {
         viewModelScope.launch {
             val events = adEvents.value
             val camps = campaigns.value.associateBy { it.id }
+            val usersById = users.value.associateBy { it.id }
             for (ev in events) {
                 val camp = ev.campaignId?.let { camps[it] }
                 val cost = when {
@@ -471,10 +491,13 @@ class AdminViewModel(
                 }
                 if (cost > 0 && camp != null) {
                     campaignRepository.incrementCampaignSpend(camp.id, cost, markCompleted = false)
-                    if (ev.writerId != null) {
+                    val writer = ev.writerId?.let { usersById[it] }
+                    if (writer != null &&
+                        CreatorEligibility.isEligibleForMonetization(writer, articles.value, realFollowersCount(writer.id))
+                    ) {
                         val split = if (ev.slotId.startsWith("writer_profile")) RevenueShares.WRITER_PROFILE_ADS else RevenueShares.IN_ARTICLE_ADS
                         walletRepository.adminLogEarning(
-                            userId = ev.writerId!!, amount = cost * split.writer,
+                            userId = writer.id, amount = cost * split.writer,
                             source = "ad_revenue", articleId = ev.articleId, campaignId = camp.id,
                             description = "حصة من عائد إعلان (${ev.eventType})"
                         )
