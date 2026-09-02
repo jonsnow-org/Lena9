@@ -12,15 +12,18 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
+import studio.ai.literium.literium_app.data.model.AppNotification
 import studio.ai.literium.literium_app.data.model.Article
 import studio.ai.literium.literium_app.data.model.Comment
 import studio.ai.literium.literium_app.data.model.CommentReply
+import studio.ai.literium.literium_app.data.model.NotificationType
 import studio.ai.literium.literium_app.data.model.User
 import studio.ai.literium.literium_app.data.remote.NetworkModule
 import studio.ai.literium.literium_app.data.remote.UnlockArticleRequest
 import studio.ai.literium.literium_app.data.repository.ArticleRepository
 import studio.ai.literium.literium_app.data.repository.AuthRepository
 import studio.ai.literium.literium_app.data.repository.FollowRepository
+import studio.ai.literium.literium_app.data.repository.NotificationRepository
 import java.time.Instant
 import java.util.UUID
 
@@ -54,6 +57,7 @@ class ArticleReaderViewModel(application: Application) : AndroidViewModel(applic
     private val articleRepository = ArticleRepository()
     private val followRepository = FollowRepository()
     private val authRepository = AuthRepository()
+    private val notificationRepository = NotificationRepository()
 
     private val prefs by lazy {
         getApplication<Application>().getSharedPreferences("literium_prefs", Context.MODE_PRIVATE)
@@ -140,7 +144,48 @@ class ArticleReaderViewModel(application: Application) : AndroidViewModel(applic
         _uiState.value = _uiState.value.copy(isLiked = !wasLiked)
         viewModelScope.launch {
             val result = if (wasLiked) articleRepository.unlikeArticle(article.id, uid) else articleRepository.likeArticle(article.id, uid)
-            if (result.isFailure) _uiState.value = _uiState.value.copy(isLiked = wasLiked)
+            if (result.isFailure) {
+                _uiState.value = _uiState.value.copy(isLiked = wasLiked)
+            } else if (!wasLiked) {
+                notifyIfNotSelf(
+                    article.writerId, uid, NotificationType.LIKE, "إعجاب جديد بمقالك",
+                    "أعجب ${actorName()} بمقالك \"${article.title}\"", article.id
+                )
+            }
+        }
+    }
+
+    /** Matches `App.tsx`'s self-notification guard applied to every like/comment/reply raised here. */
+    private fun notifyIfNotSelf(
+        recipientId: String?,
+        actorId: String,
+        type: String,
+        title: String,
+        message: String,
+        articleId: String? = null
+    ) {
+        if (recipientId.isNullOrBlank() || recipientId == actorId) return
+        viewModelScope.launch {
+            notificationRepository.createNotification(
+                AppNotification(userId = recipientId, type = type, title = title, message = message, actorId = actorId, articleId = articleId)
+            )
+        }
+    }
+
+    private fun actorName(): String = _uiState.value.currentUser?.fullName ?: "مستخدم ليتيريوم"
+
+    /** Matches `App.tsx`'s `handleShareArticle` — real share-count increment + a notification to the
+     *  writer, called when the user actually triggers the native share sheet (not merely opening it
+     *  and cancelling — [ArticleReaderScreen] only calls this once the chooser Intent is actually
+     *  launched, same "counted the moment the share sheet opens" behavior as the web's button click). */
+    fun shareArticle() {
+        val article = _uiState.value.article ?: return
+        val uid = _uiState.value.currentUserId
+        viewModelScope.launch {
+            articleRepository.updateArticleStats(article.id, mapOf("sharesCount" to FieldValue.increment(1)))
+            if (uid != null) {
+                notifyIfNotSelf(article.writerId, uid, NotificationType.SHARE, "تمت مشاركة مقالك", "شارك ${actorName()} مقالك \"${article.title}\"", article.id)
+            }
         }
     }
 
@@ -207,6 +252,10 @@ class ArticleReaderViewModel(application: Application) : AndroidViewModel(applic
                 )
             )
             articleRepository.updateArticleStats(article.id, mapOf("commentsCount" to FieldValue.increment(1)))
+            notifyIfNotSelf(
+                article.writerId, user.id, NotificationType.COMMENT, "تعليق جديد على مقالك",
+                "علّق ${actorName()} على مقالك \"${article.title}\": \"${content.trim().take(60)}\"", article.id
+            )
         }
     }
 
@@ -226,6 +275,11 @@ class ArticleReaderViewModel(application: Application) : AndroidViewModel(applic
                     createdAt = Instant.now().toString()
                 )
             )
+            val parentUserId = _uiState.value.comments.find { it.id == commentId }?.userId
+            notifyIfNotSelf(
+                parentUserId, user.id, NotificationType.REPLY, "رد جديد على تعليقك",
+                "ردّ ${actorName()} على تعليقك: \"${content.trim().take(60)}\"", _uiState.value.article?.id
+            )
         }
     }
 
@@ -233,7 +287,12 @@ class ArticleReaderViewModel(application: Application) : AndroidViewModel(applic
         val uid = _uiState.value.currentUserId ?: return
         val comment = _uiState.value.comments.find { it.id == commentId } ?: return
         val isLiking = comment.likedBy?.contains(uid) != true
-        viewModelScope.launch { articleRepository.toggleCommentLike(commentId, uid, isLiking) }
+        viewModelScope.launch {
+            articleRepository.toggleCommentLike(commentId, uid, isLiking)
+            if (isLiking) {
+                notifyIfNotSelf(comment.userId, uid, NotificationType.LIKE, "إعجاب بتعليقك", "أعجب ${actorName()} بتعليقك", comment.articleId)
+            }
+        }
     }
 
     fun unlockArticle() {

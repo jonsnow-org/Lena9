@@ -114,6 +114,7 @@ fun ArticleReaderScreen(
                             putExtra(android.content.Intent.EXTRA_TEXT, "${article.title}\n\n${article.description}")
                         }
                         context.startActivity(android.content.Intent.createChooser(sendIntent, null))
+                        viewModel.shareArticle()
                     }) {
                         Icon(Icons.Filled.Share, contentDescription = "مشاركة")
                     }

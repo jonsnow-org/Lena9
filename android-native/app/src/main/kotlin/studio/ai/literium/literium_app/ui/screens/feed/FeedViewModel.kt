@@ -12,9 +12,11 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
+import studio.ai.literium.literium_app.data.model.AppNotification
 import studio.ai.literium.literium_app.data.model.Article
 import studio.ai.literium.literium_app.data.model.ArticleStatus
 import studio.ai.literium.literium_app.data.model.CommentReply
+import studio.ai.literium.literium_app.data.model.NotificationType
 import studio.ai.literium.literium_app.data.model.Tweet
 import studio.ai.literium.literium_app.data.model.TweetComment
 import studio.ai.literium.literium_app.data.model.User
@@ -22,6 +24,7 @@ import studio.ai.literium.literium_app.data.model.UserRole
 import studio.ai.literium.literium_app.data.repository.ArticleRepository
 import studio.ai.literium.literium_app.data.repository.AuthRepository
 import studio.ai.literium.literium_app.data.repository.FollowRepository
+import studio.ai.literium.literium_app.data.repository.NotificationRepository
 import studio.ai.literium.literium_app.data.repository.TweetRepository
 import java.time.Instant
 import java.util.UUID
@@ -60,6 +63,7 @@ class FeedViewModel(application: Application) : AndroidViewModel(application) {
     private val tweetRepository = TweetRepository()
     private val followRepository = FollowRepository()
     private val authRepository = AuthRepository()
+    private val notificationRepository = NotificationRepository()
 
     private val prefs by lazy {
         getApplication<Application>().getSharedPreferences("literium_prefs", Context.MODE_PRIVATE)
@@ -123,9 +127,34 @@ class FeedViewModel(application: Application) : AndroidViewModel(application) {
         val uid = _uiState.value.currentUserId ?: return
         val isFollowing = writerId in _uiState.value.followedWriterIds
         viewModelScope.launch {
-            if (isFollowing) followRepository.unfollowUser(uid, writerId) else followRepository.followUser(uid, writerId)
+            if (isFollowing) {
+                followRepository.unfollowUser(uid, writerId)
+            } else {
+                followRepository.followUser(uid, writerId)
+                notifyIfNotSelf(writerId, uid, NotificationType.FOLLOW, "متابع جديد", "بدأ ${actorName()} بمتابعتك")
+            }
         }
     }
+
+    /** Matches `App.tsx`'s "إلا إذا كان هو من فعل الفعل على محتواه نفسه" self-notification guard,
+     *  applied consistently everywhere a like/comment/follow/share notification is raised. */
+    private fun notifyIfNotSelf(
+        recipientId: String?,
+        actorId: String,
+        type: String,
+        title: String,
+        message: String,
+        articleId: String? = null
+    ) {
+        if (recipientId.isNullOrBlank() || recipientId == actorId) return
+        viewModelScope.launch {
+            notificationRepository.createNotification(
+                AppNotification(userId = recipientId, type = type, title = title, message = message, actorId = actorId, articleId = articleId)
+            )
+        }
+    }
+
+    private fun actorName(): String = _uiState.value.currentUser?.fullName ?: "مستخدم ليتيريوم"
 
     fun toggleBookmark(articleId: String) {
         val current = _uiState.value.bookmarkedArticleIds
@@ -184,7 +213,13 @@ class FeedViewModel(application: Application) : AndroidViewModel(application) {
         val uid = _uiState.value.currentUserId ?: return
         val liked = tweetId in _uiState.value.likedTweetIds
         viewModelScope.launch {
-            if (liked) tweetRepository.unlikeTweet(tweetId, uid) else tweetRepository.likeTweet(tweetId, uid)
+            if (liked) {
+                tweetRepository.unlikeTweet(tweetId, uid)
+            } else {
+                tweetRepository.likeTweet(tweetId, uid)
+                val authorId = _uiState.value.tweets.firstOrNull { it.id == tweetId }?.authorId
+                notifyIfNotSelf(authorId, uid, NotificationType.LIKE, "إعجاب جديد بتغريدتك", "أعجب ${actorName()} بتغريدتك")
+            }
         }
     }
 
@@ -219,6 +254,8 @@ class FeedViewModel(application: Application) : AndroidViewModel(application) {
                     createdAt = Instant.now().toString()
                 )
             )
+            val authorId = _uiState.value.tweets.firstOrNull { it.id == tweetId }?.authorId
+            notifyIfNotSelf(authorId, user.id, NotificationType.COMMENT, "تعليق جديد على تغريدتك", "علّق ${actorName()} على تغريدتك")
         }
     }
 
@@ -242,6 +279,8 @@ class FeedViewModel(application: Application) : AndroidViewModel(application) {
                     createdAt = Instant.now().toString()
                 )
             )
+            val recipientId = _uiState.value.tweetComments.firstOrNull { it.id == commentId }?.userId
+            notifyIfNotSelf(recipientId, user.id, NotificationType.COMMENT, "رد جديد على تعليقك", "رد ${actorName()} على تعليقك على تغريدة")
         }
     }
 }

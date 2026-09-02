@@ -19,15 +19,19 @@ import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import studio.ai.literium.literium_app.data.model.AdCampaign
 import studio.ai.literium.literium_app.data.model.AdPlacementType
+import studio.ai.literium.literium_app.data.model.AppNotification
 import studio.ai.literium.literium_app.data.model.ArticleCategory
 import studio.ai.literium.literium_app.data.model.CampaignStatus
 import studio.ai.literium.literium_app.data.model.CampaignType
+import studio.ai.literium.literium_app.data.model.NotificationType
 import studio.ai.literium.literium_app.data.model.PricingModel
 import studio.ai.literium.literium_app.data.model.PromotionKind
 import studio.ai.literium.literium_app.data.model.User
+import studio.ai.literium.literium_app.data.model.UserRole
 import studio.ai.literium.literium_app.data.remote.NetworkModule
 import studio.ai.literium.literium_app.data.repository.AdCampaignRepository
 import studio.ai.literium.literium_app.data.repository.AuthRepository
+import studio.ai.literium.literium_app.data.repository.NotificationRepository
 import java.io.File
 import kotlin.math.max
 import kotlin.math.roundToLong
@@ -124,6 +128,7 @@ fun presetBanners() = PRESET_BANNERS
 class NewCampaignViewModel(
     private val authRepository: AuthRepository = AuthRepository(),
     private val adCampaignRepository: AdCampaignRepository = AdCampaignRepository(),
+    private val notificationRepository: NotificationRepository = NotificationRepository(),
     private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance()
 ) : ViewModel() {
 
@@ -275,6 +280,7 @@ class NewCampaignViewModel(
             result.fold(
                 onSuccess = {
                     _state.value = _state.value.copy(isSubmitting = false, submitted = true)
+                    notifyAdminsOfNewCampaign(id, campaign.advertiserName, campaign.campaignName)
                     onSuccess()
                 },
                 onFailure = { e -> _state.value = _state.value.copy(isSubmitting = false, error = e.message ?: "حدث خطأ أثناء حفظ الحملة. يرجى المحاولة مرة أخرى.") }
@@ -283,4 +289,30 @@ class NewCampaignViewModel(
     }
 
     fun clearError() { _state.value = _state.value.copy(error = null) }
+
+    /** Matches `App.tsx`'s campaign-submit handler — without this, a new campaign reached
+     *  Firestore silently and admins only ever noticed it by opening the ads panel manually. */
+    private fun notifyAdminsOfNewCampaign(advertiserId: String?, advertiserName: String, campaignName: String) {
+        viewModelScope.launch {
+            try {
+                val admins = firestore.collection("users")
+                    .whereEqualTo("role", UserRole.ADMIN)
+                    .get()
+                    .await()
+                admins.documents.forEach { doc ->
+                    notificationRepository.createNotification(
+                        AppNotification(
+                            userId = doc.id,
+                            actorId = advertiserId,
+                            type = NotificationType.CAMPAIGN,
+                            title = "حملة إعلانية جديدة بانتظار المراجعة",
+                            message = "أرسل $advertiserName حملة إعلانية جديدة \"$campaignName\" بانتظار موافقتك."
+                        )
+                    )
+                }
+            } catch (_: Exception) {
+                // إخطار غير حرج — فشل الإرسال لا يجب أن يمنع اعتبار إرسال الحملة نفسها ناجحاً
+            }
+        }
+    }
 }

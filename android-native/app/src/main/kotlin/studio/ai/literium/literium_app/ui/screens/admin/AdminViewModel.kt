@@ -17,6 +17,8 @@ import kotlinx.coroutines.tasks.await
 import studio.ai.literium.literium_app.data.firebase.FirestoreCollections
 import studio.ai.literium.literium_app.data.model.AdCampaign
 import studio.ai.literium.literium_app.data.model.AdEvent
+import studio.ai.literium.literium_app.data.model.AiPlanType
+import studio.ai.literium.literium_app.data.model.AiQuota
 import studio.ai.literium.literium_app.data.model.Article
 import studio.ai.literium.literium_app.data.model.ArticlePromotion
 import studio.ai.literium.literium_app.data.model.BotActivityLogEntry
@@ -27,6 +29,8 @@ import studio.ai.literium.literium_app.data.model.DirectMessage
 import studio.ai.literium.literium_app.data.model.EarningRecord
 import studio.ai.literium.literium_app.data.model.FraudFlag
 import studio.ai.literium.literium_app.data.model.ManualBalanceAdjustment
+import studio.ai.literium.literium_app.data.model.AppNotification
+import studio.ai.literium.literium_app.data.model.NotificationType
 import studio.ai.literium.literium_app.data.model.PayoutRequest
 import studio.ai.literium.literium_app.data.model.PurchaseRequest
 import studio.ai.literium.literium_app.data.model.ThemeSettingsData
@@ -42,7 +46,9 @@ import studio.ai.literium.literium_app.data.repository.ArticleRepository
 import studio.ai.literium.literium_app.data.repository.AuthRepository
 import studio.ai.literium.literium_app.data.repository.KycRepository
 import studio.ai.literium.literium_app.data.repository.MessageRepository
+import studio.ai.literium.literium_app.data.repository.NotificationRepository
 import studio.ai.literium.literium_app.data.repository.WalletRepository
+import studio.ai.literium.literium_app.util.CreatorEligibility
 import studio.ai.literium.literium_app.util.RevenueShares
 import java.time.Instant
 
@@ -72,6 +78,7 @@ class AdminViewModel(
     private val kycRepository: KycRepository = KycRepository(),
     private val messageRepository: MessageRepository = MessageRepository(),
     private val authRepository: AuthRepository = AuthRepository(),
+    private val notificationRepository: NotificationRepository = NotificationRepository(),
     private val api: LiteriumApiService = NetworkModule.api,
     private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance()
 ) : ViewModel() {
@@ -279,16 +286,155 @@ class AdminViewModel(
 
     // ---- Wallet / finance ----
 
+    /**
+     * Matches `App.tsx`'s `handleUpdateMoneyRequest` exactly — approving a deposit (or marking a
+     * payout "paid") was previously just a status-field write here: the request card showed
+     * "approved" while the user's actual wallet balance never moved, a real money-flow bug (the same
+     * class already found and fixed on the web once before, spec task "تشخيص نجاح الإيداع دون
+     * إضافة الرصيد"). Also fires the same result notification web sends for every outcome
+     * (approved/paid/rejected), which this screen never raised at all before.
+     */
     fun setDepositRequestStatus(requestId: String, status: String) {
-        viewModelScope.launch { walletRepository.setDepositRequestStatus(requestId, status) }
+        val req = depositRequests.value.find { it.id == requestId } ?: return
+        viewModelScope.launch {
+            walletRepository.setDepositRequestStatus(requestId, status)
+            if (status == "approved") {
+                val target = users.value.find { it.id == req.userId }
+                if (target != null) {
+                    val newWallet = (target.walletBalance ?: 0.0) + req.amount
+                    walletRepository.adminAdjustUserBalance(req.userId, mapOf("walletBalance" to newWallet))
+                }
+            }
+            notifyMoneyRequestResult(userId = req.userId, amount = req.amount, isDeposit = true, status = status)
+        }
     }
 
     fun setPayoutRequestStatus(requestId: String, status: String) {
-        viewModelScope.launch { walletRepository.setPayoutRequestStatus(requestId, status) }
+        val req = payoutRequests.value.find { it.id == requestId } ?: return
+        viewModelScope.launch {
+            walletRepository.setPayoutRequestStatus(requestId, status)
+            if (status == "paid") {
+                val target = users.value.find { it.id == req.userId }
+                if (target != null) {
+                    val newAvailable = maxOf(0.0, (target.availableBalance ?: 0.0) - req.amount)
+                    walletRepository.adminAdjustUserBalance(req.userId, mapOf("availableBalance" to newAvailable))
+                }
+            }
+            notifyMoneyRequestResult(userId = req.userId, amount = req.amount, isDeposit = false, status = status)
+        }
     }
 
+    private fun notifyMoneyRequestResult(userId: String, amount: Double, isDeposit: Boolean, status: String) {
+        val amountText = "%.2f".format(amount)
+        val title = when (status) {
+            "approved" -> if (isDeposit) "💰 تم إيداع رصيدك" else "✅ تم اعتماد طلب السحب"
+            "paid" -> "✅ تم تنفيذ عملية السحب"
+            "rejected" -> if (isDeposit) "❌ تم رفض طلب الإيداع" else "❌ تم رفض طلب السحب"
+            else -> return
+        }
+        val message = when (status) {
+            "approved" -> if (isDeposit) "تم إضافة $amountText$ إلى محفظتك بعد تأكيد إدارة المنصة لوصول المبلغ."
+                else "تمت الموافقة على طلب سحب $amountText$، وسيُحوَّل المبلغ خلال 24-48 ساعة."
+            "paid" -> "تم تحويل $amountText$ إلى حسابك بنجاح."
+            "rejected" -> if (isDeposit) "تعذر اعتماد طلب إيداع $amountText$. تواصل مع الدعم لمعرفة السبب."
+                else "تعذر اعتماد طلب سحب $amountText$. تواصل مع الدعم لمعرفة السبب."
+            else -> return
+        }
+        viewModelScope.launch {
+            notificationRepository.createNotification(
+                AppNotification(
+                    userId = userId,
+                    type = if (isDeposit) NotificationType.SYSTEM else NotificationType.WITHDRAWAL,
+                    title = title,
+                    message = message
+                )
+            )
+        }
+    }
+
+    /**
+     * Matches `App.tsx`'s `handleUpdatePurchaseRequest` exactly. This button previously only flipped
+     * the request's `status` field — approving a locked-article sale or an AI-subscription purchase
+     * never actually moved money or upgraded anything: the buyer's wallet was never charged, the
+     * writer never got their share, and a subscription purchase never activated the plan.
+     */
     fun reviewPurchaseRequest(requestId: String, status: String) {
-        viewModelScope.launch { setPurchaseRequestStatus(requestId, status) }
+        val req = purchaseRequests.value.find { it.id == requestId } ?: return
+        val isSubscription = req.articleId.startsWith("subscription_")
+        viewModelScope.launch {
+            if (status == "approved" && isSubscription) {
+                val buyer = users.value.find { it.id == (req.buyerId.ifBlank { req.userId }) }
+                if (buyer == null) {
+                    setPurchaseRequestStatus(requestId, status)
+                    return@launch
+                }
+                val isWalletPay = req.articleTitle?.contains("محفظة") == true
+                if (isWalletPay) {
+                    val bal = buyer.walletBalance ?: 0.0
+                    if (bal < req.amount) {
+                        setPurchaseRequestStatus(requestId, "rejected")
+                        return@launch
+                    }
+                    walletRepository.adminAdjustUserBalance(buyer.id, mapOf("walletBalance" to bal - req.amount))
+                }
+                val plan = if (req.articleId.contains("_annual_")) AiPlanType.ANNUAL else AiPlanType.MONTHLY
+                val updatedQuota = applySubscriptionUpgrade(buyer.aiQuota, plan)
+                walletRepository.updateUserAiQuota(buyer.id, updatedQuota)
+                val planLabel = if (plan == AiPlanType.ANNUAL) "الباقة السنوية" else "الباقة الشهرية"
+                notificationRepository.createNotification(
+                    AppNotification(
+                        userId = buyer.id,
+                        type = NotificationType.SYSTEM,
+                        title = "👑 تم تفعيل اشتراك الذكاء الاصطناعي",
+                        message = "تمت مراجعة إثبات دفعك واعتماد اشتراكك ($planLabel) فعلياً. يمكنك الآن استخدام كل أدوات الذكاء الاصطناعي."
+                    )
+                )
+            } else if (status == "approved" && !isSubscription) {
+                val buyer = users.value.find { it.id == (req.buyerId.ifBlank { req.userId }) }
+                val writer = users.value.find { it.id == req.writerId }
+                if (buyer != null) {
+                    val bal = buyer.walletBalance ?: 0.0
+                    if (bal < req.amount) {
+                        setPurchaseRequestStatus(requestId, "rejected")
+                        return@launch
+                    }
+                    walletRepository.adminAdjustUserBalance(buyer.id, mapOf("walletBalance" to bal - req.amount))
+                }
+                if (writer != null && CreatorEligibility.isEligibleForMonetization(writer, articles.value)) {
+                    val share = req.amount * RevenueShares.LOCKED_ARTICLES.writer
+                    walletRepository.adminAdjustUserBalance(
+                        writer.id,
+                        mapOf(
+                            "pendingEarnings" to (writer.pendingEarnings ?: 0.0) + share,
+                            "lifetimeEarnings" to (writer.lifetimeEarnings ?: 0.0) + share
+                        )
+                    )
+                    walletRepository.adminLogEarning(
+                        userId = writer.id,
+                        amount = share,
+                        source = "article_sale",
+                        articleId = req.articleId,
+                        description = "مبيعات مقال: ${req.articleTitle ?: req.articleId}"
+                    )
+                }
+            }
+            setPurchaseRequestStatus(requestId, status)
+        }
+    }
+
+    /** Port of `utils/aiQuota.ts`'s `applySubscriptionUpgrade` — used only from [reviewPurchaseRequest]. */
+    private fun applySubscriptionUpgrade(existing: AiQuota?, plan: String): AiQuota {
+        val now = Instant.now()
+        val expiresAt = if (plan == AiPlanType.MONTHLY) now.plus(java.time.Duration.ofDays(30)) else now.plus(java.time.Duration.ofDays(365))
+        return AiQuota(
+            freeDailyLimit = existing?.freeDailyLimit ?: 10,
+            usedToday = 0,
+            lastResetTime = now.toString(),
+            isSubscriber = true,
+            plan = plan,
+            planLimit = if (plan == AiPlanType.MONTHLY) 200 else -1,
+            planExpiresAt = expiresAt.toString()
+        )
     }
 
     fun releaseEarning(earning: EarningRecord) {
