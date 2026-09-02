@@ -14,7 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -57,6 +57,8 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.navigation.NavController
 import coil3.compose.AsyncImage
 import studio.ai.literium.literium_app.data.model.Article
+import studio.ai.literium.literium_app.data.model.AdSlotId
+import studio.ai.literium.literium_app.ui.ads.AdSlot
 import studio.ai.literium.literium_app.navigation.Screen
 
 @Composable
@@ -185,10 +187,16 @@ fun WriterProfileScreen(navController: NavController, userId: String) {
                     }
 
                     if (state.activeTab == WriterProfileTab.ARTICLES) {
+                        // writer_profile_top — أسفل بطاقة تعريف الكاتب مباشرة، 50% للكاتب.
+                        item { AdSlot(slotId = AdSlotId.WRITER_PROFILE_TOP, writerId = userId) }
                         if (state.articles.isEmpty()) {
                             item { Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) { Text("لا توجد مقالات منشورة بعد.") } }
                         } else {
-                            items(state.articles, key = { it.id }) { article: Article ->
+                            itemsIndexed(state.articles, key = { _, it -> it.id }) { index, article: Article ->
+                                // writer_profile_feed — بعد البطاقة السابعة (index==6)، 50% للكاتب.
+                                if (index == 6) {
+                                    AdSlot(slotId = AdSlotId.WRITER_PROFILE_FEED, writerId = userId)
+                                }
                                 Row(
                                     modifier = Modifier.fillMaxWidth()
                                         .clickable { navController.navigate(Screen.ArticleReader.of(article.id)) }

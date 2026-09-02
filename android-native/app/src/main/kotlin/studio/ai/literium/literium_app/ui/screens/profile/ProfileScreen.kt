@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -59,8 +60,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil3.compose.AsyncImage
 import studio.ai.literium.literium_app.data.model.Article
+import studio.ai.literium.literium_app.data.model.AdSlotId
 import studio.ai.literium.literium_app.data.model.Tweet
 import studio.ai.literium.literium_app.data.model.UserRole
+import studio.ai.literium.literium_app.ui.ads.AdSlot
 import studio.ai.literium.literium_app.navigation.Screen
 import studio.ai.literium.literium_app.util.CreatorEligibility
 
@@ -171,7 +174,12 @@ fun ProfileScreen(navController: NavController, viewModel: ProfileViewModel = vi
                     }
 
                     when (state.activeTab) {
-                        ProfileTab.ARTICLES -> articleRows(state.ownArticles) { navController.navigate(Screen.ArticleReader.of(it.id)) }
+                        ProfileTab.ARTICLES -> articleRows(
+                            state.ownArticles,
+                            // reader_profile — كل 6 مقالات داخل قائمة "مقالاتي" نفسها، ومستبعد تماماً
+                            // من ملف الأدمن (نفس شرط UserProfileView.tsx بالضبط).
+                            insertAdEvery6 = state.currentUser?.role != UserRole.ADMIN
+                        ) { navController.navigate(Screen.ArticleReader.of(it.id)) }
                         ProfileTab.LIKED -> articleRows(state.likedArticles) { navController.navigate(Screen.ArticleReader.of(it.id)) }
                         ProfileTab.TWEETS -> tweetRows(state.ownTweets) { navController.navigate(Screen.TweetDetail.of(it.id)) }
                         ProfileTab.SAVED -> tweetRows(state.savedTweets) { navController.navigate(Screen.TweetDetail.of(it.id)) }
@@ -354,11 +362,18 @@ private fun RequirementRow(met: Boolean, label: String, value: String) {
     }
 }
 
-private fun androidx.compose.foundation.lazy.LazyListScope.articleRows(articles: List<Article>, onClick: (Article) -> Unit) {
+private fun androidx.compose.foundation.lazy.LazyListScope.articleRows(
+    articles: List<Article>,
+    insertAdEvery6: Boolean = false,
+    onClick: (Article) -> Unit
+) {
     if (articles.isEmpty()) {
         item { EmptyRow("لا يوجد شيء هنا بعد") }
     } else {
-        items(articles, key = { it.id }) { article ->
+        itemsIndexed(articles, key = { _, it -> it.id }) { index, article ->
+            if (insertAdEvery6 && index > 0 && index % 6 == 0) {
+                AdSlot(slotId = AdSlotId.READER_PROFILE)
+            }
             Row(
                 modifier = Modifier.fillMaxWidth().clickable { onClick(article) }.padding(horizontal = 16.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
