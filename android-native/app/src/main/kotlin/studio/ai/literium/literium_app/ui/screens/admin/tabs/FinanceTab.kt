@@ -216,6 +216,7 @@ private fun LockedSalesList(viewModel: AdminViewModel, requests: List<PurchaseRe
 
 @Composable
 private fun AdAccountingSection(viewModel: AdminViewModel, unprocessed: List<AdEvent>, campaigns: List<AdCampaign>, users: List<User>) {
+    val externalUnprocessed = unprocessed.filter { it.isExternalAdView == true }
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
             Text(
@@ -230,6 +231,19 @@ private fun AdAccountingSection(viewModel: AdminViewModel, unprocessed: List<AdE
                 enabled = unprocessed.isNotEmpty(),
                 onClick = { viewModel.processAdEvents() }
             ) { Text("احتساب الأحداث وإيداع الأرباح للكتّاب الآن") }
+        }
+        item {
+            Text(
+                "عائد الكُتّاب من مشاهدات الشبكات الخارجية (Adsterra/PropellerAds) — ${externalUnprocessed.size} " +
+                    "مشاهدة غير محتسَبة، بسعر تقديري ثابت لكل 1000 مشاهدة (يُضبط من تبويب الإعلانات).",
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+        item {
+            OutlinedButton(
+                enabled = externalUnprocessed.isNotEmpty(),
+                onClick = { viewModel.processExternalAdRevenue() }
+            ) { Text("احتساب مشاهدات الشبكات الخارجية وإيداع حصص الكُتّاب") }
         }
         if (unprocessed.isNotEmpty()) {
             item { Text("الأحداث غير المعالجة:", fontWeight = FontWeight.Bold) }
