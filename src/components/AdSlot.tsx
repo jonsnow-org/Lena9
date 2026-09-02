@@ -325,10 +325,15 @@ export const AdSlot: React.FC<AdSlotProps> = ({
     return (
       <div ref={containerRef} className={inRead ? 'my-8' : 'my-5'}>
         <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 mb-1.5">إعلان</div>
+        {/* 250px — يطابق المقاس شبه العالمي "300x250" (Medium Rectangle)، المدعوم فعلياً في كل
+            شبكة إعلانية خارجية تقريباً (Adsterra/Monetag/PropellerAds/Taboola)، بدل صندوق 90px
+            القديم الذي كان مناسباً لشريط تذييل ضيّق لا لوحدة إعلانية حقيقية — أي وحدة Banner/Native
+            Banner معيارية تُنشئها الشبكة تحتاج مساحة أكبر من هذا لتُعرض أصلاً، وقد ترفض بعض سكربتات
+            الشبكات العرض كلياً (لا مجرد اقتصاص) إن اكتشفت أن الحاوية أصغر من الحد الأدنى المطلوب. */}
         <ExternalAdScript
           snippet={externalNetwork.snippet}
           className="w-full rounded-xl overflow-hidden border border-slate-200/70 dark:border-slate-700/50"
-          heightPx={90}
+          heightPx={250}
         />
       </div>
     );
