@@ -303,6 +303,16 @@ fun CreatorEligibilityCard(eligibility: CreatorEligibility.Status, onOpenKyc: ()
                             "استوفيت كل الشروط وهويتك موثّقة — تُحتسب أرباحك من الإعلانات والمبيعات بشكل طبيعي.",
                             style = MaterialTheme.typography.bodySmall
                         )
+                        Text(
+                            "نسبتك من إعلانات الشبكات الخارجية (Adsterra وغيرها) تُحتسب فقط من الإعلانات التي " +
+                                "تظهر داخل مقالاتك وصفحة ملفك الشخصي، بسعر تقديري ثابت لكل 1000 مشاهدة تعتمده " +
+                                "إدارة المنصة — وليس السعر الحقيقي الذي تدفعه الشبكة نفسها. الإعلانات التي تظهر " +
+                                "في الصفحة الرئيسية أو قسم التغريد أو الصفحة الأولى قبل تسجيل الدخول أو أي مكان " +
+                                "آخر خارج مقالاتك وملفك الشخصي لا تُحتسب لك منها أي نسبة.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 6.dp)
+                        )
                     }
                 }
             } else {
