@@ -1,5 +1,7 @@
 package studio.ai.literium.literium_app.data.model
 
+import com.google.firebase.firestore.PropertyName
+
 /**
  * A notification for [userId] — collection `notifications`. Field-for-field
  * port of `types.ts`'s `AppNotification` interface.
@@ -17,6 +19,10 @@ data class AppNotification(
     var type: String = NotificationType.SYSTEM,
     var title: String = "",
     var message: String = "",
+    /** انظر التعليق المطابق على `DirectMessage.isRead` في `MessageModels.kt` — نفس علّة اشتقاق
+     *  Firestore التلقائي لاسم الحقل من الدالة `isRead()` بحذف `is` (يتوقع حقلاً باسم `read` بينما
+     *  المكتوب فعلياً هو `isRead`)، فبلا هذا التوصيف تبقى القراءة `false` دائماً بصرف النظر عمّا كُتب. */
+    @get:PropertyName("isRead") @set:PropertyName("isRead")
     var isRead: Boolean = false,
     var createdAt: String = "",
     var actionUrl: String? = null,

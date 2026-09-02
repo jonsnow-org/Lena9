@@ -63,15 +63,15 @@ fun TopHeaderBar(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(32.dp)
-                        .background(BrandTeal, RoundedCornerShape(10.dp))
-                        .border(2.dp, BrandTeal.copy(alpha = 0.3f), RoundedCornerShape(10.dp)),
+                        .size(26.dp)
+                        .background(BrandTeal, RoundedCornerShape(9.dp))
+                        .border(1.5.dp, BrandTeal.copy(alpha = 0.3f), RoundedCornerShape(9.dp)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Filled.MenuBook, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Filled.MenuBook, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
                 }
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("LITERIUM", fontWeight = FontWeight.Black, fontSize = 16.sp, letterSpacing = 1.sp)
+                Spacer(modifier = Modifier.width(7.dp))
+                Text("LITERIUM", fontWeight = FontWeight.Black, fontSize = 14.sp, letterSpacing = 1.sp)
             }
         },
         navigationIcon = {

@@ -188,7 +188,7 @@ class MessageRepository(
         val registration = conversationsCol.orderBy("lastMessageAt", Query.Direction.DESCENDING)
             .addSnapshotListener { snap, error ->
                 if (error != null) { close(error); return@addSnapshotListener }
-                trySend(snap?.documents?.mapNotNull { it.toObject<Conversation>()?.copy(id = it.id) }.orEmpty())
+                trySend(snap?.documents?.mapNotNull { runCatching { it.toObject<Conversation>() }.getOrNull()?.copy(id = it.id) }.orEmpty())
             }
         awaitClose { registration.remove() }
     }
@@ -198,7 +198,7 @@ class MessageRepository(
         val registration = messagesCol.whereEqualTo("conversationId", conversationId)
             .addSnapshotListener { snap, error ->
                 if (error != null) { close(error); return@addSnapshotListener }
-                val list = snap?.documents?.mapNotNull { it.toObject<DirectMessage>()?.copy(id = it.id) }.orEmpty()
+                val list = snap?.documents?.mapNotNull { runCatching { it.toObject<DirectMessage>() }.getOrNull()?.copy(id = it.id) }.orEmpty()
                     .sortedBy { it.createdAt }
                 trySend(list)
             }
@@ -258,7 +258,7 @@ class MessageRepository(
         val registration = conversationsCol.whereArrayContains("participants", userId)
             .addSnapshotListener { snap, error ->
                 if (error != null) { close(error); return@addSnapshotListener }
-                val list = snap?.documents?.mapNotNull { it.toObject<Conversation>()?.copy(id = it.id) }.orEmpty()
+                val list = snap?.documents?.mapNotNull { runCatching { it.toObject<Conversation>() }.getOrNull()?.copy(id = it.id) }.orEmpty()
                     .sortedByDescending { it.lastMessageAt }
                 trySend(list)
             }
@@ -269,7 +269,7 @@ class MessageRepository(
         val registration = messagesCol.whereArrayContains("participants", userId)
             .addSnapshotListener { snap, error ->
                 if (error != null) { close(error); return@addSnapshotListener }
-                val list = snap?.documents?.mapNotNull { it.toObject<DirectMessage>()?.copy(id = it.id) }.orEmpty()
+                val list = snap?.documents?.mapNotNull { runCatching { it.toObject<DirectMessage>() }.getOrNull()?.copy(id = it.id) }.orEmpty()
                     .sortedBy { it.createdAt }
                 trySend(list)
             }

@@ -20,12 +20,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Article
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.RemoveRedEye
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -73,17 +71,9 @@ fun FeedScreen(
     val viewModel: FeedViewModel = viewModel()
     val state by viewModel.uiState.collectAsState()
 
-    Scaffold(
-        floatingActionButton = {
-            if (state.mode == FeedMode.BLOG && state.currentUserId != null) {
-                ExtendedFloatingActionButton(onClick = onComposeArticle, containerColor = BrandTeal, contentColor = Color.White) {
-                    Icon(Icons.Filled.Add, contentDescription = null)
-                    Spacer(Modifier.width(6.dp))
-                    Text("ابدأ الكتابة")
-                }
-            }
-        }
-    ) { padding ->
+    // لا يوجد زر عائم خاص بهذه الشاشة — الويب لديه زر قلم واحد فقط عالمي (`MainScaffold`'s FAB،
+    // مطابق لـ `btn-floating-write` في `App.tsx`)، تكرار زر هنا كان يسبب ظهور زرين معاً (بلاغ مستخدم).
+    Scaffold { padding ->
         if (state.isLoading) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = BrandTeal)

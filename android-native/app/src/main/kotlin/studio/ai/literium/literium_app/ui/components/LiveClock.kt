@@ -66,8 +66,8 @@ fun LiveClock(modifier: Modifier = Modifier) {
 
     Column(
         modifier = modifier
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
-            .padding(horizontal = 10.dp, vertical = 4.dp),
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f), RoundedCornerShape(10.dp))
+            .padding(horizontal = 8.dp, vertical = 3.dp),
         horizontalAlignment = Alignment.End
     ) {
         Text(
@@ -86,7 +86,9 @@ fun LiveClock(modifier: Modifier = Modifier) {
 }
 
 /** Pulsing green "platform is live" status dot — pure animation, no timer/JS-equivalent polling,
- *  matching `LiveStatusDot` in source. */
+ *  matching `LiveStatusDot` in source. Source hides its "مباشر" label below the `sm:` breakpoint
+ *  (`hidden sm:inline`) — this app is always that mobile width, so the dot renders alone here too,
+ *  exactly like the real mobile web layout, not a departure from it. */
 @Composable
 fun LiveStatusDot(modifier: Modifier = Modifier) {
     val infiniteTransition = rememberInfiniteTransition(label = "liveStatusDot")
@@ -106,8 +108,8 @@ fun LiveStatusDot(modifier: Modifier = Modifier) {
 
     Row(
         modifier = modifier
-            .background(emerald.copy(alpha = 0.12f), RoundedCornerShape(12.dp))
-            .padding(horizontal = 8.dp, vertical = 5.dp),
+            .background(emerald.copy(alpha = 0.12f), RoundedCornerShape(10.dp))
+            .padding(horizontal = 7.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         androidx.compose.foundation.layout.Box(contentAlignment = Alignment.Center, modifier = Modifier.size(10.dp)) {
@@ -122,12 +124,5 @@ fun LiveStatusDot(modifier: Modifier = Modifier) {
                     .background(emerald, CircleShape)
             )
         }
-        Text(
-            text = "مباشر",
-            fontSize = 9.sp,
-            fontWeight = FontWeight.Bold,
-            color = emerald,
-            modifier = Modifier.padding(start = 5.dp)
-        )
     }
 }

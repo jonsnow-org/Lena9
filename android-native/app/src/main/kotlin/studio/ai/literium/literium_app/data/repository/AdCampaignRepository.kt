@@ -53,7 +53,7 @@ class AdCampaignRepository(
     fun observeCampaigns(): Flow<List<AdCampaign>> = callbackFlow {
         val registration = campaignsCol.addSnapshotListener { snap, error ->
             if (error != null) { close(error); return@addSnapshotListener }
-            trySend(snap?.documents?.mapNotNull { it.toObject<AdCampaign>()?.copy(id = it.id) }.orEmpty())
+            trySend(snap?.documents?.mapNotNull { runCatching { it.toObject<AdCampaign>() }.getOrNull()?.copy(id = it.id) }.orEmpty())
         }
         awaitClose { registration.remove() }
     }
@@ -165,7 +165,7 @@ class AdCampaignRepository(
     fun observeAdEvents(): Flow<List<AdEvent>> = callbackFlow {
         val registration = adEventsCol.whereEqualTo("processed", false).addSnapshotListener { snap, error ->
             if (error != null) { close(error); return@addSnapshotListener }
-            trySend(snap?.documents?.mapNotNull { it.toObject<AdEvent>()?.copy(id = it.id) }.orEmpty())
+            trySend(snap?.documents?.mapNotNull { runCatching { it.toObject<AdEvent>() }.getOrNull()?.copy(id = it.id) }.orEmpty())
         }
         awaitClose { registration.remove() }
     }
@@ -181,7 +181,7 @@ class AdCampaignRepository(
     fun observeFraudFlags(): Flow<List<FraudFlag>> = callbackFlow {
         val registration = fraudFlagsCol.addSnapshotListener { snap, error ->
             if (error != null) { close(error); return@addSnapshotListener }
-            trySend(snap?.documents?.mapNotNull { it.toObject<FraudFlag>()?.copy(id = it.id) }.orEmpty())
+            trySend(snap?.documents?.mapNotNull { runCatching { it.toObject<FraudFlag>() }.getOrNull()?.copy(id = it.id) }.orEmpty())
         }
         awaitClose { registration.remove() }
     }
@@ -243,7 +243,7 @@ class AdCampaignRepository(
             val query: Query = if (isAdmin) promotionsCol else promotionsCol.whereEqualTo("writerId", writerId)
             val registration = query.addSnapshotListener { snap, error ->
                 if (error != null) { close(error); return@addSnapshotListener }
-                val list = snap?.documents?.mapNotNull { it.toObject<ArticlePromotion>()?.copy(id = it.id) }.orEmpty()
+                val list = snap?.documents?.mapNotNull { runCatching { it.toObject<ArticlePromotion>() }.getOrNull()?.copy(id = it.id) }.orEmpty()
                     .sortedByDescending { it.createdAt }
                 trySend(list)
             }

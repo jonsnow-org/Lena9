@@ -54,7 +54,7 @@ class NotificationRepository(
     fun observeNotifications(userId: String): Flow<List<AppNotification>> = callbackFlow {
         val registration = notificationsCol.whereEqualTo("userId", userId).addSnapshotListener { snap, error ->
             if (error != null) { close(error); return@addSnapshotListener }
-            val list = snap?.documents?.mapNotNull { it.toObject<AppNotification>()?.copy(id = it.id) }.orEmpty()
+            val list = snap?.documents?.mapNotNull { runCatching { it.toObject<AppNotification>() }.getOrNull()?.copy(id = it.id) }.orEmpty()
                 .sortedByDescending { it.createdAt }
             trySend(list)
         }

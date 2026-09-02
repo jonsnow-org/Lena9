@@ -1,5 +1,7 @@
 package studio.ai.literium.literium_app.data.model
 
+import com.google.firebase.firestore.PropertyName
+
 /**
  * Article document — collection `articles` (publicly readable; writer-owned
  * writes, see firestore.rules `match /articles/{articleId}`).
@@ -25,6 +27,10 @@ data class Article(
     /** One of [ArticleCategory]'s constants. */
     var category: String = ArticleCategory.GENERAL,
     var subCategory: String? = null,
+    /** انظر تعليق `DirectMessage.isRead` في `MessageModels.kt` — بلا هذا التوصيف يبحث Firestore افتراضياً
+     *  عن حقل باسم `locked` (لاشتقاقه الاسم من `isLocked()` بحذف `is`) بينما `ArticleRepository` يكتب
+     *  حرفياً `"isLocked"`، فتُقرأ القيمة `false` دوماً بصرف النظر عن الحالة الحقيقية للمقال. */
+    @get:PropertyName("isLocked") @set:PropertyName("isLocked")
     var isLocked: Boolean = false,
     /** USD. Only meaningful when [isLocked]. */
     var lockedPrice: Double? = null,

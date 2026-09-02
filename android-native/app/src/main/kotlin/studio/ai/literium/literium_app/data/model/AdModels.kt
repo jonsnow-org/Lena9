@@ -175,8 +175,14 @@ data class AdEvent(
     /** "impression" | "click" */
     var eventType: String = AdEventType.IMPRESSION,
     var processed: Boolean = false,
+    /** انظر تعليق `DirectMessage.isRead` في `MessageModels.kt` — بلا هذا التوصيف تُقرأ القيمة `null`
+     *  دائماً (بصرف النظر عمّا كتبه `processAdEvent`) لأن Firestore يشتق اسم الحقل المتوقَّع من
+     *  `isValid()` بحذف `is` (=> `valid`)، بينما الحقل الحقيقي المكتوب حرفياً هو `"isValid"` — علّة كانت
+     *  ستُبطل منطق كشف الاحتيال/احتساب الأرباح كاملاً كلما أُعيدت قراءة السجل بعد معالجته. */
+    @get:PropertyName("isValid") @set:PropertyName("isValid")
     var isValid: Boolean? = null,
     /** True = a viewability-qualified impression on an *external* ad-network fill in a writer slot. */
+    @get:PropertyName("isExternalAdView") @set:PropertyName("isExternalAdView")
     var isExternalAdView: Boolean? = null,
     var createdAt: String = ""
 )

@@ -121,12 +121,14 @@ fun ProfileScreen(navController: NavController, viewModel: ProfileViewModel = vi
                         )
                     }
 
-                    item {
-                        state.eligibility?.let { eligibility ->
-                            CreatorEligibilityCard(
-                                eligibility = eligibility,
-                                onOpenKyc = { navController.navigate(Screen.Kyc.route) }
-                            )
+                    if (user.role != UserRole.ADMIN) {
+                        item {
+                            state.eligibility?.let { eligibility ->
+                                CreatorEligibilityCard(
+                                    eligibility = eligibility,
+                                    onOpenKyc = { navController.navigate(Screen.Kyc.route) }
+                                )
+                            }
                         }
                     }
 

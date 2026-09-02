@@ -93,7 +93,7 @@ class WalletRepository(
             val query: Query = if (isAdmin) depositRequestsCol else depositRequestsCol.whereEqualTo("userId", userId)
             val registration = query.addSnapshotListener { snap, error ->
                 if (error != null) { close(error); return@addSnapshotListener }
-                val list = snap?.documents?.mapNotNull { it.toObject<DepositRequest>()?.copy(id = it.id) }.orEmpty()
+                val list = snap?.documents?.mapNotNull { runCatching { it.toObject<DepositRequest>() }.getOrNull()?.copy(id = it.id) }.orEmpty()
                     .sortedByDescending { it.createdAt }
                 trySend(list)
             }
@@ -109,7 +109,7 @@ class WalletRepository(
             val query: Query = if (isAdmin) payoutRequestsCol else payoutRequestsCol.whereEqualTo("userId", userId)
             val registration = query.addSnapshotListener { snap, error ->
                 if (error != null) { close(error); return@addSnapshotListener }
-                val list = snap?.documents?.mapNotNull { it.toObject<PayoutRequest>()?.copy(id = it.id) }.orEmpty()
+                val list = snap?.documents?.mapNotNull { runCatching { it.toObject<PayoutRequest>() }.getOrNull()?.copy(id = it.id) }.orEmpty()
                     .sortedByDescending { it.createdAt }
                 trySend(list)
             }
@@ -288,7 +288,7 @@ class WalletRepository(
     fun observeAllEarningsAdmin(): Flow<List<EarningRecord>> = callbackFlow {
         val registration = earningsCol.addSnapshotListener { snap, error ->
             if (error != null) { close(error); return@addSnapshotListener }
-            val list = snap?.documents?.mapNotNull { it.toObject<EarningRecord>()?.copy(id = it.id) }.orEmpty()
+            val list = snap?.documents?.mapNotNull { runCatching { it.toObject<EarningRecord>() }.getOrNull()?.copy(id = it.id) }.orEmpty()
                 .sortedByDescending { it.createdAt }
             trySend(list)
         }
@@ -299,7 +299,7 @@ class WalletRepository(
         val registration = transactionsCol.whereEqualTo("type", TransactionType.MANUAL_ADJUSTMENT)
             .addSnapshotListener { snap, error ->
                 if (error != null) { close(error); return@addSnapshotListener }
-                val list = snap?.documents?.mapNotNull { it.toObject<ManualBalanceAdjustment>()?.copy(id = it.id) }.orEmpty()
+                val list = snap?.documents?.mapNotNull { runCatching { it.toObject<ManualBalanceAdjustment>() }.getOrNull()?.copy(id = it.id) }.orEmpty()
                     .sortedByDescending { it.createdAt }
                 trySend(list)
             }

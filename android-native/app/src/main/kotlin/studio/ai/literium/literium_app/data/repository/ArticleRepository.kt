@@ -141,7 +141,7 @@ class ArticleRepository(
     fun observeArticleLikes(): Flow<List<ArticleLike>> = callbackFlow {
         val registration = likesCol.addSnapshotListener { snap, error ->
             if (error != null) { close(error); return@addSnapshotListener }
-            trySend(snap?.documents?.mapNotNull { it.toObject<ArticleLike>()?.copy(id = it.id) }.orEmpty())
+            trySend(snap?.documents?.mapNotNull { runCatching { it.toObject<ArticleLike>() }.getOrNull()?.copy(id = it.id) }.orEmpty())
         }
         awaitClose { registration.remove() }
     }
@@ -181,7 +181,7 @@ class ArticleRepository(
      */
     suspend fun fetchUserReaction(articleId: String, userId: String): Result<ArticleReaction?> = safeCall {
         val snap = reactionsCol.document("${articleId}_$userId").get().await()
-        if (snap.exists()) snap.toObject<ArticleReaction>()?.copy(id = snap.id) else null
+        if (snap.exists()) runCatching { snap.toObject<ArticleReaction>() }.getOrNull()?.copy(id = snap.id) else null
     }
 
     // ---- Ratings ----
@@ -189,7 +189,7 @@ class ArticleRepository(
     fun observeArticleRatings(): Flow<List<ArticleRating>> = callbackFlow {
         val registration = ratingsCol.addSnapshotListener { snap, error ->
             if (error != null) { close(error); return@addSnapshotListener }
-            trySend(snap?.documents?.mapNotNull { it.toObject<ArticleRating>()?.copy(id = it.id) }.orEmpty())
+            trySend(snap?.documents?.mapNotNull { runCatching { it.toObject<ArticleRating>() }.getOrNull()?.copy(id = it.id) }.orEmpty())
         }
         awaitClose { registration.remove() }
     }
@@ -227,7 +227,7 @@ class ArticleRepository(
     fun observeComments(): Flow<List<Comment>> = callbackFlow {
         val registration = commentsCol.addSnapshotListener { snap, error ->
             if (error != null) { close(error); return@addSnapshotListener }
-            val list = snap?.documents?.mapNotNull { it.toObject<Comment>()?.copy(id = it.id) }.orEmpty()
+            val list = snap?.documents?.mapNotNull { runCatching { it.toObject<Comment>() }.getOrNull()?.copy(id = it.id) }.orEmpty()
                 .sortedByDescending { it.createdAt }
             trySend(list)
         }
@@ -257,7 +257,7 @@ class ArticleRepository(
     // ---- internal mapping ----
 
     private fun toArticle(doc: com.google.firebase.firestore.DocumentSnapshot): Article? {
-        val article = doc.toObject<Article>() ?: return null
+        val article = runCatching { doc.toObject<Article>() }.getOrNull() ?: return null
         // Defensive: prefer the live document id in case the "id" field write (a second call right
         // after creation, see saveArticle) hasn't landed yet.
         return article.copy(id = doc.id)

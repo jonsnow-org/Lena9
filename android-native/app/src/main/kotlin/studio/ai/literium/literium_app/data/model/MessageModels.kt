@@ -27,6 +27,13 @@ data class DirectMessage(
     /** "image" | "video" | "sticker" — see [MessageMediaType]. For stickers, [content] holds the sticker id. */
     var mediaType: String? = null,
     var createdAt: String = "",
+    /** بلا `@PropertyName` هنا كانت القراءة تُرجع القيمة الافتراضية `false` دائماً مهما كُتب فعلياً في
+     *  Firestore: مُوَلِّد Firestore للـ POJO يشتق اسم الحقل تلقائياً من اسم الدالة `isRead()` بحذف
+     *  بادئة `is` (=> يبحث عن حقل باسم `read`)، بينما الحقل الحقيقي المكتوب في الوثيقة هو حرفياً
+     *  `"isRead"` (`sendMessage`/`markMessagesReadByIds` كلاهما يكتبان بهذا الاسم) — فيبقى الحقل غير
+     *  متطابق أبداً مع القراءة الانعكاسية الافتراضية، وشارة الرسائل غير المقروءة لا تختفي أبداً مهما فعل
+     *  المستخدم (بلاغ مستخدم حقيقي على جهاز فعلي). نفس العلّة تماماً التي عولجت أعلاه لحقل `text`/`content`. */
+    @get:PropertyName("isRead") @set:PropertyName("isRead")
     var isRead: Boolean = false
 )
 

@@ -2,6 +2,7 @@ package studio.ai.literium.literium_app.ui.components
 
 import android.annotation.SuppressLint
 import android.view.ViewGroup
+import android.webkit.WebChromeClient
 import android.webkit.WebView
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
@@ -32,10 +33,17 @@ fun IsolatedWebView(html: String? = null, url: String? = null, modifier: Modifie
                 // الآلية حرفياً. تشديد إضافي: بلا وصول لملفات الجهاز، ومحتوى، وموقع جغرافي.
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
-                settings.mediaPlaybackRequiresUserGesture = true
+                // false هنا (لا true): نقرة المستخدم تحدث على واجهة Compose الأصلية (زر التشغيل
+                // المُرسوم فوق الغلاف)، وليست نقرة حقيقية داخل مستند iframe المضمّن — فلا "تنتقل"
+                // كإيماءة مستخدم لمحرك YouTube/Vimeo داخل هذا الـ WebView المعزول، ما يجعله يرفض
+                // التشغيل (اليوتيوب: "الخطأ 153"، وهو خطأ تضمين/بيئة تشغيل وليس معرّف فيديو).
+                settings.mediaPlaybackRequiresUserGesture = false
                 settings.allowFileAccess = false
                 settings.allowContentAccess = false
                 settings.setGeolocationEnabled(false)
+                // مطلوب لدعم HTML5 fullscreen الذي تعتمد عليه أغلب تضمينات YouTube/Vimeo — بلا
+                // WebChromeClient يبقى WebView صامتاً افتراضياً عن أي طلب onShowCustomView.
+                webChromeClient = WebChromeClient()
             }
         },
         update = { webView ->

@@ -216,9 +216,11 @@ fun LiteriumNavHost(
             }
         }
         composable(Screen.Admin.route) {
-            MainScaffold(navController = navController, currentRoute = Screen.Admin.route) { padding ->
-                Box(Modifier.padding(padding)) { AdminScreen(navController) }
-            }
+            // بلا `MainScaffold` هنا عمداً: `AdminScreen` يملك بالفعل `Scaffold` كاملاً خاصاً به (شريط
+            // علوي + زر رجوع) — تغليفه بـ`MainScaffold` كان يُكدّس شريطاً علوياً + شريطاً سفلياً + زراً
+            // عائماً إضافيين فوقه (كانا السبب في اختلاف شكل لوحة الإدارة عن نظيرتها على الويب، وعامل
+            // خطر إضافي في تعقيد إعادة التركيب عند الانتقال من صفحة الملف الشخصي).
+            AdminScreen(navController)
         }
 
         // ---- Article ----

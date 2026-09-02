@@ -47,7 +47,7 @@ class FollowRepository(
     fun observeFollows(): Flow<List<Follow>> = callbackFlow {
         val registration = followsCol.addSnapshotListener { snap, error ->
             if (error != null) { close(error); return@addSnapshotListener }
-            trySend(snap?.documents?.mapNotNull { it.toObject<Follow>()?.copy(id = it.id) }.orEmpty())
+            trySend(snap?.documents?.mapNotNull { runCatching { it.toObject<Follow>() }.getOrNull()?.copy(id = it.id) }.orEmpty())
         }
         awaitClose { registration.remove() }
     }

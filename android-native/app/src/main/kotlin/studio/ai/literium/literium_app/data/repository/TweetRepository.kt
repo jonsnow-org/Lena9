@@ -32,7 +32,7 @@ class TweetRepository(
     fun observeTweets(): Flow<List<Tweet>> = callbackFlow {
         val registration = tweetsCol.addSnapshotListener { snap, error ->
             if (error != null) { close(error); return@addSnapshotListener }
-            val list = snap?.documents?.mapNotNull { it.toObject<Tweet>()?.copy(id = it.id) }.orEmpty()
+            val list = snap?.documents?.mapNotNull { runCatching { it.toObject<Tweet>() }.getOrNull()?.copy(id = it.id) }.orEmpty()
                 .sortedByDescending { it.createdAt }
             trySend(list)
         }
@@ -42,7 +42,7 @@ class TweetRepository(
     /** One-shot fetch for an explicit pull-to-refresh — same rationale as `ArticleRepository.fetchArticlesOnce`. */
     suspend fun fetchTweetsOnce(): Result<List<Tweet>> = safeCall {
         val snap = tweetsCol.get().await()
-        snap.documents.mapNotNull { it.toObject<Tweet>()?.copy(id = it.id) }.sortedByDescending { it.createdAt }
+        snap.documents.mapNotNull { runCatching { it.toObject<Tweet>() }.getOrNull()?.copy(id = it.id) }.sortedByDescending { it.createdAt }
     }
 
     /** [tweet.id] must already be a client-generated id — unlike articles, tweet documents are written
@@ -129,7 +129,7 @@ class TweetRepository(
     fun observeTweetComments(): Flow<List<TweetComment>> = callbackFlow {
         val registration = tweetCommentsCol.addSnapshotListener { snap, error ->
             if (error != null) { close(error); return@addSnapshotListener }
-            val list = snap?.documents?.mapNotNull { it.toObject<TweetComment>()?.copy(id = it.id) }.orEmpty()
+            val list = snap?.documents?.mapNotNull { runCatching { it.toObject<TweetComment>() }.getOrNull()?.copy(id = it.id) }.orEmpty()
                 .sortedByDescending { it.createdAt }
             trySend(list)
         }
