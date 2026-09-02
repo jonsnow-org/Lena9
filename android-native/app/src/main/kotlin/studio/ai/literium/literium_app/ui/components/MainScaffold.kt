@@ -5,6 +5,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
@@ -15,6 +16,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
@@ -114,10 +116,23 @@ fun MainScaffold(
                 // ScrollState lives inside `content`, which this shell does not own — each screen
                 // that scrolls is the right place for its own scroll-to-top affordance.
                 if (!uiState.isGuestOrSignedOut) {
+                    // Explicit low elevation — a real-device report showed a hard-edged white
+                    // rectangle rendering behind this FAB whenever it overlapped scrolling image
+                    // content underneath (a known Compose/Android artifact where a circular FAB's
+                    // drop-shadow RenderNode rasterizes as an opaque box instead of the intended soft
+                    // circular blur, over complex/animated content below it). Matches web's own look
+                    // anyway — App.tsx's button uses a soft colored `shadow-teal-600/30`, not
+                    // Android's default heavy Material elevation shadow.
                     FloatingActionButton(
                         onClick = { navController.navigate(Screen.ArticleEditor.new()) },
                         containerColor = BrandTeal,
-                        contentColor = Color.White
+                        contentColor = Color.White,
+                        elevation = FloatingActionButtonDefaults.elevation(
+                            defaultElevation = 2.dp,
+                            pressedElevation = 4.dp,
+                            focusedElevation = 2.dp,
+                            hoveredElevation = 3.dp
+                        )
                     ) {
                         Icon(Icons.Filled.Edit, contentDescription = "بدء الكتابة")
                     }

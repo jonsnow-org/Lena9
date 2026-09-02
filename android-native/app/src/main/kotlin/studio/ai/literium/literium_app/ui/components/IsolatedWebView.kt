@@ -21,16 +21,22 @@ import androidx.compose.ui.viewinterop.AndroidView
  */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun IsolatedWebView(html: String? = null, url: String? = null, modifier: Modifier = Modifier) {
+fun IsolatedWebView(html: String? = null, url: String? = null, baseUrl: String? = null, modifier: Modifier = Modifier) {
     AndroidView(
         modifier = modifier.fillMaxWidth(),
         factory = { ctx ->
             WebView(ctx).apply {
                 layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
                 // مطابق لمنطق الويب في ExternalAdScript.tsx (iframe معزول بلا allow-same-origin): بلا
-                // baseUrl هنا (نمرر null دائماً)، تحصل صفحة loadDataWithBaseURL على أصل فريد/معزول
-                // (شبيه about:blank) بلا وصول لأي تخزين/كوكيز حقيقية لنطاقنا — عزل مكافئ، وليس نفس
-                // الآلية حرفياً. تشديد إضافي: بلا وصول لملفات الجهاز، ومحتوى، وموقع جغرافي.
+                // baseUrl لمحتوى الإعلانات الخارجية غير الموثوق (القيمة الافتراضية null هنا)، تحصل
+                // صفحة loadDataWithBaseURL على أصل فريد/معزول (شبيه about:blank) بلا وصول لأي
+                // تخزين/كوكيز حقيقية لنطاقنا — عزل مكافئ، وليس نفس الآلية حرفياً. تشديد إضافي: بلا
+                // وصول لملفات الجهاز، ومحتوى، وموقع جغرافي.
+                //
+                // ملاحظة: [VideoEmbed] (تضمين يوتيوب/فيميو من طرفنا نحن، وليس محتوى إعلان طرف ثالث)
+                // يمرّر baseUrl حقيقياً (نطاق الإنتاج) عمداً — أصل about:blank المعزول هو بالضبط
+                // سبب "الخطأ 153" الذي أبلغ عنه مستخدم حقيقي: يوتيوب يرفض التشغيل من أصل iframe بلا
+                // نطاق أب حقيقي/مصرَّح.
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
                 // false هنا (لا true): نقرة المستخدم تحدث على واجهة Compose الأصلية (زر التشغيل
@@ -49,7 +55,7 @@ fun IsolatedWebView(html: String? = null, url: String? = null, modifier: Modifie
         update = { webView ->
             when {
                 url != null -> webView.loadUrl(url)
-                html != null -> webView.loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
+                html != null -> webView.loadDataWithBaseURL(baseUrl, html, "text/html", "utf-8", null)
             }
         }
     )

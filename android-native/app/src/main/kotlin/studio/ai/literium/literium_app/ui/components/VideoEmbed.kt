@@ -37,16 +37,39 @@ fun parseVideoUrl(url: String): ParsedVideo? {
     return null
 }
 
+/** Production origin the video-embed HTML wrapper is loaded with — see [VideoEmbed]'s KDoc for why
+ *  this, not `null`, is required for YouTube playback to work at all. */
+private const val PRODUCTION_ORIGIN = "https://literium.ai.studio/"
+
 /**
  * Kotlin port of `VideoEmbed.tsx` — a YouTube/Vimeo `<iframe>` embed, reserved at a 16:9 aspect ratio
  * so surrounding layout never jumps once it loads. Renders nothing for an unparseable [url], matching
  * source's own `if (!parsed) return null`.
+ *
+ * Wraps [ParsedVideo.embedUrl] in a real `<iframe>` inside a tiny host page, loaded via
+ * [IsolatedWebView]'s `html`+`baseUrl` path rather than navigating the WebView directly to the embed
+ * URL (`url =`) — a real-device bug report ("YouTube error 153: خطأ في إعدادات مشغل الفيديو"): loading
+ * the embed URL as the WebView's own top-level document, the way the `url` path does, gives YouTube's
+ * player no parent-frame/origin context at all (effectively `about:blank`), which YouTube's embed
+ * player rejects outright. `VideoEmbed.tsx` on web never hits this because its `<iframe src=embedUrl>`
+ * is genuinely nested inside the real literium.ai.studio page — this reproduces that exact structure
+ * natively, with [PRODUCTION_ORIGIN] as the iframe's real parent origin.
  */
 @Composable
 fun VideoEmbed(url: String, modifier: Modifier = Modifier) {
     val parsed = parseVideoUrl(url) ?: return
+    val html = """
+        <!DOCTYPE html><html><head><meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>html,body{margin:0;padding:0;background:#0f172a;overflow:hidden}
+        iframe{position:absolute;inset:0;width:100%;height:100%;border:0}</style>
+        </head><body>
+        <iframe src="${parsed.embedUrl}" allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+        </body></html>
+    """.trimIndent()
     IsolatedWebView(
-        url = parsed.embedUrl,
+        html = html,
+        baseUrl = PRODUCTION_ORIGIN,
         modifier = modifier
             .fillMaxWidth()
             .aspectRatio(16f / 9f)
