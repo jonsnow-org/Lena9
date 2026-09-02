@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -199,12 +200,29 @@ fun AdSlot(
     // one narrowly-scoped WebView this reverses the app's no-WebView default for. See
     // [ExternalAdNetworkView]'s KDoc for the isolation this still keeps.
     if (isPlatformSlot && selectedPoolItem is RotationPoolItem.External) {
-        val eligibleNetworks = listOf(
-            externalAdsConfig.propellerAds, externalAdsConfig.adsterra, externalAdsConfig.taboola
-        ).filter { it.enabled && it.snippet.isNotBlank() && it.appSafe }
-        val network = eligibleNetworks.getOrNull((slotIndex + rotationSeed).mod(eligibleNetworks.size.coerceAtLeast(1)))
-        if (network != null) {
-            ExternalAdNetworkView(snippet = network.snippet, modifier = modifier)
+        // Adsterra no longer carries one fixed snippet — it occupies one rotation-pool "turn" like
+        // any other network, but which of its 7 hardcoded units actually renders is picked separately
+        // (same rotation offset) among only the units the admin hasn't individually disabled. See
+        // ExternalAdsSettingsStore's KDoc + AdsterraUnits.kt (Kotlin twin of adsterraUnits.ts).
+        val plainNetworks = listOf(externalAdsConfig.propellerAds, externalAdsConfig.taboola)
+            .filter { it.enabled && it.snippet.isNotBlank() && it.appSafe }
+        val adsterraEligible = ExternalAdsSettingsStore.isAdsterraEligible(externalAdsConfig)
+        val poolSize = plainNetworks.size + if (adsterraEligible) 1 else 0
+        if (poolSize > 0) {
+            val idx = (slotIndex + rotationSeed).mod(poolSize)
+            if (idx < plainNetworks.size) {
+                ExternalAdNetworkView(snippet = plainNetworks[idx].snippet, modifier = modifier)
+            } else {
+                val unit = pickAdsterraUnit(externalAdsConfig.adsterraUnits, slotIndex + rotationSeed)
+                if (unit != null) {
+                    ExternalAdNetworkView(
+                        snippet = unit.snippet,
+                        modifier = modifier,
+                        heightDp = unit.heightPx.dp,
+                        widthDp = if (unit.widthPx > 0) unit.widthPx.dp else null
+                    )
+                }
+            }
         }
         return
     }
@@ -490,7 +508,11 @@ private fun AdMediaBlock(campaign: AdCampaign) {
 internal fun ExternalAdNetworkView(
     snippet: String,
     modifier: Modifier = Modifier,
-    heightDp: Dp = 90.dp
+    heightDp: Dp = 90.dp,
+    /** Real fixed width for a unit narrower than the slot's container (e.g. Adsterra's 160×300/
+     *  160×600/468×60/728×90) — centered within the available width instead of stretched to fill it.
+     *  `null` (the default) keeps the previous fillMaxWidth() behavior. */
+    widthDp: Dp? = null
 ) {
     val trimmed = snippet.trim()
     if (trimmed.isEmpty()) return
@@ -499,9 +521,10 @@ internal fun ExternalAdNetworkView(
         trimmed + "</body></html>"
     Box(
         modifier = modifier
-            .fillMaxWidth()
+            .then(if (widthDp != null) Modifier.width(widthDp) else Modifier.fillMaxWidth())
             .height(heightDp)
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(8.dp)),
+        contentAlignment = Alignment.Center
     ) {
         IsolatedWebView(html = html)
     }
@@ -622,6 +645,10 @@ internal object ExternalAdsSettingsStore {
     data class Config(
         val propellerAds: NetworkConfig = NetworkConfig(),
         val adsterra: NetworkConfig = NetworkConfig(),
+        /** Per-unit enable/disable map from `adsterraUnits` on the same Firestore doc — mirrors
+         *  `ExternalAdsConfig.adsterraUnits` on web. A unit id missing from this map is enabled by
+         *  default (only explicit `false` disables it). */
+        val adsterraUnits: Map<String, Boolean> = emptyMap(),
         val taboola: NetworkConfig = NetworkConfig(),
         val estimatedCpmUsd: Double = 2.0
     )
@@ -649,17 +676,30 @@ internal object ExternalAdsSettingsStore {
                     )
                 }
                 val estimatedCpm = (data["estimatedCpmUsd"] as? Number)?.toDouble()?.takeIf { it >= 0 } ?: 2.0
+                @Suppress("UNCHECKED_CAST")
+                val adsterraUnitsRaw = (data["adsterraUnits"] as? Map<String, Any?>)
+                    ?.mapNotNull { (k, v) -> (v as? Boolean)?.let { k to it } }
+                    ?.toMap() ?: emptyMap()
                 _config.value = Config(
                     propellerAds = parse("propellerAds"),
                     adsterra = parse("adsterra"),
+                    adsterraUnits = adsterraUnitsRaw,
                     taboola = parse("taboola"),
                     estimatedCpmUsd = estimatedCpm
                 )
             }
     }
 
+    /** True when Adsterra itself is on, appSafe-cleared for this native app, and at least one of its
+     *  hardcoded units hasn't been individually disabled by the admin. */
+    fun isAdsterraEligible(config: Config): Boolean =
+        config.adsterra.enabled && config.adsterra.appSafe &&
+            ADSTERRA_UNITS.any { config.adsterraUnits[it.id] != false }
+
     /** Count of networks eligible to occupy a rotation-pool turn right now (never rendered — see the object KDoc). */
-    fun eligibleCount(config: Config): Int =
-        listOf(config.propellerAds, config.adsterra, config.taboola)
+    fun eligibleCount(config: Config): Int {
+        val plainNetworks = listOf(config.propellerAds, config.taboola)
             .count { it.enabled && it.snippet.isNotBlank() && it.appSafe }
+        return plainNetworks + if (isAdsterraEligible(config)) 1 else 0
+    }
 }

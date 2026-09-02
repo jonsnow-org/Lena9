@@ -116,11 +116,27 @@ fun AdTickerBar(
     if (slotIndex >= MAX_ADS_PER_PAGE) return
     if (rotationCampaigns.isEmpty()) {
         if (externalPriority && hasEligibleExternalNetwork) {
-            val eligibleNetworks = listOf(
-                externalAdsConfig.propellerAds, externalAdsConfig.adsterra, externalAdsConfig.taboola
-            ).filter { it.enabled && it.snippet.isNotBlank() && it.appSafe }
-            eligibleNetworks.getOrNull(slotIndex.mod(eligibleNetworks.size.coerceAtLeast(1)))?.let { network ->
-                ExternalAdNetworkView(snippet = network.snippet, modifier = modifier, heightDp = minHeightDp)
+            // Same Adsterra special-case as AdSlot.kt — its snippet field is deliberately empty now
+            // (hardcoded units live in AdsterraUnits.kt), so it must never be filtered like a plain
+            // network with `it.snippet.isNotBlank()`, or it would always be excluded here.
+            val plainNetworks = listOf(externalAdsConfig.propellerAds, externalAdsConfig.taboola)
+                .filter { it.enabled && it.snippet.isNotBlank() && it.appSafe }
+            val adsterraEligible = ExternalAdsSettingsStore.isAdsterraEligible(externalAdsConfig)
+            val poolSize = plainNetworks.size + if (adsterraEligible) 1 else 0
+            if (poolSize > 0) {
+                val idx = slotIndex.mod(poolSize)
+                if (idx < plainNetworks.size) {
+                    ExternalAdNetworkView(snippet = plainNetworks[idx].snippet, modifier = modifier, heightDp = minHeightDp)
+                } else {
+                    pickAdsterraUnit(externalAdsConfig.adsterraUnits, slotIndex)?.let { unit ->
+                        ExternalAdNetworkView(
+                            snippet = unit.snippet,
+                            modifier = modifier,
+                            heightDp = minHeightDp,
+                            widthDp = if (unit.widthPx > 0) unit.widthPx.dp else null
+                        )
+                    }
+                }
             }
         }
         return

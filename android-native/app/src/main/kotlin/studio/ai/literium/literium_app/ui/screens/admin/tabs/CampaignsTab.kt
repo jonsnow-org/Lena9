@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import studio.ai.literium.literium_app.data.model.AdCampaign
 import studio.ai.literium.literium_app.data.model.ArticlePromotion
 import studio.ai.literium.literium_app.data.model.User
+import studio.ai.literium.literium_app.ui.ads.ADSTERRA_UNITS
 import studio.ai.literium.literium_app.ui.screens.admin.AdminViewModel
 
 /**
@@ -165,8 +166,15 @@ private fun ExternalNetworksSection(viewModel: AdminViewModel) {
 
     var propellerEnabled by remember(config) { mutableStateOf((config["propellerAds"] as? Map<*, *>)?.get("enabled") as? Boolean ?: false) }
     var propellerSnippet by remember(config) { mutableStateOf((config["propellerAds"] as? Map<*, *>)?.get("snippet") as? String ?: "") }
-    var adsterraEnabled by remember(config) { mutableStateOf((config["adsterra"] as? Map<*, *>)?.get("enabled") as? Boolean ?: false) }
-    var adsterraSnippet by remember(config) { mutableStateOf((config["adsterra"] as? Map<*, *>)?.get("snippet") as? String ?: "") }
+    var adsterraEnabled by remember(config) { mutableStateOf((config["adsterra"] as? Map<*, *>)?.get("enabled") as? Boolean ?: true) }
+    var adsterraApkEnabled by remember(config) { mutableStateOf((config["adsterra"] as? Map<*, *>)?.get("appSafe") as? Boolean ?: true) }
+    // Adsterra's codes are hardcoded (see AdsterraUnits.kt) — no paste box, one on/off switch per unit.
+    var adsterraUnitToggles by remember(config) {
+        @Suppress("UNCHECKED_CAST")
+        val saved = (config["adsterraUnits"] as? Map<String, Any?>)
+            ?.mapNotNull { (k, v) -> (v as? Boolean)?.let { k to it } }?.toMap() ?: emptyMap()
+        mutableStateOf(ADSTERRA_UNITS.associate { it.id to (saved[it.id] != false) })
+    }
     var taboolaEnabled by remember(config) { mutableStateOf((config["taboola"] as? Map<*, *>)?.get("enabled") as? Boolean ?: false) }
     var taboolaSnippet by remember(config) { mutableStateOf((config["taboola"] as? Map<*, *>)?.get("snippet") as? String ?: "") }
     var estimatedCpm by remember(config) { mutableStateOf((config["estimatedCpmUsd"] as? Number)?.toString() ?: "2") }
@@ -196,7 +204,14 @@ private fun ExternalNetworksSection(viewModel: AdminViewModel) {
             NetworkCard("PropellerAds (ويشمل Monetag)", propellerEnabled, { propellerEnabled = it }, propellerSnippet) { propellerSnippet = it }
         }
         item {
-            NetworkCard("Adsterra", adsterraEnabled, { adsterraEnabled = it }, adsterraSnippet) { adsterraSnippet = it }
+            AdsterraUnitsCard(
+                enabled = adsterraEnabled,
+                onEnabledChange = { adsterraEnabled = it },
+                apkEnabled = adsterraApkEnabled,
+                onApkEnabledChange = { adsterraApkEnabled = it },
+                unitToggles = adsterraUnitToggles,
+                onUnitToggle = { id, value -> adsterraUnitToggles = adsterraUnitToggles + (id to value) }
+            )
         }
         item {
             NetworkCard("Taboola", taboolaEnabled, { taboolaEnabled = it }, taboolaSnippet) { taboolaSnippet = it }
@@ -215,12 +230,61 @@ private fun ExternalNetworksSection(viewModel: AdminViewModel) {
                 viewModel.saveExternalAdsConfig(
                     mapOf(
                         "propellerAds" to mapOf("enabled" to propellerEnabled, "snippet" to propellerSnippet.trim()),
-                        "adsterra" to mapOf("enabled" to adsterraEnabled, "snippet" to adsterraSnippet.trim()),
+                        "adsterra" to mapOf("enabled" to adsterraEnabled, "snippet" to "", "appSafe" to adsterraApkEnabled),
+                        "adsterraUnits" to adsterraUnitToggles,
                         "taboola" to mapOf("enabled" to taboolaEnabled, "snippet" to taboolaSnippet.trim()),
                         "estimatedCpmUsd" to (estimatedCpm.toDoubleOrNull() ?: 2.0)
                     )
                 )
             }) { Text("حفظ إعدادات الشبكات الخارجية") }
+        }
+    }
+}
+
+/**
+ * Adsterra's real ad-unit codes (7 fixed sizes, see [ADSTERRA_UNITS]) are hardcoded in the app now —
+ * no paste box. This card gives one enable/disable switch per unit so an admin can kill a specific
+ * annoying ad without disabling every Adsterra banner, plus the network-wide switch and one
+ * "متوافقة مع APK" master switch that stops all Adsterra units inside this app specifically (the
+ * website is controlled separately from its own admin panel and is unaffected either way).
+ */
+@Composable
+private fun AdsterraUnitsCard(
+    enabled: Boolean,
+    onEnabledChange: (Boolean) -> Unit,
+    apkEnabled: Boolean,
+    onApkEnabledChange: (Boolean) -> Unit,
+    unitToggles: Map<String, Boolean>,
+    onUnitToggle: (String, Boolean) -> Unit
+) {
+    Card {
+        Column(Modifier.padding(12.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("Adsterra", fontWeight = FontWeight.Bold)
+                Switch(checked = enabled, onCheckedChange = onEnabledChange)
+            }
+            Text(
+                "أكواد Adsterra الحقيقية ثابتة في الشيفرة — أوقف وحدة واحدة إن أزعجت المستخدم بدل إيقاف الجميع.",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
+            )
+            ADSTERRA_UNITS.forEach { unit ->
+                val unitEnabled = unitToggles[unit.id] != false
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(unit.label, style = MaterialTheme.typography.bodySmall)
+                    Switch(checked = unitEnabled, onCheckedChange = { onUnitToggle(unit.id, it) })
+                }
+            }
+            Row(
+                Modifier.fillMaxWidth().padding(top = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("متوافقة مع نسخة APK (مفتاح شامل)", style = MaterialTheme.typography.bodySmall)
+                Switch(checked = apkEnabled, onCheckedChange = onApkEnabledChange)
+            }
         }
     }
 }
