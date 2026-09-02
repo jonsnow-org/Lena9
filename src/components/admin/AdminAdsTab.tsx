@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { User, AdCampaign, ArticlePromotion } from '../../types';
 import { ExternalAdsConfig } from '../../utils/externalAdsStore';
+import { ADSTERRA_UNITS, defaultAdsterraUnitsEnabled } from '../../constants/adsterraUnits';
 
 interface AdminAdsTabProps {
   campaigns: AdCampaign[];
@@ -75,7 +76,12 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
   const [propellerEnabled, setPropellerEnabled] = useState(externalAdsConfig?.propellerAds?.enabled ?? false);
   const [propellerSnippet, setPropellerSnippet] = useState(externalAdsConfig?.propellerAds?.snippet ?? '');
   const [adsterraEnabled, setAdsterraEnabled] = useState(externalAdsConfig?.adsterra?.enabled ?? false);
-  const [adsterraSnippet, setAdsterraSnippet] = useState(externalAdsConfig?.adsterra?.snippet ?? '');
+  // Adsterra لم يعد لها مربع لصق — كتالوج وحدات ثابت في الشيفرة
+  // (ADSTERRA_UNITS)، وكل وحدة منه لها مفتاح تفعيل/إيقاف مستقل هنا، بدل
+  // كود لصق واحد يتّسع لمقاس واحد فقط في كل مرة.
+  const [adsterraUnits, setAdsterraUnits] = useState<Record<string, boolean>>(
+    externalAdsConfig?.adsterraUnits ?? defaultAdsterraUnitsEnabled()
+  );
   const [taboolaEnabled, setTaboolaEnabled] = useState(externalAdsConfig?.taboola?.enabled ?? false);
   const [taboolaSnippet, setTaboolaSnippet] = useState(externalAdsConfig?.taboola?.snippet ?? '');
   // appSafe: تأكيد صريح إن سياسة الشبكة تسمح بعرضها داخل تطبيق APK لا
@@ -98,7 +104,7 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
     propellerSnippet,
     propellerAppSafe,
     adsterraEnabled,
-    adsterraSnippet,
+    adsterraUnits,
     adsterraAppSafe,
     taboolaEnabled,
     taboolaSnippet,
@@ -106,12 +112,16 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
     estimatedCpmUsd
   });
 
+  const isAdsterraUnitsDirty = ADSTERRA_UNITS.some(
+    (u) => (adsterraUnits[u.id] !== false) !== (savedExternalAdsSnapshot.adsterraUnits[u.id] !== false)
+  );
+
   const isExternalAdsDirty =
     propellerEnabled !== savedExternalAdsSnapshot.propellerEnabled ||
     propellerSnippet.trim() !== savedExternalAdsSnapshot.propellerSnippet.trim() ||
     propellerAppSafe !== savedExternalAdsSnapshot.propellerAppSafe ||
     adsterraEnabled !== savedExternalAdsSnapshot.adsterraEnabled ||
-    adsterraSnippet.trim() !== savedExternalAdsSnapshot.adsterraSnippet.trim() ||
+    isAdsterraUnitsDirty ||
     adsterraAppSafe !== savedExternalAdsSnapshot.adsterraAppSafe ||
     taboolaEnabled !== savedExternalAdsSnapshot.taboolaEnabled ||
     taboolaSnippet.trim() !== savedExternalAdsSnapshot.taboolaSnippet.trim() ||
@@ -130,7 +140,7 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
       propellerSnippet: externalAdsConfig?.propellerAds?.snippet ?? '',
       propellerAppSafe: externalAdsConfig?.propellerAds?.appSafe ?? false,
       adsterraEnabled: externalAdsConfig?.adsterra?.enabled ?? false,
-      adsterraSnippet: externalAdsConfig?.adsterra?.snippet ?? '',
+      adsterraUnits: externalAdsConfig?.adsterraUnits ?? defaultAdsterraUnitsEnabled(),
       adsterraAppSafe: externalAdsConfig?.adsterra?.appSafe ?? false,
       taboolaEnabled: externalAdsConfig?.taboola?.enabled ?? false,
       taboolaSnippet: externalAdsConfig?.taboola?.snippet ?? '',
@@ -141,7 +151,7 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
     setPropellerSnippet(nextSnapshot.propellerSnippet);
     setPropellerAppSafe(nextSnapshot.propellerAppSafe);
     setAdsterraEnabled(nextSnapshot.adsterraEnabled);
-    setAdsterraSnippet(nextSnapshot.adsterraSnippet);
+    setAdsterraUnits(nextSnapshot.adsterraUnits);
     setAdsterraAppSafe(nextSnapshot.adsterraAppSafe);
     setTaboolaEnabled(nextSnapshot.taboolaEnabled);
     setTaboolaSnippet(nextSnapshot.taboolaSnippet);
@@ -157,12 +167,12 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
     setExternalAdsSavedMsg('');
     try {
       const trimmedPropeller = propellerSnippet.trim();
-      const trimmedAdsterra = adsterraSnippet.trim();
       const trimmedTaboola = taboolaSnippet.trim();
       const cpmValue = Math.max(0, Number(estimatedCpmUsd) || 0);
       await onSaveExternalAdsConfig({
         propellerAds: { enabled: propellerEnabled, snippet: trimmedPropeller, appSafe: propellerAppSafe },
-        adsterra: { enabled: adsterraEnabled, snippet: trimmedAdsterra, appSafe: adsterraAppSafe },
+        adsterra: { enabled: adsterraEnabled, snippet: '', appSafe: adsterraAppSafe },
+        adsterraUnits,
         taboola: { enabled: taboolaEnabled, snippet: trimmedTaboola, appSafe: taboolaAppSafe },
         estimatedCpmUsd: cpmValue
       });
@@ -171,7 +181,7 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
         propellerSnippet: trimmedPropeller,
         propellerAppSafe,
         adsterraEnabled,
-        adsterraSnippet: trimmedAdsterra,
+        adsterraUnits,
         adsterraAppSafe,
         taboolaEnabled,
         taboolaSnippet: trimmedTaboola,
@@ -610,12 +620,13 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
                 </button>
               </div>
 
-              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
+              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5 sm:col-span-2 lg:col-span-3">
                 <div className="flex items-center justify-between">
                   <div className="font-bold text-xs text-white">Adsterra</div>
                   <button
                     type="button"
                     onClick={() => setAdsterraEnabled((v) => !v)}
+                    title="مفتاح رئيسي: يوقف كل وحدات Adsterra دفعة واحدة بلا حاجة لإيقافها واحدة تلو الأخرى"
                     className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${
                       adsterraEnabled ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400'
                     }`}
@@ -623,26 +634,47 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
                     {adsterraEnabled ? 'مفعّلة ✓' : 'معطّلة'}
                   </button>
                 </div>
-                <textarea
-                  rows={4}
-                  placeholder="الصق كود <script> الكامل من Adsterra هنا"
-                  value={adsterraSnippet}
-                  onChange={(e) => setAdsterraSnippet(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-[11px] text-white font-mono focus:outline-none focus:border-blue-500 resize-y"
-                  dir="ltr"
-                />
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  أكواد Adsterra الحقيقية (المُلصَقة من لوحة الشبكة) ثابتة في كود التطبيق نفسه الآن —
+                  لا مربع لصق بعد اليوم. لكل وحدة إعلانية مفتاح تفعيل/إيقاف مستقل: إن ظهر إعلان مزعج من
+                  نوع معيّن، أوقفه وحده بضغطة بدل إيقاف كل البنرات والبطاقات.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {ADSTERRA_UNITS.map((unit) => {
+                    const unitEnabled = adsterraUnits[unit.id] !== false;
+                    return (
+                      <div
+                        key={unit.id}
+                        className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-slate-900 border border-slate-800"
+                      >
+                        <span className="text-[11px] text-slate-200 font-mono">{unit.label}</span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setAdsterraUnits((prev) => ({ ...prev, [unit.id]: !unitEnabled }))
+                          }
+                          className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition-all shrink-0 ${
+                            unitEnabled ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400'
+                          }`}
+                        >
+                          {unitEnabled ? 'مفعّلة ✓' : 'معطّلة'}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
                 <button
                   type="button"
                   onClick={() => setAdsterraAppSafe((v) => !v)}
-                  title="فعّله فقط بعد التأكد من دعم الشبكة لعرض إعلاناتها داخل تطبيق APK، لا الموقع فقط"
+                  title="مفتاح شامل واحد يوقف كل وحدات Adsterra (بغض النظر عن حالتها الفردية أعلاه) داخل نسخة APK تحديداً — الموقع لا يتأثر به إطلاقاً"
                   className={`w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
                     adsterraAppSafe
                       ? 'bg-teal-600/20 text-teal-300 border border-teal-600/40'
                       : 'bg-slate-900 text-slate-500 border border-slate-800'
                   }`}
                 >
-                  <span>متوافقة مع نسخة APK</span>
-                  <span>{adsterraAppSafe ? 'مفعّل ✓' : 'غير مؤكَّد بعد'}</span>
+                  <span>متوافقة مع نسخة APK (مفتاح شامل لكل الوحدات أعلاه)</span>
+                  <span>{adsterraAppSafe ? 'مفعّل ✓' : 'موقَفة عن APK'}</span>
                 </button>
               </div>
 

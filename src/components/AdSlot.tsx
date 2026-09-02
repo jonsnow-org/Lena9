@@ -14,6 +14,7 @@ import {
 } from '../utils/externalAdsStore';
 import { ExternalAdScript } from './ExternalAdScript';
 import { SocialPromoCta } from './SocialPromoCta';
+import { pickAdsterraUnit } from '../constants/adsterraUnits';
 
 /**
  * رموز المواضع الإعلانية المعتمدة في المنصة.
@@ -322,18 +323,30 @@ export const AdSlot: React.FC<AdSlotProps> = ({
   // الموضع — نعرض كودها كما هو، بدون أي تتبّع إفصاح/نقر خاص بنا (تتبُّع
   // هذه الشبكات مستقل تماماً ومُدار من طرفها).
   if (!selectedCampaign && externalNetwork) {
+    // Adsterra لم يعد لها كود لصق وحيد — كتالوج وحدات ثابت في الشيفرة
+    // (`ADSTERRA_UNITS`)، تُختار منه وحدة واحدة مفعّلة فعلياً بنفس إزاحة
+    // الدوران المستخدمة لبقية الموضع، فتتنوّع المقاسات المعروضة عبر
+    // مواضع الصفحة المختلفة بدل مقاس 250px ثابت للجميع.
+    const isAdsterra = externalNetwork === externalAdsConfig.adsterra;
+    const adsterraUnit = isAdsterra
+      ? pickAdsterraUnit(externalAdsConfig.adsterraUnits, slotIndex + rotationSeed)
+      : null;
+    if (isAdsterra && !adsterraUnit) return null;
+    const snippet = adsterraUnit ? adsterraUnit.snippet : externalNetwork.snippet;
+    const heightPx = adsterraUnit ? adsterraUnit.heightPx : 250;
+    const widthPx = adsterraUnit && adsterraUnit.widthPx > 0 ? adsterraUnit.widthPx : undefined;
     return (
       <div ref={containerRef} className={inRead ? 'my-8' : 'my-5'}>
         <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 mb-1.5">إعلان</div>
-        {/* 250px — يطابق المقاس شبه العالمي "300x250" (Medium Rectangle)، المدعوم فعلياً في كل
-            شبكة إعلانية خارجية تقريباً (Adsterra/Monetag/PropellerAds/Taboola)، بدل صندوق 90px
-            القديم الذي كان مناسباً لشريط تذييل ضيّق لا لوحدة إعلانية حقيقية — أي وحدة Banner/Native
-            Banner معيارية تُنشئها الشبكة تحتاج مساحة أكبر من هذا لتُعرض أصلاً، وقد ترفض بعض سكربتات
-            الشبكات العرض كلياً (لا مجرد اقتصاص) إن اكتشفت أن الحاوية أصغر من الحد الأدنى المطلوب. */}
+        {/* 250px الافتراضي يطابق المقاس شبه العالمي "300x250" (Medium Rectangle)، المدعوم فعلياً في
+            كل شبكة إعلانية خارجية تقريباً (PropellerAds/Taboola) لغياب مقاس حقيقي معروف لكودها —
+            أما Adsterra فيستخدم heightPx/widthPx الحقيقيين لكل وحدة كما وثّقتهما الشبكة نفسها، بدل
+            صندوق عام واحد قد يقتصّ أو يترك فراغاً حول الوحدة الفعلية. */}
         <ExternalAdScript
-          snippet={externalNetwork.snippet}
+          snippet={snippet}
           className="w-full rounded-xl overflow-hidden border border-slate-200/70 dark:border-slate-700/50"
-          heightPx={250}
+          heightPx={heightPx}
+          widthPx={widthPx}
         />
       </div>
     );

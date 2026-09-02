@@ -25,9 +25,21 @@ interface ExternalAdScriptProps {
   /** ارتفاع الحاوية بالبكسل — شريط صغير ثابت الحجم لا يكبر مهما حاول كود
    *  الشبكة نفسه (افتراضياً 90، مناسب لوحدة بانر قياسية صغيرة). */
   heightPx?: number;
+  /** عرض الحاوية بالبكسل — لوحدات إعلانية أضيق من عرض الحاوية الأب
+   *  (مثل 160×300/160×600/468×60/728×90 من Adsterra)، بدل تمديدها لعرض
+   *  100% وترك الوحدة الحقيقية صغيرة داخل مساحة أوسع بلا داعٍ. تُترك
+   *  المساحة الزائدة حول الوحدة فارغة ومُوسَّطة (margin: 0 auto). القيمة
+   *  الافتراضية `undefined` تعني عرض 100% كالسابق تماماً (Native Banner
+   *  وبقية الشبكات التي لا مقاس ثابت لها). */
+  widthPx?: number;
 }
 
-export const ExternalAdScript: React.FC<ExternalAdScriptProps> = ({ snippet, className, heightPx = 90 }) => {
+export const ExternalAdScript: React.FC<ExternalAdScriptProps> = ({
+  snippet,
+  className,
+  heightPx = 90,
+  widthPx
+}) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -78,5 +90,15 @@ export const ExternalAdScript: React.FC<ExternalAdScriptProps> = ({ snippet, cla
   }, [snippet]);
 
   if (!snippet.trim()) return null;
-  return <div ref={containerRef} className={className} style={{ height: heightPx, overflow: 'hidden' }} />;
+  return (
+    <div
+      ref={containerRef}
+      className={className}
+      style={
+        widthPx
+          ? { height: heightPx, width: widthPx, maxWidth: '100%', margin: '0 auto', overflow: 'hidden' }
+          : { height: heightPx, overflow: 'hidden' }
+      }
+    />
+  );
 };

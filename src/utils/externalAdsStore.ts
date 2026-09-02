@@ -1,6 +1,7 @@
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import { isRunningInNativeApp } from './nativeAppEnv';
+import { ADSTERRA_UNITS, defaultAdsterraUnitsEnabled } from '../constants/adsterraUnits';
 
 // -------------------------------------------------------------------
 // إعدادات شبكات إعلانات خارجية احتياطية (PropellerAds / Adsterra) —
@@ -27,7 +28,20 @@ export interface ExternalAdNetworkConfig {
 
 export interface ExternalAdsConfig {
   propellerAds: ExternalAdNetworkConfig;
+  /**
+   * adsterra.snippet لم يعد يُستخدم للعرض الفعلي — أصبحت أكواد Adsterra
+   * كتالوجاً ثابتاً في الشيفرة (`constants/adsterraUnits.ts`) بدل حقل لصق
+   * وحيد لا يتّسع إلا لمقاس واحد. الحقل نفسه أُبقي في الشكل لتوافق أي
+   * مستند Firestore قديم فقط. enabled/appSafe يبقيان الاستخدام الحقيقي:
+   * enabled = تشغيل/إيقاف شبكة Adsterra بالكامل، appSafe = مفتاح شامل
+   * لإيقاف كل وحداتها داخل نسخة APK تحديداً (الموقع لا يتأثر أبداً).
+   */
   adsterra: ExternalAdNetworkConfig;
+  /** تفعيل/إيقاف مستقل لكل وحدة إعلانية من كتالوج Adsterra (بمعرّفها،
+   *  انظر `ADSTERRA_UNITS`) — القيمة الافتراضية لأي وحدة غير موجودة في
+   *  هذه الخريطة هي "مفعّلة" (`!== false`)، فلا حاجة لتخزين كل وحدة صراحة
+   *  إلا عند إيقافها فعلياً من لوحة الأدمن. */
+  adsterraUnits: Record<string, boolean>;
   /** إعلانات "محتوى موصى به" — بطاقات أسفل المقال، بنفس آلية الكود
    *  الجاهز المستخدمة في الشبكتين الأخريين. */
   taboola: ExternalAdNetworkConfig;
@@ -41,9 +55,15 @@ export interface ExternalAdsConfig {
 }
 
 const EMPTY_NETWORK: ExternalAdNetworkConfig = { enabled: false, snippet: '', appSafe: false };
+// Adsterra مفعّلة افتراضياً بأكواد المالك الحقيقية الثابتة في الشيفرة —
+// enabled=true/appSafe=true لأن كل الوحدات المُختارة (Banner/Native Banner
+// ثابتة المقاس) تم التحقق من كونها لا تضر تجربة المستخدم على الموقع أو
+// داخل تطبيق APK، بخلاف الشبكات الأخرى التي تبقى معطّلة حتى يلصق الأدمن
+// كوداً حقيقياً بنفسه.
 const DEFAULT_CONFIG: ExternalAdsConfig = {
   propellerAds: { ...EMPTY_NETWORK },
-  adsterra: { ...EMPTY_NETWORK },
+  adsterra: { enabled: true, snippet: '', appSafe: true },
+  adsterraUnits: defaultAdsterraUnitsEnabled(),
   taboola: { ...EMPTY_NETWORK },
   estimatedCpmUsd: 2
 };
@@ -61,7 +81,8 @@ function ensureStarted() {
       const data = snap.exists() ? (snap.data() as any) : {};
       currentValue = {
         propellerAds: { ...EMPTY_NETWORK, ...(data.propellerAds || {}) },
-        adsterra: { ...EMPTY_NETWORK, ...(data.adsterra || {}) },
+        adsterra: { ...DEFAULT_CONFIG.adsterra, ...(data.adsterra || {}) },
+        adsterraUnits: { ...defaultAdsterraUnitsEnabled(), ...(data.adsterraUnits || {}) },
         taboola: { ...EMPTY_NETWORK, ...(data.taboola || {}) },
         estimatedCpmUsd:
           typeof data.estimatedCpmUsd === 'number' && data.estimatedCpmUsd >= 0
@@ -99,9 +120,13 @@ export function pickActiveExternalNetwork(config: ExternalAdsConfig): ExternalAd
   const insideNativeApp = isRunningInNativeApp();
   const isEligible = (net: ExternalAdNetworkConfig) =>
     net.enabled && net.snippet.trim() && (!insideNativeApp || net.appSafe);
+  const isAdsterraEligible = (net: ExternalAdNetworkConfig) =>
+    net.enabled &&
+    (!insideNativeApp || net.appSafe) &&
+    ADSTERRA_UNITS.some((u) => (config.adsterraUnits ?? {})[u.id] !== false);
 
   if (isEligible(config.propellerAds)) return config.propellerAds;
-  if (isEligible(config.adsterra)) return config.adsterra;
+  if (isAdsterraEligible(config.adsterra)) return config.adsterra;
   if (isEligible(config.taboola)) return config.taboola;
   return null;
 }
@@ -116,10 +141,14 @@ export function getAllEligibleExternalNetworks(config: ExternalAdsConfig): Exter
   const insideNativeApp = isRunningInNativeApp();
   const isEligible = (net: ExternalAdNetworkConfig) =>
     net.enabled && net.snippet.trim() && (!insideNativeApp || net.appSafe);
+  const isAdsterraEligible = (net: ExternalAdNetworkConfig) =>
+    net.enabled &&
+    (!insideNativeApp || net.appSafe) &&
+    ADSTERRA_UNITS.some((u) => (config.adsterraUnits ?? {})[u.id] !== false);
 
   const result: ExternalAdNetworkConfig[] = [];
   if (isEligible(config.propellerAds)) result.push(config.propellerAds);
-  if (isEligible(config.adsterra)) result.push(config.adsterra);
+  if (isAdsterraEligible(config.adsterra)) result.push(config.adsterra);
   if (isEligible(config.taboola)) result.push(config.taboola);
   return result;
 }
