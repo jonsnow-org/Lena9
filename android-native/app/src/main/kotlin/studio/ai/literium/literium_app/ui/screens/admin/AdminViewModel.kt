@@ -105,6 +105,18 @@ class AdminViewModel(
     private val follows: StateFlow<List<Follow>> = followRepository.observeFollows().asState(emptyList())
 
     private fun realFollowersCount(userId: String): Int = follows.value.count { it.followingId == userId }
+
+    /**
+     * Double-submission guard for money-moving admin actions — port of `App.tsx`'s
+     * `processingRequestIdsRef` (`handleUpdateMoneyRequest`'s own "⚠️ حماية من الاعتماد المزدوج"
+     * comment). Was entirely absent here: two fast taps on the same request, or approving it from two
+     * concurrent admin sessions before either Firestore write round-trips back into `users`/
+     * `depositRequests` etc., could both read the same stale balance and both write `current + delta`
+     * — a real lost-update on live money, not a cosmetic gap. Every write below now checks-and-marks
+     * this set synchronously (before the coroutine's first suspension point), exactly mirroring the
+     * web's `useRef<Set>` check happening in the same synchronous tick as the click handler.
+     */
+    private val processingRequestIds = mutableSetOf<String>()
     val campaigns: StateFlow<List<AdCampaign>> = campaignRepository.observeCampaigns().asState(emptyList())
     val promotions: StateFlow<List<ArticlePromotion>> =
         campaignRepository.observePromotions(writerId = null, isAdmin = true).asState(emptyList())
@@ -307,31 +319,41 @@ class AdminViewModel(
      */
     fun setDepositRequestStatus(requestId: String, status: String) {
         val req = depositRequests.value.find { it.id == requestId } ?: return
+        if (req.status != "pending" || !processingRequestIds.add(requestId)) return
         viewModelScope.launch {
-            walletRepository.setDepositRequestStatus(requestId, status)
-            if (status == "approved") {
-                val target = users.value.find { it.id == req.userId }
-                if (target != null) {
-                    val newWallet = (target.walletBalance ?: 0.0) + req.amount
-                    walletRepository.adminAdjustUserBalance(req.userId, mapOf("walletBalance" to newWallet))
+            try {
+                walletRepository.setDepositRequestStatus(requestId, status)
+                if (status == "approved") {
+                    val target = users.value.find { it.id == req.userId }
+                    if (target != null) {
+                        val newWallet = (target.walletBalance ?: 0.0) + req.amount
+                        walletRepository.adminAdjustUserBalance(req.userId, mapOf("walletBalance" to newWallet))
+                    }
                 }
+                notifyMoneyRequestResult(userId = req.userId, amount = req.amount, isDeposit = true, status = status)
+            } finally {
+                processingRequestIds.remove(requestId)
             }
-            notifyMoneyRequestResult(userId = req.userId, amount = req.amount, isDeposit = true, status = status)
         }
     }
 
     fun setPayoutRequestStatus(requestId: String, status: String) {
         val req = payoutRequests.value.find { it.id == requestId } ?: return
+        if (req.status != "pending" || !processingRequestIds.add(requestId)) return
         viewModelScope.launch {
-            walletRepository.setPayoutRequestStatus(requestId, status)
-            if (status == "paid") {
-                val target = users.value.find { it.id == req.userId }
-                if (target != null) {
-                    val newAvailable = maxOf(0.0, (target.availableBalance ?: 0.0) - req.amount)
-                    walletRepository.adminAdjustUserBalance(req.userId, mapOf("availableBalance" to newAvailable))
+            try {
+                walletRepository.setPayoutRequestStatus(requestId, status)
+                if (status == "paid") {
+                    val target = users.value.find { it.id == req.userId }
+                    if (target != null) {
+                        val newAvailable = maxOf(0.0, (target.availableBalance ?: 0.0) - req.amount)
+                        walletRepository.adminAdjustUserBalance(req.userId, mapOf("availableBalance" to newAvailable))
+                    }
                 }
+                notifyMoneyRequestResult(userId = req.userId, amount = req.amount, isDeposit = false, status = status)
+            } finally {
+                processingRequestIds.remove(requestId)
             }
-            notifyMoneyRequestResult(userId = req.userId, amount = req.amount, isDeposit = false, status = status)
         }
     }
 
@@ -371,8 +393,10 @@ class AdminViewModel(
      */
     fun reviewPurchaseRequest(requestId: String, status: String) {
         val req = purchaseRequests.value.find { it.id == requestId } ?: return
+        if (req.status != "pending" || !processingRequestIds.add(requestId)) return
         val isSubscription = req.articleId.startsWith("subscription_")
         viewModelScope.launch {
+          try {
             if (status == "approved" && isSubscription) {
                 val buyer = users.value.find { it.id == (req.buyerId.ifBlank { req.userId }) }
                 if (buyer == null) {
@@ -432,6 +456,9 @@ class AdminViewModel(
                 }
             }
             setPurchaseRequestStatus(requestId, status)
+          } finally {
+            processingRequestIds.remove(requestId)
+          }
         }
     }
 
@@ -513,13 +540,23 @@ class AdminViewModel(
     /** Pending-campaign approve/reject goes through the real server endpoint
      *  (`POST /api/campaigns/{id}/review`) — see [LiteriumApiService.reviewCampaign]'s KDoc: the server
      *  independently re-verifies the caller is an admin, unlike the other plain Firestore writes here. */
+    /** [reviewingCampaignIds] lets [CampaignsTab] disable a campaign's approve/reject buttons while a
+     *  review is in flight — the real double-tap risk here is charging an advertiser's wallet twice
+     *  via a duplicate server call, same class of bug guarded elsewhere by [processingRequestIds]. */
+    private val _reviewingCampaignIds = MutableStateFlow<Set<String>>(emptySet())
+    val reviewingCampaignIds: StateFlow<Set<String>> = _reviewingCampaignIds
+
     fun reviewCampaign(campaignId: String, approve: Boolean, onDone: (Result<Unit>) -> Unit = {}) {
+        if (!processingRequestIds.add(campaignId)) return
+        _reviewingCampaignIds.value = _reviewingCampaignIds.value + campaignId
         viewModelScope.launch {
             val result = runCatching {
                 val auth = NetworkModule.authorizationHeader()
                 api.reviewCampaign(auth, campaignId, CampaignReviewRequest(if (approve) "approve" else "reject"))
                 Unit
             }
+            processingRequestIds.remove(campaignId)
+            _reviewingCampaignIds.value = _reviewingCampaignIds.value - campaignId
             onDone(result)
         }
     }

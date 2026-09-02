@@ -25,6 +25,11 @@ import androidx.compose.ui.unit.dp
 import studio.ai.literium.literium_app.data.model.User
 import studio.ai.literium.literium_app.ui.screens.admin.AdminViewModel
 
+/** Port of `BalanceAdjustModal.tsx`'s `LARGE_ADJUSTMENT_CONFIRM_THRESHOLD` — amounts at or above this
+ *  require a second explicit tap before applying, a fat-finger safeguard on real balances that this
+ *  dialog was missing entirely (any amount applied immediately on the first tap). */
+private const val LARGE_ADJUSTMENT_CONFIRM_THRESHOLD = 500.0
+
 private data class BalanceField(val key: String, val label: String, val get: (User) -> Double)
 
 private val ADJUSTABLE_FIELDS = listOf(
@@ -52,6 +57,7 @@ fun BalanceAdjustDialog(
     var isAdd by remember { mutableStateOf(true) }
     var amountText by remember { mutableStateOf("") }
     var reason by remember { mutableStateOf("") }
+    var confirming by remember { mutableStateOf(false) }
 
     val amount = amountText.toDoubleOrNull()
     val isValidAmount = amount != null && amount > 0
@@ -59,6 +65,7 @@ fun BalanceAdjustDialog(
     val current = field.get(user)
     val projected = current + delta
     val canSubmit = isValidAmount && reason.trim().length >= 3
+    val isLarge = (amount ?: 0.0) >= LARGE_ADJUSTMENT_CONFIRM_THRESHOLD
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -88,7 +95,7 @@ fun BalanceAdjustDialog(
 
                 OutlinedTextField(
                     value = amountText,
-                    onValueChange = { amountText = it },
+                    onValueChange = { amountText = it; confirming = false },
                     label = { Text("المبلغ بالدولار ($)") },
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                 )
@@ -100,20 +107,33 @@ fun BalanceAdjustDialog(
 
                 OutlinedTextField(
                     value = reason,
-                    onValueChange = { reason = it },
+                    onValueChange = { reason = it; confirming = false },
                     label = { Text("سبب التعديل (إلزامي)") },
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                 )
+
+                if (isLarge) {
+                    Text(
+                        "يتطلب هذا المبلغ تأكيداً ثنائياً لضمان عدم حدوث خطأ كتابي في الرصيد.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
             }
         },
         confirmButton = {
             Button(
                 enabled = canSubmit,
                 onClick = {
+                    if (isLarge && !confirming) {
+                        confirming = true
+                        return@Button
+                    }
                     viewModel.adjustBalance(user, field.key, delta, reason.trim())
                     onDismiss()
                 }
-            ) { Text("تطبيق التعديل") }
+            ) { Text(if (isLarge && confirming) "تأكيد التعديل النهائي" else "تطبيق التعديل") }
         },
         dismissButton = { OutlinedButton(onClick = onDismiss) { Text("إلغاء") } }
     )
