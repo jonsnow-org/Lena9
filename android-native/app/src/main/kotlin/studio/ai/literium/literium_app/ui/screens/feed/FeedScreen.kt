@@ -95,9 +95,13 @@ private val CATEGORY_FILTERS: List<Pair<String, String>> =
 fun FeedScreen(
     onArticleClick: (String) -> Unit,
     onWriterClick: (String) -> Unit,
-    onComposeArticle: () -> Unit
+    onComposeArticle: () -> Unit,
+    // مُمرَّرة من LiteriumNavHost (نفس نسخة ViewModel، مُشتقة عبر viewModel() لنفس مُدخل الوجهة
+    // في الـ back stack) حتى يقرأ MainScaffold حالة state.mode الحيّة نفسها لتحديد وجهة زر
+    // "بدء الكتابة" العائم (مقال أم تغريدة) — بلا هذا التمرير لا يملك MainScaffold أي رؤية على
+    // تبويب المدونة/التغريد الداخلي المُدار هنا فقط.
+    viewModel: FeedViewModel = viewModel()
 ) {
-    val viewModel: FeedViewModel = viewModel()
     val state by viewModel.uiState.collectAsState()
 
     // لا يوجد زر عائم خاص بهذه الشاشة — الويب لديه زر قلم واحد فقط عالمي (`MainScaffold`'s FAB،

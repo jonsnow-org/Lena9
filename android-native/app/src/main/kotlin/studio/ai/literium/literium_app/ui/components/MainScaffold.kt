@@ -47,6 +47,9 @@ fun MainScaffold(
     navController: NavHostController,
     currentRoute: String?,
     viewModel: MainScaffoldViewModel = viewModel(),
+    /** يتجاوز وجهة زر "بدء الكتابة" العائم الافتراضية (محرر المقال) — تستخدمه شاشة التغريدات
+     *  فقط لتوجيه الزر لمحرر التغريد القصير عند كون التبويب الحالي "تغريد" بدل "المدونة". */
+    fabAction: (() -> Unit)? = null,
     content: @Composable (PaddingValues) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -116,22 +119,21 @@ fun MainScaffold(
                 // ScrollState lives inside `content`, which this shell does not own — each screen
                 // that scrolls is the right place for its own scroll-to-top affordance.
                 if (!uiState.isGuestOrSignedOut) {
-                    // Explicit low elevation — a real-device report showed a hard-edged white
-                    // rectangle rendering behind this FAB whenever it overlapped scrolling image
-                    // content underneath (a known Compose/Android artifact where a circular FAB's
-                    // drop-shadow RenderNode rasterizes as an opaque box instead of the intended soft
-                    // circular blur, over complex/animated content below it). Matches web's own look
-                    // anyway — App.tsx's button uses a soft colored `shadow-teal-600/30`, not
-                    // Android's default heavy Material elevation shadow.
+                    // صفر ارتفاع تماماً (بلا أي ظل) — تجربة سابقة خفّضت الارتفاع فقط (2dp) بدل
+                    // إلغائه، وبقي البلاغ الحقيقي على الجهاز قائماً: ظل RenderNode الدائري لهذا
+                    // الزر يُرسَّم أحياناً كمستطيل أبيض حاد الحواف بدل التدرّج الدائري الناعم
+                    // المقصود، فوق محتوى معقّد/متحرّك أسفله (خلل معروف في Compose/Android). صفر
+                    // ارتفاع يمنع هذا الرسم من الأساس بدل محاولة تصغيره فقط. مطابق أيضاً لشكل الويب
+                    // (`shadow-teal-600/30` — ظل ملوّن ناعم، وليس ظل Material الافتراضي الثقيل).
                     FloatingActionButton(
-                        onClick = { navController.navigate(Screen.ArticleEditor.new()) },
+                        onClick = fabAction ?: { navController.navigate(Screen.ArticleEditor.new()) },
                         containerColor = BrandTeal,
                         contentColor = Color.White,
                         elevation = FloatingActionButtonDefaults.elevation(
-                            defaultElevation = 2.dp,
-                            pressedElevation = 4.dp,
-                            focusedElevation = 2.dp,
-                            hoveredElevation = 3.dp
+                            defaultElevation = 0.dp,
+                            pressedElevation = 0.dp,
+                            focusedElevation = 0.dp,
+                            hoveredElevation = 0.dp
                         )
                     ) {
                         Icon(Icons.Filled.Edit, contentDescription = "بدء الكتابة")
