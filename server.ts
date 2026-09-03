@@ -1412,6 +1412,130 @@ async function startServer() {
     }
   ];
 
+  const BOT_IDS = new Set(BOT_PERSONAS.map((p) => p.id));
+
+  // نص متطابق حرفياً (بعد تطبيع بسيط) مع أي منشور بوت حديث يُعتبر تكراراً.
+  const normalizeBotText = (s: string): string =>
+    s.trim().toLowerCase().replace(/[\s\p{P}]+/gu, ' ').trim();
+
+  function isNearDuplicateOfRecent(text: string, recent: string[]): boolean {
+    const n = normalizeBotText(text);
+    if (!n) return false;
+    return recent.some((r) => {
+      const rn = normalizeBotText(r);
+      if (!rn) return false;
+      return rn === n || (n.length > 24 && rn.startsWith(n.slice(0, 40)));
+    });
+  }
+
+  // آخر نصوص نشرها أي بوت (وليس مستخدمون حقيقيون) في مجموعة مُعيَّنة —
+  // تُستخدم لتوجيه Gemini صراحة لتجنّب تكرارها، ولاستبعادها من مجموعة
+  // الاحتياط الثابتة أدناه أيضاً حين يفشل التوليد الحقيقي.
+  async function fetchRecentBotTexts(
+    db: FirebaseFirestore.Firestore,
+    collection: string,
+    authorField: string,
+    textField: string,
+    dateField: string,
+    limit: number
+  ): Promise<string[]> {
+    try {
+      const snap = await db.collection(collection).orderBy(dateField, 'desc').limit(limit).get();
+      return snap.docs
+        .map((d) => d.data() as any)
+        .filter((d) => BOT_IDS.has(d[authorField]))
+        .map((d) => String(d[textField] || '').trim())
+        .filter(Boolean);
+    } catch {
+      // فشل الاستعلام (فهرس مفقود، انقطاع عابر) لا يجب أن يُسقط الدورة —
+      // قائمة فارغة تعني ببساطة عدم توفر سياق "تجنّب التكرار" هذه المرة.
+      return [];
+    }
+  }
+
+  // مجموعة احتياط متنوعة (وليست جملة واحدة ثابتة) — تُستخدم فقط حين يفشل
+  // Gemini كلياً (لا مفتاح API، حصة منتهية، حظر أمان) أو يُرجع نصاً غير
+  // صالح. كانت جملة واحدة ثابتة سابقاً — وهذا بالضبط ما ظهر متكرراً حرفياً
+  // بأسماء بوتات مختلفة (بلاغ مستخدم حقيقي): طالما Gemini يفشل باستمرار
+  // (مثلاً GEMINI_API_KEY غير مضبوط على الخادم المنشور)، كل تشغيل يومي كان
+  // يقع على نفس الجملة الوحيدة بالضبط. التنويع هنا يضمن عدم التكرار حتى في
+  // أسوأ سيناريو (فشل Gemini الدائم)، إضافة لمنطق تجنّب التكرار الحقيقي مع
+  // Gemini نفسه أعلاه.
+  const ARTICLE_FALLBACKS: Array<{ title: string; content: string }> = [
+    {
+      title: 'تأملات في المعنى',
+      content:
+        'ثمة لحظات يتوقف فيها الزمن قليلاً، تتيح لنا أن نعيد النظر في تفاصيل نظنها عابرة، بينما هي في حقيقتها تحمل من المعنى ما يستحق التأمل والكتابة عنه.'
+    },
+    {
+      title: 'في قيمة الصمت',
+      content:
+        'الصمت ليس غياباً للكلام فحسب، بل مساحة نادرة نسمع فيها أفكارنا بوضوح أكبر، بعيداً عن ضجيج يومي يسرقنا من أنفسنا دون أن نشعر.'
+    },
+    {
+      title: 'عن الأسئلة الصادقة',
+      content:
+        'لسنا بحاجة دائماً لإجابات جاهزة بقدر حاجتنا لأسئلة صادقة نطرحها على أنفسنا بين الحين والآخر، فهي وحدها ما يعيد ترتيب أولوياتنا الحقيقية.'
+    },
+    {
+      title: 'الذاكرة وما تبقيه',
+      content:
+        'لا تحتفظ الذاكرة بكل شيء، بل بما يستحق البقاء فينا فعلاً — وهذا الانتقاء نفسه، رغم قسوته أحياناً، هو ما يمنح تجاربنا شكلها ومعناها لاحقاً.'
+    },
+    {
+      title: 'التغيير البطيء',
+      content:
+        'أكثر التغييرات ثباتاً في حياتنا غالباً ما تبدأ بطيئة وغير ملحوظة، بعيداً عن أي إعلان أو ضجة، حتى تتراكم يوماً بعد يوم فتصبح جزءاً أصيلاً من هويتنا.'
+    },
+    {
+      title: 'بساطة لم نعد نراها',
+      content:
+        'أحياناً تكمن أعمق الأفكار في أبسط التفاصيل اليومية التي اعتدنا المرور بها دون التفاتة حقيقية، وكأن الإلفة نفسها تحجب عنا ما هو جدير بالتأمل.'
+    },
+    {
+      title: 'الصبر كمهارة',
+      content:
+        'الصبر ليس انتظاراً سلبياً كما يُظَن، بل مهارة فعلية تُمارَس وتُصقَل مع الوقت، وهي غالباً ما تفصل بين من يصل إلى ما يريد ومن يتوقف في منتصف الطريق.'
+    },
+    {
+      title: 'في الامتنان اليومي',
+      content:
+        'الامتنان لا يعني إنكار الصعوبات، بل القدرة على رؤية ما هو جيد إلى جانبها — وهي قدرة تُتعلَّم بالممارسة أكثر مما هي شعور عفوي يأتي من تلقاء نفسه.'
+    }
+  ];
+
+  const TWEET_FALLBACKS: string[] = [
+    'أحياناً لا نحتاج إلى إجابات كثيرة بقدر حاجتنا إلى أسئلة صادقة نطرحها على أنفسنا.',
+    'الصمت أحياناً أبلغ من أي كلام، خصوصاً حين لا يكون لدينا ما يستحق أن يُقال.',
+    'أجمل الأفكار غالباً ما تأتي في أبسط اللحظات، حين نتوقف قليلاً عن الجري.',
+    'التغيير الحقيقي لا يُعلَن، بل يُلاحَظ لاحقاً حين ننظر للوراء فقط.',
+    'ما نتذكره ليس دائماً الأهم، لكنه غالباً الأصدق مع من كنّاه في تلك اللحظة.',
+    'الصبر مهارة تُصقَل بالممارسة، لا موهبة يولد بها البعض فقط.',
+    'أحياناً أكبر إنجاز في يومنا هو أننا استمررنا رغم كل شيء.',
+    'الامتنان لا يلغي الصعوبة، لكنه يجعلها أخف وطأة على النفس.',
+    'كل بداية تبدو صغيرة قبل أن تتحول لاحقاً إلى أثر لا يُنسى.',
+    'أحياناً نحتاج فقط لمن يستمع، لا لمن يقدّم حلولاً جاهزة.',
+    'البساطة ليست نقصاً، بل نضج نصل إليه بعد رحلة طويلة من التعقيد.',
+    'أصعب القرارات غالباً ما تكون أكثرها وضوحاً حين ننظر إليها بصدق.'
+  ];
+
+  const COMMENT_FALLBACKS: string[] = [
+    'فكرة تستحق التأمل، شكراً على المشاركة.',
+    'كلام جميل وصادق، أحسنت التعبير عنه.',
+    'هذا بالضبط ما كنت أفكر فيه مؤخراً، شكراً لهذه الإضافة.',
+    'زاوية مختلفة وملهمة، أعجبتني طريقة طرحها.',
+    'كتابة راقية، استمر بهذا المستوى.',
+    'نقطة مهمة فعلاً تستحق التوقف عندها.',
+    'أسلوب جميل في الطرح، شكراً لهذه المشاركة.',
+    'هذا يلامس تجربة كثيرين منا بصراحة.'
+  ];
+
+  function pickVariedFallback<T>(pool: T[], recentTexts: string[], getText: (item: T) => string): T {
+    const available = pool.filter((item) => !isNearDuplicateOfRecent(getText(item), recentTexts));
+    const source = available.length > 0 ? available : pool;
+    return source[Math.floor(Math.random() * source.length)];
+  }
+
   function requireBotsCronSecret(req: express.Request, res: express.Response): boolean {
     const expected = process.env.BOTS_CRON_SECRET;
     if (!expected) {
@@ -1569,6 +1693,18 @@ async function startServer() {
       const nowIso = new Date().toISOString();
       const activityLog: Array<Record<string, any>> = [];
 
+      // سياق "تجنّب التكرار": آخر ما نشرته البوتات فعلياً (وليس المستخدمون
+      // الحقيقيون) في كل نوع محتوى — يُستخدم مرتين: توجيه Gemini صراحة
+      // لتفادي نفس العناوين/الأفكار، واستبعاد أي عنصر من مجموعة الاحتياط
+      // الثابتة يطابق شيئاً نُشر مؤخراً بالفعل.
+      const [recentArticleTitles, recentTweetTexts, recentArticleComments, recentTweetComments] = await Promise.all([
+        fetchRecentBotTexts(db, 'articles', 'writerId', 'title', 'publishedAt', 40),
+        fetchRecentBotTexts(db, 'tweets', 'authorId', 'content', 'createdAt', 60),
+        fetchRecentBotTexts(db, 'comments', 'userId', 'content', 'createdAt', 30),
+        fetchRecentBotTexts(db, 'tweetComments', 'userId', 'content', 'createdAt', 30)
+      ]);
+      const recentCommentTexts = [...recentArticleComments, ...recentTweetComments];
+
       // 1) توليد ونشر مقال يومي واحد — مُحسَّن لمحركات البحث (SEO): يختار
       // Gemini كلمات مفتاحية حقيقية يبحث عنها الناس حول موضوع البوت، ثم يبني
       // العنوان والوصف (meta description) والمحتوى حولها بشكل طبيعي غير
@@ -1578,7 +1714,14 @@ async function startServer() {
       let seoDescription = '';
       let seoKeywords: string[] = [];
       if (client) {
-        const prompt = `أنت خبير SEO ومحتوى عربي. اكتب مقالاً غنياً وعميقاً بالفصحى في قسم (${articleTopic})، لا يقل عن 550 كلمة، بأسلوب راقٍ ومترابط، ومُحسَّن لمحركات البحث بحيث تتكرر كلماته المفتاحية داخل النص بشكل طبيعي وسلس دون أي حشو أو تكرار مصطنع.
+        const avoidTitlesBlock =
+          recentArticleTitles.length > 0
+            ? `\n\nتجنّب تماماً أي تشابه في الفكرة أو العنوان مع هذه المقالات المنشورة مؤخراً على نفس المنصة، واختر زاوية مختلفة جوهرياً عنها كلها:\n${recentArticleTitles
+                .slice(0, 12)
+                .map((t) => `- ${t}`)
+                .join('\n')}`
+            : '';
+        const prompt = `أنت خبير SEO ومحتوى عربي. اكتب مقالاً غنياً وعميقاً بالفصحى في قسم (${articleTopic})، لا يقل عن 550 كلمة، بأسلوب راقٍ ومترابط، ومُحسَّن لمحركات البحث بحيث تتكرر كلماته المفتاحية داخل النص بشكل طبيعي وسلس دون أي حشو أو تكرار مصطنع.${avoidTitlesBlock}
 
 اتبع هذا الشكل بالضبط في بداية ردك (كل عنصر في سطر مستقل):
 الكلمات المفتاحية: <5 كلمات أو عبارات مفتاحية حقيقية يبحث عنها الناس فعلياً حول هذا الموضوع، مفصولة بفواصل>
@@ -1614,6 +1757,13 @@ async function startServer() {
           const candidateContent = bodyBlock.trim() || raw.trim();
           articleContent = isLikelyValidBotText(candidateContent, 100) ? candidateContent : '';
           articleTitle = isLikelyValidBotText(articleTitle, 4) ? articleTitle : '';
+          // Gemini قد يتجاهل تعليمة تجنّب التكرار أحياناً — تحقّق فعلي بعد
+          // التوليد بدل الثقة بالتعليمة وحدها؛ عند التطابق نُسقط الناتج
+          // بالكامل فينزل التنفيذ لمجموعة الاحتياط المتنوعة أدناه.
+          if (articleContent && isNearDuplicateOfRecent(articleTitle, recentArticleTitles)) {
+            articleContent = '';
+            articleTitle = '';
+          }
         } catch (genErr: any) {
           // فشل Gemini (حصة، فلتر أمان، شبكة) لا يجب أن يُسقط الدورة كلها —
           // ينزل للمحتوى الاحتياطي الثابت أدناه بدل فشل الطلب بأكمله بـ 500.
@@ -1621,9 +1771,9 @@ async function startServer() {
         }
       }
       if (!articleContent) {
-        articleTitle = articleTitle || 'تأملات في المعنى';
-        articleContent =
-          'ثمة لحظات يتوقف فيها الزمن قليلاً، تتيح لنا أن نعيد النظر في تفاصيل نظنها عابرة، بينما هي في حقيقتها تحمل من المعنى ما يستحق التأمل والكتابة عنه.';
+        const fallback = pickVariedFallback(ARTICLE_FALLBACKS, recentArticleTitles, (f) => f.title);
+        articleTitle = articleTitle || fallback.title;
+        articleContent = fallback.content;
       }
       if (seoKeywords.length === 0) seoKeywords = [articleTopic];
       if (!seoDescription) seoDescription = articleContent.slice(0, 150);
@@ -1674,7 +1824,14 @@ async function startServer() {
       let tweetContent = '';
       if (client) {
         const tweetTopic = (tweetBot.topics && tweetBot.topics[0]) || 'general';
-        const prompt = `اكتب تغريدة قصيرة (أقل من 220 حرفاً) بالفصحى، فكرة أو خاطرة موجزة ومؤثرة حول موضوع (${tweetTopic})، بلا هاشتاغات وبلا علامات اقتباس.`;
+        const avoidTweetsBlock =
+          recentTweetTexts.length > 0
+            ? `\n\nتجنّب تماماً أي تشابه في الفكرة أو الصياغة مع هذه التغريدات المنشورة مؤخراً على نفس المنصة:\n${recentTweetTexts
+                .slice(0, 12)
+                .map((t) => `- ${t}`)
+                .join('\n')}`
+            : '';
+        const prompt = `اكتب تغريدة قصيرة (أقل من 220 حرفاً) بالفصحى، فكرة أو خاطرة موجزة ومؤثرة حول موضوع (${tweetTopic})، بلا هاشتاغات وبلا علامات اقتباس.${avoidTweetsBlock}`;
         try {
           const response = await client.models.generateContent({
             model: 'gemini-3.7-flash',
@@ -1683,12 +1840,15 @@ async function startServer() {
           });
           const candidateTweet = (response.text || '').trim().slice(0, 280);
           tweetContent = isLikelyValidBotText(candidateTweet) ? candidateTweet : '';
+          if (tweetContent && isNearDuplicateOfRecent(tweetContent, recentTweetTexts)) {
+            tweetContent = '';
+          }
         } catch (genErr: any) {
           console.error('Bot tweet Gemini generation failed, using fallback:', genErr?.message || genErr);
         }
       }
       if (!tweetContent) {
-        tweetContent = 'أحياناً لا نحتاج إلى إجابات كثيرة بقدر حاجتنا إلى أسئلة صادقة نطرحها على أنفسنا.';
+        tweetContent = pickVariedFallback(TWEET_FALLBACKS, recentTweetTexts, (t) => t);
       }
 
       const tweetId = `bot_tweet_${Date.now()}`;
@@ -1757,7 +1917,14 @@ async function startServer() {
 
         let commentText = '';
         if (client) {
-          const prompt = `اكتب تعليقاً قصيراً وطبيعياً بالفصحى (سطر أو سطرين فقط) كردة فعل حقيقية على المحتوى التالي حول موضوع (${topic}):\n${content.slice(0, 400)}`;
+          const avoidCommentsBlock =
+            recentCommentTexts.length > 0
+              ? `\n\nتجنّب صياغة قريبة من هذه التعليقات المنشورة مؤخراً:\n${recentCommentTexts
+                  .slice(0, 10)
+                  .map((t) => `- ${t}`)
+                  .join('\n')}`
+              : '';
+          const prompt = `اكتب تعليقاً قصيراً وطبيعياً بالفصحى (سطر أو سطرين فقط) كردة فعل حقيقية على المحتوى التالي حول موضوع (${topic}):\n${content.slice(0, 400)}${avoidCommentsBlock}`;
           try {
             const response = await client.models.generateContent({
               model: 'gemini-3.7-flash',
@@ -1766,11 +1933,16 @@ async function startServer() {
             });
             const candidateComment = (response.text || '').trim();
             commentText = isLikelyValidBotText(candidateComment, 6) ? candidateComment : '';
+            if (commentText && isNearDuplicateOfRecent(commentText, recentCommentTexts)) {
+              commentText = '';
+            }
           } catch (genErr: any) {
             console.error('Bot comment Gemini generation failed, using fallback:', genErr?.message || genErr);
           }
         }
-        if (!commentText) commentText = 'فكرة تستحق التأمل، شكراً على المشاركة.';
+        if (!commentText) {
+          commentText = pickVariedFallback(COMMENT_FALLBACKS, recentCommentTexts, (t) => t);
+        }
 
         const commentsCollection = targetType === 'article' ? 'comments' : 'tweetComments';
         const commentTargetField = targetType === 'article' ? 'articleId' : 'tweetId';
