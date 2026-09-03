@@ -6,10 +6,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -95,30 +93,17 @@ fun AnalyticsTab(
 
         summary?.let { s ->
             item {
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(
-                        listOf(
-                            "إجمالي الزوار" to s.totalVisitors,
-                            "زوار اليوم" to s.visitorsToday,
-                            "زوار آخر 24 ساعة" to s.visitorsLast24h,
-                            "إجمالي المشاهدات" to s.totalPageViews,
-                            "مشاهدات اليوم" to s.pageViewsToday,
-                            "مشاهدات آخر 24 ساعة" to s.pageViewsLast24h
-                        )
-                    ) { (label, value) ->
-                        Card {
-                            Column(Modifier.padding(12.dp)) {
-                                Text(label, style = MaterialTheme.typography.labelSmall)
-                                Text(value.toString(), fontSize = 18.sp, fontWeight = FontWeight.Black)
-                            }
-                        }
-                    }
-                }
+                StatGrid(
+                    listOf(
+                        "إجمالي الزوار" to s.totalVisitors,
+                        "زوار اليوم" to s.visitorsToday,
+                        "زوار آخر 24 ساعة" to s.visitorsLast24h,
+                        "إجمالي المشاهدات" to s.totalPageViews,
+                        "مشاهدات اليوم" to s.pageViewsToday,
+                        "مشاهدات آخر 24 ساعة" to s.pageViewsLast24h
+                    ),
+                    valueFontSize = 18.sp
+                )
             }
             item {
                 Card {
@@ -146,32 +131,48 @@ fun AnalyticsTab(
 
         item { Text("توزيع المستخدمين المسجَّلين (من Firestore مباشرة)", fontWeight = FontWeight.Bold) }
         item {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(
-                    listOf(
-                        "إجمالي المسجلين" to registered,
-                        "قرّاء" to readers,
-                        "كتّاب" to writers,
-                        "معلنون" to advertisers,
-                        "موثقون" to verified,
-                        "مقالات حصرية" to lockedArticles,
-                        "إجمالي المشاهدات" to totalViews.toInt(),
-                        "حملات نشطة" to activeCampaigns,
-                        "إيداعات معتمدة" to approvedDeposits,
-                        "سحوبات مدفوعة" to paidWithdrawals
-                    )
-                ) { (label, value) ->
-                    Card {
+            StatGrid(
+                listOf(
+                    "إجمالي المسجلين" to registered,
+                    "قرّاء" to readers,
+                    "كتّاب" to writers,
+                    "معلنون" to advertisers,
+                    "موثقون" to verified,
+                    "مقالات حصرية" to lockedArticles,
+                    "إجمالي المشاهدات" to totalViews.toInt(),
+                    "حملات نشطة" to activeCampaigns,
+                    "إيداعات معتمدة" to approvedDeposits,
+                    "سحوبات مدفوعة" to paidWithdrawals
+                ),
+                valueFontSize = 16.sp
+            )
+        }
+    }
+}
+
+/**
+ * غير-Lazy عمداً: كان `LazyVerticalGrid` هنا متداخلاً داخل `item{}` تابعة لـ
+ * `LazyColumn` خارجية بلا ارتفاع محدد — يتسبب هذا في
+ * `IllegalStateException: Vertically scrollable component was measured with
+ * an infinity maximum height constraints` فوراً عند فتح هذا التبويب (البلاغ
+ * الحقيقي: إغلاق قسري عند فتح لوحة التحكم). أعداد البطاقات هنا صغيرة وثابتة
+ * (≤10) فلا حاجة لعنصر Lazy أصلاً.
+ */
+@Composable
+private fun StatGrid(items: List<Pair<String, Any>>, valueFontSize: androidx.compose.ui.unit.TextUnit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        items.chunked(2).forEach { row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                row.forEach { (label, value) ->
+                    Card(modifier = Modifier.weight(1f)) {
                         Column(Modifier.padding(12.dp)) {
                             Text(label, style = MaterialTheme.typography.labelSmall)
-                            Text(value.toString(), fontSize = 16.sp, fontWeight = FontWeight.Black)
+                            Text(value.toString(), fontSize = valueFontSize, fontWeight = FontWeight.Black)
                         }
                     }
+                }
+                if (row.size == 1) {
+                    androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
                 }
             }
         }

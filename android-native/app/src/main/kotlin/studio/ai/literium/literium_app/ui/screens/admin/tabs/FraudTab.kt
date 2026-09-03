@@ -7,9 +7,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -59,25 +56,18 @@ fun FraudTab(
             )
         }
         item {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(
-                    listOf(
-                        "إجمالي المحاولات المرصودة" to fraudFlags.size,
-                        "عالية الخطورة" to fraudFlags.count { it.severity == "high" || it.severity == "critical" },
-                        "بانتظار المراجعة" to fraudFlags.count { it.status == "flagged" || it.status == "auto_blocked" },
-                        "تمت المراجعة" to fraudFlags.count { it.status == "reviewed" }
-                    )
-                ) { (label, value) ->
-                    Card {
-                        Column(Modifier.padding(12.dp)) {
-                            Text(label, style = MaterialTheme.typography.labelSmall)
-                            Text(value.toString(), fontSize = 18.sp, fontWeight = FontWeight.Black)
-                        }
+            NonLazyGrid(
+                listOf(
+                    "إجمالي المحاولات المرصودة" to fraudFlags.size,
+                    "عالية الخطورة" to fraudFlags.count { it.severity == "high" || it.severity == "critical" },
+                    "بانتظار المراجعة" to fraudFlags.count { it.status == "flagged" || it.status == "auto_blocked" },
+                    "تمت المراجعة" to fraudFlags.count { it.status == "reviewed" }
+                )
+            ) { (label, value) ->
+                Card {
+                    Column(Modifier.padding(12.dp)) {
+                        Text(label, style = MaterialTheme.typography.labelSmall)
+                        Text(value.toString(), fontSize = 18.sp, fontWeight = FontWeight.Black)
                     }
                 }
             }

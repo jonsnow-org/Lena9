@@ -9,9 +9,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -91,26 +88,19 @@ fun SettingsTab(viewModel: AdminViewModel) {
 
         item { Text("لون السمة البصرية للمنصة (Theme Accent)", fontWeight = FontWeight.Bold) }
         item {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(3),
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(THEME_PRESETS) { preset ->
-                    val isSelected = (theme.preset ?: "purple") == preset.key
-                    Card(
-                        onClick = { viewModel.setThemePreset(preset.key) },
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
-                        )
-                    ) {
-                        Row(Modifier.padding(8.dp)) {
-                            Box(preset.hex)
-                            Column(Modifier.padding(start = 6.dp)) {
-                                Text(preset.label, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, maxLines = 1)
-                                if (isSelected) Icon(Icons.Filled.CheckCircle, contentDescription = null, modifier = Modifier.size(14.dp))
-                            }
+            NonLazyGrid(THEME_PRESETS, columns = 3) { preset ->
+                val isSelected = (theme.preset ?: "purple") == preset.key
+                Card(
+                    onClick = { viewModel.setThemePreset(preset.key) },
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+                    )
+                ) {
+                    Row(Modifier.padding(8.dp)) {
+                        Box(preset.hex)
+                        Column(Modifier.padding(start = 6.dp)) {
+                            Text(preset.label, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, maxLines = 1)
+                            if (isSelected) Icon(Icons.Filled.CheckCircle, contentDescription = null, modifier = Modifier.size(14.dp))
                         }
                     }
                 }
@@ -119,24 +109,17 @@ fun SettingsTab(viewModel: AdminViewModel) {
 
         item { Text("خلفية القالب الذكية (Background Style)", fontWeight = FontWeight.Bold) }
         item {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(BACKGROUND_PRESETS) { preset ->
-                    val isSelected = (theme.backgroundPreset ?: "none") == preset.key
-                    Card(
-                        onClick = { viewModel.setBackgroundPreset(preset.key) },
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface
-                        )
-                    ) {
-                        Column(Modifier.padding(10.dp)) {
-                            Text(preset.label, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                            Text(preset.description, style = MaterialTheme.typography.labelSmall, maxLines = 2)
-                        }
+            NonLazyGrid(BACKGROUND_PRESETS, columns = 2) { preset ->
+                val isSelected = (theme.backgroundPreset ?: "none") == preset.key
+                Card(
+                    onClick = { viewModel.setBackgroundPreset(preset.key) },
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface
+                    )
+                ) {
+                    Column(Modifier.padding(10.dp)) {
+                        Text(preset.label, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                        Text(preset.description, style = MaterialTheme.typography.labelSmall, maxLines = 2)
                     }
                 }
             }
