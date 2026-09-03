@@ -571,8 +571,9 @@ private sealed class RotationPoolItem {
     data object External : RotationPoolItem()
 }
 
-/** `MAX_ADS_PER_PAGE` — ported verbatim from `AdSlot.tsx` (spec §5.2/§12.1). */
-internal const val MAX_ADS_PER_PAGE = 3
+/** `MAX_ADS_PER_PAGE` — مطابقة لـ `AdSlot.tsx` (رُفعت من 3 إلى 5: مرحلة بناء/تطوير حالياً بلا
+ *  تقديم قريب لبرنامج AdSense؛ يجب إعادتها إلى 3 قبل أي تقديم فعلي له). */
+internal const val MAX_ADS_PER_PAGE = 5
 
 /**
  * Kotlin port of `AdSlot.tsx`'s module-level `renderedAdsOnPage`/`adRotationSeed` counters — shared by
