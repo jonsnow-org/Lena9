@@ -2,8 +2,15 @@ import {StrictMode, useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import {SplashScreen} from './components/SplashScreen.tsx';
+import {ErrorBoundary} from './components/ErrorBoundary.tsx';
+import {ErrorLogButton} from './components/ErrorLogButton.tsx';
 import './index.css';
 import {applyStoredThemePresetImmediately} from './utils/themeEngine';
+import {initErrorLog} from './utils/errorLog';
+
+// يُسجَّل قبل أي شيء آخر — يلتقط حتى الأعطال التي تحدث أثناء تحميل باقي
+// الوحدات نفسها، قبل أن يُرسم أي شيء على الشاشة إطلاقاً.
+initErrorLog();
 
 // يُطبَّق قبل أول رسم للواجهة — يمنع أي "وميض" للون الافتراضي البنفسجي
 // قبل تحميل القالب اللوني الذي اختاره المالك سابقاً لهذا الجهاز.
@@ -29,7 +36,11 @@ function Root() {
   return (
     <>
       {showSplash && <SplashScreen onFinish={() => setShowSplash(false)} />}
-      <App />
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
+      {/* عمداً خارج ErrorBoundary — يبقى يعمل حتى لو تعطّل App بالكامل. */}
+      <ErrorLogButton />
     </>
   );
 }

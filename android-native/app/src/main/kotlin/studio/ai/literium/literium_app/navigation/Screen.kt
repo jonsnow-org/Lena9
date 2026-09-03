@@ -67,4 +67,8 @@ sealed class Screen(val route: String) {
     data object Policies : Screen("policies/{page}") {
         fun of(page: String) = "policies/$page"
     }
+
+    /** سجل الأخطاء المحلي المستمر — انظر [studio.ai.literium.literium_app.AppErrorLog]. متاح للجميع
+     *  (وليس الأدمن فقط) لأن أي مستخدم قد يحتاج نسخ تقرير عطل وإرساله للدعم. */
+    data object ErrorLog : Screen("error_log")
 }

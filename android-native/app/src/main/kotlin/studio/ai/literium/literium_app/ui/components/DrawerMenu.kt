@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Balance
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DarkMode
@@ -188,6 +189,15 @@ fun DrawerMenuContent(
                     label = "استوديو توليد الصور (Gemini)"
                 ) { onNavigate(Screen.ImageStudio.route); onClose() }
             }
+
+            // سجل أخطاء دائم — انظر AppErrorLog. عمداً خارج كتلة `!isGuestOrSignedOut` أعلاه: عطل
+            // قد يحدث للزائر قبل تسجيل الدخول أيضاً (الشاشة الرئيسية قبل الدخول بلاغ متكرر)، فيجب أن
+            // يبقى متاحاً للجميع دون استثناء.
+            DrawerRow(
+                icon = Icons.Filled.BugReport,
+                iconTint = Color(0xFFEF4444),
+                label = "سجل الأخطاء"
+            ) { onNavigate(Screen.ErrorLog.route); onClose() }
 
             Spacer(modifier = Modifier.height(8.dp))
             HorizontalDivider()

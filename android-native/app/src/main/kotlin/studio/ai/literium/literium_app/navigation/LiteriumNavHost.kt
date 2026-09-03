@@ -37,6 +37,7 @@ import studio.ai.literium.literium_app.ui.screens.feed.FeedScreen
 import studio.ai.literium.literium_app.ui.screens.feed.FeedViewModel
 import studio.ai.literium.literium_app.ui.screens.follow.FollowListScreen
 import studio.ai.literium.literium_app.ui.screens.imagestudio.ImageStudioScreen
+import studio.ai.literium.literium_app.ui.screens.errorlog.ErrorLogScreen
 import studio.ai.literium.literium_app.ui.screens.kyc.KycScreen
 import studio.ai.literium.literium_app.ui.screens.messages.ChatScreen
 import studio.ai.literium.literium_app.ui.screens.messages.MessagesScreen
@@ -377,5 +378,6 @@ fun LiteriumNavHost(
             val page = backStackEntry.arguments?.getString("page") ?: "privacy"
             PoliciesScreen(navController = navController, page = page)
         }
+        composable(Screen.ErrorLog.route) { ErrorLogScreen(navController) }
     }
 }
