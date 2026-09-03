@@ -9,6 +9,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -24,6 +27,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
@@ -31,10 +35,12 @@ import androidx.compose.material.icons.filled.Article
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.RemoveRedEye
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -45,8 +51,10 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -58,6 +66,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import kotlinx.coroutines.launch
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -103,6 +112,11 @@ fun FeedScreen(
     viewModel: FeedViewModel = viewModel()
 ) {
     val state by viewModel.uiState.collectAsState()
+    val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
+    // يظهر فقط بعد تمرير حقيقي للأسفل — مطابق لسلوك زر "عودة لأعلى" في نسخة الويب، الذي كان
+    // غائباً كلياً عن نسخة APK (بلاغ مستخدم حقيقي).
+    val showScrollToTop by remember { derivedStateOf { listState.firstVisibleItemIndex > 3 } }
 
     // لا يوجد زر عائم خاص بهذه الشاشة — الويب لديه زر قلم واحد فقط عالمي (`MainScaffold`'s FAB،
     // مطابق لـ `btn-floating-write` في `App.tsx`)، تكرار زر هنا كان يسبب ظهور زرين معاً (بلاغ مستخدم).
@@ -114,6 +128,7 @@ fun FeedScreen(
             return@Scaffold
         }
 
+        Box(Modifier.fillMaxSize().padding(padding)) {
         // سحب-للتحديث + جلب حقيقي مرة واحدة من الخادم (مطابق لـ `handleRefreshFeed` في `App.tsx`):
         // مستمعا observeArticles()/observeTweets() الحيّان قد ينقطعان بصمت (تبديل شبكة، تعليق طويل في
         // الخلفية) بلا إعادة اتصال فورية، فيبقى المحتوى القديم ظاهراً مهما حاول المستخدم — كان هذا
@@ -121,9 +136,10 @@ fun FeedScreen(
         PullToRefreshBox(
             isRefreshing = state.isRefreshing,
             onRefresh = viewModel::refresh,
-            modifier = Modifier.fillMaxSize().padding(padding)
+            modifier = Modifier.fillMaxSize()
         ) {
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
@@ -281,6 +297,22 @@ fun FeedScreen(
                         }
                     }
                 }
+            }
+        }
+        }
+
+        AnimatedVisibility(
+            visible = showScrollToTop,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.align(Alignment.BottomStart).padding(16.dp)
+        ) {
+            FloatingActionButton(
+                onClick = { coroutineScope.launch { listState.animateScrollToItem(0) } },
+                containerColor = BrandTeal,
+                contentColor = Color.White
+            ) {
+                Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "عودة لأعلى الشاشة")
             }
         }
         }
