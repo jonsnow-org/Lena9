@@ -1,15 +1,15 @@
 package studio.ai.literium.literium_app.ui.screens.admin.tabs
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -95,34 +95,27 @@ fun OverviewTab(
         }
 
         item {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(
-                    listOf(
-                        Triple("إجمالي دخل المنصة الصافي", metrics.netPlatformRevenue, "شامل كل مصادر العوائد"),
-                        Triple("إعلانات المنصة العامة (100%)", metrics.totalPlatformAdRevenue, "عائدات كاملة للمالك"),
-                        Triple(
-                            "إعلانات الكُتّاب التشاركية (${RevenueShares.IN_ARTICLE_ADS.platformPercent}%)",
-                            metrics.platformAdSenseCut,
-                            "الكُتّاب: $${"%.2f".format(metrics.writersAdSenseCut)}"
-                        ),
-                        Triple("أموال محمية بدرع الاحتيال", metrics.totalBlockedFraudRevenue, "${fraudFlags.size} محاولات محجوبة")
-                    )
-                ) { (title, value, sub) ->
-                    Card {
-                        Column(Modifier.padding(12.dp)) {
-                            Text(title, style = MaterialTheme.typography.labelSmall)
-                            Text(
-                                "$${"%.2f".format(value)}",
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Black
-                            )
-                            Text(sub, style = MaterialTheme.typography.labelSmall)
-                        }
+            NonLazyGrid(
+                listOf(
+                    Triple("إجمالي دخل المنصة الصافي", metrics.netPlatformRevenue, "شامل كل مصادر العوائد"),
+                    Triple("إعلانات المنصة العامة (100%)", metrics.totalPlatformAdRevenue, "عائدات كاملة للمالك"),
+                    Triple(
+                        "إعلانات الكُتّاب التشاركية (${RevenueShares.IN_ARTICLE_ADS.platformPercent}%)",
+                        metrics.platformAdSenseCut,
+                        "الكُتّاب: $${"%.2f".format(metrics.writersAdSenseCut)}"
+                    ),
+                    Triple("أموال محمية بدرع الاحتيال", metrics.totalBlockedFraudRevenue, "${fraudFlags.size} محاولات محجوبة")
+                )
+            ) { (title, value, sub) ->
+                Card {
+                    Column(Modifier.padding(12.dp)) {
+                        Text(title, style = MaterialTheme.typography.labelSmall)
+                        Text(
+                            "$${"%.2f".format(value)}",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Black
+                        )
+                        Text(sub, style = MaterialTheme.typography.labelSmall)
                     }
                 }
             }
@@ -161,26 +154,44 @@ fun OverviewTab(
 
         item { Text("إحصائيات المجتمع والمحتوى", fontWeight = FontWeight.Bold) }
         item {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(
-                    listOf(
-                        "إجمالي المستخدمين" to users.size.toString(),
-                        "إجمالي المقالات" to articles.size.toString(),
-                        "الحملات الإعلانية" to campaigns.size.toString(),
-                        "الموثقون رسمياً" to users.count { it.isVerified == true || it.isKycVerified == true }.toString()
-                    )
-                ) { (label, value) ->
-                    Card {
-                        Column(Modifier.padding(12.dp)) {
-                            Text(label, style = MaterialTheme.typography.labelSmall)
-                            Text(value, fontSize = 18.sp, fontWeight = FontWeight.Black)
-                        }
+            NonLazyGrid(
+                listOf(
+                    "إجمالي المستخدمين" to users.size.toString(),
+                    "إجمالي المقالات" to articles.size.toString(),
+                    "الحملات الإعلانية" to campaigns.size.toString(),
+                    "الموثقون رسمياً" to users.count { it.isVerified == true || it.isKycVerified == true }.toString()
+                )
+            ) { (label, value) ->
+                Card {
+                    Column(Modifier.padding(12.dp)) {
+                        Text(label, style = MaterialTheme.typography.labelSmall)
+                        Text(value, fontSize = 18.sp, fontWeight = FontWeight.Black)
                     }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * غير-Lazy عمداً: `LazyVerticalGrid` كان متداخلاً هنا داخل `item{}` تابعة
+ * لـ `LazyColumn` خارجية بلا ارتفاع محدد — يسبب هذا فوراً
+ * `IllegalStateException: Vertically scrollable component was measured with
+ * an infinity maximum height constraints` عند فتح هذا التبويب (وهو التبويب
+ * الافتراضي الأول عند فتح لوحة التحكم — البلاغ الحقيقي: التطبيق يُغلق قسرياً
+ * فوراً عند فتح لوحة التحكم). أعداد البطاقات هنا صغيرة وثابتة فلا حاجة لعنصر
+ * Lazy أصلاً؛ [T] يُعرَض بطاقتين في كل صف.
+ */
+@Composable
+internal fun <T> NonLazyGrid(items: List<T>, columns: Int = 2, content: @Composable (T) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        items.chunked(columns).forEach { row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                row.forEach { entry ->
+                    Box(Modifier.weight(1f)) { content(entry) }
+                }
+                repeat(columns - row.size) {
+                    Spacer(Modifier.weight(1f))
                 }
             }
         }
