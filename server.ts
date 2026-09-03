@@ -159,7 +159,9 @@ function verifyAndConsumeServerQuota(
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  // Cloud Run (وأي منصة نشر حاويات جادة أخرى) يُملي رقم المنفذ عبر متغير
+  // البيئة PORT وقت التشغيل؛ الاستماع على رقم ثابت يمنع الحاوية من الإقلاع.
+  const PORT = Number(process.env.PORT) || 3000;
 
   // ⚠️ خلف أي وسيط (proxy) تنتهي عنده شهادة TLS (وهذا حال أي نشر جادّ —
   // Cloud Run، Render، إلخ) يرى Node الاتصال الداخلي كـ http عادي، فتُخطئ
