@@ -44,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import studio.ai.literium.literium_app.navigation.Screen
 
@@ -57,7 +58,9 @@ import studio.ai.literium.literium_app.navigation.Screen
 @Composable
 fun AiAssistantScreen(
     navController: NavController,
-    viewModel: AiAssistantViewModel = remember { AiAssistantViewModel() }
+    // كانت remember { AiAssistantViewModel() } — نفس تسرّب دورة الحياة الموجود
+    // سابقاً في AdminScreen.kt، مُصلَح هنا بنفس الطريقة.
+    viewModel: AiAssistantViewModel = viewModel()
 ) {
     val currentUser by viewModel.currentUser.collectAsState()
     val messages by viewModel.messages.collectAsState()

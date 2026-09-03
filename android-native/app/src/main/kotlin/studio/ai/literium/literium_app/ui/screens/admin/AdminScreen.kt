@@ -25,9 +25,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -82,7 +82,12 @@ private val ADMIN_TABS = listOf(
 @Composable
 fun AdminScreen(
     navController: NavController,
-    viewModel: AdminViewModel = remember { AdminViewModel() }
+    // ⚠️ كانت remember { AdminViewModel() } — إنشاء مباشر يتجاوز ربط دورة حياة
+    // ViewModel الصحيحة بمُدخل الـ back stack (نمط viewModel() القياسي)، فلا
+    // تُغلَق مستمعات Firestore الكثيرة هنا (~10) أبداً عند مغادرة الشاشة —
+    // تسرّب حقيقي، وأخطر نقطة استخدام لهذا النمط الخاطئ في كل التطبيق نظراً
+    // لعدد المستمعات الحيّة التي يفتحها AdminViewModel وحده.
+    viewModel: AdminViewModel = viewModel()
 ) {
     var activeTab by rememberSaveable { mutableStateOf("overview") }
 
