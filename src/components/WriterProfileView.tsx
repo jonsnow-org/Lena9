@@ -293,8 +293,12 @@ export const WriterProfileView: React.FC<WriterProfileViewProps> = ({
           />
           {writerArticles.map((art, artIdx) => (
             <React.Fragment key={art.id}>
-              {/* writer_profile_feed — بعد البطاقة السادسة، 50% للكاتب */}
-              {artIdx === 6 && (
+              {/* writer_profile_feed — بعد البطاقة السادسة، 50% للكاتب.
+                  احتياط: كاتب بمقالات قليلة (منصة حديثة الإطلاق) قد لا
+                  يصل أبداً للمقال السابع — نعرضه أيضاً عند آخر مقال لقائمة
+                  قصيرة (3-5 مقالات) بدل حرمانه من هذا الموضع لأشهر. */}
+              {(artIdx === 6 ||
+                (artIdx === writerArticles.length - 1 && writerArticles.length >= 3 && writerArticles.length < 7)) && (
                 <AdSlot
                   slotId="writer_profile_feed"
                   campaigns={campaigns}

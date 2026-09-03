@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -31,7 +32,9 @@ import studio.ai.literium.literium_app.ui.screens.auth.RegisterScreen
 import studio.ai.literium.literium_app.ui.screens.auth.ResetPasswordScreen
 import studio.ai.literium.literium_app.ui.screens.auth.SplashScreen
 import studio.ai.literium.literium_app.ui.screens.explore.ExploreScreen
+import studio.ai.literium.literium_app.ui.screens.feed.FeedMode
 import studio.ai.literium.literium_app.ui.screens.feed.FeedScreen
+import studio.ai.literium.literium_app.ui.screens.feed.FeedViewModel
 import studio.ai.literium.literium_app.ui.screens.follow.FollowListScreen
 import studio.ai.literium.literium_app.ui.screens.imagestudio.ImageStudioScreen
 import studio.ai.literium.literium_app.ui.screens.kyc.KycScreen
@@ -180,9 +183,26 @@ fun LiteriumNavHost(
 
         // ---- Bottom-nav tab destinations (wrapped in MainScaffold) ----
         composable(Screen.Feed.route) {
-            MainScaffold(navController = navController, currentRoute = Screen.Feed.route) { padding ->
+            // نسخة واحدة مشتركة من FeedViewModel بين MainScaffold وFeedScreen (نفس النطاق: مُدخل
+            // الـ back stack الحالي) — تتيح لزر "بدء الكتابة" العائم في MainScaffold معرفة التبويب
+            // الحالي (مدونة/تغريد) والتوجيه للمحرر الصحيح، بدل توجيه ثابت لمحرر المقال دوماً مهما
+            // كان التبويب المفتوح فعلياً (بلاغ مستخدم حقيقي).
+            val feedViewModel: FeedViewModel = viewModel()
+            val feedState by feedViewModel.uiState.collectAsState()
+            MainScaffold(
+                navController = navController,
+                currentRoute = Screen.Feed.route,
+                fabAction = {
+                    if (feedState.mode == FeedMode.TWEET) {
+                        navController.navigate(Screen.TweetComposer.route)
+                    } else {
+                        navController.navigate(Screen.ArticleEditor.new())
+                    }
+                }
+            ) { padding ->
                 Box(Modifier.padding(padding)) {
                     FeedScreen(
+                        viewModel = feedViewModel,
                         onArticleClick = { id -> navController.navigate(Screen.ArticleReader.of(id)) },
                         onWriterClick = { id -> navController.navigate(Screen.WriterProfile.of(id)) },
                         onComposeArticle = { navController.navigate(Screen.ArticleEditor.new()) }

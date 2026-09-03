@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
@@ -92,8 +93,13 @@ class AdminViewModel(
 
     val currentUserId: String? get() = FirebaseAuth.getInstance().currentUser?.uid
 
+    // ⚠️ .catch { } إلزامي هنا: كل observeXxx() أدناه callbackFlow يغلق نفسه
+    // بـ close(error) عند أي خطأ من Firestore listener (رفض صلاحية، فهرس
+    // مفقود، انقطاع شبكة عابر...) — بلا هذا catch يتحول الخطأ لاستثناء غير
+    // مُعالَج داخل viewModelScope فيُغلق التطبيق بالكامل فوراً عند أول دخول
+    // للوحة التحكم (نفس نمط FeedViewModel.kt القائم أصلاً على كل تدفقاته).
     private fun <T> Flow<T>.asState(initial: T): StateFlow<T> =
-        stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), initial)
+        this.catch { }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), initial)
 
     val currentUser: StateFlow<User?> =
         (currentUserId?.let { authRepository.observeUser(it) } ?: MutableStateFlow<User?>(null))

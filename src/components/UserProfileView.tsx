@@ -1091,8 +1091,15 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                       {/* موضع reader_profile — داخل قائمة المقالات نفسها كل 6
                           مقالات، وليس شريطاً ثابتاً أعلى الصفحة كما كان سابقاً.
                           مستبعد تماماً لملف مالك المنصة (أدمن) — لا يظهر أي
-                          إعلان في ملفه الشخصي إطلاقاً بقرار صريح. */}
-                      {artIdx > 0 && artIdx % 6 === 0 && currentUser.role !== 'admin' && (
+                          إعلان في ملفه الشخصي إطلاقاً بقرار صريح.
+                          احتياط: منصة حديثة الإطلاق بمحتوى قليل قد لا تصل أي
+                          قائمة أبداً لـ 7 عناصر (idx=6) — بلا هذا الاحتياط
+                          يبقى هذا الموضع بلا أي ظهور فعلي شهوراً. نعرضه أيضاً
+                          عند آخر عنصر لقائمة قصيرة (3-5 عناصر) بدل انتظار حد
+                          لن يُبلغ قريباً، مع إبقاء موضع واحد فقط لكل صفحة. */}
+                      {currentUser.role !== 'admin' &&
+                        ((artIdx > 0 && artIdx % 6 === 0) ||
+                          (artIdx === myPublishedArticles.length - 1 && myPublishedArticles.length >= 3 && myPublishedArticles.length < 7)) && (
                         <AdSlot slotId="reader_profile" campaigns={safeCampaigns} viewerId={currentUser.id} adFree={false} />
                       )}
                       <div
