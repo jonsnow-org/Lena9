@@ -227,6 +227,37 @@ fun AdSlot(
         return
     }
 
+    // ⚠️ احتياط شبكة خارجية لمواضع الكاتب (article_*, writer_profile_*, comments_feed) — كان غائباً
+    // كلياً هنا: internalPriority=true لهذه المواضع يعني selectedCampaign أعلاه = internalCandidate
+    // دوماً، وحين تكون null (لا حملة داخلية نشطة تناسب الموضع)، لم يكن أي مسار في الكود يصل إطلاقاً
+    // لعرض شبكة خارجية بديلة لهذه المواضع تحديداً — فقدان إيرادات حقيقي للكاتب مطابق تماماً لمنطق
+    // الويب في AdSlot.tsx: `externalNetwork = internalCandidate ? null : externalCandidate` — أي أن
+    // الشبكة الخارجية تعمل بالضبط كاحتياط لهذه المواضع حين لا توجد حملة داخلية، لا تُستبعَد كلياً.
+    if (!isPlatformSlot && config.internalPriority && selectedCampaign == null && hasEligibleExternalNetwork) {
+        // نفس ترتيب أولوية pickActiveExternalNetwork في externalAdsStore.ts بالضبط:
+        // propellerAds ← adsterra ← taboola.
+        fun isEligible(net: ExternalAdsSettingsStore.NetworkConfig) =
+            net.enabled && net.snippet.isNotBlank() && net.appSafe
+        when {
+            isEligible(externalAdsConfig.propellerAds) ->
+                ExternalAdNetworkView(snippet = externalAdsConfig.propellerAds.snippet, modifier = modifier)
+            ExternalAdsSettingsStore.isAdsterraEligible(externalAdsConfig) -> {
+                val unit = pickAdsterraUnit(externalAdsConfig.adsterraUnits, slotIndex + rotationSeed)
+                if (unit != null) {
+                    ExternalAdNetworkView(
+                        snippet = unit.snippet,
+                        modifier = modifier,
+                        heightDp = unit.heightPx.dp,
+                        widthDp = if (unit.widthPx > 0) unit.widthPx.dp else null
+                    )
+                }
+            }
+            isEligible(externalAdsConfig.taboola) ->
+                ExternalAdNetworkView(snippet = externalAdsConfig.taboola.snippet, modifier = modifier)
+        }
+        return
+    }
+
     // No internal campaign won this render (none eligible, or non-platform slot deferring to an
     // external-priority policy with none rendered above): render nothing. We never fabricate a
     // view/click event for content the user was never actually shown.
