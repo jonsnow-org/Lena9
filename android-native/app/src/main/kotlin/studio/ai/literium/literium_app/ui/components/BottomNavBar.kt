@@ -12,6 +12,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
@@ -51,8 +52,16 @@ fun BottomNavBar(
     onOpenMessages: () -> Unit,
     onOpenProfile: () -> Unit
 ) {
+    // اللون هنا مثبَّت صراحةً على نفس `colorScheme.surface` المستخدم في السطح الجذري بـ
+    // `MainActivity` (`Surface(...)` بلا لون صريح = افتراضي `colorScheme.surface`)، بدل الاعتماد
+    // على لون `NavigationBar` الافتراضي (`surfaceContainer` — درجة تدرّج مختلفة تماماً في نظام
+    // الألوان الطبقي لـ Material 3). التفاوت الطفيف بين الدرجتين كان يُرسَم كخط أبيض رفيع فوق
+    // الشريط السفلي مباشرة (بلاغ مستخدم حقيقي متكرر) لأن أي فراغ بين آخر بطاقة في المحتوى وحافة
+    // الشريط يكشف لون السطح الجذري، وهو يختلف بصرياً عن لون الشريط نفسه.
+    val navBarColor = MaterialTheme.colorScheme.surface
+
     if (isAdmin) {
-        NavigationBar {
+        NavigationBar(containerColor = navBarColor) {
             NavigationBarItem(
                 selected = currentRoute == Screen.Feed.route,
                 onClick = { onNavigate(Screen.Feed.route) },
@@ -98,7 +107,7 @@ fun BottomNavBar(
     // الرئيسية · استكشاف · إشعارات · رسائل · ملفي. لا فرع حسب role هنا إطلاقاً
     // (نفس ملاحظة BottomNav.tsx الأصلية: التفرّع القديم كان يعرض تنقّلاً أقل
     // محتوى لبعض الأدوار رغم تساوي صلاحياتها الفعلية بالكامل في النموذج الموحّد).
-    NavigationBar {
+    NavigationBar(containerColor = navBarColor) {
         NavigationBarItem(
             selected = currentRoute == Screen.Feed.route,
             onClick = { onNavigate(Screen.Feed.route) },
