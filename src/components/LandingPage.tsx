@@ -596,6 +596,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         </div>
       </section>
 
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 relative z-10">
+        <AdTickerBar slotId="landing_page_mid" campaigns={campaigns} viewerId={null} externalPriority minHeightPx={68} />
+      </div>
+
       {/* Limited Article Preview Section (تصفح بعض المقالات بدون تسجيل) */}
       <section className="py-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
@@ -721,6 +725,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           </button>
         </div>
       </section>
+
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 relative z-10">
+        <AdTickerBar slotId="landing_page_bottom" campaigns={campaigns} viewerId={null} minHeightPx={68} />
+      </div>
 
       {/* Prominent Footer Call to Action Banner */}
       <footer className="mt-20 border-t border-slate-800 bg-slate-950 py-12 px-4 sm:px-6 lg:px-8">
