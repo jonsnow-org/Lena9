@@ -46,6 +46,18 @@ export interface ExternalAdsConfig {
    *  الجاهز المستخدمة في الشبكتين الأخريين. */
   taboola: ExternalAdNetworkConfig;
   /**
+   * Monetag "Vignette" — إعلان بيني كامل الشاشة يظهر أحياناً بين تنقلات
+   * الصفحة، وليس بانراً بمقاس ثابت داخل موضع AdSlot محدد كبقية الشبكات
+   * أعلاه — لذا لا يُعرض عبر <AdSlot> إطلاقاً، بل يُحمَّل مرة واحدة فقط لكل
+   * جلسة تصفح من مكوّن مستقل (`MonetagVignetteLoader`) في جذر التطبيق.
+   * غير متاح لنسخة APK إطلاقاً وبشكل دائم (وليس بخيار إداري قابل للتبديل):
+   * يعتمد حقن سكربت خام في DOM المتصفح مباشرة، ولا يوجد محرك DOM/JavaScript
+   * كهذا داخل تطبيق Kotlin/Compose الأصلي أصلاً — enabled وحده يكفي هنا،
+   * والاستبعاد عن APK مضمون دوماً عبر isRunningInNativeApp() في المُحمِّل
+   * نفسه بصرف النظر عن أي إعداد.
+   */
+  monetag: { enabled: boolean };
+  /**
    * السعر التقديري بالدولار لكل 1000 مشاهدة حقيقية موثّقة لإعلان شبكة
    * خارجية في مواضع الكاتب (ذات حصة ربح ثابتة) — أساس حساب عائد الكاتب
    * من هذه الشبكات بقرار صريح من المالك، مستقلاً تماماً عن الرقم الحقيقي
@@ -65,6 +77,8 @@ const DEFAULT_CONFIG: ExternalAdsConfig = {
   adsterra: { enabled: true, snippet: '', appSafe: true },
   adsterraUnits: defaultAdsterraUnitsEnabled(),
   taboola: { ...EMPTY_NETWORK },
+  // مفعّلة افتراضياً بنفس منطق Adsterra: كود المالك الحقيقي، ثابت في الشيفرة.
+  monetag: { enabled: true },
   estimatedCpmUsd: 2
 };
 
@@ -84,6 +98,7 @@ function ensureStarted() {
         adsterra: { ...DEFAULT_CONFIG.adsterra, ...(data.adsterra || {}) },
         adsterraUnits: { ...defaultAdsterraUnitsEnabled(), ...(data.adsterraUnits || {}) },
         taboola: { ...EMPTY_NETWORK, ...(data.taboola || {}) },
+        monetag: { ...DEFAULT_CONFIG.monetag, ...(data.monetag || {}) },
         estimatedCpmUsd:
           typeof data.estimatedCpmUsd === 'number' && data.estimatedCpmUsd >= 0
             ? data.estimatedCpmUsd

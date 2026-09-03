@@ -84,6 +84,10 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
   );
   const [taboolaEnabled, setTaboolaEnabled] = useState(externalAdsConfig?.taboola?.enabled ?? false);
   const [taboolaSnippet, setTaboolaSnippet] = useState(externalAdsConfig?.taboola?.snippet ?? '');
+  // Monetag: كود "Vignette" (بيني كامل الشاشة) ثابت في الشيفرة أصلاً — لا
+  // مربع لصق، ولا مفتاح "متوافقة مع APK" (مستبعدة عن نسخة APK دوماً وبشكل
+  // بنيوي، وليس بخيار إداري — انظر شرح كامل في externalAdsStore.ts).
+  const [monetagEnabled, setMonetagEnabled] = useState(externalAdsConfig?.monetag?.enabled ?? false);
   // appSafe: تأكيد صريح إن سياسة الشبكة تسمح بعرضها داخل تطبيق APK لا
   // الموقع فقط — افتراضياً معطّل، لا علاقة له بظهورها بالموقع (enabled
   // وحده يكفي هناك). انظر شرح كامل في externalAdsStore.ts.
@@ -109,6 +113,7 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
     taboolaEnabled,
     taboolaSnippet,
     taboolaAppSafe,
+    monetagEnabled,
     estimatedCpmUsd
   });
 
@@ -126,6 +131,7 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
     taboolaEnabled !== savedExternalAdsSnapshot.taboolaEnabled ||
     taboolaSnippet.trim() !== savedExternalAdsSnapshot.taboolaSnippet.trim() ||
     taboolaAppSafe !== savedExternalAdsSnapshot.taboolaAppSafe ||
+    monetagEnabled !== savedExternalAdsSnapshot.monetagEnabled ||
     estimatedCpmUsd.trim() !== savedExternalAdsSnapshot.estimatedCpmUsd.trim();
 
   // إن وصلت قيمة externalAdsConfig من Firestore بعد أول تحميل لهذا
@@ -145,6 +151,7 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
       taboolaEnabled: externalAdsConfig?.taboola?.enabled ?? false,
       taboolaSnippet: externalAdsConfig?.taboola?.snippet ?? '',
       taboolaAppSafe: externalAdsConfig?.taboola?.appSafe ?? false,
+      monetagEnabled: externalAdsConfig?.monetag?.enabled ?? false,
       estimatedCpmUsd: String(externalAdsConfig?.estimatedCpmUsd ?? 2)
     };
     setPropellerEnabled(nextSnapshot.propellerEnabled);
@@ -156,6 +163,7 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
     setTaboolaEnabled(nextSnapshot.taboolaEnabled);
     setTaboolaSnippet(nextSnapshot.taboolaSnippet);
     setTaboolaAppSafe(nextSnapshot.taboolaAppSafe);
+    setMonetagEnabled(nextSnapshot.monetagEnabled);
     setEstimatedCpmUsd(nextSnapshot.estimatedCpmUsd);
     setSavedExternalAdsSnapshot(nextSnapshot);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -174,6 +182,7 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
         adsterra: { enabled: adsterraEnabled, snippet: '', appSafe: adsterraAppSafe },
         adsterraUnits,
         taboola: { enabled: taboolaEnabled, snippet: trimmedTaboola, appSafe: taboolaAppSafe },
+        monetag: { enabled: monetagEnabled },
         estimatedCpmUsd: cpmValue
       });
       setSavedExternalAdsSnapshot({
@@ -186,6 +195,7 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
         taboolaEnabled,
         taboolaSnippet: trimmedTaboola,
         taboolaAppSafe,
+        monetagEnabled,
         estimatedCpmUsd: String(cpmValue)
       });
       setExternalAdsSavedMsg('تم الحفظ بنجاح ✓');
@@ -577,7 +587,7 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
               ربط شبكات الإعلانات الخارجية البديلة (Fallback Ad Networks)
             </h4>
             <p className="text-xs text-slate-400 leading-relaxed">
-              إذا لم تكن هناك حملات محلية نشطة للمعلنين، يمكن ملء المساحات الشاغرة تلقائياً عبر شبكات خارجية مثل PropellerAds (يشمل Monetag) أو Adsterra أو Taboola لتعظيم الدخل السلبي. الصق كود الإعلان الكامل (وسم &lt;script&gt; كاملاً) كما هو من لوحة الشبكة، ثم فعّل المفتاح.
+              إذا لم تكن هناك حملات محلية نشطة للمعلنين، يمكن ملء المساحات الشاغرة تلقائياً عبر شبكات خارجية مثل PropellerAds أو Adsterra أو Taboola أو Monetag لتعظيم الدخل السلبي. الصق كود الإعلان الكامل (وسم &lt;script&gt; كاملاً) كما هو من لوحة الشبكة، ثم فعّل المفتاح.
             </p>
             <p className="text-[11px] text-amber-400 leading-relaxed bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2">
               ⚠️ مهم عند توليد الكود من لوحة الشبكة: اختر نوع وحدة إعلانية "Banner" أو "Native Banner" بمقاس ثابت (مثل 300x250 أو 320x50) فقط. لا تستخدم أنواع "Social Bar" / "In-Page Push" / "Popunder" — هذه الأنواع مصمَّمة لتغطية الشاشة كإشعار عائم على أي موقع، وحمايتنا الأمنية (عزل الإعلان داخل إطار معزول تماماً) تمنعها من تغطية الشاشة هنا لكنها قد تظهر فارغة لأنها غير مصمَّمة أصلاً للعرض داخل صندوق صغير.
@@ -712,6 +722,30 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
                   <span>متوافقة مع نسخة APK</span>
                   <span>{taboolaAppSafe ? 'مفعّل ✓' : 'غير مؤكَّد بعد'}</span>
                 </button>
+              </div>
+
+              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="font-bold text-xs text-white">Monetag</div>
+                  <button
+                    type="button"
+                    onClick={() => setMonetagEnabled((v) => !v)}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${
+                      monetagEnabled ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400'
+                    }`}
+                  >
+                    {monetagEnabled ? 'مفعّلة ✓' : 'معطّلة'}
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  كود المالك الحقيقي (نوع "Vignette" — بيني كامل الشاشة يظهر أحياناً بين تنقلات الصفحة)
+                  ثابت في كود التطبيق نفسه — لا مربع لصق. مفتاح واحد فقط للتشغيل/الإيقاف الكامل، بدل
+                  مواضع متعددة كـ Adsterra، لأن هذا النوع لا يرتبط بموضع محدد في صفحة معيّنة أصلاً.
+                </p>
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  مستبعدة عن نسخة APK دائماً وبلا أي خيار — هذا النوع يحقن سكربتاً في متصفح الويب مباشرة،
+                  ولا يوجد محرك متصفح مماثل داخل تطبيق الجوال الأصلي إطلاقاً.
+                </p>
               </div>
             </div>
 
