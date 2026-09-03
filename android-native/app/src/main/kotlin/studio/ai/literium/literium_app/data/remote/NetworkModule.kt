@@ -8,6 +8,9 @@ import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
+import studio.ai.literium.literium_app.AppErrorLog
+import studio.ai.literium.literium_app.LiteriumApplication
+import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 /**
@@ -37,11 +40,35 @@ object NetworkModule {
         level = HttpLoggingInterceptor.Level.BASIC
     }
 
+    /**
+     * يسجّل كل فشل شبكة (انقطاع اتصال، مهلة، استجابة خطأ من الخادم) تلقائياً في
+     * [AppErrorLog] — بلا حاجة لإضافة try/catch يدوي في كل مستودع يستدعي [api]. يمرّر
+     * الاستثناء/الاستجابة كما وصلت دون أي تعديل على سلوك الاستدعاء الأصلي (تسجيل فقط).
+     */
+    private val errorLoggingInterceptor = okhttp3.Interceptor { chain ->
+        val request = chain.request()
+        try {
+            val response = chain.proceed(request)
+            if (!response.isSuccessful) {
+                AppErrorLog.record(
+                    LiteriumApplication.instance,
+                    "شبكة (${request.method} ${request.url.encodedPath})",
+                    "HTTP ${response.code}: ${response.message}"
+                )
+            }
+            response
+        } catch (e: IOException) {
+            AppErrorLog.record(LiteriumApplication.instance, "شبكة (${request.method} ${request.url.encodedPath})", e)
+            throw e
+        }
+    }
+
     private val okHttpClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)
+            .addInterceptor(errorLoggingInterceptor)
             .addInterceptor(loggingInterceptor)
             .build()
     }

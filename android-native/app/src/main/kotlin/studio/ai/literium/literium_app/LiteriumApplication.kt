@@ -15,13 +15,23 @@ import com.google.firebase.ktx.initialize
  */
 class LiteriumApplication : Application() {
 
+    companion object {
+        /** Context عام لأماكن غير-Compose (مثل [studio.ai.literium.literium_app.data.remote.NetworkModule]'s
+         *  interceptor) تحتاج تسجيل خطأ في [AppErrorLog] بلا تمرير Context عبر كل استدعاء. آمن طوال
+         *  عمر العملية — Application لا يُجمَّع (GC) حتى تنتهي العملية بالكامل. */
+        lateinit var instance: LiteriumApplication
+            private set
+    }
+
     override fun onCreate() {
         super.onCreate()
+        instance = this
         Firebase.initialize(this)
 
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             try {
+                AppErrorLog.record(applicationContext, "عطل قاتل (تطبيق)", throwable)
                 FirebaseCrashlytics.getInstance().recordException(throwable)
                 CrashReportActivity.launch(applicationContext, throwable)
             } catch (_: Throwable) {
