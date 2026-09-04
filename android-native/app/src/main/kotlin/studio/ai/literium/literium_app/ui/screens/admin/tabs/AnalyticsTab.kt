@@ -78,9 +78,16 @@ fun AnalyticsTab(
         item {
             Row(
                 Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
             ) {
-                Text("الإحصائيات الحقيقية (مباشر من الخادم)", fontWeight = FontWeight.Bold)
+                Text(
+                    "الإحصائيات الحقيقية (مباشر من الخادم)",
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f).padding(end = 8.dp),
+                    maxLines = 2,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
                 Button(onClick = { viewModel.loadAnalyticsSummary() }) { Text("تحديث") }
             }
         }
