@@ -17,7 +17,7 @@ import java.util.concurrent.TimeUnit
  * Singleton Retrofit/OkHttp wiring for [LiteriumApiService], talking to the
  * live `server.ts` deployment at `https://literium-wjct.onrender.com`
  * (Render — replaces the AI Studio "Publish" host, which never ran the
- * Node/Express backend at all, so every `/api/*` call there silently
+ * Node/Express backend at all, so every `/api` route call there silently
  * failed; static-asset-only client writes like Firestore deletes still
  * worked, which is why only server-authoritative actions looked broken).
  *
