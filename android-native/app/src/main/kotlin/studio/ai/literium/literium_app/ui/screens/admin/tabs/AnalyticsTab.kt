@@ -27,6 +27,7 @@ import studio.ai.literium.literium_app.data.model.Article
 import studio.ai.literium.literium_app.data.model.DepositRequest
 import studio.ai.literium.literium_app.data.model.PayoutRequest
 import studio.ai.literium.literium_app.data.model.User
+import studio.ai.literium.literium_app.ui.diagnostics.diagnoseTouchTarget
 import studio.ai.literium.literium_app.ui.screens.admin.AdminViewModel
 
 /**
@@ -86,9 +87,13 @@ fun AnalyticsTab(
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f).padding(end = 8.dp),
                     maxLines = 2,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    onTextLayout = studio.ai.literium.literium_app.ui.diagnostics.rememberOverflowReporter("رأس تبويب التحليلات")
                 )
-                Button(onClick = { viewModel.loadAnalyticsSummary() }) { Text("تحديث") }
+                Button(
+                    onClick = { viewModel.loadAnalyticsSummary() },
+                    modifier = Modifier.diagnoseTouchTarget("زر تحديث التحليلات")
+                ) { Text("تحديث") }
             }
         }
 

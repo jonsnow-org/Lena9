@@ -38,6 +38,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import studio.ai.literium.literium_app.data.model.User
+import studio.ai.literium.literium_app.ui.diagnostics.diagnoseTouchTarget
+import studio.ai.literium.literium_app.ui.diagnostics.reportIfLowContrast
+import studio.ai.literium.literium_app.ui.diagnostics.rememberOverflowReporter
 import studio.ai.literium.literium_app.ui.screens.admin.AdminViewModel
 import studio.ai.literium.literium_app.ui.screens.admin.components.BalanceAdjustDialog
 import studio.ai.literium.literium_app.ui.screens.admin.components.BroadcastDialog
@@ -98,9 +101,13 @@ fun UsersTab(
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f).padding(end = 8.dp),
                     maxLines = 2,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    onTextLayout = rememberOverflowReporter("رأس تبويب المستخدمين")
                 )
-                Button(onClick = { showBroadcast = true }) {
+                Button(
+                    onClick = { showBroadcast = true },
+                    modifier = Modifier.diagnoseTouchTarget("زر إرسال تعميم")
+                ) {
                     Icon(Icons.Filled.Campaign, contentDescription = null, modifier = Modifier.size(16.dp))
                     Text(" إرسال تعميم", modifier = Modifier.padding(start = 4.dp))
                 }
@@ -164,12 +171,19 @@ private fun StatusPillIconButton(
     val inactiveContainer = androidx.compose.ui.graphics.Color(0xFF020617)
     val inactiveContent = androidx.compose.ui.graphics.Color(0xFF94A3B8)
     val inactiveBorder = androidx.compose.ui.graphics.Color(0xFF1E293B)
+    val resolvedContainer = if (active) activeContainer else inactiveContainer
+    val resolvedContent = if (active) activeContent else inactiveContent
+    reportIfLowContrast(
+        tag = "زر $contentDescription (${if (active) "مفعّل" else "غير مفعّل"})",
+        foreground = resolvedContent,
+        background = resolvedContainer
+    )
     androidx.compose.material3.Surface(
         onClick = onClick,
         shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
-        color = if (active) activeContainer else inactiveContainer,
+        color = resolvedContainer,
         border = if (active) null else androidx.compose.foundation.BorderStroke(1.dp, inactiveBorder),
-        modifier = Modifier.size(36.dp)
+        modifier = Modifier.size(36.dp).diagnoseTouchTarget("زر $contentDescription")
     ) {
         Box(Modifier.fillMaxWidth().padding(6.dp), contentAlignment = androidx.compose.ui.Alignment.Center) {
             Icon(
