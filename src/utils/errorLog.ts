@@ -129,7 +129,11 @@ export function initErrorLog(): void {
     const url = typeof args[0] === 'string' ? args[0] : (args[0] as Request)?.url ?? String(args[0]);
     try {
       const response = await originalFetch(...args);
-      if (!response.ok) {
+      // response.type === 'opaque' يعني طلب no-cors لنطاق خارجي (كطلبات
+      // تتبّع reCAPTCHA في الخلفية) — المتصفح يمنع قراءة حالته الحقيقية
+      // عمداً ويُعيد status:0 دائماً بصرف النظر عن نجاح الطلب فعلياً، فتسجيله
+      // كخطأ كان إنذاراً كاذباً بحتاً، لا عطلاً حقيقياً في التطبيق.
+      if (!response.ok && response.type !== 'opaque') {
         logError(`fetch (${url})`, `HTTP ${response.status}: ${response.statusText}`);
       }
       return response;
