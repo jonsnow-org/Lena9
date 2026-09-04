@@ -12,7 +12,7 @@ import retrofit2.http.Path
 
 /**
  * Retrofit interface for `server.ts`'s custom Express backend (spec §11),
- * base URL `https://literium.ai.studio`. One method per documented
+ * base URL `https://literium-wjct.onrender.com` (Render). One method per documented
  * endpoint — this is a thin, faithful mirror of the actual routes; no
  * business logic lives here (see [studio.ai.literium.literium_app.data.repository]
  * for how these are actually used).

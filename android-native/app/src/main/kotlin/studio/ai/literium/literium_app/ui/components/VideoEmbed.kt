@@ -39,7 +39,7 @@ fun parseVideoUrl(url: String): ParsedVideo? {
 
 /** Production origin the video-embed HTML wrapper is loaded with — see [VideoEmbed]'s KDoc for why
  *  this, not `null`, is required for YouTube playback to work at all. */
-private const val PRODUCTION_ORIGIN = "https://literium.ai.studio/"
+private const val PRODUCTION_ORIGIN = "https://literium-wjct.onrender.com/"
 
 /**
  * Kotlin port of `VideoEmbed.tsx` — a YouTube/Vimeo `<iframe>` embed, reserved at a 16:9 aspect ratio

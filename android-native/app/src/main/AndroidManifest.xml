@@ -26,14 +26,14 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- روابط المقالات المشتركة (literium.ai.studio/article/...) تفتح
+            <!-- روابط المقالات المشتركة (literium-wjct.onrender.com/article/...) تفتح
                  التطبيق مباشرة بدل المتصفح — يطابق سلوك OG/Twitter meta tags
                  الموجود فعلاً في الموقع لمشاركة روابط المقالات. -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="literium.ai.studio" />
+                <data android:scheme="https" android:host="literium-wjct.onrender.com" />
             </intent-filter>
         </activity>
 

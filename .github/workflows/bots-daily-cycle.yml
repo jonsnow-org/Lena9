@@ -27,7 +27,7 @@ jobs:
           status=$(curl -sS -o /tmp/body.txt -w "%{http_code}" --max-time 280 \
             -X POST \
             -H "x-bots-cron-secret: ${{ secrets.BOTS_CRON_SECRET }}" \
-            https://literium.ai.studio/api/bots/run-daily-cycle || echo "000")
+            https://literium-wjct.onrender.com/api/bots/run-daily-cycle || echo "000")
           echo "HTTP $status"
           cat /tmp/body.txt || true
           if [ "$status" != "200" ]; then

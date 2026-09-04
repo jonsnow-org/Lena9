@@ -15,7 +15,11 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Singleton Retrofit/OkHttp wiring for [LiteriumApiService], talking to the
- * live `server.ts` deployment at `https://literium.ai.studio` (spec §11).
+ * live `server.ts` deployment at `https://literium-wjct.onrender.com`
+ * (Render — replaces the AI Studio "Publish" host, which never ran the
+ * Node/Express backend at all, so every `/api/*` call there silently
+ * failed; static-asset-only client writes like Firestore deletes still
+ * worked, which is why only server-authoritative actions looked broken).
  *
  * This does NOT attach an `Authorization` header globally via an
  * interceptor — unlike a typical "always attach the bearer token" setup,
@@ -28,7 +32,7 @@ import java.util.concurrent.TimeUnit
  */
 object NetworkModule {
 
-    const val BASE_URL = "https://literium.ai.studio"
+    const val BASE_URL = "https://literium-wjct.onrender.com"
 
     private val json = Json {
         ignoreUnknownKeys = true

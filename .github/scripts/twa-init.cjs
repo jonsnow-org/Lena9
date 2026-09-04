@@ -10,7 +10,7 @@ const {TwaManifest, TwaGenerator, ConsoleLog} = require('@bubblewrap/core');
 const {generateManifestChecksumFile} = require('@bubblewrap/cli/dist/lib/cmds/shared');
 
 const PACKAGE_ID = 'studio.ai.literium.twa';
-const HOST = 'literium.ai.studio';
+const HOST = 'literium-wjct.onrender.com';
 const MANIFEST_URL = `https://${HOST}/manifest.json`;
 
 async function main() {
