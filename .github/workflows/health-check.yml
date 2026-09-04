@@ -2,10 +2,13 @@ name: Live Site Health Check
 
 # يعمل هذا على مشغّلات GitHub نفسها (اتصال إنترنت حقيقي كامل) لا داخل أي
 # جلسة عمل معزولة — الجلسات المعزولة في هذا المشروع محجوبة صراحة عن
-# الوصول لنطاق literium.ai.studio عبر بروكسي الشبكة الخاص بها (تأكّد هذا
-# بفشل curl وWebFetch بخطأ "policy denial" وليس بأي استجابة حقيقية من
-# الموقع) — فمحاولة فحص صحة الموقع من هناك تعطي نتيجة كاذبة دوماً. هذا
-# السير هو المصدر الوحيد الموثوق لحالة الموقع الحي فعلياً.
+# الوصول لنطاق الموقع الحي عبر بروكسي الشبكة الخاص بها (تأكّد هذا بفشل
+# curl وWebFetch بخطأ "policy denial" وليس بأي استجابة حقيقية من الموقع)
+# — فمحاولة فحص صحة الموقع من هناك تعطي نتيجة كاذبة دوماً. هذا السير هو
+# المصدر الوحيد الموثوق لحالة الموقع الحي فعلياً.
+#
+# انتقل النشر الفعلي من AI Studio (لم يكن يشغّل أي سيرفر Node/Express
+# إطلاقاً) إلى Render، لذا يفحص هذا السير رابط Render الآن.
 
 on:
   workflow_dispatch:
@@ -19,12 +22,15 @@ jobs:
   health-check:
     runs-on: ubuntu-latest
     steps:
-      - name: Check https://literium.ai.studio/api/health (3 attempts)
+      - name: Check https://literium-wjct.onrender.com/api/health (3 attempts)
         id: check
         run: |
           status="000"
           for attempt in 1 2 3; do
-            status=$(curl -sS -o /tmp/body.txt -w "%{http_code}" --max-time 15 https://literium.ai.studio/api/health || echo "000")
+            # ٧٠ ثانية لا ١٥ — الخطة المجانية في Render تُنيم الخدمة بعد ~١٥ دقيقة
+            # خمول، وأول طلب يوقظها قد يستغرق حتى ٥٠ ثانية؛ مهلة قصيرة هنا كانت
+            # ستُبلّغ عن عطل كاذب في كل فحص مجدول (كل ٣٠ دقيقة = خدمة نائمة دوماً).
+            status=$(curl -sS -o /tmp/body.txt -w "%{http_code}" --max-time 70 https://literium-wjct.onrender.com/api/health || echo "000")
             if [ "$status" = "200" ] && grep -q '"status"[[:space:]]*:[[:space:]]*"ok"' /tmp/body.txt 2>/dev/null; then
               echo "healthy=true" >> "$GITHUB_OUTPUT"
               exit 0
@@ -47,7 +53,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           existing=$(gh issue list --repo ${{ github.repository }} --label site-down --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
-          body="آخر فحص فشل عند $(date -u +"%Y-%m-%dT%H:%M:%SZ") UTC — HTTP ${{ steps.check.outputs.last_status }} من https://literium.ai.studio/api/health بعد 3 محاولات بفارق 20 ثانية."
+          body="آخر فحص فشل عند $(date -u +"%Y-%m-%dT%H:%M:%SZ") UTC — HTTP ${{ steps.check.outputs.last_status }} من https://literium-wjct.onrender.com/api/health بعد 3 محاولات بفارق 20 ثانية."
           if [ -n "$existing" ]; then
             gh issue comment "$existing" --repo ${{ github.repository }} --body "$body"
           else
