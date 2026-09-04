@@ -87,8 +87,18 @@ fun BotsTab(viewModel: AdminViewModel, users: List<User>) {
         }
 
         item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("المحتوى المنشور (${content.size})", fontWeight = FontWeight.Bold)
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+            ) {
+                Text(
+                    "المحتوى المنشور (${content.size})",
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f).padding(end = 8.dp),
+                    maxLines = 2,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
                 if (selected.isNotEmpty()) {
                     OutlinedButton(onClick = {
                         viewModel.deleteBotContent(content.filter { it.id in selected }, bots.map { it.id })

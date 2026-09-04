@@ -26,7 +26,11 @@ fun IsolatedWebView(html: String? = null, url: String? = null, baseUrl: String? 
         modifier = modifier.fillMaxWidth(),
         factory = { ctx ->
             WebView(ctx).apply {
-                layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                // MATCH_PARENT على البُعدين وليس WRAP_CONTENT للارتفاع: عطل معروف في
+                // WebView داخل Compose — الارتفاع يبقى شبه صفري داخلياً حتى يُعاد قياسه
+                // بعد تحميل المحتوى، وهو ما لا يحدث تلقائياً لصفحة iframe مضمّنة، فتظهر
+                // شاشة سوداء/فارغة رغم أن حاوية Compose الخارجية (aspectRatio) صحيحة الحجم.
+                layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
                 // مطابق لمنطق الويب في ExternalAdScript.tsx (iframe معزول بلا allow-same-origin): بلا
                 // baseUrl لمحتوى الإعلانات الخارجية غير الموثوق (القيمة الافتراضية null هنا)، تحصل
                 // صفحة loadDataWithBaseURL على أصل فريد/معزول (شبيه about:blank) بلا وصول لأي

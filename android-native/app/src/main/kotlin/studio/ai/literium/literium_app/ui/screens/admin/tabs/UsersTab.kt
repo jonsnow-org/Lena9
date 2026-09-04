@@ -88,8 +88,18 @@ fun UsersTab(
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("إدارة المستخدمين (${users.size})", fontWeight = FontWeight.Bold)
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+            ) {
+                Text(
+                    "إدارة المستخدمين (${users.size})",
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f).padding(end = 8.dp),
+                    maxLines = 2,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
                 Button(onClick = { showBroadcast = true }) {
                     Icon(Icons.Filled.Campaign, contentDescription = null, modifier = Modifier.size(16.dp))
                     Text(" إرسال تعميم", modifier = Modifier.padding(start = 4.dp))
@@ -133,6 +143,43 @@ fun UsersTab(
     kycTarget?.let { u -> KycReviewDialog(viewModel, u) { kycTarget = null } }
     balanceTarget?.let { u -> BalanceAdjustDialog(viewModel, u) { balanceTarget = null } }
     if (showBroadcast) BroadcastDialog(viewModel, users.size) { showBroadcast = false }
+}
+
+/**
+ * Rounded colored-pill icon toggle matching `AdminUsersTab.tsx`'s verify/ban buttons — a plain
+ * default-tint [IconButton] rendered as flat gray/black with no fill at all, which is what made these
+ * look "colorless" compared to the web's `bg-blue-500/20`/`bg-rose-500` pills. Inactive state uses a
+ * dim outlined pill (`bg-slate-950`/`border-slate-800`) so it still reads as a real button, not just a
+ * bare icon.
+ */
+@Composable
+private fun StatusPillIconButton(
+    active: Boolean,
+    activeContainer: androidx.compose.ui.graphics.Color,
+    activeContent: androidx.compose.ui.graphics.Color,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit
+) {
+    val inactiveContainer = androidx.compose.ui.graphics.Color(0xFF020617)
+    val inactiveContent = androidx.compose.ui.graphics.Color(0xFF94A3B8)
+    val inactiveBorder = androidx.compose.ui.graphics.Color(0xFF1E293B)
+    androidx.compose.material3.Surface(
+        onClick = onClick,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+        color = if (active) activeContainer else inactiveContainer,
+        border = if (active) null else androidx.compose.foundation.BorderStroke(1.dp, inactiveBorder),
+        modifier = Modifier.size(36.dp)
+    ) {
+        Box(Modifier.fillMaxWidth().padding(6.dp), contentAlignment = androidx.compose.ui.Alignment.Center) {
+            Icon(
+                icon,
+                contentDescription = contentDescription,
+                tint = if (active) activeContent else inactiveContent,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+    }
 }
 
 @Composable
@@ -187,16 +234,32 @@ private fun UserRow(
                     }
                 }
                 if (isKycPending) {
-                    Button(onClick = onOpenKyc) { Text("تدقيق الهوية") }
+                    Button(
+                        onClick = onOpenKyc,
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                            containerColor = studio.ai.literium.literium_app.ui.theme.BrandAmber,
+                            contentColor = androidx.compose.ui.graphics.Color(0xFF020617)
+                        )
+                    ) { Text("تدقيق الهوية") }
                 }
                 OutlinedButton(onClick = onOpenBalance) { Text("تعديل الرصيد") }
                 if (!isSelf) {
-                    IconButton(onClick = { viewModel.setUserVerified(u.id, u.isVerified != true) }) {
-                        Icon(Icons.Filled.CheckCircle, contentDescription = "توثيق")
-                    }
-                    IconButton(onClick = { viewModel.setUserBanned(u.id, u.isBanned != true) }) {
-                        Icon(Icons.Filled.Block, contentDescription = "حظر")
-                    }
+                    StatusPillIconButton(
+                        active = u.isVerified == true,
+                        activeContainer = androidx.compose.ui.graphics.Color(0xFF3B82F6).copy(alpha = 0.2f),
+                        activeContent = androidx.compose.ui.graphics.Color(0xFF93C5FD),
+                        icon = Icons.Filled.CheckCircle,
+                        contentDescription = "توثيق",
+                        onClick = { viewModel.setUserVerified(u.id, u.isVerified != true) }
+                    )
+                    StatusPillIconButton(
+                        active = u.isBanned == true,
+                        activeContainer = androidx.compose.ui.graphics.Color(0xFFF43F5E),
+                        activeContent = androidx.compose.ui.graphics.Color.White,
+                        icon = Icons.Filled.Block,
+                        contentDescription = "حظر",
+                        onClick = { viewModel.setUserBanned(u.id, u.isBanned != true) }
+                    )
                 }
                 IconButton(onClick = { onOpenProfile(u.id) }) {
                     Icon(Icons.Filled.Visibility, contentDescription = "معاينة")
