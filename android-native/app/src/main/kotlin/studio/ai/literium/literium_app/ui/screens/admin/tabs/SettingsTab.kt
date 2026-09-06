@@ -25,7 +25,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.ui.unit.sp
 import studio.ai.literium.literium_app.ui.screens.admin.AdminViewModel
+import studio.ai.literium.literium_app.ui.theme.DarkCard
+import studio.ai.literium.literium_app.ui.theme.SlateCardBg
+import studio.ai.literium.literium_app.ui.theme.SlateMuted
 import studio.ai.literium.literium_app.util.RevenueShares
 
 private data class ThemePresetOption(val key: String, val label: String, val hex: String)
@@ -81,7 +85,7 @@ fun SettingsTab(viewModel: AdminViewModel) {
 
     LazyColumn(
         modifier = Modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item { Text("إعدادات المنظومة والمظهر", fontWeight = FontWeight.Bold) }
@@ -93,13 +97,14 @@ fun SettingsTab(viewModel: AdminViewModel) {
                 Card(
                     onClick = { viewModel.setThemePreset(preset.key) },
                     colors = CardDefaults.cardColors(
-                        containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+                        containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else SlateCardBg,
+                        contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else Color.White
                     )
                 ) {
                     Row(Modifier.padding(8.dp)) {
                         Box(preset.hex)
                         Column(Modifier.padding(start = 6.dp)) {
-                            Text(preset.label, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, maxLines = 1)
+                            Text(preset.label, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                             if (isSelected) Icon(Icons.Filled.CheckCircle, contentDescription = null, modifier = Modifier.size(14.dp))
                         }
                     }
@@ -114,27 +119,29 @@ fun SettingsTab(viewModel: AdminViewModel) {
                 Card(
                     onClick = { viewModel.setBackgroundPreset(preset.key) },
                     colors = CardDefaults.cardColors(
-                        containerColor = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface
+                        containerColor = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else SlateCardBg,
+                        contentColor = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer else Color.White
                     )
                 ) {
                     Column(Modifier.padding(10.dp)) {
-                        Text(preset.label, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                        Text(preset.description, style = MaterialTheme.typography.labelSmall, maxLines = 2)
+                        Text(preset.label, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(preset.description, fontSize = 10.sp, color = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer else SlateMuted, maxLines = 2)
                     }
                 }
             }
         }
 
         item {
-            Card {
+            DarkCard {
                 Column(Modifier.padding(12.dp)) {
                     Text("مصفوفة تقاسم العوائد والضمان المالي", fontWeight = FontWeight.Bold)
-                    Text("إعلانات المقالات: ${RevenueShares.IN_ARTICLE_ADS.label}", style = MaterialTheme.typography.bodySmall)
-                    Text("إعلانات الملف الشخصي: ${RevenueShares.WRITER_PROFILE_ADS.label}", style = MaterialTheme.typography.bodySmall)
-                    Text("مبيعات المقالات الحصرية: ${RevenueShares.LOCKED_ARTICLES.label}", style = MaterialTheme.typography.bodySmall)
+                    Text("إعلانات المقالات: ${RevenueShares.IN_ARTICLE_ADS.label}", fontSize = 12.sp, color = SlateMuted)
+                    Text("إعلانات الملف الشخصي: ${RevenueShares.WRITER_PROFILE_ADS.label}", fontSize = 12.sp, color = SlateMuted)
+                    Text("مبيعات المقالات الحصرية: ${RevenueShares.LOCKED_ARTICLES.label}", fontSize = 12.sp, color = SlateMuted)
                     Text(
                         "فترة تجميد الأرباح: 30 يوماً قبل أن تصبح قابلة للسحب.",
-                        style = MaterialTheme.typography.labelSmall,
+                        fontSize = 11.sp,
+                        color = SlateMuted,
                         modifier = Modifier.padding(top = 4.dp)
                     )
                 }
@@ -142,13 +149,19 @@ fun SettingsTab(viewModel: AdminViewModel) {
         }
 
         item {
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer
+                )
+            ) {
                 Column(Modifier.padding(12.dp)) {
                     Text("منطقة الخطر — تصفير كل البيانات المالية التجريبية", fontWeight = FontWeight.Bold)
                     Text(
                         "هذا الإجراء متاح فقط من لوحة تحكم الويب (يتطلب POST /api/admin/reset-test-financial-data، " +
                             "مستبعد عمداً من واجهة الجوال البرمجية). استخدمه من الموقع مباشرة إن احتجت تصفير البيانات التجريبية قبل الإطلاق.",
-                        style = MaterialTheme.typography.labelSmall
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(top = 4.dp)
                     )
                 }
             }

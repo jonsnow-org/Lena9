@@ -26,6 +26,8 @@ import androidx.compose.ui.unit.sp
 import studio.ai.literium.literium_app.data.model.FraudFlag
 import studio.ai.literium.literium_app.data.model.User
 import studio.ai.literium.literium_app.ui.screens.admin.AdminViewModel
+import studio.ai.literium.literium_app.ui.theme.DarkCard
+import studio.ai.literium.literium_app.ui.theme.SlateMuted
 
 /**
  * "مركز مكافحة الاحتيال والأمان" — Compose port of `AdminFraudTab.tsx`.
@@ -46,7 +48,7 @@ fun FraudTab(
 
     LazyColumn(
         modifier = Modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         item {
@@ -64,9 +66,9 @@ fun FraudTab(
                     "تمت المراجعة" to fraudFlags.count { it.status == "reviewed" }
                 )
             ) { (label, value) ->
-                Card {
+                DarkCard {
                     Column(Modifier.padding(12.dp)) {
-                        Text(label, style = MaterialTheme.typography.labelSmall)
+                        Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = SlateMuted)
                         Text(value.toString(), fontSize = 18.sp, fontWeight = FontWeight.Black)
                     }
                 }
@@ -84,11 +86,11 @@ fun FraudTab(
         } else {
             items(filtered, key = { it.id }) { flag ->
                 val suspect = flag.userId?.let { id -> users.find { it.id == id } }
-                Card {
+                DarkCard {
                     Column(Modifier.padding(12.dp)) {
                         Text(flag.details, fontWeight = FontWeight.Bold)
-                        Text("IP: ${flag.userIp} • ${flag.detectedAt}", style = MaterialTheme.typography.labelSmall)
-                        suspect?.let { Text("المشتبه به: ${it.fullName} (@${it.username})", style = MaterialTheme.typography.labelSmall) }
+                        Text("IP: ${flag.userIp} • ${flag.detectedAt}", fontSize = 11.sp, color = SlateMuted)
+                        suspect?.let { Text("المشتبه به: ${it.fullName} (@${it.username})", fontSize = 11.sp, color = SlateMuted) }
                         Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             if (flag.status != "reviewed") {
                                 Button(onClick = { viewModel.resolveFraudFlag(flag.id, "resolved") }) { Text("تأكيد الحجب") }

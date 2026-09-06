@@ -36,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import studio.ai.literium.literium_app.data.model.User
 import studio.ai.literium.literium_app.ui.diagnostics.diagnoseTouchTarget
@@ -87,7 +88,7 @@ fun UsersTab(
 
     LazyColumn(
         modifier = Modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         item {
@@ -209,7 +210,7 @@ private fun UserRow(
     val isKycPending = u.kycDetails?.status == "pending"
     var roleMenuOpen by remember { mutableStateOf(false) }
 
-    Card {
+    studio.ai.literium.literium_app.ui.theme.DarkCard {
         Column(Modifier.padding(12.dp)) {
             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 AsyncImage(
@@ -218,10 +219,10 @@ private fun UserRow(
                 )
                 Column(Modifier.padding(start = 10.dp).weight(1f)) {
                     Text(u.fullName, fontWeight = FontWeight.Bold)
-                    Text("@${u.username} • ${u.email}", style = MaterialTheme.typography.labelSmall)
+                    Text("@${u.username} • ${u.email}", fontSize = 11.sp, color = studio.ai.literium.literium_app.ui.theme.SlateMuted)
                     Text(
                         "المحفظة: $${"%.2f".format(u.walletBalance ?: 0.0)} • للسحب: $${"%.2f".format(u.availableBalance ?: 0.0)} • مجمّد: $${"%.2f".format(u.pendingEarnings ?: 0.0)}",
-                        style = MaterialTheme.typography.labelSmall
+                        fontSize = 11.sp, color = studio.ai.literium.literium_app.ui.theme.SlateMuted
                     )
                     if (u.isBanned == true) Text("محظور", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
                     if (isKycPending) Text("طلب توثيق KYC جديد ⏳", color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.Bold)

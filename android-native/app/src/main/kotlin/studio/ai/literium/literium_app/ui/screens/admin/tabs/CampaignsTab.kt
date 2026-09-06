@@ -25,11 +25,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import studio.ai.literium.literium_app.data.model.AdCampaign
 import studio.ai.literium.literium_app.data.model.ArticlePromotion
 import studio.ai.literium.literium_app.data.model.User
 import studio.ai.literium.literium_app.ui.ads.ADSTERRA_UNITS
 import studio.ai.literium.literium_app.ui.screens.admin.AdminViewModel
+import studio.ai.literium.literium_app.ui.theme.DarkCard
+import studio.ai.literium.literium_app.ui.theme.SlateMuted
 
 /**
  * "مركز الإعلانات والترويج" — Compose port of `AdminAdsTab.tsx`'s three
@@ -77,7 +80,7 @@ private fun CampaignsList(viewModel: AdminViewModel, campaigns: List<AdCampaign>
             (searchQuery.isBlank() || c.campaignName.contains(searchQuery, ignoreCase = true))
     }
 
-    LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
             OutlinedTextField(
                 value = searchQuery, onValueChange = { searchQuery = it },
@@ -94,7 +97,7 @@ private fun CampaignsList(viewModel: AdminViewModel, campaigns: List<AdCampaign>
             item { EmptyHint("لا توجد حملات إعلانية تطابق هذا البحث أو الفلتر.") }
         } else {
             items(filtered, key = { it.id }) { camp ->
-                Card {
+                DarkCard {
                     Column(Modifier.padding(12.dp)) {
                         Text(camp.campaignName, fontWeight = FontWeight.Bold)
                         Text(
@@ -104,12 +107,12 @@ private fun CampaignsList(viewModel: AdminViewModel, campaigns: List<AdCampaign>
                                 "paused" -> "متوقفة مؤقتاً"
                                 else -> "مرفوضة ✗"
                             },
-                            style = MaterialTheme.typography.labelSmall
+                            fontSize = 11.sp, color = SlateMuted
                         )
-                        Text(camp.description, style = MaterialTheme.typography.bodySmall, maxLines = 2)
+                        Text(camp.description, fontSize = 12.sp, color = SlateMuted, maxLines = 2)
                         Text(
                             "الميزانية: $${if (camp.status == "pending") camp.requestedBudget ?: 0.0 else camp.totalBudget} • المُنفَق: $${"%.2f".format(camp.totalSpent)} • الظهور: ${camp.impressionsCount} • النقرات: ${camp.clicksCount}",
-                            style = MaterialTheme.typography.labelSmall
+                            fontSize = 11.sp, color = SlateMuted
                         )
                         Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             when (camp.status) {
@@ -138,19 +141,19 @@ private fun CampaignsList(viewModel: AdminViewModel, campaigns: List<AdCampaign>
 
 @Composable
 private fun PromotionsList(viewModel: AdminViewModel, promotions: List<ArticlePromotion>, users: List<User>) {
-    LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { Text("طلبات ترويج المقالات (${promotions.size})", fontWeight = FontWeight.Bold) }
         if (promotions.isEmpty()) {
             item { EmptyHint("لا توجد طلبات ترويج مقالات حالياً.") }
         } else {
             items(promotions, key = { it.id }) { promo ->
                 val writer = users.find { it.id == promo.writerId }
-                Card {
+                DarkCard {
                     Column(Modifier.padding(12.dp)) {
                         Text(promo.articleTitle ?: promo.articleId, fontWeight = FontWeight.Bold)
                         Text(
                             "الكاتب: ${writer?.fullName ?: promo.writerId} • التكلفة: $${promo.cost} • ${if (promo.pricingModel == "cpc") "لكل نقرة" else "سعر ثابت"}",
-                            style = MaterialTheme.typography.labelSmall
+                            fontSize = 11.sp, color = SlateMuted
                         )
                         if (promo.status == "pending") {
                             Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -158,7 +161,7 @@ private fun PromotionsList(viewModel: AdminViewModel, promotions: List<ArticlePr
                                 OutlinedButton(onClick = { viewModel.setPromotionStatus(promo.id, "rejected") }) { Text("رفض") }
                             }
                         } else {
-                            Text(if (promo.status == "approved") "موافق عليه ونشط ✓" else "مرفوض ✗", style = MaterialTheme.typography.labelSmall)
+                            Text(if (promo.status == "approved") "موافق عليه ونشط ✓" else "مرفوض ✗", fontSize = 11.sp, color = SlateMuted)
                         }
                     }
                 }
@@ -187,9 +190,9 @@ private fun ExternalNetworksSection(viewModel: AdminViewModel) {
     var taboolaSnippet by remember(config) { mutableStateOf((config["taboola"] as? Map<*, *>)?.get("snippet") as? String ?: "") }
     var estimatedCpm by remember(config) { mutableStateOf((config["estimatedCpmUsd"] as? Number)?.toString() ?: "2") }
 
-    LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
-            Card {
+            DarkCard {
                 Row(
                     Modifier.fillMaxWidth().padding(12.dp),
                     horizontalArrangement = Arrangement.SpaceBetween
@@ -204,7 +207,7 @@ private fun ExternalNetworksSection(viewModel: AdminViewModel) {
             Text(
                 "ربط شبكات الإعلانات الخارجية البديلة (PropellerAds/Monetag، Adsterra، Taboola) — الصق كود " +
                     "الإعلان الكامل من لوحة الشبكة، اختر Banner/Native ثابت المقاس فقط.",
-                style = MaterialTheme.typography.bodySmall
+                fontSize = 12.sp, color = SlateMuted
             )
         }
 
@@ -265,7 +268,7 @@ private fun AdsterraUnitsCard(
     unitToggles: Map<String, Boolean>,
     onUnitToggle: (String, Boolean) -> Unit
 ) {
-    Card {
+    DarkCard {
         Column(Modifier.padding(12.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("Adsterra", fontWeight = FontWeight.Bold)
@@ -273,7 +276,7 @@ private fun AdsterraUnitsCard(
             }
             Text(
                 "أكواد Adsterra الحقيقية ثابتة في الشيفرة — أوقف وحدة واحدة إن أزعجت المستخدم بدل إيقاف الجميع.",
-                style = MaterialTheme.typography.bodySmall,
+                fontSize = 12.sp, color = SlateMuted,
                 modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
             )
             ADSTERRA_UNITS.forEach { unit ->
@@ -282,7 +285,7 @@ private fun AdsterraUnitsCard(
                     Modifier.fillMaxWidth().padding(vertical = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text(unit.label, style = MaterialTheme.typography.bodySmall)
+                    Text(unit.label, fontSize = 12.sp, color = SlateMuted)
                     Switch(checked = unitEnabled, onCheckedChange = { onUnitToggle(unit.id, it) })
                 }
             }
@@ -290,7 +293,7 @@ private fun AdsterraUnitsCard(
                 Modifier.fillMaxWidth().padding(top = 6.dp),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text("متوافقة مع نسخة APK (مفتاح شامل)", style = MaterialTheme.typography.bodySmall)
+                Text("متوافقة مع نسخة APK (مفتاح شامل)", fontSize = 12.sp, color = SlateMuted)
                 Switch(checked = apkEnabled, onCheckedChange = onApkEnabledChange)
             }
         }
@@ -299,7 +302,7 @@ private fun AdsterraUnitsCard(
 
 @Composable
 private fun NetworkCard(title: String, enabled: Boolean, onEnabledChange: (Boolean) -> Unit, snippet: String, onSnippetChange: (String) -> Unit) {
-    Card {
+    DarkCard {
         Column(Modifier.padding(12.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(title, fontWeight = FontWeight.Bold)

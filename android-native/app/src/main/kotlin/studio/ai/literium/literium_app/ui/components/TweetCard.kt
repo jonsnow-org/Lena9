@@ -5,10 +5,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -128,8 +130,8 @@ fun TweetCard(
                 }
 
                 if (canDelete) {
-                    IconButton(onClick = { onDelete!!(tweet.id) }, modifier = Modifier.size(30.dp)) {
-                        Icon(Icons.Filled.Delete, contentDescription = "حذف", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                    IconButton(onClick = { onDelete!!(tweet.id) }, modifier = Modifier.size(40.dp)) {
+                        Icon(Icons.Filled.Delete, contentDescription = "حذف", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                     }
                 }
             }
@@ -140,33 +142,36 @@ fun TweetCard(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // ---- Actions ----
+            // ---- Actions (uniform size/touch-target/color system across all four) ----
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 ActionChip(
                     icon = if (isLiked) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
                     tint = if (isLiked) Color(0xFFE11D48) else MaterialTheme.colorScheme.onSurfaceVariant,
                     label = "${tweet.likesCount}",
+                    contentDescription = "إعجاب",
                     onClick = { onToggleLike(tweet.id) }
                 )
                 ActionChip(
                     icon = Icons.Outlined.ModeComment,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     label = "${tweet.commentsCount}",
+                    contentDescription = "التعليقات",
                     onClick = { showComments = !showComments }
                 )
                 ActionChip(
                     icon = Icons.Filled.Share,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     label = "${tweet.sharesCount}",
+                    contentDescription = "مشاركة",
                     onClick = { onShare(tweet) }
                 )
-                IconButton(onClick = { onToggleFavorite(tweet.id) }) {
-                    Icon(
-                        if (isFavorited) Icons.Filled.Star else Icons.Outlined.StarBorder,
-                        contentDescription = "إضافة إلى المفضلة",
-                        tint = if (isFavorited) BrandTeal.copy(alpha = 0.9f) else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                ActionChip(
+                    icon = if (isFavorited) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                    tint = if (isFavorited) BrandTeal else MaterialTheme.colorScheme.onSurfaceVariant,
+                    label = null,
+                    contentDescription = "إضافة إلى المفضلة",
+                    onClick = { onToggleFavorite(tweet.id) }
+                )
             }
 
             if (showComments) {
@@ -231,14 +236,27 @@ fun TweetCard(
 }
 
 @Composable
-private fun ActionChip(icon: androidx.compose.ui.graphics.vector.ImageVector, tint: Color, label: String, onClick: () -> Unit) {
+private fun ActionChip(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    tint: Color,
+    label: String?,
+    contentDescription: String,
+    onClick: () -> Unit
+) {
     Row(
-        modifier = Modifier.clickable(onClick = onClick).padding(vertical = 4.dp, horizontal = 6.dp),
+        modifier = Modifier
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .defaultMinSize(minWidth = 44.dp, minHeight = 40.dp)
+            .padding(vertical = 8.dp, horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(5.dp)
+        horizontalArrangement = Arrangement.Center
     ) {
-        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(16.dp))
-        Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = tint)
+        Icon(icon, contentDescription = contentDescription, tint = tint, modifier = Modifier.size(18.dp))
+        if (label != null) {
+            Spacer(modifier = Modifier.width(5.dp))
+            Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = tint)
+        }
     }
 }
 
@@ -288,35 +306,47 @@ private fun TweetCommentRow(
             Spacer(modifier = Modifier.height(4.dp))
             Text(comment.content, fontSize = 11.sp, lineHeight = 15.sp)
             Spacer(modifier = Modifier.height(6.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Row(
-                    modifier = Modifier.clickable { onLikeComment(comment.id, !likedByMe) },
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { onLikeComment(comment.id, !likedByMe) }
+                        .defaultMinSize(minHeight = 32.dp)
+                        .padding(horizontal = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
                     Icon(
                         if (likedByMe) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                        contentDescription = null,
+                        contentDescription = "إعجاب بالتعليق",
                         tint = if (likedByMe) Color(0xFFE11D48) else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(13.dp)
+                        modifier = Modifier.size(14.dp)
                     )
                     Text("${comment.likesCount}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Row(
-                    modifier = Modifier.clickable(onClick = onToggleReplying),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable(onClick = onToggleReplying)
+                        .defaultMinSize(minHeight = 32.dp)
+                        .padding(horizontal = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
-                    Icon(Icons.AutoMirrored.Filled.Reply, contentDescription = null, tint = BrandTeal, modifier = Modifier.size(13.dp))
+                    Icon(Icons.AutoMirrored.Filled.Reply, contentDescription = "رد على التعليق", tint = BrandTeal, modifier = Modifier.size(14.dp))
                     Text("رد", fontSize = 10.sp, fontWeight = FontWeight.Medium, color = BrandTeal)
                 }
                 if (canDelete) {
                     Row(
-                        modifier = Modifier.clickable { confirmingDelete = true },
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { confirmingDelete = true }
+                            .defaultMinSize(minHeight = 32.dp)
+                            .padding(horizontal = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(3.dp)
                     ) {
-                        Icon(Icons.Filled.Delete, contentDescription = "حذف التعليق", tint = Color(0xFFE11D48), modifier = Modifier.size(13.dp))
+                        Icon(Icons.Filled.Delete, contentDescription = "حذف التعليق", tint = Color(0xFFE11D48), modifier = Modifier.size(14.dp))
                         Text("حذف", fontSize = 10.sp, fontWeight = FontWeight.Medium, color = Color(0xFFE11D48))
                     }
                 }

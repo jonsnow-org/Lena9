@@ -22,6 +22,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import studio.ai.literium.literium_app.data.model.AdCampaign
 import studio.ai.literium.literium_app.data.model.AdEvent
 import studio.ai.literium.literium_app.data.model.DepositRequest
@@ -31,6 +32,8 @@ import studio.ai.literium.literium_app.data.model.PayoutRequest
 import studio.ai.literium.literium_app.data.model.PurchaseRequest
 import studio.ai.literium.literium_app.data.model.User
 import studio.ai.literium.literium_app.ui.screens.admin.AdminViewModel
+import studio.ai.literium.literium_app.ui.theme.DarkCard
+import studio.ai.literium.literium_app.ui.theme.SlateMuted
 import studio.ai.literium.literium_app.util.RevenueShares
 import java.time.Instant
 
@@ -96,18 +99,18 @@ fun FinanceTab(
 
 @Composable
 private fun PayoutsList(viewModel: AdminViewModel, requests: List<PayoutRequest>, users: List<User>) {
-    LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (requests.isEmpty()) {
             item { EmptyHint("لا توجد طلبات سحب حالياً.") }
         } else {
             items(requests, key = { it.id }) { req ->
                 val u = users.find { it.id == req.userId }
-                Card {
+                DarkCard {
                     Column(Modifier.padding(12.dp)) {
                         Text(u?.fullName ?: req.userId, fontWeight = FontWeight.Bold)
-                        Text("${req.method} • $${"%.2f".format(req.amount)}", style = MaterialTheme.typography.labelSmall)
-                        req.destination?.let { Text("الوجهة: $it", style = MaterialTheme.typography.labelSmall) }
-                        Text(statusLabelPayout(req.status), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                        Text("${req.method} • $${"%.2f".format(req.amount)}", fontSize = 11.sp, color = SlateMuted)
+                        req.destination?.let { Text("الوجهة: $it", fontSize = 11.sp, color = SlateMuted) }
+                        Text(statusLabelPayout(req.status), fontSize = 11.sp, color = SlateMuted, fontWeight = FontWeight.Bold)
                         if (req.status != "paid" && req.status != "rejected") {
                             Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Button(onClick = { viewModel.setPayoutRequestStatus(req.id, "paid") }) { Text("تأكيد الدفع") }
@@ -130,24 +133,24 @@ private fun statusLabelPayout(status: String) = when (status) {
 
 @Composable
 private fun DepositsList(viewModel: AdminViewModel, requests: List<DepositRequest>, users: List<User>) {
-    LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (requests.isEmpty()) {
             item { EmptyHint("لا توجد طلبات إيداع حالياً.") }
         } else {
             items(requests, key = { it.id }) { req ->
                 val u = users.find { it.id == req.userId }
-                Card {
+                DarkCard {
                     Column(Modifier.padding(12.dp)) {
                         Text(u?.fullName ?: req.userId, fontWeight = FontWeight.Bold)
-                        Text("${req.method} • $${"%.2f".format(req.amount)}", style = MaterialTheme.typography.labelSmall)
-                        req.reference?.let { Text("المرجع: $it", style = MaterialTheme.typography.labelSmall) }
+                        Text("${req.method} • $${"%.2f".format(req.amount)}", fontSize = 11.sp, color = SlateMuted)
+                        req.reference?.let { Text("المرجع: $it", fontSize = 11.sp, color = SlateMuted) }
                         if (req.status == "pending") {
                             Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Button(onClick = { viewModel.setDepositRequestStatus(req.id, "approved") }) { Text("تأكيد الاستلام والشحن") }
                                 OutlinedButton(onClick = { viewModel.setDepositRequestStatus(req.id, "rejected") }) { Text("رفض") }
                             }
                         } else {
-                            Text(if (req.status == "approved") "معتمد وتم الشحن ✓" else "مرفوض ✗", style = MaterialTheme.typography.labelSmall)
+                            Text(if (req.status == "approved") "معتمد وتم الشحن ✓" else "مرفوض ✗", fontSize = 11.sp, color = SlateMuted)
                         }
                     }
                 }
@@ -158,17 +161,17 @@ private fun DepositsList(viewModel: AdminViewModel, requests: List<DepositReques
 
 @Composable
 private fun ReleasableList(viewModel: AdminViewModel, releasable: List<EarningRecord>, users: List<User>) {
-    LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { Text("أرباح جاهزة للتحرير للسحب (${releasable.size})", fontWeight = FontWeight.Bold) }
         if (releasable.isEmpty()) {
             item { EmptyHint("لا توجد أرباح تجاوزت فترة التجميد (30 يوماً) حالياً.") }
         } else {
             items(releasable, key = { it.id }) { earning ->
                 val u = users.find { it.id == earning.userId }
-                Card {
+                DarkCard {
                     Column(Modifier.padding(12.dp)) {
                         Text(u?.fullName ?: earning.userId, fontWeight = FontWeight.Bold)
-                        Text(earning.description ?: earning.source, style = MaterialTheme.typography.labelSmall)
+                        Text(earning.description ?: earning.source, fontSize = 11.sp, color = SlateMuted)
                         Text("$${"%.2f".format(earning.amount)}", fontWeight = FontWeight.Black)
                         Button(onClick = { viewModel.releaseEarning(earning) }, modifier = Modifier.padding(top = 6.dp)) {
                             Text("تحرير للسحب المباشر")
@@ -182,7 +185,7 @@ private fun ReleasableList(viewModel: AdminViewModel, releasable: List<EarningRe
 
 @Composable
 private fun LockedSalesList(viewModel: AdminViewModel, requests: List<PurchaseRequest>, users: List<User>) {
-    LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { Text("طلبات شراء المقالات الحصرية (${requests.size})", fontWeight = FontWeight.Bold) }
         if (requests.isEmpty()) {
             item { EmptyHint("لا توجد طلبات شراء مقالات حالياً.") }
@@ -191,12 +194,12 @@ private fun LockedSalesList(viewModel: AdminViewModel, requests: List<PurchaseRe
                 val buyer = users.find { it.id == req.buyerId || it.id == req.userId }
                 val writer = users.find { it.id == req.writerId }
                 val writerShare = req.amount * RevenueShares.LOCKED_ARTICLES.writer
-                Card {
+                DarkCard {
                     Column(Modifier.padding(12.dp)) {
                         Text(req.articleTitle ?: req.articleId, fontWeight = FontWeight.Bold)
                         Text(
                             "المشتري: ${buyer?.fullName ?: req.buyerId} • الكاتب: ${writer?.fullName ?: req.writerId}",
-                            style = MaterialTheme.typography.labelSmall
+                            fontSize = 11.sp, color = SlateMuted
                         )
                         Text("$${"%.2f".format(req.amount)} — حصة الكاتب: $${"%.2f".format(writerShare)}", fontWeight = FontWeight.Bold)
                         if (req.status == "pending") {
@@ -205,7 +208,7 @@ private fun LockedSalesList(viewModel: AdminViewModel, requests: List<PurchaseRe
                                 OutlinedButton(onClick = { viewModel.reviewPurchaseRequest(req.id, "rejected") }) { Text("رفض") }
                             }
                         } else {
-                            Text(if (req.status == "approved") "معتمد ومفتوح للمشتري ✓" else "مرفوض ✗", style = MaterialTheme.typography.labelSmall)
+                            Text(if (req.status == "approved") "معتمد ومفتوح للمشتري ✓" else "مرفوض ✗", fontSize = 11.sp, color = SlateMuted)
                         }
                     }
                 }
@@ -217,13 +220,13 @@ private fun LockedSalesList(viewModel: AdminViewModel, requests: List<PurchaseRe
 @Composable
 private fun AdAccountingSection(viewModel: AdminViewModel, unprocessed: List<AdEvent>, campaigns: List<AdCampaign>, users: List<User>) {
     val externalUnprocessed = unprocessed.filter { it.isExternalAdView == true }
-    LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
             Text(
                 "احتساب أرباح إعلانات الكُتّاب وتصفية الأحداث — ${unprocessed.size} حدث غير معالَج. " +
                     "التحقق من صحة النقر/الظهور يتم عند تسجيل الحدث نفسه؛ ليس هناك إعادة تقييم دفعية للاحتيال " +
                     "في هذه النسخة (فلتر evaluateAdEventBatch من الموقع لم يُنقَل بعد — انظر التقرير النهائي).",
-                style = MaterialTheme.typography.bodySmall
+                fontSize = 12.sp, color = SlateMuted
             )
         }
         item {
@@ -236,7 +239,7 @@ private fun AdAccountingSection(viewModel: AdminViewModel, unprocessed: List<AdE
             Text(
                 "عائد الكُتّاب من مشاهدات الشبكات الخارجية (Adsterra/PropellerAds) — ${externalUnprocessed.size} " +
                     "مشاهدة غير محتسَبة، بسعر تقديري ثابت لكل 1000 مشاهدة (يُضبط من تبويب الإعلانات).",
-                style = MaterialTheme.typography.bodySmall
+                fontSize = 12.sp, color = SlateMuted
             )
         }
         item {
@@ -248,9 +251,9 @@ private fun AdAccountingSection(viewModel: AdminViewModel, unprocessed: List<AdE
         if (unprocessed.isNotEmpty()) {
             item { Text("الأحداث غير المعالجة:", fontWeight = FontWeight.Bold) }
             items(unprocessed.take(30), key = { it.id }) { ev ->
-                Card {
+                DarkCard {
                     Column(Modifier.padding(10.dp)) {
-                        Text("${if (ev.eventType == "click") "نقرة" else "ظهور"} — ${ev.slotId}", style = MaterialTheme.typography.bodySmall)
+                        Text("${if (ev.eventType == "click") "نقرة" else "ظهور"} — ${ev.slotId}", fontSize = 12.sp, color = SlateMuted)
                     }
                 }
             }
@@ -260,7 +263,7 @@ private fun AdAccountingSection(viewModel: AdminViewModel, unprocessed: List<AdE
 
 @Composable
 private fun AuditLogList(adjustments: List<ManualBalanceAdjustment>, users: List<User>) {
-    LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { Text("سجل تعديلات الرصيد اليدوية (${adjustments.size})", fontWeight = FontWeight.Bold) }
         if (adjustments.isEmpty()) {
             item { EmptyHint("لا توجد تعديلات رصيد يدوية مسجَّلة.") }
@@ -268,11 +271,11 @@ private fun AuditLogList(adjustments: List<ManualBalanceAdjustment>, users: List
             items(adjustments, key = { it.id }) { adj ->
                 val target = users.find { it.id == adj.userId }
                 val adjuster = users.find { it.id == adj.adjustedBy }
-                Card {
+                DarkCard {
                     Column(Modifier.padding(12.dp)) {
                         Text("الحساب: ${target?.fullName ?: adj.userId}", fontWeight = FontWeight.Bold)
-                        Text("عدَّله: ${adjuster?.fullName ?: adj.adjustedBy}", style = MaterialTheme.typography.labelSmall)
-                        if (adj.reason.isNotBlank()) Text("السبب: ${adj.reason}", style = MaterialTheme.typography.labelSmall)
+                        Text("عدَّله: ${adjuster?.fullName ?: adj.adjustedBy}", fontSize = 11.sp, color = SlateMuted)
+                        if (adj.reason.isNotBlank()) Text("السبب: ${adj.reason}", fontSize = 11.sp, color = SlateMuted)
                         Text(
                             "${if (adj.amount >= 0) "+" else ""}$${"%.2f".format(adj.amount)} → الرصيد الجديد: $${"%.2f".format(adj.newValue)}",
                             fontWeight = FontWeight.Bold
