@@ -26,6 +26,9 @@ import androidx.compose.ui.unit.dp
 import studio.ai.literium.literium_app.data.model.Conversation
 import studio.ai.literium.literium_app.data.model.User
 import studio.ai.literium.literium_app.ui.screens.admin.AdminViewModel
+import studio.ai.literium.literium_app.ui.theme.DarkCard
+import studio.ai.literium.literium_app.ui.theme.SlateMuted
+import androidx.compose.ui.unit.sp
 
 /**
  * "مراقبة المحادثات — جودة المنصة" — Compose port of `AdminChatsTab.tsx`.
@@ -53,7 +56,7 @@ fun ChatsTab(viewModel: AdminViewModel, users: List<User>) {
 
     LazyColumn(
         modifier = Modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         item {
@@ -71,10 +74,10 @@ fun ChatsTab(viewModel: AdminViewModel, users: List<User>) {
             items(filtered, key = { it.id }) { c ->
                 val a = c.participants.getOrNull(0)
                 val b = c.participants.getOrNull(1)
-                Card(onClick = { openConversation = c }) {
+                DarkCard(onClick = { openConversation = c }) {
                     Column(Modifier.padding(12.dp)) {
                         Text("${userLabel(a)} ↔ ${userLabel(b)}", fontWeight = FontWeight.Bold)
-                        Text(c.lastMessage.ifBlank { "—" }, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                        Text(c.lastMessage.ifBlank { "—" }, fontSize = 12.sp, color = SlateMuted, maxLines = 1)
                     }
                 }
             }

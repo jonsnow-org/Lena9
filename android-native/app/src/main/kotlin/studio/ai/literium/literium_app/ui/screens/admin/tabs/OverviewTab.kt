@@ -30,6 +30,8 @@ import studio.ai.literium.literium_app.data.model.PurchaseRequest
 import studio.ai.literium.literium_app.data.model.AdEvent
 import studio.ai.literium.literium_app.data.model.User
 import studio.ai.literium.literium_app.ui.screens.admin.AdminViewModel
+import studio.ai.literium.literium_app.ui.theme.DarkCard
+import studio.ai.literium.literium_app.ui.theme.SlateMuted
 import studio.ai.literium.literium_app.util.RevenueShares
 import java.util.Locale
 
@@ -70,7 +72,7 @@ fun OverviewTab(
 
     LazyColumn(
         modifier = Modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         if (totalActionItems > 0) {
@@ -106,28 +108,29 @@ fun OverviewTab(
                     Triple("أموال محمية بدرع الاحتيال", metrics.totalBlockedFraudRevenue, "${fraudFlags.size} محاولات محجوبة")
                 )
             ) { (title, value, sub) ->
-                Card {
+                DarkCard {
                     Column(Modifier.padding(12.dp)) {
-                        Text(title, style = MaterialTheme.typography.labelSmall)
+                        Text(title, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = SlateMuted)
                         Text(
                             "$${"%.2f".format(value)}",
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Black
                         )
-                        Text(sub, style = MaterialTheme.typography.labelSmall)
+                        Text(sub, fontSize = 10.sp, color = SlateMuted)
                     }
                 }
             }
         }
 
         item {
-            Card {
+            DarkCard {
                 Column(Modifier.padding(16.dp)) {
                     Text("هيكلية النظام الإعلاني المزدوج", fontWeight = FontWeight.Bold)
                     Text(
                         "إعلانات المنصة العامة: 100% للمالك. إعلانات الكُتّاب التشاركية: ${RevenueShares.IN_ARTICLE_ADS.label}. " +
                             "مبيعات المقالات الحصرية: ${RevenueShares.LOCKED_ARTICLES.label}.",
-                        style = MaterialTheme.typography.bodySmall,
+                        fontSize = 12.sp,
+                        color = SlateMuted,
                         modifier = Modifier.padding(top = 6.dp)
                     )
                 }
@@ -139,13 +142,13 @@ fun OverviewTab(
             item { EmptyHint("الدرع نشط ومستقر — لا توجد إنذارات احتيال حالياً.") }
         } else {
             items(fraudFlags.take(3)) { flag ->
-                Card {
+                DarkCard {
                     Column(Modifier.padding(12.dp)) {
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(flag.details, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
-                            Text(flag.severity.uppercase(Locale.ROOT), style = MaterialTheme.typography.labelSmall)
+                            Text(flag.details, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            Text(flag.severity.uppercase(Locale.ROOT), fontSize = 10.sp, color = SlateMuted)
                         }
-                        Text("IP: ${flag.userIp} • ${flag.detectedAt}", style = MaterialTheme.typography.labelSmall)
+                        Text("IP: ${flag.userIp} • ${flag.detectedAt}", fontSize = 10.sp, color = SlateMuted)
                     }
                 }
             }
@@ -161,9 +164,9 @@ fun OverviewTab(
                     "الموثقون رسمياً" to users.count { it.isVerified == true || it.isKycVerified == true }.toString()
                 )
             ) { (label, value) ->
-                Card {
+                DarkCard {
                     Column(Modifier.padding(12.dp)) {
-                        Text(label, style = MaterialTheme.typography.labelSmall)
+                        Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = SlateMuted)
                         Text(value, fontSize = 18.sp, fontWeight = FontWeight.Black)
                     }
                 }
@@ -214,13 +217,14 @@ internal fun ActionChip(label: String, onClick: () -> Unit) {
 
 @Composable
 internal fun EmptyHint(text: String) {
-    Card {
+    DarkCard {
         Text(
             text,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(24.dp),
-            style = MaterialTheme.typography.bodySmall
+            fontSize = 13.sp,
+            color = SlateMuted
         )
     }
 }

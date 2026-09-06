@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -307,7 +308,7 @@ fun FeedScreen(
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.BottomStart).padding(16.dp)
         ) {
-            FloatingActionButton(
+            SmallFloatingActionButton(
                 onClick = { coroutineScope.launch { listState.animateScrollToItem(0) } },
                 containerColor = BrandTeal,
                 contentColor = Color.White

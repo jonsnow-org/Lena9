@@ -28,9 +28,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import studio.ai.literium.literium_app.data.model.User
 import studio.ai.literium.literium_app.ui.screens.admin.AdminViewModel
+import studio.ai.literium.literium_app.ui.theme.DarkCard
+import studio.ai.literium.literium_app.ui.theme.SlateMuted
 
 /**
  * "بوتات النشر والتفاعل التلقائي" — Compose port of `AdminBotsTab.tsx`.
@@ -55,18 +58,18 @@ fun BotsTab(viewModel: AdminViewModel, users: List<User>) {
 
     LazyColumn(
         modifier = Modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         item {
-            Card {
+            DarkCard {
                 Row(
                     Modifier.fillMaxWidth().padding(12.dp),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Column {
                         Text("بوتات النشر والتفاعل التلقائي", fontWeight = FontWeight.Bold)
-                        Text("مقال وتغريدة يومياً بالتداول بين 8 حسابات افتراضية، مستبعدة من الأرباح.", style = MaterialTheme.typography.labelSmall)
+                        Text("مقال وتغريدة يومياً بالتداول بين 8 حسابات افتراضية، مستبعدة من الأرباح.", fontSize = 11.sp, color = SlateMuted)
                     }
                     Switch(checked = publishingBotsEnabled, onCheckedChange = { viewModel.setPublishingBotsEnabled(it) })
                 }
@@ -75,12 +78,12 @@ fun BotsTab(viewModel: AdminViewModel, users: List<User>) {
 
         item { Text("حسابات الكتّاب الافتراضيين (${bots.size}/8)", fontWeight = FontWeight.Bold) }
         items(bots, key = { it.id }) { bot ->
-            Card {
+            DarkCard {
                 Row(Modifier.padding(10.dp)) {
                     AsyncImage(model = bot.avatarUrl, contentDescription = bot.fullName, modifier = Modifier.size(40.dp).clip(CircleShape))
                     Column(Modifier.padding(start = 8.dp)) {
                         Text(bot.fullName, fontWeight = FontWeight.Bold)
-                        Text(bot.bio ?: "", style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                        Text(bot.bio ?: "", fontSize = 11.sp, color = SlateMuted, maxLines = 1)
                     }
                 }
             }
@@ -127,10 +130,10 @@ fun BotsTab(viewModel: AdminViewModel, users: List<User>) {
             item { EmptyHint("لا يوجد نشاط مسجَّل بعد.") }
         } else {
             items(activity.take(30), key = { it.id }) { entry ->
-                Card {
+                DarkCard {
                     Column(Modifier.padding(10.dp)) {
-                        Text("${entry.botName}: ${entry.summary}", style = MaterialTheme.typography.bodySmall)
-                        Text(entry.createdAt, style = MaterialTheme.typography.labelSmall)
+                        Text("${entry.botName}: ${entry.summary}", fontSize = 12.sp, color = SlateMuted)
+                        Text(entry.createdAt, fontSize = 11.sp, color = SlateMuted)
                     }
                 }
             }

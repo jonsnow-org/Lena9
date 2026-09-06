@@ -24,10 +24,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import studio.ai.literium.literium_app.data.model.Article
 import studio.ai.literium.literium_app.data.model.User
 import studio.ai.literium.literium_app.ui.screens.admin.AdminViewModel
+import studio.ai.literium.literium_app.ui.theme.DarkCard
+import studio.ai.literium.literium_app.ui.theme.SlateMuted
 
 /**
  * "حوكمة المحتوى والمقالات المنشورة" — Compose port of
@@ -59,7 +62,7 @@ fun ModerationTab(
 
     LazyColumn(
         modifier = Modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         item { Text("إجمالي المقالات: ${articles.size}", fontWeight = FontWeight.Bold) }
@@ -84,7 +87,7 @@ fun ModerationTab(
         } else {
             items(filtered, key = { it.id }) { art ->
                 val isArchived = art.status == "archived"
-                Card {
+                DarkCard {
                     Column(Modifier.padding(12.dp)) {
                         Row {
                             if (art.featuredImage.isNotBlank()) {
@@ -97,17 +100,20 @@ fun ModerationTab(
                                 Text(art.title, fontWeight = FontWeight.Bold, maxLines = 1)
                                 Text(
                                     "الكاتب: ${art.writerName} • ${art.viewsCount} مشاهدة • ${art.likesCount} إعجاب",
-                                    style = MaterialTheme.typography.labelSmall
+                                    fontSize = 11.sp,
+                                    color = SlateMuted
                                 )
                                 if (art.isLocked) {
                                     Text(
                                         "حصري ($${art.lockedPrice}) — ${art.purchasesCount} عملية شراء",
-                                        style = MaterialTheme.typography.labelSmall
+                                        fontSize = 11.sp,
+                                        color = SlateMuted
                                     )
                                 }
                                 Text(
                                     if (isArchived) "مؤرشف / غير منشور" else "منشور نشط",
-                                    style = MaterialTheme.typography.labelSmall,
+                                    fontSize = 11.sp,
+                                    color = if (isArchived) SlateMuted else studio.ai.literium.literium_app.ui.theme.Emerald,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
