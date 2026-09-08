@@ -1,6 +1,8 @@
 package studio.ai.literium.literium_app.ui.screens.profile
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import android.content.Context
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,18 +19,29 @@ import studio.ai.literium.literium_app.data.repository.FollowRepository
 import studio.ai.literium.literium_app.data.repository.TweetRepository
 import studio.ai.literium.literium_app.util.CreatorEligibility
 
-/** The 4 tabs of the self-profile screen — spec §4.19. */
-enum class ProfileTab { ARTICLES, TWEETS, LIKED, SAVED }
+/** The self-profile's real top-level structure — exact port of `UserProfileView.tsx`'s
+ *  writerTab ("مدونة"/"تغريد"/"لوحة التحكم", spec §4.19): every registered member (not just
+ *  writers, per the unified-account model) sees the same three tabs. */
+enum class ProfileTab { BLOG, TWEET, CONTROL_PANEL }
+
+/** `blogSubView` on web: "مقالاتي" (published) or "المقالات المحفوظة" (local bookmarks). */
+enum class BlogSubTab { ARTICLES, BOOKMARKS }
+
+/** `tweetSubView` on web: "تغريداتي" (own) or "المفضلة" (starred). */
+enum class TweetSubTab { MINE, FAVORITES }
 
 data class ProfileUiState(
     val isLoading: Boolean = true,
     val notSignedIn: Boolean = false,
     val currentUser: User? = null,
-    val activeTab: ProfileTab = ProfileTab.ARTICLES,
+    val activeTab: ProfileTab = ProfileTab.BLOG,
+    val blogSubTab: BlogSubTab = BlogSubTab.ARTICLES,
+    val tweetSubTab: TweetSubTab = TweetSubTab.MINE,
     val ownArticles: List<Article> = emptyList(),
+    val bookmarkedArticles: List<Article> = emptyList(),
     val ownTweets: List<Tweet> = emptyList(),
-    val likedArticles: List<Article> = emptyList(),
-    val savedTweets: List<Tweet> = emptyList(),
+    val favoritedTweets: List<Tweet> = emptyList(),
+    val totalOwnViews: Int = 0,
     val followersCount: Int = 0,
     val followingCount: Int = 0,
     val eligibility: CreatorEligibility.Status? = null,
@@ -46,23 +59,28 @@ data class ProfileUiState(
  * (followers/following, eligibility stats) from the same real collections
  * ([FollowRepository]/[ArticleRepository]) that [CreatorEligibility] itself reads,
  * so this screen can never show a different number than [WriterProfileViewModel]
- * would for the same account.
+ * would for the same account. Bookmarks are read from the same `literium_bookmarks`
+ * SharedPreferences key [studio.ai.literium.literium_app.ui.screens.feed.FeedViewModel]
+ * writes to — a purely local, unsynced list on the web too (verified: `App.tsx`'s
+ * `bookmarkedArticleIds` round-trips through `localStorage` only, no Firestore backing).
  */
-class ProfileViewModel(
-    private val authRepository: AuthRepository = AuthRepository(),
-    private val articleRepository: ArticleRepository = ArticleRepository(),
-    private val tweetRepository: TweetRepository = TweetRepository(),
-    private val followRepository: FollowRepository = FollowRepository()
-) : ViewModel() {
+class ProfileViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val authRepository = AuthRepository()
+    private val articleRepository = ArticleRepository()
+    private val tweetRepository = TweetRepository()
+    private val followRepository = FollowRepository()
 
     private val _state = MutableStateFlow(ProfileUiState())
     val state: StateFlow<ProfileUiState> = _state.asStateFlow()
 
     private val uid: String? = FirebaseAuth.getInstance().currentUser?.uid
 
+    private val prefs by lazy { application.getSharedPreferences("literium_prefs", Context.MODE_PRIVATE) }
+    private fun loadBookmarkIds(): Set<String> = prefs.getStringSet("literium_bookmarks", emptySet())?.toSet() ?: emptySet()
+
     private var allArticles: List<Article> = emptyList()
     private var allTweets: List<Tweet> = emptyList()
-    private var likedArticleIds: Set<String> = emptySet()
     private var favoritedTweetIds: Set<String> = emptySet()
 
     init {
@@ -90,12 +108,6 @@ class ProfileViewModel(
                 }
             }
             viewModelScope.launch {
-                articleRepository.observeArticleLikes().collect { likes ->
-                    likedArticleIds = likes.filter { it.userId == id }.map { it.articleId }.toSet()
-                    recomputeArticleDerived(id)
-                }
-            }
-            viewModelScope.launch {
                 tweetRepository.observeTweetFavorites(id).collect { favIds ->
                     favoritedTweetIds = favIds.toSet()
                     recomputeTweetDerived(id)
@@ -113,16 +125,19 @@ class ProfileViewModel(
     }
 
     private fun recomputeArticleDerived(id: String) {
+        val bookmarkIds = loadBookmarkIds()
+        val own = allArticles.filter { it.writerId == id }.sortedByDescending { it.publishedAt }
         _state.value = _state.value.copy(
-            ownArticles = allArticles.filter { it.writerId == id }.sortedByDescending { it.publishedAt },
-            likedArticles = allArticles.filter { it.id in likedArticleIds }
+            ownArticles = own,
+            bookmarkedArticles = allArticles.filter { it.id in bookmarkIds },
+            totalOwnViews = own.sumOf { it.viewsCount }
         )
     }
 
     private fun recomputeTweetDerived(id: String) {
         _state.value = _state.value.copy(
             ownTweets = allTweets.filter { it.authorId == id }.sortedByDescending { it.createdAt },
-            savedTweets = allTweets.filter { it.id in favoritedTweetIds }
+            favoritedTweets = allTweets.filter { it.id in favoritedTweetIds }
         )
     }
 
@@ -137,8 +152,23 @@ class ProfileViewModel(
         )
     }
 
+    /** Re-read bookmarks from SharedPreferences — call when returning to this screen, since a
+     *  bookmark toggled from the feed/reader doesn't otherwise notify this ViewModel. */
+    fun refreshBookmarks() {
+        val id = uid ?: return
+        recomputeArticleDerived(id)
+    }
+
     fun selectTab(tab: ProfileTab) {
         _state.value = _state.value.copy(activeTab = tab)
+    }
+
+    fun selectBlogSubTab(tab: BlogSubTab) {
+        _state.value = _state.value.copy(blogSubTab = tab)
+    }
+
+    fun selectTweetSubTab(tab: TweetSubTab) {
+        _state.value = _state.value.copy(tweetSubTab = tab)
     }
 
     /** Active-persona role switch (spec §1.3a) — self-assignable roles only, never admin. */

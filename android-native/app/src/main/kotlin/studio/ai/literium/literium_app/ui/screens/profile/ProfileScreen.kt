@@ -19,15 +19,22 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.AdminPanelSettings
+import androidx.compose.material.icons.filled.Article
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.HourglassEmpty
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -40,13 +47,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -56,6 +62,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil3.compose.AsyncImage
@@ -65,6 +72,7 @@ import studio.ai.literium.literium_app.data.model.Tweet
 import studio.ai.literium.literium_app.data.model.UserRole
 import studio.ai.literium.literium_app.ui.ads.AdSlot
 import studio.ai.literium.literium_app.navigation.Screen
+import studio.ai.literium.literium_app.ui.theme.BrandTeal
 import studio.ai.literium.literium_app.util.CreatorEligibility
 
 @Composable
@@ -99,6 +107,14 @@ fun ProfileScreen(navController: NavController, viewModel: ProfileViewModel = vi
             }
             else -> {
                 val user = state.currentUser!!
+                // إعادة قراءة إشارات مرجعية محلية (SharedPreferences، لا Firestore — نفس سلوك
+                // الويب) عند دخول تبويب "المدونة › المحفوظات" تحديداً، لأن تفعيلها من شاشة
+                // أخرى (الخلاصة، القارئ) لا يُخطر هذا ViewModel تلقائياً بخلاف بقية البيانات.
+                LaunchedEffect(state.activeTab, state.blogSubTab) {
+                    if (state.activeTab == ProfileTab.BLOG && state.blogSubTab == BlogSubTab.BOOKMARKS) {
+                        viewModel.refreshBookmarks()
+                    }
+                }
                 LazyColumn(modifier = Modifier.fillMaxSize().padding(padding)) {
                     item {
                         ProfileHeader(
@@ -155,34 +171,64 @@ fun ProfileScreen(navController: NavController, viewModel: ProfileViewModel = vi
                         }
                     }
 
-                    item {
-                        val tabs = listOf(
-                            ProfileTab.ARTICLES to "المقالات (${state.ownArticles.size})",
-                            ProfileTab.TWEETS to "التغريدات (${state.ownTweets.size})",
-                            ProfileTab.LIKED to "الإعجابات",
-                            ProfileTab.SAVED to "المحفوظات"
-                        )
-                        TabRow(selectedTabIndex = tabs.indexOfFirst { it.first == state.activeTab }.coerceAtLeast(0)) {
-                            tabs.forEach { (tab, label) ->
-                                Tab(
-                                    selected = state.activeTab == tab,
-                                    onClick = { viewModel.selectTab(tab) },
-                                    text = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                                )
+                    // ثلاثة تبويبات فقط أسفل المحفظة/بطاقة الأهلية — مطابق حرفياً لـ
+                    // UserProfileView.tsx (مدونة/تغريد/لوحة التحكم)، لا شريط تبويبات مسطّح
+                    // بأربعة أزرار كما كان سابقاً: "مدونة" و"تغريد" هما المحتوى المنشور،
+                    // و"لوحة التحكم" تجمع كل ما هو إدارة/مال/إعدادات خلف مدخل واحد.
+                    if (user.role != UserRole.ADMIN) {
+                        item {
+                            ProfileTopTabs(activeTab = state.activeTab, onSelect = viewModel::selectTab)
+                        }
+
+                        when (state.activeTab) {
+                            ProfileTab.BLOG -> {
+                                item {
+                                    BlogSubTabRow(
+                                        activeSubTab = state.blogSubTab,
+                                        articlesCount = state.ownArticles.size,
+                                        bookmarksCount = state.bookmarkedArticles.size,
+                                        onSelect = viewModel::selectBlogSubTab
+                                    )
+                                }
+                                when (state.blogSubTab) {
+                                    BlogSubTab.ARTICLES -> articleRows(
+                                        state.ownArticles,
+                                        // reader_profile — كل 6 مقالات داخل "مقالاتي" نفسها، ومستبعد
+                                        // تماماً من ملف الأدمن (نفس شرط UserProfileView.tsx بالضبط).
+                                        insertAdEvery6 = true
+                                    ) { navController.navigate(Screen.ArticleReader.of(it.id)) }
+                                    BlogSubTab.BOOKMARKS -> articleRows(state.bookmarkedArticles) {
+                                        navController.navigate(Screen.ArticleReader.of(it.id))
+                                    }
+                                }
+                            }
+                            ProfileTab.TWEET -> {
+                                item {
+                                    TweetSubTabRow(
+                                        activeSubTab = state.tweetSubTab,
+                                        mineCount = state.ownTweets.size,
+                                        favoritesCount = state.favoritedTweets.size,
+                                        onSelect = viewModel::selectTweetSubTab
+                                    )
+                                }
+                                when (state.tweetSubTab) {
+                                    TweetSubTab.MINE -> tweetRows(state.ownTweets) { navController.navigate(Screen.TweetDetail.of(it.id)) }
+                                    TweetSubTab.FAVORITES -> tweetRows(state.favoritedTweets) { navController.navigate(Screen.TweetDetail.of(it.id)) }
+                                }
+                            }
+                            ProfileTab.CONTROL_PANEL -> {
+                                item {
+                                    ControlPanelSection(
+                                        totalViews = state.totalOwnViews,
+                                        articlesCount = state.ownArticles.size,
+                                        followersCount = state.followersCount,
+                                        onOpenAds = { navController.navigate(Screen.AdvertiserDashboard.route) },
+                                        onOpenEarnings = { navController.navigate(Screen.Wallet.route) },
+                                        onOpenLiterarySettings = { navController.navigate(Screen.EditProfile.route) }
+                                    )
+                                }
                             }
                         }
-                    }
-
-                    when (state.activeTab) {
-                        ProfileTab.ARTICLES -> articleRows(
-                            state.ownArticles,
-                            // reader_profile — كل 6 مقالات داخل قائمة "مقالاتي" نفسها، ومستبعد تماماً
-                            // من ملف الأدمن (نفس شرط UserProfileView.tsx بالضبط).
-                            insertAdEvery6 = state.currentUser?.role != UserRole.ADMIN
-                        ) { navController.navigate(Screen.ArticleReader.of(it.id)) }
-                        ProfileTab.LIKED -> articleRows(state.likedArticles) { navController.navigate(Screen.ArticleReader.of(it.id)) }
-                        ProfileTab.TWEETS -> tweetRows(state.ownTweets) { navController.navigate(Screen.TweetDetail.of(it.id)) }
-                        ProfileTab.SAVED -> tweetRows(state.savedTweets) { navController.navigate(Screen.TweetDetail.of(it.id)) }
                     }
 
                     item { Spacer(Modifier.height(24.dp)) }
@@ -285,6 +331,161 @@ private fun RoleSwitcher(currentRole: String, onSwitch: (String) -> Unit) {
                 onClick = { onSwitch(role) },
                 label = { Text(labels[role] ?: role) }
             )
+        }
+    }
+}
+
+/** "مدونة / تغريد / لوحة التحكم" — exact port of `UserProfileView.tsx`'s three-button segmented
+ *  row (spec §4.19): a single flat container with three equal-width buttons, the active one raised
+ *  on a surface chip — not a Material [TabRow]/[Tab] pair, which renders as an underlined strip and
+ *  reads as a completely different navigation idiom than the web's pill-segmented control. */
+@Composable
+private fun ProfileTopTabs(activeTab: ProfileTab, onSelect: (ProfileTab) -> Unit) {
+    val tabs = listOf(
+        Triple(ProfileTab.BLOG, "مدونة", Icons.Filled.Article),
+        Triple(ProfileTab.TWEET, "تغريد", Icons.Filled.Chat),
+        Triple(ProfileTab.CONTROL_PANEL, "لوحة التحكم", Icons.Filled.Tune)
+    )
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
+    ) {
+        Row(modifier = Modifier.padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            tabs.forEach { (tab, label, icon) ->
+                val active = activeTab == tab
+                Surface(
+                    color = if (active) MaterialTheme.colorScheme.surface else Color.Transparent,
+                    contentColor = if (active) BrandTeal else MaterialTheme.colorScheme.onSurfaceVariant,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.weight(1f).clickable { onSelect(tab) }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(vertical = 10.dp, horizontal = 6.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(label, fontSize = 12.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** "مقالاتي / المقالات المحفوظة" pill row under the مدونة tab — matches web's `blogSubView`. */
+@Composable
+private fun BlogSubTabRow(activeSubTab: BlogSubTab, articlesCount: Int, bookmarksCount: Int, onSelect: (BlogSubTab) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        SubTabPill(label = "مقالاتي ($articlesCount)", icon = Icons.Filled.Article, active = activeSubTab == BlogSubTab.ARTICLES) {
+            onSelect(BlogSubTab.ARTICLES)
+        }
+        SubTabPill(label = "المحفوظة ($bookmarksCount)", icon = Icons.Filled.Bookmark, active = activeSubTab == BlogSubTab.BOOKMARKS) {
+            onSelect(BlogSubTab.BOOKMARKS)
+        }
+    }
+}
+
+/** "تغريداتي / المفضلة" pill row under the تغريد tab — matches web's `tweetSubView`. */
+@Composable
+private fun TweetSubTabRow(activeSubTab: TweetSubTab, mineCount: Int, favoritesCount: Int, onSelect: (TweetSubTab) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        SubTabPill(label = "تغريداتي ($mineCount)", icon = Icons.Filled.Chat, active = activeSubTab == TweetSubTab.MINE) {
+            onSelect(TweetSubTab.MINE)
+        }
+        SubTabPill(label = "المفضلة ($favoritesCount)", icon = Icons.Filled.Star, active = activeSubTab == TweetSubTab.FAVORITES) {
+            onSelect(TweetSubTab.FAVORITES)
+        }
+    }
+}
+
+@Composable
+private fun SubTabPill(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, active: Boolean, onClick: () -> Unit) {
+    Surface(
+        color = if (active) BrandTeal else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        contentColor = if (active) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+        shape = RoundedCornerShape(50),
+        modifier = Modifier.clickable(onClick = onClick)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(14.dp))
+            Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+/** "لوحة التحكم": overview stat grid + three navigation entries (إعلاناتي/الأرباح/الإعدادات
+ *  الأدبية) — matches web's `writerTab === 'control_panel'` section (spec §4.19). The web embeds
+ *  each sub-section's full form directly inline; this app instead routes to the equivalent existing
+ *  standalone screen ([Screen.AdvertiserDashboard]/[Screen.Wallet]/[Screen.EditProfile]) rather than
+ *  duplicating that already-built UI a second time inside this card. */
+@Composable
+private fun ControlPanelSection(
+    totalViews: Int,
+    articlesCount: Int,
+    followersCount: Int,
+    onOpenAds: () -> Unit,
+    onOpenEarnings: () -> Unit,
+    onOpenLiterarySettings: () -> Unit
+) {
+    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+            ControlPanelStat(label = "إجمالي المشاهدات", value = "$totalViews", modifier = Modifier.weight(1f))
+            ControlPanelStat(label = "المقالات", value = "$articlesCount", modifier = Modifier.weight(1f))
+            ControlPanelStat(label = "المتابعون", value = "$followersCount", modifier = Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(12.dp))
+        ControlPanelNavCard(label = "الإعلانات والترويج", icon = Icons.Filled.Campaign, onClick = onOpenAds)
+        Spacer(Modifier.height(8.dp))
+        ControlPanelNavCard(label = "الأرباح والمحفظة", icon = Icons.Filled.AccountBalanceWallet, onClick = onOpenEarnings)
+        Spacer(Modifier.height(8.dp))
+        ControlPanelNavCard(label = "الإعدادات الأدبية", icon = Icons.Filled.Edit, onClick = onOpenLiterarySettings)
+    }
+}
+
+@Composable
+private fun ControlPanelStat(label: String, value: String, modifier: Modifier = Modifier) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+        shape = RoundedCornerShape(16.dp),
+        modifier = modifier
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(value, fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleMedium)
+            Text(label, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun ControlPanelNavCard(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp).fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Icon(icon, contentDescription = null, tint = BrandTeal)
+                Text(label, fontWeight = FontWeight.Bold)
+            }
+            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
         }
     }
 }
