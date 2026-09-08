@@ -24,7 +24,7 @@ export async function fetchMediaUploadStatus(): Promise<boolean> {
   }
 }
 
-export async function uploadAdMedia(file: File, purpose: 'ad' | 'article' | 'message' = 'ad'): Promise<MediaUploadResult> {
+export async function uploadAdMedia(file: File, purpose: 'ad' | 'article' | 'message' | 'tweet' = 'ad'): Promise<MediaUploadResult> {
   const user = auth.currentUser;
   if (!user) throw new Error('يجب تسجيل الدخول أولاً.');
   const token = await user.getIdToken();

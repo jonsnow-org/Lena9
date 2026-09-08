@@ -13,6 +13,8 @@ data class Tweet(
     var authorAvatar: String = "",
     var authorRole: String = UserRole.READER,
     var content: String = "",
+    /** Optional attached image URL (Cloudinary, purpose="tweet") — mirrors web's Tweet.imageUrl. */
+    var imageUrl: String? = null,
     var likesCount: Long = 0,
     var commentsCount: Long = 0,
     var sharesCount: Long = 0,
@@ -28,6 +30,8 @@ data class TweetComment(
     var userAvatar: String = "",
     var userRole: String = UserRole.READER,
     var content: String = "",
+    /** Optional attached image URL — mirrors web's TweetComment.imageUrl. */
+    var imageUrl: String? = null,
     var likesCount: Long = 0,
     var likedBy: List<String>? = null,
     var createdAt: String = "",

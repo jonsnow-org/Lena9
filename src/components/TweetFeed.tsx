@@ -12,12 +12,12 @@ interface TweetFeedProps {
   likedTweetIds: string[];
   favoritedTweetIds: string[];
   campaigns?: AdCampaign[];
-  onPostTweet: (content: string) => void | Promise<void>;
+  onPostTweet: (content: string, imageUrl?: string) => void | Promise<void>;
   onToggleLike: (tweetId: string) => void;
   onToggleFavorite: (tweetId: string) => void;
   onShare: (tweet: Tweet) => void;
   onDeleteTweet: (tweetId: string) => void;
-  onAddComment: (tweetId: string, content: string) => void;
+  onAddComment: (tweetId: string, content: string, imageUrl?: string) => void;
   onLikeComment: (commentId: string, isLiking: boolean) => void;
   onReplyToComment: (commentId: string, content: string) => void;
   onSelectAuthor?: (userId: string) => void;

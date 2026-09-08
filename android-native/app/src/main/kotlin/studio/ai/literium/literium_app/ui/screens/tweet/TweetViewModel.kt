@@ -1,6 +1,7 @@
 package studio.ai.literium.literium_app.ui.screens.tweet
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,6 +17,7 @@ import studio.ai.literium.literium_app.data.model.TweetComment
 import studio.ai.literium.literium_app.data.model.User
 import studio.ai.literium.literium_app.data.repository.AuthRepository
 import studio.ai.literium.literium_app.data.repository.TweetRepository
+import studio.ai.literium.literium_app.util.uploadTweetImage
 import java.time.Instant
 import java.util.UUID
 
@@ -38,7 +40,9 @@ data class TweetComposerUiState(
     val currentUser: User? = null,
     val isPosting: Boolean = false,
     val posted: Boolean = false,
-    val error: String? = null
+    val error: String? = null,
+    val imageUrl: String? = null,
+    val isUploadingImage: Boolean = false
 )
 
 /**
@@ -135,7 +139,7 @@ class TweetViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun addComment(content: String) {
+    fun addComment(content: String, imageUrl: String? = null) {
         val tweetId = _detailState.value.tweet?.id ?: return
         val user = _detailState.value.currentUser ?: return
         if (content.isBlank()) return
@@ -149,6 +153,7 @@ class TweetViewModel(application: Application) : AndroidViewModel(application) {
                     userAvatar = user.avatarUrl,
                     userRole = user.role,
                     content = content.trim(),
+                    imageUrl = imageUrl,
                     createdAt = Instant.now().toString()
                 )
             )
@@ -189,6 +194,20 @@ class TweetViewModel(application: Application) : AndroidViewModel(application) {
 
     // ---- Composer screen ----
 
+    fun uploadComposerImage(context: android.content.Context, uri: Uri) {
+        _composerState.value = _composerState.value.copy(isUploadingImage = true, error = null)
+        viewModelScope.launch {
+            uploadTweetImage(context, uri).fold(
+                onSuccess = { url -> _composerState.value = _composerState.value.copy(isUploadingImage = false, imageUrl = url) },
+                onFailure = { e -> _composerState.value = _composerState.value.copy(isUploadingImage = false, error = e.message ?: "تعذّر رفع الصورة.") }
+            )
+        }
+    }
+
+    fun clearComposerImage() {
+        _composerState.value = _composerState.value.copy(imageUrl = null)
+    }
+
     fun postTweet(content: String) {
         val user = _composerState.value.currentUser ?: return
         val trimmed = content.trim()
@@ -196,6 +215,7 @@ class TweetViewModel(application: Application) : AndroidViewModel(application) {
             _composerState.value = _composerState.value.copy(error = "نص التغريدة يجب أن يكون بين 1 و280 حرفاً.")
             return
         }
+        val imageUrl = _composerState.value.imageUrl
         _composerState.value = _composerState.value.copy(isPosting = true, error = null)
         viewModelScope.launch {
             tweetRepository.addTweet(
@@ -207,10 +227,11 @@ class TweetViewModel(application: Application) : AndroidViewModel(application) {
                     authorAvatar = user.avatarUrl,
                     authorRole = user.role,
                     content = trimmed,
+                    imageUrl = imageUrl,
                     createdAt = Instant.now().toString()
                 )
             ).fold(
-                onSuccess = { _composerState.value = _composerState.value.copy(isPosting = false, posted = true) },
+                onSuccess = { _composerState.value = _composerState.value.copy(isPosting = false, posted = true, imageUrl = null) },
                 onFailure = { e -> _composerState.value = _composerState.value.copy(isPosting = false, error = e.message ?: "تعذّر نشر التغريدة.") }
             )
         }

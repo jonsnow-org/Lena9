@@ -79,7 +79,7 @@ fun TweetDetailScreen(
                         onToggleFavorite = { viewModel.toggleFavorite() },
                         onShare = { viewModel.share() },
                         onDelete = deleteHandler,
-                        onAddComment = { _, content -> viewModel.addComment(content) },
+                        onAddComment = { _, content, imageUrl -> viewModel.addComment(content, imageUrl) },
                         onLikeComment = { commentId, isLiking -> viewModel.likeComment(commentId, isLiking) },
                         onDeleteComment = { commentId -> viewModel.deleteComment(commentId) },
                         onReplyToComment = { commentId, content -> viewModel.replyToComment(commentId, content) },

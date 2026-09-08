@@ -249,7 +249,7 @@ class FeedViewModel(application: Application) : AndroidViewModel(application) {
 
     // ---- Tweet mode actions (spec §8 — TweetFeed embedded directly in the home feed) ----
 
-    fun postTweet(content: String) {
+    fun postTweet(content: String, imageUrl: String? = null) {
         val user = _uiState.value.currentUser ?: return
         if (content.isBlank() || content.length > 280) return
         viewModelScope.launch {
@@ -262,6 +262,7 @@ class FeedViewModel(application: Application) : AndroidViewModel(application) {
                     authorAvatar = user.avatarUrl,
                     authorRole = user.role,
                     content = content,
+                    imageUrl = imageUrl,
                     createdAt = Instant.now().toString()
                 )
             )
@@ -298,7 +299,7 @@ class FeedViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { tweetRepository.deleteTweet(tweetId) }
     }
 
-    fun addTweetComment(tweetId: String, content: String) {
+    fun addTweetComment(tweetId: String, content: String, imageUrl: String? = null) {
         val user = _uiState.value.currentUser ?: return
         viewModelScope.launch {
             tweetRepository.addTweetComment(
@@ -310,6 +311,7 @@ class FeedViewModel(application: Application) : AndroidViewModel(application) {
                     userAvatar = user.avatarUrl,
                     userRole = user.role,
                     content = content,
+                    imageUrl = imageUrl,
                     createdAt = Instant.now().toString()
                 )
             )

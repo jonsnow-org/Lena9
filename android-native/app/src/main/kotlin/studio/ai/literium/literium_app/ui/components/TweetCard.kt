@@ -1,7 +1,11 @@
 package studio.ai.literium.literium_app.ui.components
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,8 +20,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.FavoriteBorder
@@ -26,6 +32,7 @@ import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -37,22 +44,26 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import kotlinx.coroutines.launch
 import studio.ai.literium.literium_app.data.model.CommentReply
 import studio.ai.literium.literium_app.data.model.Tweet
 import studio.ai.literium.literium_app.data.model.TweetComment
 import studio.ai.literium.literium_app.data.model.UserRole
 import studio.ai.literium.literium_app.ui.theme.BrandTeal
 import studio.ai.literium.literium_app.util.DateFormatAr
+import studio.ai.literium.literium_app.util.uploadTweetImage
 
 /**
  * The short-post ("tweet") card reused across the tweet feed, Explore, and profile screens —
@@ -75,7 +86,7 @@ fun TweetCard(
     onToggleFavorite: (String) -> Unit = {},
     onShare: (Tweet) -> Unit = {},
     onDelete: ((String) -> Unit)? = null,
-    onAddComment: (String, String) -> Unit = { _, _ -> },
+    onAddComment: (String, String, String?) -> Unit = { _, _, _ -> },
     onLikeComment: (String, Boolean) -> Unit = { _, _ -> },
     onDeleteComment: ((String) -> Unit)? = null,
     onReplyToComment: (String, String) -> Unit = { _, _ -> },
@@ -84,8 +95,24 @@ fun TweetCard(
 ) {
     var showComments by remember { mutableStateOf(startExpanded) }
     var commentText by remember { mutableStateOf("") }
+    var commentImageUrl by remember { mutableStateOf<String?>(null) }
+    var commentImageUploading by remember { mutableStateOf(false) }
+    var commentImageError by remember { mutableStateOf<String?>(null) }
     var replyingToId by remember { mutableStateOf<String?>(null) }
     var replyText by remember { mutableStateOf("") }
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    val commentImagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        commentImageError = null
+        commentImageUploading = true
+        coroutineScope.launch {
+            uploadTweetImage(context, uri).fold(
+                onSuccess = { url -> commentImageUploading = false; commentImageUrl = url },
+                onFailure = { e -> commentImageUploading = false; commentImageError = e.message ?: "تعذّر رفع الصورة." }
+            )
+        }
+    }
 
     val canDelete = onDelete != null && (currentUserId == tweet.authorId || isAdmin)
 
@@ -140,6 +167,16 @@ fun TweetCard(
 
             Text(tweet.content, fontSize = 14.sp, lineHeight = 20.sp)
 
+            tweet.imageUrl?.let { url ->
+                Spacer(modifier = Modifier.height(8.dp))
+                AsyncImage(
+                    model = url,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)),
+                    contentScale = ContentScale.Crop
+                )
+            }
+
             Spacer(modifier = Modifier.height(10.dp))
 
             // ---- Actions (uniform size/touch-target/color system across all four) ----
@@ -180,6 +217,17 @@ fun TweetCard(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    IconButton(
+                        onClick = { commentImagePicker.launch("image/*") },
+                        enabled = !commentImageUploading,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        if (commentImageUploading) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = BrandTeal)
+                        } else {
+                            Icon(Icons.Filled.Image, contentDescription = "إرفاق صورة", tint = BrandTeal, modifier = Modifier.size(18.dp))
+                        }
+                    }
                     OutlinedTextField(
                         value = commentText,
                         onValueChange = { commentText = it },
@@ -190,11 +238,37 @@ fun TweetCard(
                     )
                     TextButton(onClick = {
                         if (commentText.isNotBlank()) {
-                            onAddComment(tweet.id, commentText.trim())
+                            onAddComment(tweet.id, commentText.trim(), commentImageUrl)
                             commentText = ""
+                            commentImageUrl = null
+                            commentImageError = null
                         }
-                    }, enabled = commentText.isNotBlank()) {
+                    }, enabled = commentText.isNotBlank() && !commentImageUploading) {
                         Text("تعليق", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                commentImageError?.let { err ->
+                    Text(err, fontSize = 10.sp, color = Color(0xFFE11D48))
+                }
+
+                commentImageUrl?.let { url ->
+                    Box(contentAlignment = Alignment.TopEnd) {
+                        AsyncImage(
+                            model = url,
+                            contentDescription = null,
+                            modifier = Modifier.height(90.dp).clip(RoundedCornerShape(10.dp)),
+                            contentScale = ContentScale.Crop
+                        )
+                        Surface(
+                            color = Color.Black.copy(alpha = 0.55f),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.padding(4.dp)
+                        ) {
+                            IconButton(onClick = { commentImageUrl = null }, modifier = Modifier.size(22.dp)) {
+                                Icon(Icons.Filled.Close, contentDescription = "إزالة الصورة", tint = Color.White, modifier = Modifier.size(14.dp))
+                            }
+                        }
                     }
                 }
 
@@ -305,6 +379,15 @@ private fun TweetCommentRow(
             }
             Spacer(modifier = Modifier.height(4.dp))
             Text(comment.content, fontSize = 11.sp, lineHeight = 15.sp)
+            comment.imageUrl?.let { url ->
+                Spacer(modifier = Modifier.height(6.dp))
+                AsyncImage(
+                    model = url,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxWidth().height(140.dp).clip(RoundedCornerShape(10.dp)),
+                    contentScale = ContentScale.Crop
+                )
+            }
             Spacer(modifier = Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Row(

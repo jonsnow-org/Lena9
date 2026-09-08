@@ -148,7 +148,7 @@ interface UserProfileViewProps {
   onToggleTweetLike?: (tweetId: string) => void;
   onToggleTweetFavorite?: (tweetId: string) => void;
   onShareTweet?: (tweet: Tweet) => void;
-  onAddTweetComment?: (tweetId: string, content: string) => void;
+  onAddTweetComment?: (tweetId: string, content: string, imageUrl?: string) => void;
   onLikeTweetComment?: (commentId: string, isLiking: boolean) => void;
   onReplyToTweetComment?: (commentId: string, content: string) => void;
   /** عدد الكتّاب الذين يتابعهم هذا المستخدم فعلياً (followedWriterIds.length)
