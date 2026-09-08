@@ -433,7 +433,7 @@ private fun SubTabPill(label: String, icon: androidx.compose.ui.graphics.vector.
  *  duplicating that already-built UI a second time inside this card. */
 @Composable
 private fun ControlPanelSection(
-    totalViews: Int,
+    totalViews: Long,
     articlesCount: Int,
     followersCount: Int,
     onOpenAds: () -> Unit,
