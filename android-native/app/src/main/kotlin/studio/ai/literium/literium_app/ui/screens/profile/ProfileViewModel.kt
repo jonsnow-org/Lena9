@@ -41,7 +41,7 @@ data class ProfileUiState(
     val bookmarkedArticles: List<Article> = emptyList(),
     val ownTweets: List<Tweet> = emptyList(),
     val favoritedTweets: List<Tweet> = emptyList(),
-    val totalOwnViews: Int = 0,
+    val totalOwnViews: Long = 0L,
     val followersCount: Int = 0,
     val followingCount: Int = 0,
     val eligibility: CreatorEligibility.Status? = null,
