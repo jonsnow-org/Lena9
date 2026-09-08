@@ -198,6 +198,8 @@ export interface Tweet {
   authorAvatar: string;
   authorRole: UserRole;
   content: string;
+  /** صورة مرفقة اختيارية بالتغريدة (رفع Cloudinary، purpose='tweet'). */
+  imageUrl?: string;
   likesCount: number;
   commentsCount: number;
   sharesCount: number;
@@ -213,6 +215,8 @@ export interface TweetComment {
   userAvatar: string;
   userRole: UserRole;
   content: string;
+  /** صورة مرفقة اختيارية بالتعليق. */
+  imageUrl?: string;
   likesCount: number;
   likedBy?: string[];
   createdAt: string;

@@ -2563,9 +2563,19 @@ async function startServer() {
 
       // فيديو المقالات ليس له حد مدة، وفيديو رسائل المحادثة محدود بـ5 دقائق
       // (300 ثانية) — بخلاف فيديو الإعلانات المحدود بدقيقة واحدة فقط
-      // (القيمة الافتراضية غير المُمرَّرة تُبقي حدّها كما هو).
-      const purpose = req.body?.purpose === 'article' ? 'article' : req.body?.purpose === 'message' ? 'message' : 'ad';
-      const folderName = purpose === 'article' ? 'articles' : purpose === 'message' ? 'messages' : 'ads';
+      // (القيمة الافتراضية غير المُمرَّرة تُبقي حدّها كما هو). صور التغريد/
+      // تعليقات التغريد (purpose='tweet') صور فقط عملياً من واجهة العميل،
+      // فحد المدة هنا غير ذي أثر — لا حاجة لحد مخصص.
+      const purpose =
+        req.body?.purpose === 'article'
+          ? 'article'
+          : req.body?.purpose === 'message'
+          ? 'message'
+          : req.body?.purpose === 'tweet'
+          ? 'tweet'
+          : 'ad';
+      const folderName =
+        purpose === 'article' ? 'articles' : purpose === 'message' ? 'messages' : purpose === 'tweet' ? 'tweets' : 'ads';
       const result = await uploadMediaBuffer(file.buffer, {
         folder: `literium/${folderName}/${uid}`,
         resourceType: isVideo ? 'video' : 'image',

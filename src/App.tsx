@@ -1970,7 +1970,7 @@ export function App() {
   // ===== التغريدات =====
   // نشر تغريد جديد. النشر متاح لأي عضو مسجّل (قارئ/كاتب/معلن)، وليس
   // للكتّاب فقط، تماشياً مع نموذج "الحساب الموحّد" في المنصة.
-  const handlePostTweet = async (content: string) => {
+  const handlePostTweet = async (content: string, imageUrl?: string) => {
     if (!requireAuth()) return;
     try {
       const newTweet: Tweet = {
@@ -1981,6 +1981,7 @@ export function App() {
         authorAvatar: currentUser.avatarUrl,
         authorRole: currentUser.role,
         content,
+        ...(imageUrl ? { imageUrl } : {}),
         likesCount: 0,
         commentsCount: 0,
         sharesCount: 0,
@@ -2084,7 +2085,7 @@ export function App() {
     }
   };
 
-  const handlePostTweetComment = async (tweetId: string, content: string) => {
+  const handlePostTweetComment = async (tweetId: string, content: string, imageUrl?: string) => {
     if (!requireAuth()) return;
     try {
       const newComment: TweetComment = {
@@ -2095,6 +2096,7 @@ export function App() {
         userAvatar: currentUser.avatarUrl,
         userRole: currentUser.role,
         content,
+        ...(imageUrl ? { imageUrl } : {}),
         likesCount: 0,
         likedBy: [],
         createdAt: new Date().toISOString(),
