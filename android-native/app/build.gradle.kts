@@ -78,6 +78,13 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.activity:activity-compose:1.9.3")
+    // بعض المكتبات الأخرى تسحب androidx.fragment بإصدار قديم عبر النقل
+    // (transitive) — أقل من 1.3.0 الذي يتطلبه registerForActivityResult
+    // فعلياً (يتحقق منه Lint حتى مع Activity عادية بلا أي Fragment صريح في
+    // هذا الكود). فرض إصدار حديث هنا هو الحل الموثَّق رسمياً لهذا التحذير
+    // بالضبط (InvalidFragmentVersionForActivityResult)، لا علاقة له بأي
+    // استخدام فعلي لـFragment في هذا التطبيق.
+    implementation("androidx.fragment:fragment-ktx:1.8.4")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.navigation:navigation-compose:2.8.5")
