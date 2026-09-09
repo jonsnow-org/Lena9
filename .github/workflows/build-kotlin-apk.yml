@@ -1,6 +1,14 @@
 name: Build Kotlin Native Android APK
 
-# يبني تطبيق Literium الأصيل الجديد المكتوب بـKotlin/Jetpack Compose بالكامل
+# ⚠️ معطَّل عمداً (workflow_dispatch فقط، بلا push) بعد التحول إلى مسار
+# TWA (انظر build-apk.yml) — القرار الصريح لاحقاً كان أن يكون المحتوى هو
+# الموقع نفسه (WebView مُتحقَّق منه رسمياً) بدل إعادة بناء كل شاشة يدوياً.
+# كلا السيرين كانا يكتبان إلى نفس public/downloads/Literium.apk، فبقاء هذا
+# مفعَّلاً على push كان سيتسبب بسباق فعلي: يفوز أيهما ينتهي متأخراً فيستبدل
+# بناء TWA الصحيح بهذا البناء القديم بصمت. أُبقي على الكود والتشغيل اليدوي
+# فقط كمرجع/احتياط، لا كمسار نشر فعلي.
+#
+# يبني تطبيق Literium الأصيل المكتوب بـKotlin/Jetpack Compose بالكامل
 # (android-native/) — يستبدل نسخة Flutter+WebView السابقة (flutter_app/)
 # لأن تشغيل محركي عرض معاً في نفس العملية (Flutter/Skia وWebView/Chromium)
 # كان يجعل التطبيق أثقل وأبطأ بشكل ملحوظ من الموقع نفسه داخل Chrome —
@@ -13,11 +21,6 @@ name: Build Kotlin Native Android APK
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main, claude/project-error-analysis-zhu2ux]
-    paths:
-      - 'android-native/**'
-      - '.github/workflows/build-kotlin-apk.yml'
 
 permissions:
   contents: write
