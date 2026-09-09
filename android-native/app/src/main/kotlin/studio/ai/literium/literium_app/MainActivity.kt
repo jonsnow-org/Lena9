@@ -3,76 +3,152 @@ package studio.ai.literium.literium_app
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.view.ViewGroup
+import android.webkit.ValueCallback
+import android.webkit.WebChromeClient
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.unit.LayoutDirection
-import studio.ai.literium.literium_app.data.local.UserPreferencesRepository
-import studio.ai.literium.literium_app.navigation.DeepLinkTarget
-import studio.ai.literium.literium_app.navigation.LiteriumNavHost
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
 import studio.ai.literium.literium_app.ui.theme.LiteriumTheme
 
-/** Resolves an incoming intent's `Uri` into a navigation target, mirroring `App.tsx`'s own two
- *  deep-link entry points: `?article=<id>` (shared-article App Link, `getShareUrl`/`ArticleReader.tsx`)
- *  and `?mode=resetPassword&oobCode=<code>` (`getPasswordResetCodeFromUrl`/`firebase.ts`). Both arrive
- *  on the same verified App Link host declared in the manifest, so a single
- *  parser distinguishes them by query param rather than by path. */
-private fun resolveDeepLink(uri: Uri?): DeepLinkTarget? {
-    if (uri == null) return null
+private const val PRODUCTION_HOST = "literium-wjct.onrender.com"
+private const val BASE_URL = "https://$PRODUCTION_HOST/"
+
+/**
+ * المحتوى الآن هو الموقع الحي نفسه بحذافيره — عبر WebView أصيل (android.webkit.WebView) مباشرة
+ * داخل هذا الـActivity، وليس عبر Trusted Web Activity/Chrome Custom Tabs. القرار مقصود: TWA يُظهر
+ * دائماً إشعار نظام دائم "قيد التشغيل في Chrome" بصرف النظر عن تحقق Digital Asset Links — هذا سلوك
+ * إلزامي من Google لكل جلسة Custom Tabs، وليس خللاً في الإعداد يمكن إصلاحه. WebView خام هنا لا يمرّ
+ * عبر خدمة Custom Tabs إطلاقاً، فلا يوجد أي التزام إشعار من النظام — هذا بالضبط ما يجعل تطبيقات
+ * Capacitor/Cordova الهجينة لا تُظهر هذا الإشعار مطلقاً خلافاً لأي تطبيق TWA.
+ */
+private fun resolveStartUrl(uri: Uri?): String {
+    if (uri == null) return BASE_URL
     val oobCode = uri.getQueryParameter("oobCode")
     if (uri.getQueryParameter("mode") == "resetPassword" && !oobCode.isNullOrBlank()) {
-        return DeepLinkTarget.ResetPassword(oobCode)
+        return "${BASE_URL}?mode=resetPassword&oobCode=$oobCode"
     }
     val articleId = uri.getQueryParameter("article")
     if (!articleId.isNullOrBlank()) {
-        return DeepLinkTarget.Article(articleId)
+        return "${BASE_URL}?article=$articleId"
     }
-    return null
+    return BASE_URL
 }
 
 class MainActivity : ComponentActivity() {
 
-    private var deepLinkState = mutableStateOf<DeepLinkTarget?>(null)
+    private var webViewRef: WebView? = null
+    private var pendingFileCallback: ValueCallback<Array<Uri>>? = null
+
+    private val fileChooserLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val callback = pendingFileCallback
+        pendingFileCallback = null
+        val uris = if (result.resultCode == RESULT_OK) {
+            WebChromeClient.FileChooserParams.parseResult(result.resultCode, result.data)
+        } else {
+            null
+        }
+        callback?.onReceiveValue(uris)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        deepLinkState.value = resolveDeepLink(intent?.data)
+
+        val startUrl = resolveStartUrl(intent?.data)
+
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                val webView = webViewRef
+                if (webView != null && webView.canGoBack()) {
+                    webView.goBack()
+                } else {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                    isEnabled = true
+                }
+            }
+        })
 
         setContent {
-            val deepLink by deepLinkState
-            val userPreferencesRepository = remember { UserPreferencesRepository(this) }
-            // اللغة تفضيل خاص بهذا الجهاز/المستخدم فقط (بلا مزامنة حية عبر Firestore، خلافاً لقالب
-            // الألوان الإداري) — نفس تفرقة App.tsx بين `literium_lang` (محلي) و`settings/theme`
-            // (عام). عربي (RTL) هو الافتراضي طالما لم يُغيَّر صراحة، مطابقاً لسلوك الموقع.
-            val languageCode by userPreferencesRepository.languageCode.collectAsState(initial = "ar")
-            val layoutDirection = if (languageCode == "ar") LayoutDirection.Rtl else LayoutDirection.Ltr
+            LiteriumTheme {
+                val context = LocalContext.current
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    AndroidView(
+                        modifier = Modifier.fillMaxSize(),
+                        factory = {
+                            WebView(context).apply {
+                                webViewRef = this
+                                layoutParams = ViewGroup.LayoutParams(
+                                    ViewGroup.LayoutParams.MATCH_PARENT,
+                                    ViewGroup.LayoutParams.MATCH_PARENT
+                                )
+                                settings.javaScriptEnabled = true
+                                settings.domStorageEnabled = true
+                                settings.mediaPlaybackRequiresUserGesture = false
+                                settings.allowFileAccess = true
 
-            // المظهر الداكن/الفاتح تفضيل محلي حقيقي أيضاً (`App.tsx`'s `theme` state) — يتبع نظام
-            // الجهاز افتراضياً حتى يُغيَّر صراحة من القائمة الجانبية، عندها يبقى ثابتاً بصرف النظر
-            // عن نظام الجهاز.
-            val systemDark = isSystemInDarkTheme()
-            val darkModeOverride by userPreferencesRepository.darkModeOverride.collectAsState(initial = null)
+                                webViewClient = object : WebViewClient() {
+                                    // روابط خارجية (mailto:, tel:, نطاقات خارج موقعنا) تُفتح بمتصفح
+                                    // النظام الافتراضي عبر Intent عادي — وليس Custom Tabs — فلا يظهر
+                                    // إشعار "قيد التشغيل في Chrome" في هذه الحالة أيضاً.
+                                    override fun shouldOverrideUrlLoading(
+                                        view: WebView?,
+                                        request: android.webkit.WebResourceRequest?
+                                    ): Boolean {
+                                        val url = request?.url ?: return false
+                                        if (url.host?.endsWith(PRODUCTION_HOST) == true) {
+                                            return false
+                                        }
+                                        return try {
+                                            startActivity(Intent(Intent.ACTION_VIEW, url))
+                                            true
+                                        } catch (_: Exception) {
+                                            false
+                                        }
+                                    }
+                                }
 
-            CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
-                LiteriumTheme(darkTheme = darkModeOverride ?: systemDark) {
-                    Surface(modifier = Modifier.fillMaxSize()) {
-                        LiteriumNavHost(
-                            deepLinkTarget = deepLink,
-                            onDeepLinkConsumed = { deepLinkState.value = null }
-                        )
-                    }
+                                webChromeClient = object : WebChromeClient() {
+                                    // لمس <input type="file"> في الموقع (رفع صورة مقال/رسالة/وثيقة
+                                    // KYC) — منتقي ملفات حقيقي من الجهاز، مطابق لسلوك نسخة Flutter
+                                    // السابقة (file_picker) لكن بلا أي تبعية خارجية هنا.
+                                    override fun onShowFileChooser(
+                                        webView: WebView?,
+                                        filePathCallback: ValueCallback<Array<Uri>>?,
+                                        fileChooserParams: FileChooserParams?
+                                    ): Boolean {
+                                        pendingFileCallback = filePathCallback
+                                        val intent = fileChooserParams?.createIntent()
+                                            ?: Intent(Intent.ACTION_GET_CONTENT).apply {
+                                                addCategory(Intent.CATEGORY_OPENABLE)
+                                                type = "*/*"
+                                            }
+                                        return try {
+                                            fileChooserLauncher.launch(intent)
+                                            true
+                                        } catch (_: Exception) {
+                                            pendingFileCallback = null
+                                            false
+                                        }
+                                    }
+                                }
+
+                                loadUrl(startUrl)
+                            }
+                        }
+                    )
                 }
             }
         }
@@ -81,6 +157,6 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        resolveDeepLink(intent.data)?.let { deepLinkState.value = it }
+        webViewRef?.loadUrl(resolveStartUrl(intent.data))
     }
 }

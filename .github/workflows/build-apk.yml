@@ -1,12 +1,15 @@
 name: Build Android APK
 
+# ⚠️ معطَّل عمداً (workflow_dispatch فقط) — مسار TWA هذا يُظهر دائماً إشعار
+# نظام "قيد التشغيل في Chrome" الدائم بصرف النظر عن صحة إعداد Digital Asset
+# Links (سلوك إلزامي من Google لكل جلسة Chrome Custom Tabs، وليس خللاً قابلاً
+# للإصلاح بضبط أدق) — تأكَّد هذا فعلياً على جهاز حقيقي في 2026-09-09. المسار
+# الصحيح الآن هو build-kotlin-apk.yml (MainActivity.kt فيه صار WebView أصيل
+# مباشر، بلا Custom Tabs إطلاقاً). أُبقي على الكود والتشغيل اليدوي هنا فقط
+# كمرجع، مطفأ عن push لمنع تكرار سباق الكتابة على نفس ملف التحميل.
+
 on:
   workflow_dispatch:
-  push:
-    branches: [main, claude/project-error-analysis-zhu2ux]
-    paths:
-      - '.github/workflows/build-apk.yml'
-      - '.github/scripts/twa-init.cjs'
 
 permissions:
   contents: write
