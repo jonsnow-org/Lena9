@@ -9,7 +9,12 @@ const path = require('path');
 const {TwaManifest, TwaGenerator, ConsoleLog} = require('@bubblewrap/core');
 const {generateManifestChecksumFile} = require('@bubblewrap/cli/dist/lib/cmds/shared');
 
-const PACKAGE_ID = 'studio.ai.literium.twa';
+// نفس اسم حزمة تطبيق كوتلين (Compose) الحالي المثبَّت فعلياً على أجهزة
+// المستخدمين — عمداً، وليس اسماً جديداً: هذا يجعل بناء TWA هذا "تحديثاً"
+// حقيقياً فوق أي تثبيت سابق (بما أنه يشارك نفس مفتاح التوقيع أيضاً)، بدل
+// تطبيق ثالث منفصل يُضاف إلى الالتباس الذي اشتكى منه صاحب المشروع
+// (نسخة متصفح + نسخة PWA مثبّتة + نسخة APK... كل واحدة مختلفة عن الأخرى).
+const PACKAGE_ID = 'studio.ai.literium.literium_app';
 const HOST = 'literium-wjct.onrender.com';
 const MANIFEST_URL = `https://${HOST}/manifest.json`;
 
@@ -23,7 +28,12 @@ async function main() {
   twaManifest.startUrl = '/';
   twaManifest.name = 'Literium';
   twaManifest.launcherName = 'Literium';
-  twaManifest.appVersionCode = Number(process.env.APP_VERSION_CODE || 2);
+  // ⚠️ كان هذا يسقط دائماً على القيمة الافتراضية 2 لأن لا شيء كان يضبط
+  // APP_VERSION_CODE فعلياً — أقل من رقم إصدار تطبيق كوتلين (Compose)
+  // المثبَّت حالياً (78 وما فوق)، فيرفض أندرويد تثبيت هذا البناء كـ"تحديث"
+  // بصمت تام (لا رسالة خطأ واضحة) بما أنه نفس اسم الحزمة ونفس التوقيع.
+  // build-apk.yml يمرر الآن قيمة مضمونة الزيادة دوماً (دقائق منذ الحقبة).
+  twaManifest.appVersionCode = Number(process.env.APP_VERSION_CODE) || 2;
   twaManifest.appVersionName = process.env.APP_VERSION_NAME || '1.0.1';
   // نفس ملف التوقيع الأصلي الذي طُلبت بصمته بالضبط في assetlinks.json —
   // يُستعاد من سر GitHub قبل هذه الخطوة، لا يُنشأ مفتاح جديد أبداً.

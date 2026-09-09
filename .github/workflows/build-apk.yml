@@ -3,7 +3,7 @@ name: Build Android APK
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, claude/project-error-analysis-zhu2ux]
     paths:
       - '.github/workflows/build-apk.yml'
       - '.github/scripts/twa-init.cjs'
@@ -61,11 +61,33 @@ jobs:
         run: |
           echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android-build/android.keystore
 
+      - name: Print signing certificate SHA-256 (must match public/.well-known/assetlinks.json)
+        # قيمة عامة غير حساسة (مصمَّمة لتُنشر علناً في assetlinks.json نفسه) —
+        # طباعتها هنا آمنة تماماً ولا تكشف كلمة سر أو محتوى المفتاح.
+        run: |
+          keytool -list -v \
+            -keystore android-build/android.keystore \
+            -alias literium \
+            -storepass "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
+            | grep "SHA256:"
+
+      - name: Compute a version code guaranteed higher than any previous build
+        # لا نستخدم github.run_number هنا: لهذا السير عمل عدّاده الخاص المنفصل
+        # عن build-kotlin-apk.yml (كل ملف Workflow له عدّاد مستقل)، فقد يعطي
+        # رقماً أقل من آخر نسخة كوتلين المنشورة فعلياً (كانت المشكلة الأصلية:
+        # القيمة الافتراضية الثابتة 2 في twa-init.cjs). الدقائق منذ حقبة يونكس
+        # تتزايد دوماً بغضّ النظر عن أي سير عمل بناها، وتبقى تحت حد أندرويد
+        # الأقصى (2100000000) لعقود قادمة.
+        id: version
+        run: echo "code=$(( $(date -u +%s) / 60 ))" >> "$GITHUB_OUTPUT"
+
       - name: Scaffold TWA project from the live site's manifest
         # الملف يُنسخ داخل android-build عمداً قبل تشغيله: توزيع الحزم عبر
         # require() في Node يعتمد على مكان الملف نفسه لا مجلد العمل الحالي
         # (cwd)، فلو بقي بمكانه الأصلي تحت .github/scripts/ لن يجد
         # node_modules المُثبَّتة داخل android-build/ رغم أنها بجواره تقريباً.
+        env:
+          APP_VERSION_CODE: ${{ steps.version.outputs.code }}
         run: |
           cp .github/scripts/twa-init.cjs android-build/twa-init.cjs
           cd android-build
@@ -104,12 +126,12 @@ jobs:
           fi
           git commit -m "Sync in-app download with latest CI-built APK [skip ci]"
           for attempt in 1 2 3 4 5; do
-            if git push origin HEAD:main; then
+            if git push origin HEAD:${{ github.ref_name }}; then
               exit 0
             fi
-            echo "Push rejected (attempt $attempt) — rebasing onto latest origin/main and retrying..."
-            git fetch origin main
-            git rebase origin/main
+            echo "Push rejected (attempt $attempt) — rebasing onto latest origin/${{ github.ref_name }} and retrying..."
+            git fetch origin ${{ github.ref_name }}
+            git rebase origin/${{ github.ref_name }}
             sleep 3
           done
           echo "::error::Failed to push the synced APK after 5 attempts."
