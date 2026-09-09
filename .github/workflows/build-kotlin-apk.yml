@@ -1,18 +1,16 @@
 name: Build Kotlin Native Android APK
 
-# ⚠️ معطَّل عمداً (workflow_dispatch فقط، بلا push) بعد التحول إلى مسار
-# TWA (انظر build-apk.yml) — القرار الصريح لاحقاً كان أن يكون المحتوى هو
-# الموقع نفسه (WebView مُتحقَّق منه رسمياً) بدل إعادة بناء كل شاشة يدوياً.
-# كلا السيرين كانا يكتبان إلى نفس public/downloads/Literium.apk، فبقاء هذا
-# مفعَّلاً على push كان سيتسبب بسباق فعلي: يفوز أيهما ينتهي متأخراً فيستبدل
-# بناء TWA الصحيح بهذا البناء القديم بصمت. أُبقي على الكود والتشغيل اليدوي
-# فقط كمرجع/احتياط، لا كمسار نشر فعلي.
+# يبني تطبيق Literium الأصيل المكتوب بـKotlin/Jetpack Compose (android-native/).
+# منذ 2026-09-09 صار MainActivity.kt نفسه يعرض الموقع الحي عبر WebView أصيل
+# مباشر (بلا Trusted Web Activity/Custom Tabs) بدل شجرة الشاشات المبنية يدوياً —
+# TWA كان يُظهر دائماً إشعار نظام "قيد التشغيل في Chrome" (سلوك إلزامي من
+# Google لكل جلسة Custom Tabs، لا علاقة له بتحقق Digital Asset Links)، بينما
+# WebView خام لا يمرّ عبر تلك الخدمة إطلاقاً فلا يظهر أي إشعار مطلقاً — هذا
+# هو المسار الصحيح لمتطلب "محتوى الموقع بلا أي إشارة أنه متصفح".
 #
-# يبني تطبيق Literium الأصيل المكتوب بـKotlin/Jetpack Compose بالكامل
-# (android-native/) — يستبدل نسخة Flutter+WebView السابقة (flutter_app/)
-# لأن تشغيل محركي عرض معاً في نفس العملية (Flutter/Skia وWebView/Chromium)
-# كان يجعل التطبيق أثقل وأبطأ بشكل ملحوظ من الموقع نفسه داخل Chrome —
-# محرك عرض واحد فقط هنا (Compose الأصيل)، بلا أي WebView في أي مكان.
+# ⚠️ build-apk.yml (مسار TWA البديل) معطَّل الآن عمداً لنفس سبب تعطيل هذا
+# سابقاً: كلاهما يكتب إلى public/downloads/Literium.apk، فتفعيل الاثنين معاً
+# يعيد نفس سباق الكتابة الصامت.
 #
 # يعيد استخدام نفس أسرار GitHub الموجودة فعلاً من مسار flutter_app (نفس
 # تسجيل تطبيق Firebase Android، ونفس مفتاح التوقيع) — بلا حاجة لأي إعداد
@@ -21,6 +19,11 @@ name: Build Kotlin Native Android APK
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main, claude/project-error-analysis-zhu2ux]
+    paths:
+      - 'android-native/**'
+      - '.github/workflows/build-kotlin-apk.yml'
 
 permissions:
   contents: write
