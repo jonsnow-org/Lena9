@@ -92,15 +92,22 @@ jobs:
         run: |
           echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > app/literium.keystore
 
-      - name: Build signed release APK
+      # بناء واحد يُنتج الصيغتين معاً من نفس الشيفرة ونفس مفتاح التوقيع —
+      # APK للتحميل المباشر من الموقع، وAAB (Android App Bundle) هو الصيغة
+      # التي يتطلبها Google Play حصراً لأي رفع جديد منذ 2021 (لا يقبل APK
+      # مباشرة). ليست عملية منفصلة أو بديلة: نفس ما يفعله Android Studio
+      # حرفياً عبر قائمته "Build > Generate Signed App Bundle / APK" —
+      # تعبئتان مختلفتان للبناء المُختبر نفسه، لا شيفرة إضافية ولا تطبيق آخر.
+      #
+      # رقم الإصدار (versionCode) يُشتق من ${{ github.run_number }} عبر
+      # خاصية Gradle project property "versionCode" (يقرأها app/build.gradle.kts)
+      # حتى يبقى دائماً أعلى من أي بناء سابق تلقائياً — نفس الدرس المستفاد
+      # من مشكلة "يجب حذف النسخة السابقة" التي واجهناها مع flutter_app.
+      - name: Build signed release APK + AAB
         working-directory: android-native
         env:
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-        # رقم الإصدار (versionCode) يُشتق من ${{ github.run_number }} عبر
-        # خاصية Gradle project property "versionCode" (يقرأها app/build.gradle.kts)
-        # حتى يبقى دائماً أعلى من أي بناء سابق تلقائياً — نفس الدرس المستفاد
-        # من مشكلة "يجب حذف النسخة السابقة" التي واجهناها مع flutter_app.
-        run: gradle :app:assembleRelease -PversionCode=${{ github.run_number }} --stacktrace
+        run: gradle :app:assembleRelease :app:bundleRelease -PversionCode=${{ github.run_number }} --stacktrace
 
       - name: Verify built APK's actual versionCode
         run: |
@@ -116,6 +123,16 @@ jobs:
         with:
           name: Literium-kotlin-signed-apk
           path: android-native/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+
+      # لا يُنشر على الموقع (زر التحميل المباشر يبقى APK كالمعتاد) — فقط
+      # يُرفع كملف مرفق هنا ليُنزّله صاحب المشروع ويرفعه يدوياً بنفسه إلى
+      # Play Console عند الرغبة.
+      - name: Upload signed AAB (for Google Play upload)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Literium-kotlin-signed-aab-for-play-store
+          path: android-native/app/build/outputs/bundle/release/app-release.aab
           if-no-files-found: error
 
       # يبقي زر "تحميل التطبيق" بالموقع (public/downloads/Literium.apk)
