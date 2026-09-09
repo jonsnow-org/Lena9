@@ -2,6 +2,7 @@ package studio.ai.literium.literium_app
 
 import android.content.Intent
 import android.net.Uri
+import android.graphics.Color
 import android.os.Bundle
 import android.view.ViewGroup
 import android.webkit.ValueCallback
@@ -11,9 +12,12 @@ import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.view.WindowCompat
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -64,7 +68,18 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+
+        // بلا enableEdgeToEdge(): على أندرويد 15+ (targetSdk 36 هنا) يفرض النظام قد يفرض
+        // edge-to-edge بصرف النظر عن هذا الاستدعاء، لذا الاعتماد الوحيد الموثوق هو حشو
+        // المحتوى فعلياً حسب حواف النظام (أدناه، عبر windowInsetsPadding) بدل الاعتماد على
+        // عدم استدعاء enableEdgeToEdge وحده. نفس لون العلامة التجارية المعتمد في
+        // manifest.json (theme_color) على الشريطين لتطابق ما يظهر عند تثبيت الموقع كـPWA.
+        window.statusBarColor = Color.parseColor("#0D9488")
+        window.navigationBarColor = Color.parseColor("#0D9488")
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            isAppearanceLightStatusBars = false
+            isAppearanceLightNavigationBars = false
+        }
 
         val startUrl = resolveStartUrl(intent?.data)
 
@@ -84,7 +99,13 @@ class MainActivity : ComponentActivity() {
         setContent {
             LiteriumTheme {
                 val context = LocalContext.current
-                Surface(modifier = Modifier.fillMaxSize()) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        // الإصلاح الفعلي لالتصاق شريطي الموقع بحواف الشاشة: حشوة حقيقية بمقدار
+                        // ارتفاع شريط الحالة/شريط التنقل الحاليين، بدل ترك WebView يرسم تحتهما.
+                        .windowInsetsPadding(WindowInsets.systemBars)
+                ) {
                     AndroidView(
                         modifier = Modifier.fillMaxSize(),
                         factory = {
