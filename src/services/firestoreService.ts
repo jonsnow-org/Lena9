@@ -1465,6 +1465,45 @@ export async function setPublishingBotsEnabledInFirestore(enabled: boolean, upda
   }
 }
 
+// -------------------------------------------------------------------
+// نشر التطبيق على المتاجر (settings/appDistribution)
+// -------------------------------------------------------------------
+// نفس منطق settings/publishingBots تماماً: مستند واحد ثابت المعرّف، قراءة
+// عامة (AppUpdateWidget يحتاجه لدى كل مستخدم لديه APK)، وكتابة مقصورة على
+// الأدمن فقط عبر قواعد أمان Firestore. بعد رفع التطبيق فعلياً على متجر
+// (Google Play مثلاً) يصبح تحديث نسخة APK بيد المتجر نفسه حصراً — إبقاء
+// زر "تحديث" الداخلي ظاهراً بعدها يُربك المستخدم (تحديثان مختلفان لنفس
+// التطبيق) لذا يُخفيه هذا العلم كلياً لأي مستخدم يملك APK، بصرف النظر عن
+// وجود نسخة أحدث من حزمة الموقع أم لا.
+export function subscribeToAppPublishedOnStores(
+  onSettings: (publishedOnStores: boolean) => void,
+  onError?: (err: any) => void
+) {
+  return onSnapshot(
+    doc(db, 'settings', 'appDistribution'),
+    (snap) => {
+      onSettings(snap.exists() ? Boolean(snap.data().publishedOnStores) : false);
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'settings/appDistribution');
+      if (onError) onError(error);
+    }
+  );
+}
+
+export async function setAppPublishedOnStoresInFirestore(publishedOnStores: boolean, updatedByUserId: string): Promise<void> {
+  try {
+    await setDoc(
+      doc(db, 'settings', 'appDistribution'),
+      { publishedOnStores, updatedAt: new Date().toISOString(), updatedBy: updatedByUserId },
+      { merge: true }
+    );
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'settings/appDistribution');
+    throw error;
+  }
+}
+
 /** آخر نشاطات البوتات (نشر مقال/تغريدة، إعجاب، تعليق) — لعرضها في لوحة
  *  الإدارة فقط. سجل للقراءة، تُكتَب مُدخَلاته حصرياً من الخادم (Admin SDK)
  *  عند كل دورة نشر يومية، ولا كتابة من العميل إطلاقاً (انظر firestore.rules). */

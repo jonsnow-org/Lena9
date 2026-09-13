@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Settings,
   Sparkles,
@@ -8,29 +8,60 @@ import {
   CheckCircle2,
   DollarSign,
   Info,
-  AlertOctagon
+  AlertOctagon,
+  Store,
+  Power
 } from 'lucide-react';
 import { THEME_PRESETS, ThemePresetKey, DEFAULT_THEME_PRESET } from '../../constants/themePresets';
 import { BACKGROUND_PRESETS, BackgroundPresetKey, DEFAULT_BACKGROUND_PRESET } from '../../constants/backgroundPresets';
 import { REVENUE_SHARES } from '../../constants/revenueShares';
 import { resetAllTestFinancialData } from '../../services/adminDangerZoneApi';
+import { subscribeToAppPublishedOnStores, setAppPublishedOnStoresInFirestore } from '../../services/firestoreService';
 
 interface AdminSettingsTabProps {
   currentThemePreset?: ThemePresetKey;
   onChangeThemePreset?: (preset: ThemePresetKey) => void;
   currentBackgroundPreset?: BackgroundPresetKey;
   onChangeBackgroundPreset?: (preset: BackgroundPresetKey) => void;
+  adminUserId: string;
 }
 
 export const AdminSettingsTab: React.FC<AdminSettingsTabProps> = ({
   currentThemePreset = DEFAULT_THEME_PRESET,
   onChangeThemePreset,
   currentBackgroundPreset = DEFAULT_BACKGROUND_PRESET,
-  onChangeBackgroundPreset
+  onChangeBackgroundPreset,
+  adminUserId
 }) => {
   const [isResettingFinancials, setIsResettingFinancials] = useState(false);
   const [resetFinancialsResultMsg, setResetFinancialsResultMsg] = useState('');
   const [resetFinancialsErrorMsg, setResetFinancialsErrorMsg] = useState('');
+
+  // علم "نُشر التطبيق على المتاجر" — راجع settings/appDistribution في
+  // firestoreService.ts. بمجرد تفعيله يختفي زر "تحديث" الداخلي كلياً لدى
+  // كل من يملك نسخة APK، بصرف النظر عن وجود نسخة أحدث من حزمة الموقع.
+  const [publishedOnStores, setPublishedOnStoresState] = useState(false);
+  const [isTogglingStores, setIsTogglingStores] = useState(false);
+  useEffect(() => {
+    return subscribeToAppPublishedOnStores(setPublishedOnStoresState, (err) =>
+      console.error('تعذر تحميل إعداد النشر على المتاجر:', err)
+    );
+  }, []);
+
+  const handleTogglePublishedOnStores = async () => {
+    const next = !publishedOnStores;
+    setIsTogglingStores(true);
+    setPublishedOnStoresState(next);
+    try {
+      await setAppPublishedOnStoresInFirestore(next, adminUserId);
+    } catch (err) {
+      console.error('تعذر حفظ إعداد النشر على المتاجر:', err);
+      setPublishedOnStoresState(!next);
+      alert('تعذر حفظ الإعداد الجديد. تحقق من اتصالك ثم حاول مجدداً.');
+    } finally {
+      setIsTogglingStores(false);
+    }
+  };
 
   const handleResetTestFinancialData = async () => {
     const confirmed = window.confirm(
@@ -201,7 +232,38 @@ export const AdminSettingsTab: React.FC<AdminSettingsTabProps> = ({
         </div>
       </div>
 
-      {/* 4. DANGER ZONE — تصفير كل البيانات المالية التجريبية دفعة واحدة.
+      {/* 4. APP STORE DISTRIBUTION FLAG — بعد رفع التطبيق فعلياً على متجر
+          (Google Play مثلاً)، يخفي زر "تحديث" الداخلي كلياً لدى كل من
+          يملك نسخة APK ويعتمد على تحديث المتجر نفسه بدلاً منه. */}
+      <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-brand-600/15 flex items-center justify-center flex-shrink-0">
+              <Store className="w-5 h-5 text-brand-500" />
+            </div>
+            <div>
+              <h4 className="font-bold text-white text-sm">التطبيق منشور على متاجر التطبيقات</h4>
+              <p className="text-xs text-slate-400 mt-0.5">
+                فعّله فقط بعد رفع ونشر التطبيق فعلياً على Google Play (أو أي متجر آخر). عند التفعيل يختفي زر "تحديث" العائم داخل التطبيق لدى كل من يملك نسخة APK نهائياً — تحديث النسخة يصبح مسؤولية المتجر وحده.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={handleTogglePublishedOnStores}
+            disabled={isTogglingStores}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-black transition-all flex-shrink-0 disabled:opacity-50 ${
+              publishedOnStores
+                ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/20'
+                : 'bg-slate-800 text-slate-400'
+            }`}
+          >
+            <Power className="w-3.5 h-3.5" />
+            {publishedOnStores ? 'منشور ✓' : 'غير منشور بعد'}
+          </button>
+        </div>
+      </div>
+
+      {/* 5. DANGER ZONE — تصفير كل البيانات المالية التجريبية دفعة واحدة.
           مخصص للاستخدام مرة واحدة فقط قبل الإطلاق الحقيقي، بعد تأكيد
           صريح أن كل الحسابات/الحملات/المقالات الحالية بيانات اختبار. */}
       <div className="p-5 rounded-2xl bg-rose-950/20 border border-rose-500/30 space-y-4">

@@ -153,6 +153,21 @@ class MainActivity : ComponentActivity() {
                                 settings.domStorageEnabled = true
                                 settings.mediaPlaybackRequiresUserGesture = false
                                 settings.allowFileAccess = true
+                                // ⚠️ استبدال كامل لسلسلة User-Agent الافتراضية، لا إلحاق فقط:
+                                // WebView الافتراضي في أندرويد يضع علامة "; wv)" ضمن الجزء الأول
+                                // من السلسلة (ومعها "Version/4.0" قبل Chrome/) — وهذه بالضبط
+                                // العلامة التي يبحث عنها Google لمنع تسجيل الدخول (Sign-In) داخل
+                                // أي WebView (حماية أمنية من Google، ليست خللاً في هذا التطبيق).
+                                // نفس الحل المستخدم سابقاً في flutter_app (main.dart): سلسلة
+                                // Chrome/Android عادية تماماً بلا "; wv)" ولا "Version/x.x"، مع
+                                // إلحاق "LiteriumNativeApp/1" في النهاية فقط — بعد
+                                // "Mobile Safari/537.36" — ليتحقق منها navigator.userAgent في
+                                // كود الموقع (isRunningAsInstalledApp في installState.ts) لتمييز
+                                // زوار التطبيق الأصيل عن زوار المتصفح، دون كسر تسجيل الدخول عبر Google.
+                                settings.userAgentString =
+                                    "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 " +
+                                        "(KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36 " +
+                                        "LiteriumNativeApp/1"
 
                                 webViewClient = object : WebViewClient() {
                                     // روابط خارجية (mailto:, tel:, نطاقات خارج موقعنا) تُفتح بمتصفح

@@ -1,7 +1,8 @@
-import React, {useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import {Download, RefreshCw} from 'lucide-react';
 import {useAppUpdate} from '../hooks/useAppUpdate';
 import {isRunningAsInstalledApp} from '../utils/installState';
+import {subscribeToAppPublishedOnStores} from '../services/firestoreService';
 
 // عنصر عائم مستقل تماماً عن App (كشاشة البدء SplashScreen) — لا يحتاج أي
 // بيانات من حالة التطبيق الضخمة. يفرّق بين سياقين عبر isRunningAsInstalledApp
@@ -10,16 +11,28 @@ import {isRunningAsInstalledApp} from '../utils/installState';
 //
 //  - داخل تطبيق الهاتف المثبَّت: زر "تحديث" فقط، ويظهر فقط عند وجود نسخة
 //    أحدث منشورة، ويختفي تلقائياً (يُفكَّك العنصر بالكامل) بعد تطبيق التحديث
-//    لأن إعادة التحميل تجلب رقم البناء الجديد فتصبح النسختان متطابقتين.
-//  - داخل متصفح عادي (لم يُثبَّت بعد): زر "تحميل التطبيق" يظهر دائماً، ويظهر
-//    بجانبه زر "تحديث" أيضاً لو كانت نسخة الموقع المحمَّلة قديمة.
+//    لأن إعادة التحميل تجلب رقم البناء الجديد فتصبح النسختان متطابقتين —
+//    إلا إذا كان التطبيق منشوراً فعلياً على متجر (settings/appDistribution)،
+//    فعندها يُخفى زر "تحديث" هذا كلياً لأن المتجر نفسه يتولى التحديث.
+//  - داخل متصفح عادي (لم يُثبَّت بعد): زر "تحميل التطبيق" فقط، ولا يظهر زر
+//    "تحديث" إطلاقاً — التحديث مفهوم خاص بمن يملك نسخة APK مثبَّتة فعلاً؛
+//    زائر المتصفح يحصل دوماً على أحدث نسخة من الموقع تلقائياً فلا معنى لعرضه له.
 
 export const AppUpdateWidget: React.FC = () => {
   const {updateAvailable, applyUpdate} = useAppUpdate();
   const [isInstalledApp] = useState(isRunningAsInstalledApp);
+  const [publishedOnStores, setPublishedOnStores] = useState(false);
   const isArabic = (localStorage.getItem('literium_lang') || 'ar') === 'ar';
 
-  if (isInstalledApp && !updateAvailable) return null;
+  useEffect(() => {
+    if (!isInstalledApp) return;
+    const unsubscribe = subscribeToAppPublishedOnStores(setPublishedOnStores);
+    return () => unsubscribe();
+  }, [isInstalledApp]);
+
+  const showUpdateButton = isInstalledApp && updateAvailable && !publishedOnStores;
+
+  if (isInstalledApp && !showUpdateButton) return null;
 
   const labels = isArabic
     ? {download: 'تحميل التطبيق', update: 'تحديث'}
@@ -36,7 +49,7 @@ export const AppUpdateWidget: React.FC = () => {
     // (الشريط العلوي/السفلي والأزرار العائمة) فيختفي تلقائياً خلف أي نافذة
     // منبثقة مفتوحة، تماماً كبقية عناصر الواجهة الدائمة.
     <div className="fixed bottom-36 sm:bottom-40 end-4 sm:end-6 z-40 flex flex-col items-end gap-2">
-      {updateAvailable && (
+      {showUpdateButton && (
         <button
           type="button"
           onClick={applyUpdate}

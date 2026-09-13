@@ -504,6 +504,14 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // علم "نُشر التطبيق على المتاجر" — نفس منطق settings/publishingBots
+    // تماماً (قراءة عامة لأن AppUpdateWidget يحتاجه لدى كل مستخدم لديه
+    // APK لإخفاء زر "تحديث" الداخلي بعد النشر على متجر، وكتابة أدمن فقط).
+    match /settings/appDistribution {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
     // سجل نشاط بوتات النشر (مقال/تغريدة/إعجاب/تعليق) — يُكتَب حصرياً من
     // الخادم عبر Admin SDK (يتجاوز هذه القواعد)، ولا كتابة من العميل
     // إطلاقاً. قراءة مقصورة على الأدمن لأنه سجل تشغيلي داخلي فقط.
