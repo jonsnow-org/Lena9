@@ -420,6 +420,11 @@ export function App() {
   // شريط البحث ينطوي افتراضياً لأيقونة عدسة فقط، ويتمدد للكتابة عند الضغط عليها
   // بدل إشغال عرض الشاشة بحقل نص فارغ طوال الوقت.
   const [isSearchExpanded, setIsSearchExpanded] = useState<boolean>(false);
+  // بحث قسم التغريد — منفصل عن بحث المدونة أعلاه (نطاقان مختلفان تماماً)،
+  // لكن بنفس فلسفة "أيقونة منطوية تتمدد عند الضغط" وموضعه بجانب زر تحديث
+  // التغريدات مباشرة، بدل شريط بحث منفصل أسفل المُنشئ.
+  const [isTweetSearchExpanded, setIsTweetSearchExpanded] = useState<boolean>(false);
+  const [tweetSearchQuery, setTweetSearchQuery] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
   const [showScrollTop, setShowScrollTop] = useState(false);
@@ -3988,13 +3993,51 @@ export function App() {
                 <>
                 {/* -mt-4 يعاكس فجوة space-y-6 الموروثة من الحاوية الأب —
                     كان هذا الصف يترك فراغاً كبيراً واضحاً أعلى وأسفل زر
-                    وحيد صغير، فيبدو وكأن الشاشة فارغة. الزر نفسه مطويّ الآن
-                    (أيقونة فقط بلا نص "تحديث") ليقل حجمه البصري أيضاً. */}
-                <div className="flex items-center justify-end -mt-4">
+                    وحيد صغير، فيبدو وكأن الشاشة فارغة. زر البحث الآن بجانب
+                    زر التحديث في نفس الصف مباشرة (كان شريط بحث منفصلاً أسفل
+                    مُنشئ التغريدة، بعيداً عن زر التحديث). */}
+                <div className="flex flex-row items-center justify-between gap-2 -mt-4">
+                  {isTweetSearchExpanded ? (
+                    <div className="flex items-stretch flex-1 min-w-0 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xs focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/20 transition-all overflow-hidden">
+                      <div className="w-9 shrink-0 flex items-center justify-center text-slate-400 border-e border-slate-200 dark:border-slate-800">
+                        <Search className="w-3.5 h-3.5" />
+                      </div>
+                      <input
+                        autoFocus
+                        type="text"
+                        value={tweetSearchQuery}
+                        onChange={(e) => setTweetSearchQuery(e.target.value)}
+                        onBlur={() => {
+                          if (!tweetSearchQuery.trim()) setIsTweetSearchExpanded(false);
+                        }}
+                        placeholder="ابحث في التغريدات أو عن كاتب..."
+                        className="w-full px-3 py-2 bg-transparent text-xs outline-hidden text-slate-900 dark:text-white"
+                      />
+                      <button
+                        onClick={() => {
+                          setTweetSearchQuery('');
+                          setIsTweetSearchExpanded(false);
+                        }}
+                        className="w-9 shrink-0 flex items-center justify-center text-slate-400 hover:text-rose-500 transition-colors"
+                        title="إغلاق البحث"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setIsTweetSearchExpanded(true)}
+                      className="p-2 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 shadow-2xs transition-all touch-manipulation active:scale-95"
+                      title="بحث في التغريدات"
+                      aria-label="بحث في التغريدات"
+                    >
+                      <Search className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                   <button
                     onClick={handleRefreshFeed}
                     disabled={isRefreshing}
-                    className="p-2 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 shadow-2xs transition-all touch-manipulation active:scale-95"
+                    className="p-2 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 shadow-2xs transition-all touch-manipulation active:scale-95 shrink-0"
                     title="تحديث التغريدات"
                     aria-label="تحديث التغريدات"
                   >
@@ -4010,6 +4053,7 @@ export function App() {
                   campaigns={campaigns}
                   onPostTweet={handlePostTweet}
                   focusComposeTrigger={tweetComposeFocusTrigger}
+                  searchQuery={tweetSearchQuery}
                   onToggleLike={handleToggleTweetLike}
                   onToggleFavorite={handleToggleTweetFavorite}
                   onShare={handleShareTweet}

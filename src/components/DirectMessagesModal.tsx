@@ -40,6 +40,17 @@ const REPORT_REASONS: { id: MessageReport['reason']; label: string }[] = [
   { id: 'other', label: 'سبب آخر' }
 ];
 
+/** نفس معيار "متصل الآن" المستخدم في رأس المحادثة المفتوحة (نبضة أقل من
+ *  دقيقة) — يُستدعى أيضاً لكل صف في قائمة المحادثات حتى تتطابق حالة
+ *  الاتصال المعروضة في الحالتين، بدل أن تظهر فقط داخل محادثة مفتوحة. */
+function computeIsOnline(presence?: User['presence']): boolean {
+  return Boolean(
+    presence?.state === 'online' &&
+      presence.lastHeartbeatAt &&
+      Date.now() - new Date(presence.lastHeartbeatAt).getTime() < 60000
+  );
+}
+
 function stubUserFromConversation(c: Conversation): User {
   return {
     id: c.partnerId,
@@ -154,16 +165,26 @@ export const DirectMessagesModal: React.FC<DirectMessagesModalProps> = ({
     return () => clearInterval(id);
   }, []);
 
-  // النافذة تبقى مركّبة دون إعادة تحميل بين مرات الفتح، لذا فتح محادثة
-  // جديدة من ملف كاتب آخر (activeChatPartner يتغيّر) يجب أن يحدّث المحادثة
-  // المعروضة فوراً، بدل بقاء آخر محادثة مفتوحة سابقاً على الشاشة.
+  // النافذة تبقى مركّبة دون إعادة تحميل بين مرات الفتح (isOpen يتحول false
+  // فقط، لا تُفكَّك — أي حالة React هنا تبقى محفوظة كما هي). بدون هذا
+  // التصفير، فتح قائمة نقاط محادثة (showMenu/openRowMenuId) ثم الخروج من
+  // الرسائل تماماً (إغلاق النافذة أو التنقل لقسم آخر) والعودة إليها لاحقاً
+  // يُعيد عرض نفس القائمة المفتوحة تماماً كما تُركت — هذا بالضبط ما ظهر:
+  // "تنقلت في كل الأزرار ثم عدت لهذا المكان وأجده هكذا كما هو".
+  useEffect(() => {
+    if (!isOpen) return;
+    setShowMenu(false);
+    setShowEmoji(false);
+    setShowReport(false);
+    setOpenRowMenuId(null);
+  }, [isOpen]);
+
+  // فتح محادثة جديدة من ملف كاتب آخر (activeChatPartner يتغيّر) يجب أن
+  // يحدّث المحادثة المعروضة فوراً، بدل بقاء آخر محادثة مفتوحة سابقاً.
   useEffect(() => {
     if (isOpen && activeChatPartner) {
       setSelectedPartnerId(activeChatPartner.id);
       onOpenConversation?.(activeChatPartner.id);
-      setShowMenu(false);
-      setShowEmoji(false);
-      setShowReport(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, activeChatPartner]);
@@ -234,11 +255,7 @@ export const DirectMessagesModal: React.FC<DirectMessagesModalProps> = ({
   const isPartnerTyping = Boolean(partnerTypingAt && Date.now() - new Date(partnerTypingAt).getTime() < 4000);
 
   const presence = selectedPartner?.presence;
-  const isPartnerOnline = Boolean(
-    presence?.state === 'online' &&
-      presence.lastHeartbeatAt &&
-      Date.now() - new Date(presence.lastHeartbeatAt).getTime() < 60000
-  );
+  const isPartnerOnline = computeIsOnline(presence);
   const lastSeenLabel = presence?.lastSeenAt ? `آخر ظهور ${timeAgoAr(presence.lastSeenAt)}` : 'غير متصل';
 
   const openConversation = (c: Conversation) => {
@@ -366,6 +383,21 @@ export const DirectMessagesModal: React.FC<DirectMessagesModalProps> = ({
         className="relative w-full max-w-2xl h-[85vh] max-h-[680px] rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col overflow-hidden animate-fade-in"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* حاجز شفاف يغلق أي قائمة نقاط مفتوحة (خيارات المحادثة أو خيارات
+            صف محادثة) عند الضغط في أي مكان آخر من النافذة — بدونه تبقى
+            القائمة مفتوحة فوق الشاشة إلى الأبد إلا بالضغط على أحد عناصرها
+            تحديداً، فتبدو "عالقة" وتحجب أزرار الرجوع/فتح المحادثة/الإرسال
+            الواقعة خلفها بصرياً. */}
+        {(showMenu || openRowMenuId) && (
+          <div
+            className="fixed inset-0 z-30"
+            onClick={() => {
+              setShowMenu(false);
+              setOpenRowMenuId(null);
+            }}
+          />
+        )}
+
         {/* Header */}
         <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/80">
           <div className="flex items-center gap-2.5 min-w-0">
@@ -375,6 +407,7 @@ export const DirectMessagesModal: React.FC<DirectMessagesModalProps> = ({
                   setSelectedPartnerId(null);
                   setShowMenu(false);
                   setShowEmoji(false);
+                  setShowReport(false);
                 }}
                 className="sm:hidden p-1 rounded-lg text-slate-500 hover:bg-slate-100 shrink-0"
                 title="رجوع لقائمة المحادثات"
@@ -437,7 +470,7 @@ export const DirectMessagesModal: React.FC<DirectMessagesModalProps> = ({
                   <MoreVertical className="w-4.5 h-4.5" />
                 </button>
                 {showMenu && (
-                  <div className="absolute end-0 top-full mt-1.5 w-52 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-2xl overflow-hidden z-10 text-xs">
+                  <div className="absolute end-0 top-full mt-1.5 w-52 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-2xl overflow-hidden z-40 text-xs">
                     <button
                       onClick={handleOpenProfile}
                       className="w-full flex items-center gap-2 px-3.5 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 font-bold"
@@ -534,6 +567,11 @@ export const DirectMessagesModal: React.FC<DirectMessagesModalProps> = ({
               visibleConversations.map((c) => {
                 const unread = unreadCountByPartnerId[c.partnerId] || 0;
                 const muted = currentUser.mutedUserIds?.includes(c.partnerId);
+                // نفس معيار "متصل الآن" المعروض داخل المحادثة المفتوحة —
+                // كانت نقطة الحضور تظهر فقط بعد فتح محادثة، فتبدو القائمة
+                // وكأنها لا تعرف شيئاً عن حالة اتصال أي طرف قبل ذلك.
+                const partnerUser = users.find((u) => u.id === c.partnerId);
+                const rowIsOnline = computeIsOnline(partnerUser?.presence);
                 return (
                   <div
                     key={c.id}
@@ -544,12 +582,19 @@ export const DirectMessagesModal: React.FC<DirectMessagesModalProps> = ({
                         : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
                     } ${muted ? 'opacity-60' : ''}`}
                   >
-                    <img
-                      src={c.partnerAvatar}
-                      alt={c.partnerName}
-                      referrerPolicy="no-referrer"
-                      className="w-10 h-10 rounded-full object-cover shrink-0"
-                    />
+                    <div className="relative shrink-0">
+                      <img
+                        src={c.partnerAvatar}
+                        alt={c.partnerName}
+                        referrerPolicy="no-referrer"
+                        className="w-10 h-10 rounded-full object-cover"
+                      />
+                      <span
+                        className={`absolute -bottom-0.5 -end-0.5 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-slate-900 ${
+                          rowIsOnline ? 'bg-emerald-500' : 'bg-slate-400'
+                        }`}
+                      />
+                    </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between mb-0.5">
                         <span
@@ -582,7 +627,7 @@ export const DirectMessagesModal: React.FC<DirectMessagesModalProps> = ({
                         <MoreVertical className="w-3.5 h-3.5" />
                       </button>
                       {openRowMenuId === c.id && (
-                        <div className="absolute end-0 top-full mt-1 w-40 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-2xl overflow-hidden z-10 text-[11px]">
+                        <div className="absolute end-0 top-full mt-1 w-40 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-2xl overflow-hidden z-40 text-[11px]">
                           <button
                             onClick={() => {
                               setOpenRowMenuId(null);

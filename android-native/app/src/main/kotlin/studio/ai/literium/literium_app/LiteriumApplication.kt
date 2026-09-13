@@ -42,6 +42,18 @@ class LiteriumApplication : Application() {
                 // إن فشل عرض شاشة العطل نفسها، لا داعٍ لإخفاء أي شيء إضافي هنا.
             } finally {
                 defaultHandler?.uncaughtException(thread, throwable)
+                // ⚠️ startActivity في CrashReportActivity.launch أعلاه غير متزامن
+                // (مجرد طلب لمدير الأنشطة)؛ قتل العملية فوراً هنا كان يسبق غالباً
+                // رسم تلك الشاشة فعلياً على الشاشة، فتظهر بيضاء لجزء من الثانية
+                // ثم يُغلَق التطبيق قبل أن يتمكن المستخدم من قراءة أو نسخ أي شيء —
+                // هذا بالضبط ما أبلغ عنه المستخدم. تأخير بسيط هنا (يُحظر الخيط
+                // المُعطَّل نفسه فقط، آمن تماماً لأنه سينتهي على أي حال) يمنح مدير
+                // الأنشطة وقتاً كافياً لعرض الشاشة فعلاً قبل قتل العملية.
+                try {
+                    Thread.sleep(1500)
+                } catch (_: InterruptedException) {
+                    // لا يهم — المتابعة لقتل العملية على أي حال
+                }
                 android.os.Process.killProcess(android.os.Process.myPid())
             }
         }

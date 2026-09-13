@@ -31,6 +31,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
@@ -46,6 +47,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color as ComposeColor
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
@@ -256,9 +258,19 @@ class MainActivity : ComponentActivity() {
                                             pageReadyState.value = true
                                             // جسر الرمز الحالي في كل تحميل صفحة حقيقي — حالة JS تُعاد
                                             // تصفيرها عند كل تحميل، فلا يكفي جسر الرمز مرة واحدة فقط
-                                            // عند إقلاع التطبيق الأول.
-                                            FirebaseMessaging.getInstance().token
-                                                .addOnSuccessListener { token -> bridgeFcmTokenToWebView(token) }
+                                            // عند إقلاع التطبيق الأول. try/catch احترازي: أي فشل في
+                                            // Firebase Messaging (خدمات جوجل غير جاهزة بعد على جهاز
+                                            // حديث التثبيت مثلاً) يجب ألا يُسقط التطبيق بالكامل — هذا
+                                            // مجرد تحسين ثانوي (تسجيل push)، لا وظيفة أساسية.
+                                            try {
+                                                FirebaseMessaging.getInstance().token
+                                                    .addOnSuccessListener { token -> bridgeFcmTokenToWebView(token) }
+                                                    .addOnFailureListener { e ->
+                                                        AppErrorLog.record(this@MainActivity, "جلب رمز FCM", e)
+                                                    }
+                                            } catch (e: Exception) {
+                                                AppErrorLog.record(this@MainActivity, "جلب رمز FCM", e)
+                                            }
                                         }
                                     }
                                 }
@@ -370,7 +382,17 @@ class MainActivity : ComponentActivity() {
                                 Image(
                                     painter = painterResource(id = R.drawable.ic_launcher_foreground),
                                     contentDescription = null,
-                                    modifier = Modifier.size(140.dp)
+                                    // ضغط مطوَّل على شعار شاشة البداية يفتح سجل الأخطاء الدائم —
+                                    // المخرج التشخيصي الوحيد المتاح للمستخدم حين يظهر عطل قاتل
+                                    // للحظة قصيرة فقط قبل إغلاق التطبيق (انظر LiteriumApplication.kt)
+                                    // ولا تتاح فرصة كافية لقراءة/نسخ شاشة العطل التلقائية نفسها.
+                                    modifier = Modifier
+                                        .size(140.dp)
+                                        .pointerInput(Unit) {
+                                            detectTapGestures(onLongPress = {
+                                                ErrorLogActivity.launch(context)
+                                            })
+                                        }
                                 )
                                 CircularProgressIndicator(
                                     color = ComposeColor.White,
