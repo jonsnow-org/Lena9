@@ -3,6 +3,7 @@ import { MessageSquare } from 'lucide-react';
 import { Tweet, TweetComment, User, AdCampaign } from '../types';
 import { TweetComposer } from './TweetComposer';
 import { TweetCard } from './TweetCard';
+import { TweetCardSkeleton } from './TweetCardSkeleton';
 import { AdSlot } from './AdSlot';
 
 interface TweetFeedProps {
@@ -20,6 +21,11 @@ interface TweetFeedProps {
   /** نص البحث الحالي — أصبح مُتحكَّماً به من الصف العلوي بجانب زر التحديث
    *  (App.tsx)، بدل شريط بحث منفصل هنا، ليطابق نفس موضع زر بحث المدونة. */
   searchQuery: string;
+  /** true إلى أن يصل أول رد فعلي من Firestore — بلا ذاكرة تخزين محلي
+   *  للتغريدات، القائمة فارغة دائماً عند كل فتح للتطبيق، فبدون هذا العلم
+   *  كانت رسالة "لا توجد تغريدات" تومض دائماً للحظة قبل وصول البيانات
+   *  الحقيقية حتى مع وجود تغريدات فعلية. */
+  isLoading?: boolean;
   onToggleLike: (tweetId: string) => void;
   onToggleFavorite: (tweetId: string) => void;
   onShare: (tweet: Tweet) => void;
@@ -48,6 +54,7 @@ export const TweetFeed: React.FC<TweetFeedProps> = ({
   onPostTweet,
   focusComposeTrigger,
   searchQuery,
+  isLoading = false,
   onToggleLike,
   onToggleFavorite,
   onShare,
@@ -77,7 +84,13 @@ export const TweetFeed: React.FC<TweetFeedProps> = ({
         <TweetComposer currentUser={currentUser} onSubmit={onPostTweet} focusTrigger={focusComposeTrigger} />
       )}
 
-      {filteredTweets.length === 0 ? (
+      {isLoading ? (
+        <div className="space-y-3">
+          {[1, 2, 3].map((n) => (
+            <TweetCardSkeleton key={n} />
+          ))}
+        </div>
+      ) : filteredTweets.length === 0 ? (
         <div className="p-10 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center">
           <MessageSquare className="w-8 h-8 text-slate-300 dark:text-slate-700 mx-auto mb-2" />
           <p className="text-sm text-slate-400">
