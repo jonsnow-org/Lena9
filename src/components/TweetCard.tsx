@@ -31,11 +31,14 @@ const TweetActionButton: React.FC<{
   hoverClass: string;
   title?: string;
 }> = ({ onClick, icon, label, hoverClass, title }) => (
+  // بطاقة بخلفية ثابتة (لا تعتمد على hover فقط) بنفس حجم زر موحّد للأربعة
+  // (إعجاب/تعليق/مشاركة/مفضلة) — نفس لغة تصميم بطاقتي "متابعون/يتابع" في
+  // الملف الشخصي، ليتضح أن هذه أزرار حقيقية قابلة للنقر لا مجرد نص وأيقونة.
   <button
     type="button"
     onClick={onClick}
     title={title}
-    className={`flex items-center gap-1.5 px-3 py-2 rounded-lg min-w-[44px] justify-center text-slate-500 dark:text-slate-400 transition-all active:scale-90 ${hoverClass}`}
+    className={`flex items-center gap-1.5 px-3 py-2 rounded-xl min-w-[44px] justify-center bg-slate-50 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-700/60 text-slate-500 dark:text-slate-400 transition-all active:scale-90 ${hoverClass}`}
   >
     {icon}
     {label !== undefined && <span className="text-xs font-bold">{label}</span>}
@@ -192,7 +195,7 @@ export const TweetCard: React.FC<TweetCardProps> = ({
             onClick={() => {
               if (window.confirm('حذف هذه التغريدة نهائياً؟')) onDelete(tweet.id);
             }}
-            className="p-2 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 active:scale-90 transition-all shrink-0"
+            className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-700/60 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 active:scale-90 transition-all shrink-0"
             title="حذف التغريدة"
           >
             <Trash2 className="w-4 h-4" />
@@ -319,11 +322,11 @@ export const TweetCard: React.FC<TweetCardProps> = ({
                     />
                   )}
 
-                  <div className="flex items-center gap-3 text-[11px] text-slate-500">
+                  <div className="flex items-center gap-2 text-[11px] text-slate-500">
                     <button
                       type="button"
                       onClick={() => onLikeComment(comm.id, !(comm.likedBy || []).includes(currentUser.id))}
-                      className="flex items-center gap-1 px-1.5 py-1 rounded-md hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 transition-all active:scale-90"
+                      className="flex items-center gap-1 px-2 py-1 rounded-lg bg-white dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-700/50 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 transition-all active:scale-90"
                     >
                       <Heart className={`w-3 h-3 ${(comm.likedBy || []).includes(currentUser.id) ? 'fill-rose-500 text-rose-500' : ''}`} />
                       <span>{comm.likesCount || 0}</span>
@@ -331,7 +334,7 @@ export const TweetCard: React.FC<TweetCardProps> = ({
                     <button
                       type="button"
                       onClick={() => setReplyingToId(replyingToId === comm.id ? null : comm.id)}
-                      className="flex items-center gap-1 px-1.5 py-1 rounded-md hover:text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-950/20 transition-all font-medium active:scale-90"
+                      className="flex items-center gap-1 px-2 py-1 rounded-lg bg-white dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-700/50 hover:text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-950/20 transition-all font-medium active:scale-90"
                     >
                       <CornerDownLeft className="w-3 h-3" />
                       <span>رد</span>

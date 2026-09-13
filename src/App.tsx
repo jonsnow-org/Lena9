@@ -2608,6 +2608,36 @@ export function App() {
     }
   };
 
+  // حذف نهائي من لوحة تحكم الأدمن لمقال أي مستخدم آخر — كانت لوحة "حوكمة
+  // المحتوى" (AdminContentTab) تعرض فقط زر "أرشفة/حجب" (يُبقي المقال في
+  // قاعدة البيانات بحالة archived) بلا أي زر حذف نهائي فعلي. بخلاف
+  // handleDeleteArticle أعلاه (مصمَّم لحذف الكاتب مقاله الخاص، فيُنقص
+  // articlesCount لدى currentUser نفسه)، هذه الدالة تبحث عن الكاتب
+  // الحقيقي صاحب المقال (قد يكون أي مستخدم آخر غير الأدمن) لتُنقص عدّاده
+  // هو بالتحديد.
+  const handleDeleteArticleAsAdmin = async (articleId: string) => {
+    if (!window.confirm('سيُحذف هذا المقال نهائياً لكل الزوار ولا يمكن التراجع. هل تريد المتابعة؟')) {
+      return;
+    }
+    const target = articles.find((a) => a.id === articleId);
+    setArticles((prev) => prev.filter((a) => a.id !== articleId));
+    if (target) {
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.id === target.writerId
+            ? { ...u, articlesCount: Math.max(0, (u.articlesCount || 1) - 1) }
+            : u
+        )
+      );
+    }
+    try {
+      await deleteArticleFromFirestore(articleId);
+    } catch (err: any) {
+      console.error('Error deleting article as admin in Firestore:', err);
+      alert('حدث خطأ أثناء حذف المقال من Firestore: ' + (err?.message || 'خطأ غير معروف'));
+    }
+  };
+
   // Deposit Funds
   // الإيداع: لم يعد يعدّل الرصيد محلياً.
   // قواعد أمان Firestore تمنع كتابة الحقول المالية من المتصفح، لذا يُنشأ
@@ -3578,6 +3608,7 @@ export function App() {
               );
               await setArticleStatusInFirestore(articleId, status);
             }}
+            onDeleteArticleAsAdmin={handleDeleteArticleAsAdmin}
             onResolveFraudFlag={async (flagId, action) => {
               setFraudFlags((prev) =>
                 prev.map((f) =>
@@ -3794,6 +3825,7 @@ export function App() {
               );
               await setArticleStatusInFirestore(articleId, status);
             }}
+            onDeleteArticleAsAdmin={handleDeleteArticleAsAdmin}
             onResolveFraudFlag={async (flagId, action) => {
               setFraudFlags((prev) =>
                 prev.map((f) =>

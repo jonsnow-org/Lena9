@@ -472,28 +472,34 @@ export const DirectMessagesModal: React.FC<DirectMessagesModalProps> = ({
                       className="w-full flex items-center gap-2 px-3.5 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-500 font-bold"
                     >
                       <LogOut className="w-3.5 h-3.5" />
-                      حذف المحادثة
+                      إخفاء المحادثة
                     </button>
+                    {/* حذف نهائي (أدمن فقط) — كان زراً منفصلاً خارج قائمة النقاط
+                        الثلاث بجوارها مباشرة، فبدا كإجراءين مكرَّرين لنفس المكان.
+                        الآن مُدمَج هنا كخيار إضافي داخل نفس القائمة، بلون مميّز
+                        (rose) ليتضح أنه إجراء مختلف تماماً عن "إخفاء المحادثة"
+                        أعلاه (ذاك يُخفيها من جهتك فقط، وهذا يحذفها نهائياً للطرفين). */}
+                    {currentUser.role === 'admin' && onDeleteConversation && (
+                      <button
+                        onClick={() => {
+                          setShowMenu(false);
+                          if (!selectedConversation) return;
+                          const confirmed = window.confirm(
+                            `سيتم حذف محادثتك مع ${selectedPartner.fullName} بكل رسائلها نهائياً. هل تريد المتابعة؟`
+                          );
+                          if (!confirmed) return;
+                          onDeleteConversation(selectedConversation.id, selectedPartner.id);
+                          setSelectedPartnerId(null);
+                        }}
+                        className="w-full flex items-center gap-2 px-3.5 py-2.5 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-rose-600 font-bold"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        حذف نهائي (صلاحية أدمن)
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
-            )}
-            {selectedPartner && currentUser.role === 'admin' && onDeleteConversation && (
-              <button
-                onClick={() => {
-                  if (!selectedConversation) return;
-                  const confirmed = window.confirm(
-                    `سيتم حذف محادثتك مع ${selectedPartner.fullName} بكل رسائلها نهائياً. هل تريد المتابعة؟`
-                  );
-                  if (!confirmed) return;
-                  onDeleteConversation(selectedConversation.id, selectedPartner.id);
-                  setSelectedPartnerId(null);
-                }}
-                className="p-1.5 rounded-xl text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
-                title="حذف نهائي (صلاحية أدمن)"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
             )}
             <button
               onClick={onClose}

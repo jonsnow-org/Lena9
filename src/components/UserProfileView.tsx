@@ -208,6 +208,7 @@ interface UserProfileViewProps {
   onToggleCampaignStatus?: (campaignId: string) => void;
   onDeleteCampaign?: (campaignId: string) => void;
   onUpdateArticleStatus?: (articleId: string, status: Article['status']) => void;
+  onDeleteArticleAsAdmin?: (articleId: string) => void;
   onResolveFraudFlag?: (flagId: string, action: 'resolved' | 'dismissed') => void;
   onSelectUser?: (user: User) => void;
   onUpdatePromotionStatus?: (promotionId: string, status: 'approved' | 'rejected') => void;
@@ -297,6 +298,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   onToggleCampaignStatus,
   onDeleteCampaign,
   onUpdateArticleStatus,
+  onDeleteArticleAsAdmin,
   onResolveFraudFlag,
   onSelectUser,
   onUpdatePromotionStatus,
@@ -681,22 +683,25 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   الفعلية (FollowListModal)، وليسا مجرد عدّادين ثابتين كما
                   كانا سابقاً. */}
               {currentUser.id !== 'guest' && (
-                <div className="flex items-center justify-center sm:justify-start gap-4 pt-1">
+                <div className="flex items-center justify-center sm:justify-start gap-2 pt-1">
+                  {/* بطاقتان بحجم زر موحّد (بدل نص عاري بلا خلفية) — نفس لغة
+                      تصميم زر "متابعة" في WriterProfileView، ليتضح أن هذين
+                      عنصران قابلان للنقر وليسا مجرد رقمين للعرض. */}
                   <button
                     type="button"
                     onClick={onShowFollowers}
-                    className="text-center sm:text-start hover:opacity-70 transition-opacity"
+                    className="flex flex-col items-center justify-center min-w-[68px] px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition-all"
                   >
-                    <span className="block text-sm font-black text-slate-900 dark:text-white">{realFollowersCount.toLocaleString('ar-EG')}</span>
-                    <span className="block text-[10px] text-slate-400 font-bold">متابعون</span>
+                    <span className="text-sm font-black text-slate-900 dark:text-white">{realFollowersCount.toLocaleString('ar-EG')}</span>
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold">متابعون</span>
                   </button>
                   <button
                     type="button"
                     onClick={onShowFollowing}
-                    className="text-center sm:text-start hover:opacity-70 transition-opacity"
+                    className="flex flex-col items-center justify-center min-w-[68px] px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition-all"
                   >
-                    <span className="block text-sm font-black text-slate-900 dark:text-white">{(followingCount ?? currentUser.followingCount ?? 0).toLocaleString('ar-EG')}</span>
-                    <span className="block text-[10px] text-slate-400 font-bold">يتابع</span>
+                    <span className="text-sm font-black text-slate-900 dark:text-white">{(followingCount ?? currentUser.followingCount ?? 0).toLocaleString('ar-EG')}</span>
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold">يتابع</span>
                   </button>
                 </div>
               )}
@@ -1604,6 +1609,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   users={users}
                   onSelectArticle={onSelectArticle}
                   onUpdateArticleStatus={onUpdateArticleStatus}
+                  onDeleteArticleAsAdmin={onDeleteArticleAsAdmin}
                 />
               )}
 
