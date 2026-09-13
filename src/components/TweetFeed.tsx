@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { MessageSquare, Search, X } from 'lucide-react';
+import React, { useMemo } from 'react';
+import { MessageSquare } from 'lucide-react';
 import { Tweet, TweetComment, User, AdCampaign } from '../types';
 import { TweetComposer } from './TweetComposer';
 import { TweetCard } from './TweetCard';
@@ -17,6 +17,9 @@ interface TweetFeedProps {
    *  لتمرير الصفحة إلى المُنشئ وتركيز حقل الكتابة، بدل فتح محرر مقال كامل لا
    *  علاقة له بالتغريد إطلاقاً. */
   focusComposeTrigger?: number;
+  /** نص البحث الحالي — أصبح مُتحكَّماً به من الصف العلوي بجانب زر التحديث
+   *  (App.tsx)، بدل شريط بحث منفصل هنا، ليطابق نفس موضع زر بحث المدونة. */
+  searchQuery: string;
   onToggleLike: (tweetId: string) => void;
   onToggleFavorite: (tweetId: string) => void;
   onShare: (tweet: Tweet) => void;
@@ -44,6 +47,7 @@ export const TweetFeed: React.FC<TweetFeedProps> = ({
   campaigns = [],
   onPostTweet,
   focusComposeTrigger,
+  searchQuery,
   onToggleLike,
   onToggleFavorite,
   onShare,
@@ -54,9 +58,8 @@ export const TweetFeed: React.FC<TweetFeedProps> = ({
   onSelectAuthor
 }) => {
   const isGuest = currentUser.id === 'guest';
-  // بحث محلي بالمحتوى أو اسم/معرّف الكاتب — لم يكن لقسم التغريد أي وسيلة
-  // بحث إطلاقاً، بخلاف قسم المدونة الذي يملك شريط بحث خاصاً به.
-  const [searchQuery, setSearchQuery] = useState('');
+  // بحث محلي بالمحتوى أو اسم/معرّف الكاتب — searchQuery مُمرَّر الآن من
+  // الصف العلوي بجانب زر التحديث (App.tsx) بدل حالة داخلية هنا.
   const filteredTweets = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return tweets;
@@ -73,27 +76,6 @@ export const TweetFeed: React.FC<TweetFeedProps> = ({
       {!isGuest && (
         <TweetComposer currentUser={currentUser} onSubmit={onPostTweet} focusTrigger={focusComposeTrigger} />
       )}
-
-      <div className="relative">
-        <Search className="w-4 h-4 text-slate-400 absolute start-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="ابحث في التغريدات أو عن كاتب..."
-          className="w-full ps-9 pe-9 py-2.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-700 dark:text-slate-200 placeholder-slate-400 outline-hidden focus:border-brand-500 shadow-2xs"
-        />
-        {searchQuery && (
-          <button
-            type="button"
-            onClick={() => setSearchQuery('')}
-            className="absolute end-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-            title="مسح البحث"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        )}
-      </div>
 
       {filteredTweets.length === 0 ? (
         <div className="p-10 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center">
