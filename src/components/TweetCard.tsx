@@ -340,7 +340,7 @@ export const TweetCard: React.FC<TweetCardProps> = ({
       )}
 
       {/* Content */}
-      <p className="text-sm text-slate-800 dark:text-slate-100 leading-relaxed whitespace-pre-wrap break-words">
+      <p className="text-sm text-slate-800 dark:text-slate-100 leading-relaxed whitespace-pre-wrap break-words select-text">
         {tweet.content}
       </p>
 
@@ -453,7 +453,7 @@ export const TweetCard: React.FC<TweetCardProps> = ({
                     <span className="font-bold text-xs">{comm.userName}</span>
                     <span className="text-[10px] text-slate-400">{timeAgoAr(comm.createdAt)}</span>
                   </div>
-                  <p className="text-xs leading-relaxed mb-2">{comm.content}</p>
+                  <p className="text-xs leading-relaxed mb-2 select-text">{comm.content}</p>
                   {comm.imageUrl && (
                     <img
                       src={comm.imageUrl}
@@ -518,7 +518,7 @@ export const TweetCard: React.FC<TweetCardProps> = ({
                             <span className="font-bold">{rep.userName}</span>
                             <span className="text-[9px] text-slate-400">{timeAgoAr(rep.createdAt)}</span>
                           </div>
-                          <p className="opacity-90">{rep.content}</p>
+                          <p className="opacity-90 select-text">{rep.content}</p>
                         </div>
                       ))}
                     </div>

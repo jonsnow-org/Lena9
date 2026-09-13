@@ -956,7 +956,7 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
                     )}
                   </div>
 
-                  <p className="text-xs sm:text-sm leading-relaxed mb-3">
+                  <p className="text-xs sm:text-sm leading-relaxed mb-3 select-text">
                     {comm.content}
                   </p>
 
@@ -1023,7 +1023,7 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
                             </div>
                             <span className="text-[10px] text-slate-400">{timeAgoAr(rep.createdAt)}</span>
                           </div>
-                          <p className="opacity-90">{rep.content}</p>
+                          <p className="opacity-90 select-text">{rep.content}</p>
                         </div>
                       ))}
                     </div>

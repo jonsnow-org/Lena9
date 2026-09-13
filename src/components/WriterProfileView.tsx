@@ -180,7 +180,7 @@ export const WriterProfileView: React.FC<WriterProfileViewProps> = ({
           </div>
 
           {/* Bio */}
-          <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed max-w-3xl mb-4">
+          <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed max-w-3xl mb-4 select-text">
             {writer.bio}
           </p>
 
