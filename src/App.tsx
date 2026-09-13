@@ -100,6 +100,7 @@ import {
   setPublishingBotsEnabledInFirestore
 } from './services/firestoreService';
 import { seedBotAccounts } from './services/botsApi';
+import { sendPushNotification } from './services/pushNotificationsApi';
 import { PromoteArticleModal } from './components/PromoteArticleModal';
 import { LegalPages, LegalSection } from './components/LegalPages';
 import { SiteFooter } from './components/SiteFooter';
@@ -1891,6 +1892,7 @@ export function App() {
           message: `بدأ ${currentUser.fullName} بمتابعتك`,
           actorId: currentUserId
         });
+        sendPushNotification(writerId, 'follows', 'متابع جديد', `بدأ ${currentUser.fullName} بمتابعتك`);
       }
     } catch (err) {
       console.error('تعذر تحديث المتابعة:', err);
@@ -2172,6 +2174,7 @@ export function App() {
           message: `رد ${currentUser.fullName} على تعليقك على تغريدة`,
           actorId: currentUser.id
         });
+        sendPushNotification(comment.userId, 'replies', 'رد جديد على تعليقك', `رد ${currentUser.fullName} على تعليقك على تغريدة`);
       }
     } catch (err) {
       console.error('تعذر إضافة الرد:', err);
@@ -2286,6 +2289,12 @@ export function App() {
             articleId,
             actorId: currentUserId
           });
+          sendPushNotification(
+            parentComment.userId,
+            'replies',
+            'رد جديد على تعليقك',
+            `ردّ ${currentUser.fullName} على تعليقك: "${content.slice(0, 60)}"`
+          );
         }
       } else {
         // تعليق جذري جديد
@@ -3016,6 +3025,12 @@ export function App() {
         mediaUrl: media?.url,
         mediaType: media?.type
       });
+      sendPushNotification(
+        recipientId,
+        'messages',
+        currentUser.fullName,
+        media && !content.trim() ? (media.type === 'sticker' ? '📎 ملصق' : '📎 وسائط') : content.trim()
+      );
     } catch (err) {
       console.error('تعذر إرسال الرسالة:', err);
       alert('تعذر إرسال الرسالة. تحقق من اتصالك ثم حاول مجدداً.');
