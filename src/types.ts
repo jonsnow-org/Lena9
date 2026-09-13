@@ -123,6 +123,22 @@ export interface User {
    *  أهلية الربح والإحصاءات الداخلية (انظر isEligibleForMonetization
    *  وAdminAnalyticsTab). لا يُضبَط هذا الحقل يدوياً من أي مسار آخر. */
   isBot?: boolean;
+  /** رموز تسجيل Firebase Cloud Messaging لأجهزة هذا المستخدم — مصفوفة لأن
+   *  نفس الحساب قد يُستخدم من أكثر من جهاز/متصفح. يُكتب من كود الموقع نفسه
+   *  (installState.ts يحمل الرمز من التطبيق الأصيل عبر جسر JS، أو من متصفح
+   *  ويب عادي مباشرة)، وليس من الخادم — الخادم Admin SDK فقط يقرأها لإرسال
+   *  push فعلي عبر server/pushNotifications.ts. */
+  fcmTokens?: string[];
+  /** تفضيلات الإشعارات push لكل مستخدم — كل الفئات مفعّلة افتراضياً (undefined
+   *  يُعامَل كـtrue في server/pushNotifications.ts) إلا mutedAll الذي يوقف كل
+   *  شيء دفعة واحدة بصرف النظر عن باقي الحقول. */
+  notificationPrefs?: {
+    messages?: boolean;
+    follows?: boolean;
+    replies?: boolean;
+    promotional?: boolean;
+    mutedAll?: boolean;
+  };
 }
 
 export interface ReadingHistoryItem {

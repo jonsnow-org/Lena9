@@ -34,6 +34,7 @@ import {
   createNowPaymentsDirectPayment,
   verifyNowPaymentsIpnSignature
 } from './server/nowPayments';
+import { sendPushToUser, type NotificationCategory } from './server/pushNotifications';
 import { isEligibleForMonetization } from './src/utils/creatorEligibility';
 import { REVENUE_SHARES } from './src/constants/revenueShares';
 import type { User, Article } from './src/types';
@@ -857,6 +858,42 @@ async function startServer() {
       }
       console.error('Article unlock error:', err?.message || err);
       res.status(500).json({ error: 'unlock_failed', message: 'تعذر إتمام عملية الشراء. حاول مجدداً.' });
+    }
+  });
+
+  // إرسال إشعار push حقيقي (FCM) لمستخدم واحد — يستدعيه الموقع مباشرة بعد
+  // إرسال رسالة خاصة أو متابعة كاتب أو رد على تعليق، إلى جانب الإشعار
+  // الداخلي القديم في Firestore وليس بدلاً عنه. الفئة 'promotional' مستثناة
+  // عمداً هنا (متاحة فقط عبر مسار الحملة المجدولة المحمي بسر cron منفصل)
+  // حتى لا يستطيع أي مستخدم موثّق إرسال إشعارات ترويجية عشوائية لغيره.
+  app.post('/api/notifications/push', async (req, res) => {
+    if (!isAdminConfigured()) {
+      return res.status(503).json({ error: 'not_configured', message: 'الخدمة غير مهيأة على الخادم حالياً.' });
+    }
+    try {
+      await verifyRequestAuth(req.headers.authorization);
+      const { targetUserId, category, title, body, data } = req.body || {};
+      if (!targetUserId || typeof targetUserId !== 'string') {
+        return res.status(400).json({ error: 'invalid_target', message: 'معرّف المستلم غير صالح.' });
+      }
+      if (!['messages', 'follows', 'replies'].includes(category)) {
+        return res.status(400).json({ error: 'invalid_category', message: 'نوع إشعار غير صالح.' });
+      }
+      if (!title || !body) {
+        return res.status(400).json({ error: 'invalid_content', message: 'يلزم عنوان ونص للإشعار.' });
+      }
+      const result = await sendPushToUser(
+        targetUserId,
+        category as NotificationCategory,
+        String(title),
+        String(body),
+        data
+      );
+      res.json({ success: true, ...result });
+    } catch (err: any) {
+      const status = err?.message === 'missing_auth_token' ? 401 : 500;
+      console.error('notifications/push error:', err?.message || err);
+      res.status(status).json({ error: 'push_failed', message: err?.message || 'تعذر إرسال الإشعار.' });
     }
   });
 
