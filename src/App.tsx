@@ -4028,8 +4028,11 @@ export function App() {
               {homeFeedMode === 'blog' && (
               <>
               {/* Search Bar — عدسة البحث عنصر منفصل تماماً عن حقل الكتابة،
-                  وليست أيقونة عائمة داخل الحقل، حتى يكون شكلها واضحاً كزر بحث حقيقي */}
-              <div className="flex flex-row items-center justify-between gap-2">
+                  وليست أيقونة عائمة داخل الحقل، حتى يكون شكلها واضحاً كزر بحث حقيقي.
+                  -mt-4 يعاكس فجوة space-y-6 الموروثة من الحاوية الأب — نفس إصلاح
+                  صف تحديث التغريدات أعلاه بالضبط، كان هذا الصف يترك فراغاً واضحاً
+                  أعلى زرين صغيرين فقط فيبدو وكأن الشاشة فارغة. */}
+              <div className="flex flex-row items-center justify-between gap-2 -mt-4">
                 {isSearchExpanded ? (
                   <div className="flex items-stretch flex-1 min-w-0 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xs focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/20 transition-all overflow-hidden">
                     <div className="w-11 shrink-0 flex items-center justify-center text-slate-400 border-e border-slate-200 dark:border-slate-800">
@@ -4108,8 +4111,10 @@ export function App() {
                 </div>
               )}
 
-              {/* Categories Scroll Filter */}
-              <div className="relative">
+              {/* Categories Scroll Filter — -mt-3 يقلّص فجوة space-y-6 الموروثة
+                  (24px) إلى ما يقارب النصف، فلا يبقى فراغ كبير مضاعف بين صف
+                  البحث/التحديث وشرائح التصنيفات أسفله. */}
+              <div className="relative -mt-3">
                 <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none scroll-smooth">
                   {categoryFilters.map((cat) => (
                     <button
