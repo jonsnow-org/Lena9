@@ -4,6 +4,8 @@ import android.content.Intent
 import android.net.Uri
 import android.graphics.Color
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.ViewGroup
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
@@ -14,18 +16,39 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.WindowCompat
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import studio.ai.literium.literium_app.ui.theme.LiteriumTheme
 
 private const val PRODUCTION_HOST = "literium-wjct.onrender.com"
 private const val BASE_URL = "https://$PRODUCTION_HOST/"
+
+// عنوان الصفحة الحقيقي (index.html) لتمييزه عن صفحة "إيقاظ الخدمة" المؤقتة التي
+// يعرضها Render نفسه عندما تكون الخدمة نائمة (الخطة المجانية توقفها بعد قلة نشاط) —
+// تلك الصفحة HTML صالحة أيضاً فتُطلق onPageFinished مثل أي صفحة حقيقية، لذا العنوان
+// وحده هو الفارق الموثوق المتاح هنا لتمييز "جاهز فعلاً" عن "لا يزال يُوقظ الخادم".
+private const val REAL_APP_TITLE_MARKER = "LITERIUM"
 
 /**
  * المحتوى الآن هو الموقع الحي نفسه بحذافيره — عبر WebView أصيل (android.webkit.WebView) مباشرة
@@ -52,6 +75,10 @@ class MainActivity : ComponentActivity() {
 
     private var webViewRef: WebView? = null
     private var pendingFileCallback: ValueCallback<Array<Uri>>? = null
+    // تُقرأ/تُكتب من onPageFinished (Compose state، آمنة من نفس خيط الواجهة الذي
+    // يُشغَّل عليه WebViewClient دائماً) — تتحكم بإخفاء شاشة البداية أدناه.
+    private var pageReadyState = mutableStateOf(false)
+    private val revealTimeoutHandler = Handler(Looper.getMainLooper())
 
     private val fileChooserLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -83,6 +110,11 @@ class MainActivity : ComponentActivity() {
 
         val startUrl = resolveStartUrl(intent?.data)
 
+        // شبكة أمان: إن لم يتحقق شرط العنوان الحقيقي خلال 45 ثانية لأي سبب غير متوقع
+        // (تغيّر عنوان الصفحة الحقيقية، أو صفحة إيقاظ لا تُعيد التوجيه تلقائياً) — يُكشف
+        // المحتوى رغم ذلك بدل حبس المستخدم خلف شاشة البداية إلى الأبد. فشل آمن، لا فشل مانع.
+        revealTimeoutHandler.postDelayed({ pageReadyState.value = true }, 45_000L)
+
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 val webView = webViewRef
@@ -99,6 +131,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             LiteriumTheme {
                 val context = LocalContext.current
+                val pageReady by pageReadyState
                 Surface(
                     modifier = Modifier
                         .fillMaxSize()
@@ -106,6 +139,7 @@ class MainActivity : ComponentActivity() {
                         // ارتفاع شريط الحالة/شريط التنقل الحاليين، بدل ترك WebView يرسم تحتهما.
                         .windowInsetsPadding(WindowInsets.systemBars)
                 ) {
+                    Box(modifier = Modifier.fillMaxSize()) {
                     AndroidView(
                         modifier = Modifier.fillMaxSize(),
                         factory = {
@@ -119,6 +153,21 @@ class MainActivity : ComponentActivity() {
                                 settings.domStorageEnabled = true
                                 settings.mediaPlaybackRequiresUserGesture = false
                                 settings.allowFileAccess = true
+                                // ⚠️ استبدال كامل لسلسلة User-Agent الافتراضية، لا إلحاق فقط:
+                                // WebView الافتراضي في أندرويد يضع علامة "; wv)" ضمن الجزء الأول
+                                // من السلسلة (ومعها "Version/4.0" قبل Chrome/) — وهذه بالضبط
+                                // العلامة التي يبحث عنها Google لمنع تسجيل الدخول (Sign-In) داخل
+                                // أي WebView (حماية أمنية من Google، ليست خللاً في هذا التطبيق).
+                                // نفس الحل المستخدم سابقاً في flutter_app (main.dart): سلسلة
+                                // Chrome/Android عادية تماماً بلا "; wv)" ولا "Version/x.x"، مع
+                                // إلحاق "LiteriumNativeApp/1" في النهاية فقط — بعد
+                                // "Mobile Safari/537.36" — ليتحقق منها navigator.userAgent في
+                                // كود الموقع (isRunningAsInstalledApp في installState.ts) لتمييز
+                                // زوار التطبيق الأصيل عن زوار المتصفح، دون كسر تسجيل الدخول عبر Google.
+                                settings.userAgentString =
+                                    "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 " +
+                                        "(KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36 " +
+                                        "LiteriumNativeApp/1"
 
                                 webViewClient = object : WebViewClient() {
                                     // روابط خارجية (mailto:, tel:, نطاقات خارج موقعنا) تُفتح بمتصفح
@@ -137,6 +186,21 @@ class MainActivity : ComponentActivity() {
                                             true
                                         } catch (_: Exception) {
                                             false
+                                        }
+                                    }
+
+                                    // إن كانت الخدمة نائمة (سبات Render بعد قلة نشاط)، أول استجابة
+                                    // فعلية ليست تطبيقنا إطلاقاً بل صفحة "إيقاظ الخدمة" الخاصة بـ
+                                    // Render نفسها — HTML صالح تماماً فيُطلق onPageFinished مثل أي
+                                    // تحميل ناجح عادي، فلا يكفي مجرد "انتهى التحميل" وحده. العنوان هو
+                                    // الفارق الموثوق الوحيد المتاح هنا: صفحة الموقع الحقيقية فقط تحمل
+                                    // "LITERIUM" (index.html)، فتُكشف شاشة البداية عند تطابقه فقط —
+                                    // تبقى ظاهرة أثناء صفحة الإيقاظ، وتُخفى تلقائياً بعد إعادة تحميل
+                                    // Render نفسها للصفحة الحقيقية دون أي وميض لواجهتها للمستخدم إطلاقاً.
+                                    override fun onPageFinished(view: WebView?, url: String?) {
+                                        super.onPageFinished(view, url)
+                                        if (view?.title?.contains(REAL_APP_TITLE_MARKER, ignoreCase = true) == true) {
+                                            pageReadyState.value = true
                                         }
                                     }
                                 }
@@ -170,6 +234,37 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     )
+
+                    // تُغطي WebView بالكامل حتى تتحقق شاشة العنوان الحقيقي أعلاه — يستمر
+                    // WebView بالتحميل خلفها بلا انقطاع، فتظهر شاشتنا فوراً فقط دون أي وميض
+                    // لصفحة "إيقاظ الخدمة" الخاصة بـRender مهما استغرقت.
+                    AnimatedVisibility(
+                        visible = !pageReady,
+                        exit = fadeOut(),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(ComposeColor(0xFF0D2968)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Image(
+                                    painter = painterResource(id = R.drawable.ic_launcher_foreground),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(140.dp)
+                                )
+                                CircularProgressIndicator(
+                                    color = ComposeColor.White,
+                                    modifier = Modifier
+                                        .padding(top = 24.dp)
+                                        .size(32.dp)
+                                )
+                            }
+                        }
+                    }
+                    }
                 }
             }
         }
@@ -179,5 +274,10 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         webViewRef?.loadUrl(resolveStartUrl(intent.data))
+    }
+
+    override fun onDestroy() {
+        revealTimeoutHandler.removeCallbacksAndMessages(null)
+        super.onDestroy()
     }
 }

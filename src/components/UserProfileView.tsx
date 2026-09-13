@@ -1650,6 +1650,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   onChangeThemePreset={onChangeThemePreset}
                   currentBackgroundPreset={currentBackgroundPreset}
                   onChangeBackgroundPreset={onChangeBackgroundPreset}
+                  adminUserId={currentUser.id}
                 />
               )}
             </div>
