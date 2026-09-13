@@ -198,8 +198,11 @@ export interface Tweet {
   authorAvatar: string;
   authorRole: UserRole;
   content: string;
-  /** صورة مرفقة اختيارية بالتغريدة (رفع Cloudinary، purpose='tweet'). */
+  /** صورة أو فيديو قصير مرفق اختيارياً بالتغريدة (رفع Cloudinary، purpose='tweet'،
+   *  حد الفيديو 61 ثانية/50 ميغابايت). mediaType يحدد كيفية عرض imageUrl —
+   *  الافتراضي 'image' لتوافق التغريدات القديمة قبل إضافة دعم الفيديو. */
   imageUrl?: string;
+  mediaType?: 'image' | 'video';
   likesCount: number;
   commentsCount: number;
   sharesCount: number;

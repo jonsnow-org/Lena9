@@ -1,8 +1,10 @@
 import React, { useRef, useState } from 'react';
-import { Heart, MessageSquare, Share2, Star, CornerDownLeft, Trash2, Image as ImageIcon, X, Loader2 } from 'lucide-react';
+import { Heart, MessageSquare, Share2, Star, CornerDownLeft, Trash2, Paperclip, MoreVertical, UserCircle2, Flag, X, Loader2 } from 'lucide-react';
 import { Tweet, TweetComment, User } from '../types';
 import { timeAgoAr } from '../utils/dateFormat';
 import { uploadAdMedia, fetchMediaUploadStatus } from '../services/mediaApi';
+import { submitUserReport } from '../services/firestoreService';
+import { VideoPlayer } from './VideoPlayer';
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
@@ -111,7 +113,7 @@ const InlineImageAttach: React.FC<{
         className="p-2 rounded-lg text-slate-400 hover:text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-950/20 active:scale-90 transition-all disabled:opacity-40 shrink-0"
         title="إرفاق صورة"
       >
-        {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImageIcon className="w-4 h-4" />}
+        {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Paperclip className="w-4 h-4" />}
       </button>
     </>
   );
@@ -139,8 +141,35 @@ export const TweetCard: React.FC<TweetCardProps> = ({
   const [commentImageError, setCommentImageError] = useState('');
   const [replyingToId, setReplyingToId] = useState<string | null>(null);
   const [replyText, setReplyText] = useState('');
+  const [showMenu, setShowMenu] = useState(false);
+  const [showReport, setShowReport] = useState(false);
+  const [reportReason, setReportReason] = useState<'abusive' | 'harassment' | 'spam' | 'other'>('abusive');
+  const [reportDetails, setReportDetails] = useState('');
+  const [isSubmittingReport, setIsSubmittingReport] = useState(false);
 
   const canDelete = currentUser.id === tweet.authorId || currentUser.role === 'admin';
+
+  const handleSubmitReport = async () => {
+    setIsSubmittingReport(true);
+    try {
+      await submitUserReport({
+        reporterId: currentUser.id,
+        reportedUserId: tweet.authorId,
+        reason: reportReason,
+        details: `تغريدة (${tweet.id}): "${tweet.content.slice(0, 200)}"${
+          reportDetails.trim() ? ' — ' + reportDetails.trim() : ''
+        }`
+      });
+      setShowReport(false);
+      setReportDetails('');
+      alert('تم إرسال البلاغ، شكراً لك.');
+    } catch (err) {
+      console.error('تعذر إرسال البلاغ عن التغريدة:', err);
+      alert('تعذر إرسال البلاغ. تحقق من اتصالك ثم حاول مجدداً.');
+    } finally {
+      setIsSubmittingReport(false);
+    }
+  };
 
   const handleAddComment = () => {
     if (!commentText.trim()) return;
@@ -189,19 +218,126 @@ export const TweetCard: React.FC<TweetCardProps> = ({
           </div>
         </button>
 
-        {canDelete && onDelete && (
+        {/* قائمة نقاط موحّدة (عرض الملف/مشاركة/إبلاغ/حذف) بدل زر حذف مستقل
+            بجوار الاسم مباشرة — نفس نمط قائمة النقاط الثلاث في رأس محادثة
+            الرسائل الخاصة (DirectMessagesModal)، ليكون التنظيم متسقاً في
+            كل مكان بالتطبيق بدل زر خام منفصل لكل إجراء. */}
+        <div className="relative shrink-0">
           <button
             type="button"
-            onClick={() => {
-              if (window.confirm('حذف هذه التغريدة نهائياً؟')) onDelete(tweet.id);
-            }}
-            className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 active:scale-90 transition-all shrink-0"
-            title="حذف التغريدة"
+            onClick={() => setShowMenu((v) => !v)}
+            className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 active:scale-90 transition-all"
+            title="خيارات التغريدة"
           >
-            <Trash2 className="w-4 h-4" />
+            <MoreVertical className="w-4 h-4" />
           </button>
-        )}
+          {showMenu && (
+            <div
+              className="absolute end-0 top-full mt-1.5 w-48 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-2xl overflow-hidden z-10 text-xs"
+              onClick={() => setShowMenu(false)}
+            >
+              <button
+                onClick={() => onSelectAuthor?.(tweet.authorId)}
+                className="w-full flex items-center gap-2 px-3.5 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 font-bold"
+              >
+                <UserCircle2 className="w-3.5 h-3.5" />
+                عرض الملف الشخصي
+              </button>
+              <button
+                onClick={() => onShare(tweet)}
+                className="w-full flex items-center gap-2 px-3.5 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 font-bold"
+              >
+                <Share2 className="w-3.5 h-3.5" />
+                مشاركة
+              </button>
+              {currentUser.id !== tweet.authorId && (
+                <button
+                  onClick={() => setShowReport(true)}
+                  className="w-full flex items-center gap-2 px-3.5 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-amber-600 font-bold"
+                >
+                  <Flag className="w-3.5 h-3.5" />
+                  إبلاغ
+                </button>
+              )}
+              {canDelete && onDelete && (
+                <>
+                  <div className="h-px bg-slate-100 dark:bg-slate-700" />
+                  <button
+                    onClick={() => {
+                      if (window.confirm('حذف هذه التغريدة نهائياً؟')) onDelete(tweet.id);
+                    }}
+                    className="w-full flex items-center gap-2 px-3.5 py-2.5 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-rose-600 font-bold"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    حذف
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
       </div>
+
+      {showReport && (
+        <div
+          className="fixed inset-0 bg-slate-950/50 backdrop-blur-xs flex items-center justify-center p-4 z-50"
+          onClick={() => setShowReport(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl p-4 space-y-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h4 className="font-extrabold text-sm text-slate-900 dark:text-white flex items-center gap-1.5">
+              <Flag className="w-4 h-4 text-amber-500" />
+              إبلاغ عن تغريدة {tweet.authorName}
+            </h4>
+            <div className="space-y-1.5">
+              {[
+                { id: 'abusive' as const, label: 'محتوى مسيء' },
+                { id: 'harassment' as const, label: 'مضايقة أو إزعاج' },
+                { id: 'spam' as const, label: 'رسائل مزعجة/دعائية' },
+                { id: 'other' as const, label: 'سبب آخر' }
+              ].map((r) => (
+                <label
+                  key={r.id}
+                  className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-200 cursor-pointer"
+                >
+                  <input
+                    type="radio"
+                    name={`tweet-report-reason-${tweet.id}`}
+                    checked={reportReason === r.id}
+                    onChange={() => setReportReason(r.id)}
+                    className="accent-teal-600"
+                  />
+                  {r.label}
+                </label>
+              ))}
+            </div>
+            <textarea
+              value={reportDetails}
+              onChange={(e) => setReportDetails(e.target.value)}
+              placeholder="تفاصيل إضافية (اختياري)..."
+              rows={3}
+              className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs outline-hidden focus:border-teal-500 resize-none"
+            />
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowReport(false)}
+                className="flex-1 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold text-xs"
+              >
+                إلغاء
+              </button>
+              <button
+                onClick={handleSubmitReport}
+                disabled={isSubmittingReport}
+                className="flex-1 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-bold text-xs"
+              >
+                {isSubmittingReport ? 'جارٍ الإرسال...' : 'إرسال البلاغ'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Content */}
       <p className="text-sm text-slate-800 dark:text-slate-100 leading-relaxed whitespace-pre-wrap break-words">
@@ -209,11 +345,15 @@ export const TweetCard: React.FC<TweetCardProps> = ({
       </p>
 
       {tweet.imageUrl && (
-        <img
-          src={tweet.imageUrl}
-          alt=""
-          className="w-full max-h-96 object-cover rounded-xl border border-slate-200 dark:border-slate-800"
-        />
+        tweet.mediaType === 'video' ? (
+          <VideoPlayer src={tweet.imageUrl} className="w-full max-h-96 rounded-xl border border-slate-200 dark:border-slate-800" />
+        ) : (
+          <img
+            src={tweet.imageUrl}
+            alt=""
+            className="w-full max-h-96 object-cover rounded-xl border border-slate-200 dark:border-slate-800"
+          />
+        )
       )}
 
       {/* Actions */}

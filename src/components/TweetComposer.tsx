@@ -1,25 +1,61 @@
-import React, { useRef, useState } from 'react';
-import { Send, Image as ImageIcon, X, Loader2 } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Send, Paperclip, X, Loader2 } from 'lucide-react';
 import { User } from '../types';
 import { uploadAdMedia, fetchMediaUploadStatus } from '../services/mediaApi';
+import { VideoPlayer } from './VideoPlayer';
 
 const MAX_TWEET_LENGTH = 280;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
+// نفس حد المدة الفعلي على الخادم لمقاطع فيديو التغريد (server.ts، purpose='tweet'
+// يقع على القيمة الافتراضية MAX_VIDEO_DURATION_SECONDS=61) — 60 هنا فقط للعرض
+// المبسّط على المستخدم؛ الخادم هو الحَكَم الفعلي النهائي بهامش الثانية الإضافية.
+const MAX_VIDEO_SECONDS = 60;
+
+function readVideoDuration(file: File): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement('video');
+    video.preload = 'metadata';
+    video.onloadedmetadata = () => {
+      URL.revokeObjectURL(video.src);
+      resolve(video.duration);
+    };
+    video.onerror = () => {
+      URL.revokeObjectURL(video.src);
+      reject(new Error('تعذر قراءة معلومات الفيديو.'));
+    };
+    video.src = URL.createObjectURL(file);
+  });
+}
 
 interface TweetComposerProps {
   currentUser: User;
-  onSubmit: (content: string, imageUrl?: string) => void | Promise<void>;
+  onSubmit: (content: string, imageUrl?: string, mediaType?: 'image' | 'video') => void | Promise<void>;
   placeholder?: string;
+  /** يتغيّر (رقم متزايد) كلما ضُغط زر الكتابة العائم أثناء وضع التغريد — يُمرَّر
+   *  من App.tsx عبر TweetFeed. عند تغيّره نُمرِّر الصفحة لهذا المُنشئ ونُركِّز
+   *  حقل النص مباشرة، بدل ترك المستخدم يبحث عنه يدوياً أعلى الخلاصة. */
+  focusTrigger?: number;
 }
 
 export const TweetComposer: React.FC<TweetComposerProps> = ({
   currentUser,
   onSubmit,
-  placeholder = 'بماذا تفكر؟ شارك خاطرة قصيرة...'
+  placeholder = 'بماذا تفكر؟ شارك خاطرة قصيرة...',
+  focusTrigger
 }) => {
   const [content, setContent] = useState('');
   const [isPosting, setIsPosting] = useState(false);
   const [imageUrl, setImageUrl] = useState('');
+  const [mediaType, setMediaType] = useState<'image' | 'video'>('image');
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    if (!focusTrigger) return;
+    textareaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    textareaRef.current?.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusTrigger]);
   const [imageUploading, setImageUploading] = useState(false);
   const [imageError, setImageError] = useState('');
   const [uploadConfigured, setUploadConfigured] = useState<boolean | null>(null);
@@ -34,11 +70,11 @@ export const TweetComposer: React.FC<TweetComposerProps> = ({
       const configured = await fetchMediaUploadStatus();
       setUploadConfigured(configured);
       if (!configured) {
-        setImageError('رفع الصور غير مفعّل على الخادم حالياً.');
+        setImageError('رفع الوسائط غير مفعّل على الخادم حالياً.');
         return;
       }
     } else if (!uploadConfigured) {
-      setImageError('رفع الصور غير مفعّل على الخادم حالياً.');
+      setImageError('رفع الوسائط غير مفعّل على الخادم حالياً.');
       return;
     }
     fileInputRef.current?.click();
@@ -46,20 +82,39 @@ export const TweetComposer: React.FC<TweetComposerProps> = ({
 
   const handleImageFile = async (file: File) => {
     setImageError('');
-    if (!file.type.startsWith('image/')) {
-      setImageError('يرجى اختيار ملف صورة صالح.');
+    const isVideo = file.type.startsWith('video/');
+    const isImage = file.type.startsWith('image/');
+    if (!isVideo && !isImage) {
+      setImageError('يرجى اختيار ملف صورة أو فيديو صالح.');
       return;
     }
-    if (file.size > MAX_IMAGE_BYTES) {
+    if (isImage && file.size > MAX_IMAGE_BYTES) {
       setImageError('حجم الصورة يتجاوز 8 ميغابايت.');
       return;
+    }
+    if (isVideo && file.size > MAX_VIDEO_BYTES) {
+      setImageError('حجم الفيديو يتجاوز 50 ميغابايت.');
+      return;
+    }
+    if (isVideo) {
+      try {
+        const duration = await readVideoDuration(file);
+        if (duration > MAX_VIDEO_SECONDS) {
+          setImageError('مدة الفيديو تتجاوز الدقيقة المسموحة.');
+          return;
+        }
+      } catch (err: any) {
+        setImageError(err?.message || 'تعذر قراءة معلومات الفيديو.');
+        return;
+      }
     }
     setImageUploading(true);
     try {
       const result = await uploadAdMedia(file, 'tweet');
       setImageUrl(result.url);
+      setMediaType(isVideo ? 'video' : 'image');
     } catch (err: any) {
-      setImageError(err?.message || 'تعذر رفع الصورة.');
+      setImageError(err?.message || 'تعذر رفع الملف.');
     } finally {
       setImageUploading(false);
     }
@@ -69,9 +124,10 @@ export const TweetComposer: React.FC<TweetComposerProps> = ({
     if (!canSubmit) return;
     setIsPosting(true);
     try {
-      await onSubmit(content.trim(), imageUrl || undefined);
+      await onSubmit(content.trim(), imageUrl || undefined, imageUrl ? mediaType : undefined);
       setContent('');
       setImageUrl('');
+      setMediaType('image');
       setImageError('');
     } finally {
       setIsPosting(false);
@@ -89,6 +145,7 @@ export const TweetComposer: React.FC<TweetComposerProps> = ({
         />
         <div className="flex-1 min-w-0 space-y-2">
           <textarea
+            ref={textareaRef}
             value={content}
             onChange={(e) => setContent(e.target.value)}
             placeholder={placeholder}
@@ -99,7 +156,7 @@ export const TweetComposer: React.FC<TweetComposerProps> = ({
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept="image/*,video/*"
             className="hidden"
             onChange={(e) => {
               const file = e.target.files?.[0];
@@ -111,18 +168,22 @@ export const TweetComposer: React.FC<TweetComposerProps> = ({
           {imageUploading && (
             <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 text-xs text-slate-500">
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              <span>جاري رفع الصورة...</span>
+              <span>جاري رفع الملف...</span>
             </div>
           )}
 
           {imageUrl && !imageUploading && (
             <div className="relative inline-block">
-              <img src={imageUrl} alt="" className="max-h-40 rounded-xl border border-slate-200 dark:border-slate-700 object-cover" />
+              {mediaType === 'video' ? (
+                <VideoPlayer src={imageUrl} className="max-h-40 rounded-xl border border-slate-200 dark:border-slate-700" />
+              ) : (
+                <img src={imageUrl} alt="" className="max-h-40 rounded-xl border border-slate-200 dark:border-slate-700 object-cover" />
+              )}
               <button
                 type="button"
                 onClick={() => setImageUrl('')}
                 className="absolute top-1.5 end-1.5 p-1 rounded-lg bg-slate-950/70 text-white hover:bg-slate-950 active:scale-90 transition-transform"
-                title="إزالة الصورة"
+                title="إزالة المرفق"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -138,9 +199,9 @@ export const TweetComposer: React.FC<TweetComposerProps> = ({
                 onClick={handlePickImage}
                 disabled={imageUploading}
                 className="p-2 rounded-lg text-slate-400 hover:text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-950/20 active:scale-90 transition-all disabled:opacity-40"
-                title="إرفاق صورة"
+                title="إرفاق صورة أو فيديو قصير"
               >
-                <ImageIcon className="w-4 h-4" />
+                <Paperclip className="w-4 h-4" />
               </button>
               <span
                 className={`text-[11px] font-mono font-bold ${
