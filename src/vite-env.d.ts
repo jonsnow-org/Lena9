@@ -13,3 +13,9 @@ interface ImportMeta {
 
 /** مُعرِّف رقم البناء الحالي، يُخبَز عبر vite.config.ts define من public/version.json */
 declare const __APP_BUILD__: string;
+
+interface Window {
+  /** جسر رمز تسجيل FCM — يستدعيه غلاف WebView الأصيل (MainActivity.kt) بعد
+   *  كل تحميل صفحة حقيقي؛ مُعرَّف في App.tsx (انظر saveFcmToken). */
+  __literiumFcmToken?: (token: string) => void;
+}

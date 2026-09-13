@@ -221,7 +221,8 @@ import {
   updateCampaignStatsInFirestore,
   incrementCampaignSpendInFirestore,
   setArticleStatusInFirestore,
-  resolveFraudFlagInFirestore
+  resolveFraudFlagInFirestore,
+  saveFcmToken
 } from './services/firestoreService';
 
 // Minimal read-only placeholder used ONLY while browsing unauthenticated
@@ -729,6 +730,30 @@ export function App() {
     const newSearch = params.toString();
     window.history.replaceState({}, '', window.location.pathname + (newSearch ? `?${newSearch}` : ''));
   }, []);
+
+  // جسر رمز إشعارات FCM: غلاف WebView الأصيل (MainActivity.kt) يستدعي
+  // window.__literiumFcmToken('...') بعد كل تحميل صفحة حقيقي — هو من يملك
+  // رمز الجهاز (عبر Firebase Android SDK)، لكنه لا يملك أي سياق مصادقة خاص
+  // به (كل تسجيل الدخول يحدث هنا في جافاسكربت الموقع). لو وصل الرمز قبل
+  // اكتمال تسجيل الدخول (سباق محتمل عند إقلاع بارد)، يُحفَظ مؤقتاً في
+  // pendingFcmTokenRef ويُرسَل فور توفر currentUserId الحقيقي.
+  const pendingFcmTokenRef = useRef<string | null>(null);
+  useEffect(() => {
+    window.__literiumFcmToken = (token: string) => {
+      if (currentUserId) {
+        saveFcmToken(currentUserId, token);
+      } else {
+        pendingFcmTokenRef.current = token;
+      }
+    };
+    if (currentUserId && pendingFcmTokenRef.current) {
+      saveFcmToken(currentUserId, pendingFcmTokenRef.current);
+      pendingFcmTokenRef.current = null;
+    }
+    return () => {
+      delete window.__literiumFcmToken;
+    };
+  }, [currentUserId]);
 
   // فتح المقال تلقائياً عند الدخول من رابط مُشارَك (?article=ID، يُنشئه
   // getShareUrl في ArticleReader.tsx عند نسخ/مشاركة الرابط) — كان هذا
