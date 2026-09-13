@@ -138,6 +138,9 @@ export const DirectMessagesModal: React.FC<DirectMessagesModalProps> = ({
   const [uploading, setUploading] = useState<'image' | 'video' | null>(null);
   const [uploadError, setUploadError] = useState('');
   const [, forceTick] = useState(0);
+  // قائمة نقاط صغيرة لكل صف محادثة في القائمة (بدل زر حذف خام مستقل) —
+  // صف واحد مفتوح كحد أقصى في نفس اللحظة.
+  const [openRowMenuId, setOpenRowMenuId] = useState<string | null>(null);
 
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const videoInputRef = useRef<HTMLInputElement | null>(null);
@@ -570,17 +573,30 @@ export const DirectMessagesModal: React.FC<DirectMessagesModalProps> = ({
                         )}
                       </div>
                     </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (!window.confirm(`حذف المحادثة مع ${c.partnerName} من قائمتك؟ يمكنك استقبال رسائل جديدة منه لاحقاً بلا مشكلة.`)) return;
-                        onHideConversation?.(c.id);
-                      }}
-                      className="shrink-0 p-1.5 rounded-lg text-slate-300 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
-                      title="حذف المحادثة"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => setOpenRowMenuId((id) => (id === c.id ? null : c.id))}
+                        className="p-1.5 rounded-lg text-slate-300 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                        title="خيارات المحادثة"
+                      >
+                        <MoreVertical className="w-3.5 h-3.5" />
+                      </button>
+                      {openRowMenuId === c.id && (
+                        <div className="absolute end-0 top-full mt-1 w-40 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-2xl overflow-hidden z-10 text-[11px]">
+                          <button
+                            onClick={() => {
+                              setOpenRowMenuId(null);
+                              if (!window.confirm(`حذف المحادثة مع ${c.partnerName} من قائمتك؟ يمكنك استقبال رسائل جديدة منه لاحقاً بلا مشكلة.`)) return;
+                              onHideConversation?.(c.id);
+                            }}
+                            className="w-full flex items-center gap-1.5 px-3 py-2 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-rose-600 font-bold"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            حذف
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 );
               })

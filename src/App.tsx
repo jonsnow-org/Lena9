@@ -419,6 +419,9 @@ export function App() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
   const [showScrollTop, setShowScrollTop] = useState(false);
+  // رقم متزايد يُمرَّر لـTweetComposer عبر TweetFeed — زر الكتابة العائم
+  // يزيده بدل فتح محرر مقال حين يكون المستخدم في وضع التغريد.
+  const [tweetComposeFocusTrigger, setTweetComposeFocusTrigger] = useState(0);
   // ⚠️ ref لا state: تتبّع نقطة بداية اللمسة لا يحتاج إعادة رسم إطلاقاً
   const touchStartPosRef = useRef(0);
 
@@ -1970,7 +1973,7 @@ export function App() {
   // ===== التغريدات =====
   // نشر تغريد جديد. النشر متاح لأي عضو مسجّل (قارئ/كاتب/معلن)، وليس
   // للكتّاب فقط، تماشياً مع نموذج "الحساب الموحّد" في المنصة.
-  const handlePostTweet = async (content: string, imageUrl?: string) => {
+  const handlePostTweet = async (content: string, imageUrl?: string, mediaType?: 'image' | 'video') => {
     if (!requireAuth()) return;
     try {
       const newTweet: Tweet = {
@@ -1981,7 +1984,7 @@ export function App() {
         authorAvatar: currentUser.avatarUrl,
         authorRole: currentUser.role,
         content,
-        ...(imageUrl ? { imageUrl } : {}),
+        ...(imageUrl ? { imageUrl, mediaType: mediaType || 'image' } : {}),
         likesCount: 0,
         commentsCount: 0,
         sharesCount: 0,
@@ -3929,15 +3932,19 @@ export function App() {
 
               {homeFeedMode === 'tweet' && (
                 <>
-                <div className="flex items-center justify-end">
+                {/* -mt-4 يعاكس فجوة space-y-6 الموروثة من الحاوية الأب —
+                    كان هذا الصف يترك فراغاً كبيراً واضحاً أعلى وأسفل زر
+                    وحيد صغير، فيبدو وكأن الشاشة فارغة. الزر نفسه مطويّ الآن
+                    (أيقونة فقط بلا نص "تحديث") ليقل حجمه البصري أيضاً. */}
+                <div className="flex items-center justify-end -mt-4">
                   <button
                     onClick={handleRefreshFeed}
                     disabled={isRefreshing}
-                    className="min-h-[44px] px-3.5 py-2 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-1.5 shadow-2xs transition-all touch-manipulation active:scale-95"
+                    className="p-2 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 shadow-2xs transition-all touch-manipulation active:scale-95"
                     title="تحديث التغريدات"
+                    aria-label="تحديث التغريدات"
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-brand-500' : ''}`} />
-                    <span>تحديث</span>
                   </button>
                 </div>
                 <TweetFeed
@@ -3948,6 +3955,7 @@ export function App() {
                   favoritedTweetIds={favoritedTweetIds}
                   campaigns={campaigns}
                   onPostTweet={handlePostTweet}
+                  focusComposeTrigger={tweetComposeFocusTrigger}
                   onToggleLike={handleToggleTweetLike}
                   onToggleFavorite={handleToggleTweetFavorite}
                   onShare={handleShareTweet}
@@ -4263,17 +4271,31 @@ export function App() {
         <SiteFooter onOpenLegal={(sec) => setLegalSection(sec)} />
       </main>
 
-      {/* زر عائم لكتابة مقال جديد (ابدأ الكتابة) — في الجهة اليسرى (يُخفى أثناء قراءة مقال لتجنب تضارب الواجهات) */}
-      {!readingArticle && !isArticleEditorOpen && currentUser.id !== 'guest' && (
+      {/* زر عائم لبدء الكتابة — في الجهة اليسرى، ويُخفى أثناء قراءة مقال لتجنب
+          تضارب الواجهات. مقصور على تبويب الخلاصة الرئيسي فقط (حيث مبدّل
+          تغريد/مدونة أصلاً) — لا معنى لزر "كتابة" في الملف الشخصي أو الرسائل
+          أو الإعلانات أو المالية. الإجراء نفسه يعتمد على القسم الفعّال: في
+          وضع "المدونة" يفتح محرر المقال كالمعتاد، وفي وضع "تغريد" كان يفتح
+          نفس محرر المقال الكامل خطأً بصرف النظر عن القسم — الآن يمرّر الصفحة
+          إلى مُنشئ التغريد ويركّز حقل الكتابة مباشرة بدلاً من ذلك. */}
+      {!readingArticle &&
+        !isArticleEditorOpen &&
+        currentUser.id !== 'guest' &&
+        activeTab === 'feed' &&
+        !viewingWriterProfile && (
         <button
           id="btn-floating-write"
           type="button"
           onClick={() => {
+            if (homeFeedMode === 'tweet') {
+              setTweetComposeFocusTrigger((n) => n + 1);
+              return;
+            }
             setEditingArticle(null);
             setIsArticleEditorOpen(true);
           }}
-          aria-label="ابدأ الكتابة"
-          title="ابدأ الكتابة"
+          aria-label={homeFeedMode === 'tweet' ? 'كتابة تغريدة' : 'ابدأ الكتابة'}
+          title={homeFeedMode === 'tweet' ? 'كتابة تغريدة' : 'ابدأ الكتابة'}
           className="fixed bottom-20 left-4 sm:bottom-24 sm:left-6 z-40 p-3.5 rounded-full bg-teal-600 hover:bg-teal-700 text-white shadow-xl shadow-teal-600/30 transition-all duration-300 transform hover:scale-110 active:scale-95 flex items-center justify-center cursor-pointer border border-white/20 backdrop-blur-sm"
         >
           <PenTool className="w-5 h-5" />

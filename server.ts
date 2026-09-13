@@ -3005,15 +3005,25 @@ async function startServer() {
         // نفس منطق المقال تماماً لروابط مشاركة التغريدات (?tweet=) — كانت
         // مفقودة تماماً من قبل، فأي رابط تغريدة يُشارَك على X/واتساب/
         // تيليجرام كان يظهر بلا معاينة إطلاقاً لأنه يسقط مباشرة إلى
-        // index.html الافتراضي دون أي وسوم Open Graph مخصصة. التغريدات
-        // لا تملك صورة خاصة بها في المخطط، فتُترَك og:image فارغة عمداً.
+        // index.html الافتراضي دون أي وسوم Open Graph مخصصة.
+        // ⚠️ التعليق القديم هنا ادّعى أن التغريدات "لا تملك صورة خاصة بها في
+        // المخطط" فتُرك og:image فارغاً عمداً — هذا كان صحيحاً وقت كتابته،
+        // لكن تغريدات الصور/الفيديو صارت مدعومة لاحقاً (tweet.imageUrl) ولم
+        // يُحدَّث هذا المسار قط، فبقيت كل بطاقة مشاركة تغريدة نصية فقط حتى
+        // للتغريدات المرفَق بها صورة فعلياً. تمرير tw.imageUrl هنا يجعل بطاقة
+        // المشاركة تحمل الصورة الحقيقية عند توفرها — وسيلة ترويج فعلية
+        // للموقع بدل رابط نصي عادٍ بلا أي عنصر بصري جذاب.
         if (tweetId && isAdminConfigured()) {
           const db = getAdminDb();
           const snap = await db.collection('tweets').doc(tweetId).get();
           if (snap.exists) {
             const tw = snap.data() || {};
             const title = tw.authorName ? `تغريدة ${tw.authorName} على LITERIUM` : 'تغريدة على LITERIUM';
-            const html = injectOgTags(indexPath, pageUrl, title, tw.content || '', null, 'website');
+            // فيديو التغريدات (mediaType='video') لا يصلح كـog:image (يتطلب
+            // og:video مختلفاً تماماً) — يُستبعَد هنا فقط، بلا تراجع لصورة
+            // بديلة غير موجودة أصلاً، فتبقى بطاقة المشاركة نصية له كما كانت.
+            const tweetImage = tw.mediaType !== 'video' && typeof tw.imageUrl === 'string' ? tw.imageUrl : null;
+            const html = injectOgTags(indexPath, pageUrl, title, tw.content || '', tweetImage, 'website');
             res.set('Content-Type', 'text/html; charset=utf-8');
             return res.send(html);
           }
