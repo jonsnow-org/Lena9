@@ -186,12 +186,14 @@ export const WriterProfileView: React.FC<WriterProfileViewProps> = ({
 
           {/* Stats Bar */}
           <div className="flex flex-wrap items-center gap-4 sm:gap-6 py-3 border-y border-slate-100 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400">
-            {/* عدد المتابِعين — محسوب من بيانات المتابعة الفعلية */}
+            {/* عدد المتابِعين — محسوب من بيانات المتابعة الفعلية. بطاقة بحجم
+                زر موحّد (بدل نص عاري) بنفس لغة تصميم زر "متابعة" أعلاه، ليتضح
+                أنهما عنصران قابلان للنقر فعلاً وليسا مجرد رقمين للعرض. */}
             <button
               onClick={onShowFollowers}
-              className="hover:text-brand-600 dark:hover:text-brand-400 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition-all"
             >
-              <strong className="text-slate-900 dark:text-white font-black text-sm me-1">
+              <strong className="text-slate-900 dark:text-white font-black text-sm">
                 {(followersCount ?? writer.followersCount ?? 0).toLocaleString('ar-EG')}
               </strong>
               <span>متابِع</span>
@@ -199,9 +201,9 @@ export const WriterProfileView: React.FC<WriterProfileViewProps> = ({
 
             <button
               onClick={onShowFollowing}
-              className="hover:text-brand-600 dark:hover:text-brand-400 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition-all"
             >
-              <strong className="text-slate-900 dark:text-white font-black text-sm me-1">
+              <strong className="text-slate-900 dark:text-white font-black text-sm">
                 {(followingCount ?? 0).toLocaleString('ar-EG')}
               </strong>
               <span>يتابع</span>

@@ -1,11 +1,13 @@
 package studio.ai.literium.literium_app
 
+import android.app.AlertDialog
 import android.content.Intent
 import android.net.Uri
 import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.view.View
 import android.view.ViewGroup
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
@@ -121,9 +123,17 @@ class MainActivity : ComponentActivity() {
                 if (webView != null && webView.canGoBack()) {
                     webView.goBack()
                 } else {
-                    isEnabled = false
-                    onBackPressedDispatcher.onBackPressed()
-                    isEnabled = true
+                    // طلب صريح: تأكيد خروج واحد واضح بدل الاعتماد على ضغطتي رجوع
+                    // متتاليتين (نمط "double back to exit" الذي كان يعتمد على منطق
+                    // التنبيه (toast) الخاص بالموقع نفسه عبر popstate — غير موثوق هنا
+                    // لأن هذا الكولباك يعترض زر الرجوع الفعلي للنظام قبل وصوله لأي
+                    // منطق JS في الصفحة أصلاً). حوار نظام أصيل واضح لا لبس فيه.
+                    AlertDialog.Builder(this@MainActivity)
+                        .setTitle("الخروج من التطبيق")
+                        .setMessage("هل تريد الخروج من تطبيق ليتيريوم؟")
+                        .setPositiveButton("خروج") { _, _ -> finish() }
+                        .setNegativeButton("إلغاء", null)
+                        .show()
                 }
             }
         })
@@ -153,6 +163,15 @@ class MainActivity : ComponentActivity() {
                                 settings.domStorageEnabled = true
                                 settings.mediaPlaybackRequiresUserGesture = false
                                 settings.allowFileAccess = true
+                                // الموقع نفسه يملك بالفعل سحب-للتحديث حقيقياً (لمسة
+                                // متتبَّعة + كبسولة "اسحب/أفلت للتحديث" + إعادة جلب فعلية
+                                // للمقالات — انظر handleTouchStart/handleRefreshFeed في
+                                // App.tsx)، لكن توهج الارتداد (overscroll glow) الافتراضي
+                                // لـWebView كان يظهر فوقه في نفس اللحظة فيبدو الأمر مجرد
+                                // "سحب وارتداد" عام بلا أي فعل حقيقي، ويطغى بصرياً على
+                                // كبسولة الموقع الحقيقية. تعطيله هنا يترك مؤشر الموقع
+                                // الحقيقي وحده هو ما يظهر.
+                                overScrollMode = View.OVER_SCROLL_NEVER
                                 // ⚠️ استبدال كامل لسلسلة User-Agent الافتراضية، لا إلحاق فقط:
                                 // WebView الافتراضي في أندرويد يضع علامة "; wv)" ضمن الجزء الأول
                                 // من السلسلة (ومعها "Version/4.0" قبل Chrome/) — وهذه بالضبط

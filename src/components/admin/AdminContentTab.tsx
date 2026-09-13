@@ -10,7 +10,8 @@ import {
   RefreshCw,
   CheckCircle2,
   XCircle,
-  Tag
+  Tag,
+  Trash2
 } from 'lucide-react';
 import { Article, User } from '../../types';
 
@@ -19,13 +20,15 @@ interface AdminContentTabProps {
   users: User[];
   onSelectArticle?: (article: Article) => void;
   onUpdateArticleStatus?: (articleId: string, status: Article['status']) => void;
+  onDeleteArticleAsAdmin?: (articleId: string) => void;
 }
 
 export const AdminContentTab: React.FC<AdminContentTabProps> = ({
   articles,
   users,
   onSelectArticle,
-  onUpdateArticleStatus
+  onUpdateArticleStatus,
+  onDeleteArticleAsAdmin
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'published' | 'locked' | 'free' | 'archived'>('all');
@@ -230,13 +233,26 @@ export const AdminContentTab: React.FC<AdminContentTabProps> = ({
                       ) : (
                         <button
                           onClick={() => onUpdateArticleStatus(art.id, 'archived')}
-                          className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-rose-600 text-slate-400 hover:text-white text-xs font-bold transition-colors flex items-center gap-1"
+                          className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-amber-600 text-slate-400 hover:text-white text-xs font-bold transition-colors flex items-center gap-1"
                         >
                           <Archive className="w-3.5 h-3.5" />
                           <span>أرشفة / حجب</span>
                         </button>
                       )}
                     </>
+                  )}
+
+                  {/* حذف نهائي — كانت "أرشفة/حجب" أعلاه الخيار الوحيد المتاح
+                      هنا (يُبقي المقال في قاعدة البيانات بحالة archived فقط)،
+                      بلا أي وسيلة فعلية لحذف مقال نهائياً من لوحة الأدمن. */}
+                  {onDeleteArticleAsAdmin && (
+                    <button
+                      onClick={() => onDeleteArticleAsAdmin(art.id)}
+                      className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-rose-600 text-slate-400 hover:text-white text-xs font-bold transition-colors flex items-center gap-1"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>حذف نهائي</span>
+                    </button>
                   )}
                 </div>
               </div>
