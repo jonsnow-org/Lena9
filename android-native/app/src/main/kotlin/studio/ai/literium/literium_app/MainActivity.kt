@@ -9,10 +9,13 @@ import android.os.Handler
 import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.JsPromptResult
+import android.webkit.JsResult
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.EditText
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
@@ -246,6 +249,65 @@ class MainActivity : ComponentActivity() {
                                             pendingFileCallback = null
                                             false
                                         }
+                                    }
+
+                                    // ⚠️ بلا هذه التخصيصات الثلاثة، أي alert()/confirm()/prompt() في
+                                    // كود الموقع (يوجد منها عشرات عبر التطبيق — تأكيدات حذف، رسائل خطأ،
+                                    // تأكيد نسخ رابط مشاركة...) يعرضها WebView بتصميمه الافتراضي الذي
+                                    // يبدأ دائماً بجملة "تعرض الصفحة في '<الرابط الكامل>' :" قبل نص
+                                    // الرسالة نفسها — سلوك أمني قياسي في WebView (تمييز حوار الصفحة عن
+                                    // حوار النظام)، لكنه يكشف رابط الاستضافة الخام (onrender.com) للمستخدم
+                                    // ويجعل كل حوار في التطبيق يبدو كتحذير متصفح لا كجزء من تطبيق أصيل —
+                                    // هذا بالضبط ما ظهر في مشكلة "نافذة المشاركة المربكة". حوار نظام نظيف
+                                    // بلا أي ذكر للرابط يحل المشكلة لكل الحوارات دفعة واحدة.
+                                    override fun onJsAlert(
+                                        view: WebView?,
+                                        url: String?,
+                                        message: String?,
+                                        result: JsResult?
+                                    ): Boolean {
+                                        AlertDialog.Builder(this@MainActivity)
+                                            .setMessage(message)
+                                            .setPositiveButton("حسناً") { _, _ -> result?.confirm() }
+                                            .setOnCancelListener { result?.confirm() }
+                                            .setCancelable(false)
+                                            .show()
+                                        return true
+                                    }
+
+                                    override fun onJsConfirm(
+                                        view: WebView?,
+                                        url: String?,
+                                        message: String?,
+                                        result: JsResult?
+                                    ): Boolean {
+                                        AlertDialog.Builder(this@MainActivity)
+                                            .setMessage(message)
+                                            .setPositiveButton("موافق") { _, _ -> result?.confirm() }
+                                            .setNegativeButton("إلغاء") { _, _ -> result?.cancel() }
+                                            .setOnCancelListener { result?.cancel() }
+                                            .show()
+                                        return true
+                                    }
+
+                                    override fun onJsPrompt(
+                                        view: WebView?,
+                                        url: String?,
+                                        message: String?,
+                                        defaultValue: String?,
+                                        result: JsPromptResult?
+                                    ): Boolean {
+                                        val input = EditText(this@MainActivity).apply {
+                                            setText(defaultValue)
+                                        }
+                                        AlertDialog.Builder(this@MainActivity)
+                                            .setMessage(message)
+                                            .setView(input)
+                                            .setPositiveButton("موافق") { _, _ -> result?.confirm(input.text.toString()) }
+                                            .setNegativeButton("إلغاء") { _, _ -> result?.cancel() }
+                                            .setOnCancelListener { result?.cancel() }
+                                            .show()
+                                        return true
                                     }
                                 }
 
