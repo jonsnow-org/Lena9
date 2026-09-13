@@ -31,7 +31,7 @@ export const FollowListModal: React.FC<FollowListModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-xs p-0 sm:p-4" onClick={onClose}>
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full sm:max-w-md sm:rounded-3xl rounded-t-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl max-h-[80vh] flex flex-col"
+        className="w-full sm:max-w-md sm:rounded-3xl rounded-t-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl max-h-[80vh] flex flex-col animate-android-in"
       >
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800 shrink-0">
           <h3 className="font-extrabold text-sm text-slate-900 dark:text-white">{title}</h3>
