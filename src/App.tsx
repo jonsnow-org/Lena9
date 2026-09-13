@@ -73,6 +73,7 @@ import { ImageStudioModal } from './components/ImageStudioModal';
 import { AuthModal } from './components/AuthModal';
 import { ResetPasswordModal } from './components/ResetPasswordModal';
 import { DrawerMenu } from './components/DrawerMenu';
+import { NotificationSettingsModal } from './components/NotificationSettingsModal';
 import { SubscriptionModal } from './components/SubscriptionModal';
 import { NewCampaignModal } from './components/NewCampaignModal';
 import { MonetagVignetteLoader } from './components/MonetagVignetteLoader';
@@ -100,6 +101,7 @@ import {
   setPublishingBotsEnabledInFirestore
 } from './services/firestoreService';
 import { seedBotAccounts } from './services/botsApi';
+import { sendPushNotification } from './services/pushNotificationsApi';
 import { PromoteArticleModal } from './components/PromoteArticleModal';
 import { LegalPages, LegalSection } from './components/LegalPages';
 import { SiteFooter } from './components/SiteFooter';
@@ -221,7 +223,9 @@ import {
   updateCampaignStatsInFirestore,
   incrementCampaignSpendInFirestore,
   setArticleStatusInFirestore,
-  resolveFraudFlagInFirestore
+  resolveFraudFlagInFirestore,
+  saveFcmToken,
+  updateNotificationPrefs
 } from './services/firestoreService';
 
 // Minimal read-only placeholder used ONLY while browsing unauthenticated
@@ -475,6 +479,7 @@ export function App() {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isBeta20Open, setIsBeta20Open] = useState(false);
   const [isImageStudioOpen, setIsImageStudioOpen] = useState(false);
+  const [isNotificationSettingsOpen, setIsNotificationSettingsOpen] = useState(false);
   const [imageStudioPrompt, setImageStudioPrompt] = useState('');
   const [imageStudioSelectCallback, setImageStudioSelectCallback] = useState<((url: string) => void) | null>(null);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
@@ -729,6 +734,30 @@ export function App() {
     const newSearch = params.toString();
     window.history.replaceState({}, '', window.location.pathname + (newSearch ? `?${newSearch}` : ''));
   }, []);
+
+  // جسر رمز إشعارات FCM: غلاف WebView الأصيل (MainActivity.kt) يستدعي
+  // window.__literiumFcmToken('...') بعد كل تحميل صفحة حقيقي — هو من يملك
+  // رمز الجهاز (عبر Firebase Android SDK)، لكنه لا يملك أي سياق مصادقة خاص
+  // به (كل تسجيل الدخول يحدث هنا في جافاسكربت الموقع). لو وصل الرمز قبل
+  // اكتمال تسجيل الدخول (سباق محتمل عند إقلاع بارد)، يُحفَظ مؤقتاً في
+  // pendingFcmTokenRef ويُرسَل فور توفر currentUserId الحقيقي.
+  const pendingFcmTokenRef = useRef<string | null>(null);
+  useEffect(() => {
+    window.__literiumFcmToken = (token: string) => {
+      if (currentUserId) {
+        saveFcmToken(currentUserId, token);
+      } else {
+        pendingFcmTokenRef.current = token;
+      }
+    };
+    if (currentUserId && pendingFcmTokenRef.current) {
+      saveFcmToken(currentUserId, pendingFcmTokenRef.current);
+      pendingFcmTokenRef.current = null;
+    }
+    return () => {
+      delete window.__literiumFcmToken;
+    };
+  }, [currentUserId]);
 
   // فتح المقال تلقائياً عند الدخول من رابط مُشارَك (?article=ID، يُنشئه
   // getShareUrl في ArticleReader.tsx عند نسخ/مشاركة الرابط) — كان هذا
@@ -1112,6 +1141,17 @@ export function App() {
       setUsers((prev) => prev.map((u) => (u.id === currentUser.id ? { ...u, ...updates } : u)));
     } catch (err) {
       console.error('تعذر حفظ الملف الشخصي:', err);
+      throw err;
+    }
+  };
+
+  const handleSaveNotificationPrefs = async (prefs: NonNullable<User['notificationPrefs']>) => {
+    if (!requireAuth()) return;
+    try {
+      await updateNotificationPrefs(currentUser.id, prefs);
+      setUsers((prev) => prev.map((u) => (u.id === currentUser.id ? { ...u, notificationPrefs: prefs } : u)));
+    } catch (err) {
+      console.error('تعذر حفظ إعدادات الإشعارات:', err);
       throw err;
     }
   };
@@ -1866,6 +1906,7 @@ export function App() {
           message: `بدأ ${currentUser.fullName} بمتابعتك`,
           actorId: currentUserId
         });
+        sendPushNotification(writerId, 'follows', 'متابع جديد', `بدأ ${currentUser.fullName} بمتابعتك`);
       }
     } catch (err) {
       console.error('تعذر تحديث المتابعة:', err);
@@ -2147,6 +2188,7 @@ export function App() {
           message: `رد ${currentUser.fullName} على تعليقك على تغريدة`,
           actorId: currentUser.id
         });
+        sendPushNotification(comment.userId, 'replies', 'رد جديد على تعليقك', `رد ${currentUser.fullName} على تعليقك على تغريدة`);
       }
     } catch (err) {
       console.error('تعذر إضافة الرد:', err);
@@ -2261,6 +2303,12 @@ export function App() {
             articleId,
             actorId: currentUserId
           });
+          sendPushNotification(
+            parentComment.userId,
+            'replies',
+            'رد جديد على تعليقك',
+            `ردّ ${currentUser.fullName} على تعليقك: "${content.slice(0, 60)}"`
+          );
         }
       } else {
         // تعليق جذري جديد
@@ -2991,6 +3039,12 @@ export function App() {
         mediaUrl: media?.url,
         mediaType: media?.type
       });
+      sendPushNotification(
+        recipientId,
+        'messages',
+        currentUser.fullName,
+        media && !content.trim() ? (media.type === 'sticker' ? '📎 ملصق' : '📎 وسائط') : content.trim()
+      );
     } catch (err) {
       console.error('تعذر إرسال الرسالة:', err);
       alert('تعذر إرسال الرسالة. تحقق من اتصالك ثم حاول مجدداً.');
@@ -3974,8 +4028,11 @@ export function App() {
               {homeFeedMode === 'blog' && (
               <>
               {/* Search Bar — عدسة البحث عنصر منفصل تماماً عن حقل الكتابة،
-                  وليست أيقونة عائمة داخل الحقل، حتى يكون شكلها واضحاً كزر بحث حقيقي */}
-              <div className="flex flex-row items-center justify-between gap-2">
+                  وليست أيقونة عائمة داخل الحقل، حتى يكون شكلها واضحاً كزر بحث حقيقي.
+                  -mt-4 يعاكس فجوة space-y-6 الموروثة من الحاوية الأب — نفس إصلاح
+                  صف تحديث التغريدات أعلاه بالضبط، كان هذا الصف يترك فراغاً واضحاً
+                  أعلى زرين صغيرين فقط فيبدو وكأن الشاشة فارغة. */}
+              <div className="flex flex-row items-center justify-between gap-2 -mt-4">
                 {isSearchExpanded ? (
                   <div className="flex items-stretch flex-1 min-w-0 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xs focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/20 transition-all overflow-hidden">
                     <div className="w-11 shrink-0 flex items-center justify-center text-slate-400 border-e border-slate-200 dark:border-slate-800">
@@ -4054,8 +4111,10 @@ export function App() {
                 </div>
               )}
 
-              {/* Categories Scroll Filter */}
-              <div className="relative">
+              {/* Categories Scroll Filter — -mt-3 يقلّص فجوة space-y-6 الموروثة
+                  (24px) إلى ما يقارب النصف، فلا يبقى فراغ كبير مضاعف بين صف
+                  البحث/التحديث وشرائح التصنيفات أسفله. */}
+              <div className="relative -mt-3">
                 <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none scroll-smooth">
                   {categoryFilters.map((cat) => (
                     <button
@@ -4379,6 +4438,7 @@ export function App() {
           setImageStudioSelectCallback(null);
           setIsImageStudioOpen(true);
         }}
+        onOpenNotificationSettings={() => setIsNotificationSettingsOpen(true)}
         onLogout={handleLogout}
         theme={theme}
         onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
@@ -4532,6 +4592,14 @@ export function App() {
             )
           );
         }}
+      />
+
+      {/* Notification Settings Modal */}
+      <NotificationSettingsModal
+        isOpen={isNotificationSettingsOpen}
+        currentUser={currentUser}
+        onClose={() => setIsNotificationSettingsOpen(false)}
+        onSave={handleSaveNotificationPrefs}
       />
 
       {/* Wallet Modal */}

@@ -1737,6 +1737,36 @@ export async function adminLogEarning(earning: {
  * حفظ الروابط الخارجية للمستخدم في ملفه الشخصي.
  * socialLinks حقل غير مالي، فيسمح به تعديل صاحب الحساب في قواعد الأمان.
  */
+/**
+ * يحفظ رمز تسجيل FCM لجهاز واحد ضمن مصفوفة fcmTokens الخاصة بالمستخدم —
+ * arrayUnion يمنع التكرار تلقائياً لو استُدعي بنفس الرمز أكثر من مرة (تحميل
+ * صفحة متكرر داخل نفس جلسة التطبيق الأصيل مثلاً). يُستدعى من الجسر
+ * window.__literiumFcmToken في App.tsx الذي يمرّره غلاف WebView الأصيل
+ * (MainActivity.kt) بعد كل تحميل صفحة حقيقي.
+ */
+export async function saveFcmToken(userId: string, token: string): Promise<void> {
+  try {
+    await updateDoc(doc(db, 'users', userId), { fcmTokens: arrayUnion(token) });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `users/${userId}`);
+  }
+}
+
+/** يحفظ تفضيلات إشعارات push الكاملة للمستخدم — من صفحة الإعدادات
+ *  (NotificationSettingsModal.tsx)، يستبدل الكائن بالكامل عمداً (وليس
+ *  دمجاً جزئياً) لأن الواجهة تعرض دائماً كل الحقول الأربعة+mutedAll معاً. */
+export async function updateNotificationPrefs(
+  userId: string,
+  prefs: NonNullable<User['notificationPrefs']>
+): Promise<void> {
+  try {
+    await updateDoc(doc(db, 'users', userId), { notificationPrefs: prefs });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `users/${userId}`);
+    throw error;
+  }
+}
+
 export async function updateUserSocialLinks(
   userId: string,
   socialLinks: Record<string, string>

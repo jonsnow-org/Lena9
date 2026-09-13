@@ -1,6 +1,9 @@
 package studio.ai.literium.literium_app
 
 import android.app.Application
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.os.Build
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.google.firebase.ktx.Firebase
 import com.google.firebase.ktx.initialize
@@ -27,6 +30,7 @@ class LiteriumApplication : Application() {
         super.onCreate()
         instance = this
         Firebase.initialize(this)
+        createNotificationChannel()
 
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
@@ -41,5 +45,21 @@ class LiteriumApplication : Application() {
                 android.os.Process.killProcess(android.os.Process.myPid())
             }
         }
+    }
+
+    // القناة (channel) شرط إلزامي لعرض أي إشعار على أندرويد 8+ (API 26+) —
+    // يجب إنشاؤها مرة واحدة قبل أول notify()، ومعرّفها (CHANNEL_ID) في
+    // FcmService.kt يجب أن يطابق هذا تماماً.
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val channel = NotificationChannel(
+            "literium_default",
+            "إشعارات ليتيريوم",
+            NotificationManager.IMPORTANCE_HIGH
+        ).apply {
+            description = "رسائل، متابعات، ردود، وتحديثات ليتيريوم"
+        }
+        val manager = getSystemService(NotificationManager::class.java)
+        manager?.createNotificationChannel(channel)
     }
 }

@@ -96,6 +96,7 @@ dependencies {
     implementation("com.google.firebase:firebase-firestore-ktx")
     implementation("com.google.firebase:firebase-crashlytics-ktx")
     implementation("com.google.firebase:firebase-analytics-ktx")
+    implementation("com.google.firebase:firebase-messaging-ktx")
 
     // ---- شبكة (نقاط server.ts) ----
     implementation("com.squareup.retrofit2:retrofit:2.11.0")

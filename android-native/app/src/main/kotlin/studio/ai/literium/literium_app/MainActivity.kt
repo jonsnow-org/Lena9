@@ -1,9 +1,12 @@
 package studio.ai.literium.literium_app
 
+import android.Manifest
 import android.app.AlertDialog
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.graphics.Color
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -20,7 +23,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
+import com.google.firebase.messaging.FirebaseMessaging
+import org.json.JSONObject
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Image
@@ -98,8 +104,33 @@ class MainActivity : ComponentActivity() {
         callback?.onReceiveValue(uris)
     }
 
+    // بلا هذا الإذن الصريح على أندرويد 13+ (API 33+)، أي push فعلي يصل والتطبيق
+    // في الخلفية يُسقَط بصمت (الإذن في AndroidManifest.xml وحده غير كافٍ منذ
+    // هذا الإصدار — إذن "خطر" (dangerous) يتطلب طلباً وقت التشغيل).
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* رفض المستخدم يعني فقط عدم وصول إشعارات نظام — لا حاجة لأي تعامل هنا */ }
+
+    // يمرّر رمز FCM الحالي إلى صفحة الموقع الحيّة عبر جسر JS بسيط — كود الموقع
+    // (installState.ts) يملك سياق المصادقة الحقيقي (WebView الأصيل هنا لا يملك
+    // أي جلسة Firebase Auth خاصة به) فهو من يحفظ الرمز فعلياً في مستند المستخدم.
+    private fun bridgeFcmTokenToWebView(token: String) {
+        val encoded = JSONObject.quote(token)
+        webViewRef?.evaluateJavascript(
+            "window.__literiumFcmToken && window.__literiumFcmToken($encoded)",
+            null
+        )
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
 
         // بلا enableEdgeToEdge(): على أندرويد 15+ (targetSdk 36 هنا) يفرض النظام قد يفرض
         // edge-to-edge بصرف النظر عن هذا الاستدعاء، لذا الاعتماد الوحيد الموثوق هو حشو
@@ -223,6 +254,11 @@ class MainActivity : ComponentActivity() {
                                         super.onPageFinished(view, url)
                                         if (view?.title?.contains(REAL_APP_TITLE_MARKER, ignoreCase = true) == true) {
                                             pageReadyState.value = true
+                                            // جسر الرمز الحالي في كل تحميل صفحة حقيقي — حالة JS تُعاد
+                                            // تصفيرها عند كل تحميل، فلا يكفي جسر الرمز مرة واحدة فقط
+                                            // عند إقلاع التطبيق الأول.
+                                            FirebaseMessaging.getInstance().token
+                                                .addOnSuccessListener { token -> bridgeFcmTokenToWebView(token) }
                                         }
                                     }
                                 }
@@ -355,6 +391,22 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         webViewRef?.loadUrl(resolveStartUrl(intent.data))
+    }
+
+    // foregroundTokenListener مُسجَّل فقط بين onResume/onPause عمداً (وليس طوال
+    // عمر الـActivity كما بين onCreate/onDestroy): FcmService.onMessageReceived
+    // يعتمد على وجوده لتمييز "التطبيق مرئي فعلياً الآن" عن "التطبيق في الخلفية
+    // لكن عمليته لا تزال حيّة" — الفرق الوحيد الموثوق بين الحالتين هو دورة حياة
+    // onResume/onPause، وليس onCreate/onDestroy التي لا تُستدعى إلا عند إغلاق
+    // الـActivity فعلياً.
+    override fun onResume() {
+        super.onResume()
+        FcmService.foregroundTokenListener = { token -> bridgeFcmTokenToWebView(token) }
+    }
+
+    override fun onPause() {
+        FcmService.foregroundTokenListener = null
+        super.onPause()
     }
 
     override fun onDestroy() {
