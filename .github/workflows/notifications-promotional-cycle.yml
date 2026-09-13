@@ -1,0 +1,33 @@
+name: Promotional Notifications Cycle
+
+# نبضة دورية (صباحاً/مساءً بتوقيت UTC) تستدعي حملة إعادة جذب المستخدمين
+# الغائبين عبر push حقيقي — نفس فلسفة bots-daily-cycle.yml تماماً: الخادم
+# (server.ts) هو من يقرر فعلياً من يستحق إشعاراً ومتى (عتبة الغياب، التقييد
+# اليومي، تفضيلات المستخدم)، هذا السير مجرد نبضة تستدعيه لا أكثر.
+#
+# ملاحظة: نفس درس سير health-check.yml — الجدولة عبر schedule: تعمل فقط
+# من الفرع الافتراضي (main) في GitHub، فلا بد من دمج هذا الملف في main
+# قبل أن تبدأ الجدولة تعمل فعلياً.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 7 * * *'
+    - cron: '0 17 * * *'
+
+jobs:
+  run-promotional-cycle:
+    runs-on: ubuntu-latest
+    steps:
+      - name: POST /api/notifications/promotional-cycle
+        run: |
+          status=$(curl -sS -o /tmp/body.txt -w "%{http_code}" --max-time 120 \
+            -X POST \
+            -H "x-notifications-cron-secret: ${{ secrets.NOTIFICATIONS_CRON_SECRET }}" \
+            https://literium-wjct.onrender.com/api/notifications/promotional-cycle || echo "000")
+          echo "HTTP $status"
+          cat /tmp/body.txt || true
+          if [ "$status" != "200" ]; then
+            echo "::error::فشل استدعاء حملة الإشعارات الترويجية (HTTP $status)"
+            exit 1
+          fi

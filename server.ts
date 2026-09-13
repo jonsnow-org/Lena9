@@ -2040,6 +2040,116 @@ async function startServer() {
     }
   });
 
+  function requireNotificationsCronSecret(req: express.Request, res: express.Response): boolean {
+    const expected = process.env.NOTIFICATIONS_CRON_SECRET;
+    if (!expected) {
+      res.status(503).json({
+        error: 'not_configured',
+        message: 'لم يُضبط NOTIFICATIONS_CRON_SECRET على الخادم — الحملة الترويجية غير مفعَّلة بعد.'
+      });
+      return false;
+    }
+    const provided = req.headers['x-notifications-cron-secret'];
+    if (provided !== expected) {
+      res.status(403).json({ error: 'forbidden', message: 'مفتاح تشغيل حملة الإشعارات غير صحيح.' });
+      return false;
+    }
+    return true;
+  }
+
+  // حملة إشعارات ترويجية دورية لإعادة جذب المستخدمين الغائبين — يستدعيها سير
+  // GitHub Actions مجدوَل (notifications-promotional-cycle.yml) مرتين يومياً
+  // (صباحاً/مساءً)، بنفس فلسفة bots-daily-cycle.yml أعلاه تماماً: هذا المسار
+  // وحده من يقرر فعلياً من يستحق إشعاراً، السير مجرد نبضة تستدعيه.
+  // 'promotional' فئة مستبعدة عمداً من /api/notifications/push العام
+  // (المتاح لأي مستخدم موثّق) — هذا المسار المحمي بسرّ cron منفصل هو الوحيد
+  // القادر على إرسالها، لمنع أي مستخدم من إرسال إشعارات ترويجية عشوائية.
+  app.post('/api/notifications/promotional-cycle', async (req, res) => {
+    if (!isAdminConfigured()) {
+      return res.status(503).json({ error: 'not_configured', message: 'الخدمة غير مهيأة على الخادم حالياً.' });
+    }
+    if (!requireNotificationsCronSecret(req, res)) return;
+
+    try {
+      const db = getAdminDb();
+      const now = new Date();
+      const hour = now.getUTCHours();
+      const isFriday = now.getUTCDay() === 5;
+      const greeting = isFriday ? 'جمعة مباركة 🌙' : hour < 12 ? 'صباح الخير ☀️' : 'مساء الخير 🌙';
+
+      // عتبة الغياب الأدنى (يومان) تستبعد المستخدمين النشطين فعلاً من أي
+      // إزعاج ترويجي؛ عتبة التقييد (18 ساعة) تمنع تكرار نفس الإشعار للمستخدم
+      // نفسه لو نجحت دورتا الصباح والمساء كلتاهما في نفس اليوم على مستخدم
+      // غائب منذ فترة طويلة.
+      const MIN_ABSENCE_MS = 2 * 24 * 60 * 60 * 1000;
+      const THROTTLE_MS = 18 * 60 * 60 * 1000;
+
+      const usersSnap = await db.collection('users').get();
+      let sent = 0;
+      let skippedNoTokens = 0;
+      let skippedMuted = 0;
+      let skippedRecentlyActive = 0;
+      let skippedThrottled = 0;
+
+      for (const userDoc of usersSnap.docs) {
+        const user = userDoc.data() as any;
+        if (user.isBot) continue;
+
+        const tokens: string[] = Array.isArray(user.fcmTokens)
+          ? user.fcmTokens.filter((t: unknown) => typeof t === 'string' && t.trim())
+          : [];
+        if (tokens.length === 0) {
+          skippedNoTokens++;
+          continue;
+        }
+
+        const prefs = user.notificationPrefs || {};
+        if (prefs.mutedAll === true || prefs.promotional === false) {
+          skippedMuted++;
+          continue;
+        }
+
+        const lastSeenAt = user.presence?.lastSeenAt;
+        const absenceMs = lastSeenAt ? now.getTime() - new Date(lastSeenAt).getTime() : 0;
+        if (!lastSeenAt || absenceMs < MIN_ABSENCE_MS) {
+          skippedRecentlyActive++;
+          continue;
+        }
+
+        const lastPromoAt = user.lastPromotionalPushAt;
+        if (lastPromoAt && now.getTime() - new Date(lastPromoAt).getTime() < THROTTLE_MS) {
+          skippedThrottled++;
+          continue;
+        }
+
+        const absenceDays = Math.floor(absenceMs / (24 * 60 * 60 * 1000));
+        const body =
+          absenceDays >= 7
+            ? `${greeting} — مرّ وقت طويل! تعال واكتشف كل ما فاتك في ليتيريوم.`
+            : absenceDays >= 4
+              ? `${greeting} — اشتقنا لك في ليتيريوم! الكثير من المحتوى الجديد بانتظارك.`
+              : `${greeting}، أصدقاؤك بانتظارك 🥰 عد لتصفح أحدث المقالات والتغريدات.`;
+
+        const result = await sendPushToUser(userDoc.id, 'promotional', 'ليتيريوم يفتقدك', body);
+        await userDoc.ref.update({ lastPromotionalPushAt: now.toISOString() });
+        if (result.sent > 0) sent++;
+      }
+
+      res.json({
+        success: true,
+        sent,
+        skippedNoTokens,
+        skippedMuted,
+        skippedRecentlyActive,
+        skippedThrottled,
+        greeting
+      });
+    } catch (err: any) {
+      console.error('Promotional notification cycle error:', err?.message || err);
+      res.status(500).json({ error: 'cycle_failed', message: 'تعذر تنفيذ حملة الإشعارات الترويجية.' });
+    }
+  });
+
   // AI Writing Suite endpoint for writers
   app.post('/api/ai/writing-assistant', async (req, res) => {
     try {
