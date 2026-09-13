@@ -1752,6 +1752,21 @@ export async function saveFcmToken(userId: string, token: string): Promise<void>
   }
 }
 
+/** يحفظ تفضيلات إشعارات push الكاملة للمستخدم — من صفحة الإعدادات
+ *  (NotificationSettingsModal.tsx)، يستبدل الكائن بالكامل عمداً (وليس
+ *  دمجاً جزئياً) لأن الواجهة تعرض دائماً كل الحقول الأربعة+mutedAll معاً. */
+export async function updateNotificationPrefs(
+  userId: string,
+  prefs: NonNullable<User['notificationPrefs']>
+): Promise<void> {
+  try {
+    await updateDoc(doc(db, 'users', userId), { notificationPrefs: prefs });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `users/${userId}`);
+    throw error;
+  }
+}
+
 export async function updateUserSocialLinks(
   userId: string,
   socialLinks: Record<string, string>

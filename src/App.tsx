@@ -73,6 +73,7 @@ import { ImageStudioModal } from './components/ImageStudioModal';
 import { AuthModal } from './components/AuthModal';
 import { ResetPasswordModal } from './components/ResetPasswordModal';
 import { DrawerMenu } from './components/DrawerMenu';
+import { NotificationSettingsModal } from './components/NotificationSettingsModal';
 import { SubscriptionModal } from './components/SubscriptionModal';
 import { NewCampaignModal } from './components/NewCampaignModal';
 import { MonetagVignetteLoader } from './components/MonetagVignetteLoader';
@@ -223,7 +224,8 @@ import {
   incrementCampaignSpendInFirestore,
   setArticleStatusInFirestore,
   resolveFraudFlagInFirestore,
-  saveFcmToken
+  saveFcmToken,
+  updateNotificationPrefs
 } from './services/firestoreService';
 
 // Minimal read-only placeholder used ONLY while browsing unauthenticated
@@ -477,6 +479,7 @@ export function App() {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isBeta20Open, setIsBeta20Open] = useState(false);
   const [isImageStudioOpen, setIsImageStudioOpen] = useState(false);
+  const [isNotificationSettingsOpen, setIsNotificationSettingsOpen] = useState(false);
   const [imageStudioPrompt, setImageStudioPrompt] = useState('');
   const [imageStudioSelectCallback, setImageStudioSelectCallback] = useState<((url: string) => void) | null>(null);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
@@ -1138,6 +1141,17 @@ export function App() {
       setUsers((prev) => prev.map((u) => (u.id === currentUser.id ? { ...u, ...updates } : u)));
     } catch (err) {
       console.error('تعذر حفظ الملف الشخصي:', err);
+      throw err;
+    }
+  };
+
+  const handleSaveNotificationPrefs = async (prefs: NonNullable<User['notificationPrefs']>) => {
+    if (!requireAuth()) return;
+    try {
+      await updateNotificationPrefs(currentUser.id, prefs);
+      setUsers((prev) => prev.map((u) => (u.id === currentUser.id ? { ...u, notificationPrefs: prefs } : u)));
+    } catch (err) {
+      console.error('تعذر حفظ إعدادات الإشعارات:', err);
       throw err;
     }
   };
@@ -4419,6 +4433,7 @@ export function App() {
           setImageStudioSelectCallback(null);
           setIsImageStudioOpen(true);
         }}
+        onOpenNotificationSettings={() => setIsNotificationSettingsOpen(true)}
         onLogout={handleLogout}
         theme={theme}
         onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
@@ -4572,6 +4587,14 @@ export function App() {
             )
           );
         }}
+      />
+
+      {/* Notification Settings Modal */}
+      <NotificationSettingsModal
+        isOpen={isNotificationSettingsOpen}
+        currentUser={currentUser}
+        onClose={() => setIsNotificationSettingsOpen(false)}
+        onSave={handleSaveNotificationPrefs}
       />
 
       {/* Wallet Modal */}

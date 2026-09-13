@@ -17,7 +17,8 @@ import {
   Wand2,
   Palette,
   Download,
-  RefreshCw
+  RefreshCw,
+  Bell
 } from 'lucide-react';
 import { User, LanguageCode, UserRole } from '../types';
 import { getRemainingAiUses } from '../utils/aiQuota';
@@ -62,6 +63,8 @@ interface DrawerMenuProps {
   onStartWriting?: () => void;
   /** يفتح استوديو توليد الصور بالذكاء الاصطناعي */
   onOpenImageStudio?: () => void;
+  /** يفتح إعدادات إشعارات push (رسائل/متابعات/ردود/ترويجية + كتم شامل) */
+  onOpenNotificationSettings?: () => void;
 }
 
 export const DrawerMenu: React.FC<DrawerMenuProps> = ({
@@ -88,6 +91,7 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
   onOpenLogin,
   onStartWriting,
   onOpenImageStudio,
+  onOpenNotificationSettings,
   isMonetizationEligible = false,
   memberStatusLabel
 }) => {
@@ -319,6 +323,22 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
                 </div>
                 <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
               </button>
+
+              {currentUser.id !== 'guest' && (
+                <button
+                  onClick={() => {
+                    onOpenNotificationSettings?.();
+                    onClose();
+                  }}
+                  className="w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold text-slate-200 hover:bg-brand-900/30 hover:text-brand-300 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <Bell className="w-4 h-4 text-amber-400" />
+                    <span>إعدادات الإشعارات</span>
+                  </div>
+                  <ChevronLeft className="w-4 h-4 text-slate-400 rtl:rotate-0 ltr:rotate-180" />
+                </button>
+              )}
 
               {/* استوديو توليد الصور الذكية */}
               <button
