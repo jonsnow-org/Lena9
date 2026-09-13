@@ -3436,6 +3436,12 @@ export function App() {
         )}
 
         {/* Unified Role & Tab Based View Router */}
+        {/* مفتاح React أدناه (key) يُعيد تركيب هذا الغلاف عند كل تبديل فعلي
+            لقسم/تبويب رئيسي أو الدخول لملف كاتب آخر، فيُشغَّل .animate-android-in
+            من جديد (فيد + انزلاق خفيف للأعلى، 280ms) في كل مرة — بدل التبديل
+            الفوري بلا أي إحساس حركي الذي كان يجعل التنقل بين الأقسام يبدو مجرد
+            صفحة ويب عادية بدل تطبيق أصيل. */}
+        <div key={`${viewingWriterProfile?.id || 'none'}-${activeTab}`} className="animate-android-in">
         {viewingWriterProfile ? (
           <WriterProfileView
             writer={viewingWriterProfile}
@@ -4219,6 +4225,7 @@ export function App() {
             </div>
           )
         }
+        </div>
 
         {/* التذييل — روابط الصفحات القانونية مطلوبة في كل صفحة لقبول AdSense */}
         <SiteFooter onOpenLegal={(sec) => setLegalSection(sec)} />
