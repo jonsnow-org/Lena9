@@ -48,6 +48,11 @@
             android:exported="false"
             android:theme="@style/Theme.Literium" />
 
+        <activity
+            android:name=".ErrorLogActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Literium" />
+
         <service
             android:name=".FcmService"
             android:exported="false">
