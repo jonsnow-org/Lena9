@@ -661,7 +661,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                 </div>
               )}
 
-              <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 max-w-xl leading-relaxed">
+              <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 max-w-xl leading-relaxed select-text">
                 {currentUser.bio || 'مرحباً بك في ليتيريوم! استمتع بأفضل تجربة أدبية وثقافية متكاملة.'}
               </p>
 

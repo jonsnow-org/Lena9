@@ -707,7 +707,7 @@ export const DirectMessagesModal: React.FC<DirectMessagesModalProps> = ({
                             {msg.mediaType === 'video' && msg.mediaUrl && (
                               <VideoPlayer src={msg.mediaUrl} className="rounded-xl max-w-full max-h-64 mb-1.5" />
                             )}
-                            {msg.content && <p className="break-words">{msg.content}</p>}
+                            {msg.content && <p className="break-words select-text">{msg.content}</p>}
                             <span className={`block text-[9px] mt-1 text-end ${isMe ? 'text-teal-200' : 'text-slate-400'}`}>
                               {timeAgoAr(msg.createdAt)}
                             </span>

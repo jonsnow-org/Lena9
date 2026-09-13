@@ -286,6 +286,12 @@ export function App() {
     const saved = localStorage.getItem('literium_articles');
     return saved ? JSON.parse(saved) : [];
   });
+  // true فور توفر أي بيانات (سواء من ذاكرة التخزين المحلي أو من أول رد
+  // فعلي من Firestore) — يميّز "لا نعرف بعد" (يستحق هياكل تحميل) عن "تحقّقنا
+  // فعلاً ولا توجد مقالات" (يستحق رسالة فارغة حقيقية). بدونه، أول فتح على
+  // جهاز جديد بلا ذاكرة محلية كان يُظهر رسالة "لا توجد مقالات" لجزء من
+  // الثانية قبل وصول البيانات الحقيقية، بدل هيكل تحميل يوحي بأن شيئاً يجري.
+  const [articlesLoaded, setArticlesLoaded] = useState(() => articles.length > 0);
 
   const [campaigns, setCampaigns] = useState<AdCampaign[]>(() => {
     const saved = localStorage.getItem('literium_campaigns');
@@ -323,6 +329,11 @@ export function App() {
   // التغريدات — محتوى قصير بجانب المدونة، بنفس نمط المقالات/الإعجابات/
   // التعليقات تماماً.
   const [tweets, setTweets] = useState<Tweet[]>([]);
+  // بلا ذاكرة تخزين محلي للتغريدات (خلافاً للمقالات) — القائمة فارغة دائماً
+  // عند كل فتح للتطبيق حتى وصول أول رد من Firestore، فتُعامَل كـ"تحميل" لا
+  // "لا توجد تغريدات" إلى أن يصل ذلك الرد فعلياً (انظر articlesLoaded لنفس
+  // المنطق تماماً في المقالات).
+  const [tweetsLoaded, setTweetsLoaded] = useState(false);
   const [tweetComments, setTweetComments] = useState<TweetComment[]>([]);
   const [tweetLikes, setTweetLikes] = useState<{ id: string; tweetId: string; userId: string }[]>([]);
   const [favoritedTweetIds, setFavoritedTweetIds] = useState<string[]>([]);
@@ -554,6 +565,7 @@ export function App() {
       if (firestoreArticles && firestoreArticles.length > 0) {
         setArticles(firestoreArticles);
       }
+      setArticlesLoaded(true);
     });
 
     const unsubCampaigns = subscribeToCampaigns((firestoreCampaigns) => {
@@ -1295,8 +1307,14 @@ export function App() {
   // الاستماع للتغريدات وتعليقاتها وإعجاباتها (قراءة عامة، نفس منطق المقالات)
   useEffect(() => {
     const unsubTweets = subscribeToTweets(
-      setTweets,
-      (e) => console.error('Tweets subscription error:', e)
+      (firestoreTweets) => {
+        setTweets(firestoreTweets);
+        setTweetsLoaded(true);
+      },
+      (e) => {
+        console.error('Tweets subscription error:', e);
+        setTweetsLoaded(true);
+      }
     );
     const unsubTweetComments = subscribeToTweetComments(
       setTweetComments,
@@ -4054,6 +4072,7 @@ export function App() {
                   onPostTweet={handlePostTweet}
                   focusComposeTrigger={tweetComposeFocusTrigger}
                   searchQuery={tweetSearchQuery}
+                  isLoading={!tweetsLoaded}
                   onToggleLike={handleToggleTweetLike}
                   onToggleFavorite={handleToggleTweetFavorite}
                   onShare={handleShareTweet}
@@ -4290,8 +4309,10 @@ export function App() {
                 </span>
               </div>
 
-              {/* Loading Skeletons when refreshing */}
-              {isRefreshing ? (
+              {/* Loading Skeletons when refreshing، أو عند التحميل الأول قبل
+                  وصول أي بيانات حقيقية (بدل رسالة "لا توجد مقالات" الفارغة
+                  التي كانت تومض للحظة على جهاز جديد بلا ذاكرة محلية) */}
+              {isRefreshing || !articlesLoaded ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
                   {[1, 2, 3, 4, 5, 6].map((n) => (
                     <ArticleCardSkeleton key={n} />

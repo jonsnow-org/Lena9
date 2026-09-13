@@ -49,6 +49,18 @@
        يحس "متصفح" رغم عمله الصحيح فعلياً (بلا شريط عنوان). لا يمنع تمرير
        الصفحة العادي لأعلى/أسفل داخل التطبيق نفسه، فقط منع تسريبه للخارج. */
     overscroll-behavior-y: contain;
+    /* يزيل تأخير الـ300ms قبل تسجيل أي ضغطة — سلوك متصفح افتراضي (ينتظر
+       للتأكد أن الضغطة ليست بداية نقرة مزدوجة للتكبير)، وهو بالضبط ما
+       يجعل كل ضغطة في التطبيق تُحسّ "بطيئة قليلاً" مقارنة بتطبيق أصيل،
+       رغم أن التكبير بالنقر المزدوج غير مستخدم هنا إطلاقاً أصلاً. */
+    touch-action: manipulation;
+    /* تحديد النص (تظليل + فقاعة نسخ/مشاركة) سلوك متصفح مميّز يكشف أننا
+       داخل صفحة ويب لا تطبيق — يُعطَّل افتراضياً هنا على كل شيء (الأزرار،
+       العناوين، البطاقات)، ويُعاد تفعيله صراحة (select-text أو
+       .article-content) فقط في مواضع محتوى نصي حقيقي يُتوقَّع نسخه: جسم
+       المقال، نص التغريدة/التعليق، نص الرسالة الخاصة، النبذة التعريفية. */
+    -webkit-user-select: none;
+    user-select: none;
   }
 
   /* لون قاعدة الصفحة (Canvas) — يُرسم في أسفل كل الطبقات دائماً */
@@ -65,27 +77,24 @@
     background-color: #020617; /* slate-950 */
   }
 
+  /* شريط تمرير ظاهر (ولو رفيعاً) بصمة متصفح واضحة — التطبيقات الأصيلة لا
+     تُظهر أي شريط تمرير دائم، فقط ارتداداً بصرياً عند التمرير الفعلي.
+     يبقى التمرير نفسه يعمل تماماً، فقط بلا خط مرئي ثابت على الحافة. */
   * {
-    scrollbar-width: thin;
-    scrollbar-color: rgba(13, 148, 136, 0.3) transparent;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
   }
-  
+
   ::-webkit-scrollbar {
-    width: 5px;
-    height: 5px;
+    display: none;
   }
-  
-  ::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  
-  ::-webkit-scrollbar-thumb {
-    background: rgba(13, 148, 136, 0.25);
-    border-radius: 9999px;
-  }
-  
-  ::-webkit-scrollbar-thumb:hover {
-    background: rgba(13, 148, 136, 0.5);
+
+  /* تحديد النص مُعطَّل افتراضياً من html أعلاه — لكن حقول الإدخال والتحرير
+     استثناء إلزامي: بدونه يتعذّر وضع المؤشر واختيار/قص نص داخل أي حقل
+     كتابة (بحث، تعليق، رسالة...) في بعض محركات WebView. */
+  input, textarea, [contenteditable='true'] {
+    -webkit-user-select: text;
+    user-select: text;
   }
 
   /* Prevent text zoom on mobile inputs */
@@ -167,6 +176,11 @@
 }
 
 /* Article Typography Styling */
+.article-content {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 .article-content p {
   margin-bottom: 1.35rem;
   line-height: 1.95;
