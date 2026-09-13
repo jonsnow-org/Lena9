@@ -38,7 +38,7 @@ const TweetActionButton: React.FC<{
     type="button"
     onClick={onClick}
     title={title}
-    className={`flex items-center gap-1.5 px-3 py-2 rounded-xl min-w-[44px] justify-center bg-slate-50 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-700/60 text-slate-500 dark:text-slate-400 transition-all active:scale-90 ${hoverClass}`}
+    className={`flex items-center gap-1.5 px-3 py-2 rounded-xl min-w-[44px] justify-center bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 text-slate-500 dark:text-slate-400 transition-all active:scale-90 ${hoverClass}`}
   >
     {icon}
     {label !== undefined && <span className="text-xs font-bold">{label}</span>}
@@ -195,7 +195,7 @@ export const TweetCard: React.FC<TweetCardProps> = ({
             onClick={() => {
               if (window.confirm('حذف هذه التغريدة نهائياً؟')) onDelete(tweet.id);
             }}
-            className="p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/70 dark:border-slate-700/60 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 active:scale-90 transition-all shrink-0"
+            className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 active:scale-90 transition-all shrink-0"
             title="حذف التغريدة"
           >
             <Trash2 className="w-4 h-4" />
