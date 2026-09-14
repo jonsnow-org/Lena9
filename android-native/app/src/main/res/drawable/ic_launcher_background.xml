@@ -4,7 +4,7 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- لون واحد مأخوذ من زوايا شعار الويب (public/icon.png) — الآن نفس التصميم
-         تمامًا في الطبقة الأمامية، فلا حاجة لتدرّج منفصل هنا. -->
-    <path android:pathData="M0,0h108v108h-108z" android:fillColor="#0D2968" />
+    <!-- خلفية شفافة بالكامل: يظهر الشعار فقط دون أي إطار أو لون خلفي موحد
+         خلفه — بناءً على طلب صريح بإزالة "الصندوق" الداكن المحيط بالأيقونة. -->
+    <path android:pathData="M0,0h108v108h-108z" android:fillColor="#00000000" />
 </vector>
