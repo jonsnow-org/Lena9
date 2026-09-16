@@ -40,29 +40,20 @@ class LiteriumApplication : Application() {
         // يُركَّب إطلاقاً إلا حين يكون startIo مفعَّلاً من لوحة التحكم وفاز فعلاً بدور التدوير — فما لم
         // يُفعِّله الأدمن صراحة، الـSDK بأكمله (تهيئة، شاشة موافقة، أي جمع بيانات) لا يعمل مطلقاً.
 
+        // ⚠️ عمداً لا تُعرَض أي شاشة عطل تلقائية على المستخدم (كانت CrashReportActivity —
+        // أُزيلت بالكامل): تسبّبت بومضة نص عطل خام + زر نسخ لجزء من الثانية على شاشة مستخدم حقيقي،
+        // وهذا غير مقبول إطلاقاً على تطبيق حي. التسجيل الصامت (محلي عبر AppErrorLog، وعن بُعد عبر
+        // Crashlytics) كافٍ تماماً للتشخيص، ويبقى الأخير قابلاً للاطلاع عليه لاحقاً من داخل التطبيق
+        // نفسه عبر ErrorLogActivity (شاشة يفتحها المستخدم عمداً من الإعدادات، لا تُفرَض عليه أبداً).
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             try {
                 AppErrorLog.record(applicationContext, "عطل قاتل (تطبيق)", throwable)
                 FirebaseCrashlytics.getInstance().recordException(throwable)
-                CrashReportActivity.launch(applicationContext, throwable)
             } catch (_: Throwable) {
-                // إن فشل عرض شاشة العطل نفسها، لا داعٍ لإخفاء أي شيء إضافي هنا.
+                // فشل التسجيل نفسه يجب ألا يمنع تسليم العطل لمعالج النظام أدناه.
             } finally {
                 defaultHandler?.uncaughtException(thread, throwable)
-                // ⚠️ startActivity في CrashReportActivity.launch أعلاه غير متزامن
-                // (مجرد طلب لمدير الأنشطة)؛ قتل العملية فوراً هنا كان يسبق غالباً
-                // رسم تلك الشاشة فعلياً على الشاشة، فتظهر بيضاء لجزء من الثانية
-                // ثم يُغلَق التطبيق قبل أن يتمكن المستخدم من قراءة أو نسخ أي شيء —
-                // هذا بالضبط ما أبلغ عنه المستخدم. تأخير بسيط هنا (يُحظر الخيط
-                // المُعطَّل نفسه فقط، آمن تماماً لأنه سينتهي على أي حال) يمنح مدير
-                // الأنشطة وقتاً كافياً لعرض الشاشة فعلاً قبل قتل العملية.
-                try {
-                    Thread.sleep(1500)
-                } catch (_: InterruptedException) {
-                    // لا يهم — المتابعة لقتل العملية على أي حال
-                }
-                android.os.Process.killProcess(android.os.Process.myPid())
             }
         }
     }
