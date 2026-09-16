@@ -122,12 +122,13 @@ fun AdTickerBar(
             val plainNetworks = listOf(externalAdsConfig.propellerAds, externalAdsConfig.taboola)
                 .filter { it.enabled && it.snippet.isNotBlank() && it.appSafe }
             val adsterraEligible = ExternalAdsSettingsStore.isAdsterraEligible(externalAdsConfig)
-            val poolSize = plainNetworks.size + if (adsterraEligible) 1 else 0
+            val startIoEligible = externalAdsConfig.startIo
+            val poolSize = plainNetworks.size + (if (adsterraEligible) 1 else 0) + (if (startIoEligible) 1 else 0)
             if (poolSize > 0) {
                 val idx = slotIndex.mod(poolSize)
                 if (idx < plainNetworks.size) {
                     ExternalAdNetworkView(snippet = plainNetworks[idx].snippet, modifier = modifier, heightDp = minHeightDp)
-                } else {
+                } else if (idx < plainNetworks.size + (if (adsterraEligible) 1 else 0)) {
                     pickAdsterraUnit(externalAdsConfig.adsterraUnits, slotIndex)?.let { unit ->
                         ExternalAdNetworkView(
                             snippet = unit.snippet,
@@ -136,6 +137,8 @@ fun AdTickerBar(
                             widthDp = if (unit.widthPx > 0) unit.widthPx.dp else null
                         )
                     }
+                } else {
+                    StartIoBannerView(modifier = modifier)
                 }
             }
         }

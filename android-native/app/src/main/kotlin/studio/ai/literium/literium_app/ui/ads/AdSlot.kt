@@ -207,12 +207,17 @@ fun AdSlot(
         val plainNetworks = listOf(externalAdsConfig.propellerAds, externalAdsConfig.taboola)
             .filter { it.enabled && it.snippet.isNotBlank() && it.appSafe }
         val adsterraEligible = ExternalAdsSettingsStore.isAdsterraEligible(externalAdsConfig)
-        val poolSize = plainNetworks.size + if (adsterraEligible) 1 else 0
+        val startIoEligible = externalAdsConfig.startIo
+        // Start.io's own pool "slot" sits after Adsterra's, appended rather than inserted, so a
+        // deployment where it's off (the default, until the admin flips it on) reproduces the exact
+        // same idx math every other network already relied on — turning it on only ever adds a new
+        // turn, never reshuffles who wins the existing ones.
+        val poolSize = plainNetworks.size + (if (adsterraEligible) 1 else 0) + (if (startIoEligible) 1 else 0)
         if (poolSize > 0) {
             val idx = (slotIndex + rotationSeed).mod(poolSize)
             if (idx < plainNetworks.size) {
                 ExternalAdNetworkView(snippet = plainNetworks[idx].snippet, modifier = modifier)
-            } else {
+            } else if (idx < plainNetworks.size + (if (adsterraEligible) 1 else 0)) {
                 val unit = pickAdsterraUnit(externalAdsConfig.adsterraUnits, slotIndex + rotationSeed)
                 if (unit != null) {
                     ExternalAdNetworkView(
@@ -222,6 +227,8 @@ fun AdSlot(
                         widthDp = if (unit.widthPx > 0) unit.widthPx.dp else null
                     )
                 }
+            } else {
+                StartIoBannerView(modifier = modifier)
             }
         }
         return
@@ -235,7 +242,8 @@ fun AdSlot(
     // الشبكة الخارجية تعمل بالضبط كاحتياط لهذه المواضع حين لا توجد حملة داخلية، لا تُستبعَد كلياً.
     if (!isPlatformSlot && config.internalPriority && selectedCampaign == null && hasEligibleExternalNetwork) {
         // نفس ترتيب أولوية pickActiveExternalNetwork في externalAdsStore.ts بالضبط:
-        // propellerAds ← adsterra ← taboola.
+        // propellerAds ← adsterra ← taboola ← Start.io (الأخيرة: شبكة SDK أصلي أُضيفت لاحقاً،
+        // فتأتي بعد الشبكات الثلاث الأصلية بدل مزاحمة ترتيبها الحالي).
         fun isEligible(net: ExternalAdsSettingsStore.NetworkConfig) =
             net.enabled && net.snippet.isNotBlank() && net.appSafe
         when {
@@ -254,6 +262,7 @@ fun AdSlot(
             }
             isEligible(externalAdsConfig.taboola) ->
                 ExternalAdNetworkView(snippet = externalAdsConfig.taboola.snippet, modifier = modifier)
+            externalAdsConfig.startIo -> StartIoBannerView(modifier = modifier)
         }
         return
     }
@@ -682,6 +691,11 @@ internal object ExternalAdsSettingsStore {
          *  default (only explicit `false` disables it). */
         val adsterraUnits: Map<String, Boolean> = emptyMap(),
         val taboola: NetworkConfig = NetworkConfig(),
+        /** Start.io — a native-SDK banner network, not a pasted snippet; see [StartIoAds]. Only an
+         *  on/off switch is meaningful here (no `snippet`/`appSafe`: the App ID is a compiled-in
+         *  constant, and a native SDK banner has no "safe inside an app?" question the way raw
+         *  third-party HTML/JS does). */
+        val startIo: Boolean = false,
         val estimatedCpmUsd: Double = 2.0
     )
 
@@ -723,6 +737,7 @@ internal object ExternalAdsSettingsStore {
                     adsterra = parse("adsterra", default = NetworkConfig(enabled = true, snippet = "", appSafe = true)),
                     adsterraUnits = adsterraUnitsRaw,
                     taboola = parse("taboola"),
+                    startIo = (data["startIo"] as? Map<*, *>)?.get("enabled") as? Boolean ?: false,
                     estimatedCpmUsd = estimatedCpm
                 )
             }
@@ -738,6 +753,6 @@ internal object ExternalAdsSettingsStore {
     fun eligibleCount(config: Config): Int {
         val plainNetworks = listOf(config.propellerAds, config.taboola)
             .count { it.enabled && it.snippet.isNotBlank() && it.appSafe }
-        return plainNetworks + if (isAdsterraEligible(config)) 1 else 0
+        return plainNetworks + (if (isAdsterraEligible(config)) 1 else 0) + (if (config.startIo) 1 else 0)
     }
 }

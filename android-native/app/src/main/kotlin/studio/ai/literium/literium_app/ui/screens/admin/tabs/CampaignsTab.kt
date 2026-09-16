@@ -30,6 +30,7 @@ import studio.ai.literium.literium_app.data.model.AdCampaign
 import studio.ai.literium.literium_app.data.model.ArticlePromotion
 import studio.ai.literium.literium_app.data.model.User
 import studio.ai.literium.literium_app.ui.ads.ADSTERRA_UNITS
+import studio.ai.literium.literium_app.ui.ads.StartIoAds
 import studio.ai.literium.literium_app.ui.screens.admin.AdminViewModel
 import studio.ai.literium.literium_app.ui.theme.DarkCard
 import studio.ai.literium.literium_app.ui.theme.SlateMuted
@@ -188,6 +189,9 @@ private fun ExternalNetworksSection(viewModel: AdminViewModel) {
     }
     var taboolaEnabled by remember(config) { mutableStateOf((config["taboola"] as? Map<*, *>)?.get("enabled") as? Boolean ?: false) }
     var taboolaSnippet by remember(config) { mutableStateOf((config["taboola"] as? Map<*, *>)?.get("snippet") as? String ?: "") }
+    // Start.io هو SDK بانر أصلي (App ID مضمّن في الكود، انظر StartIoAds.kt) — لا كود يُلصق هنا،
+    // مجرد مفتاح تفعيل/تعطيل واحد يشارك في نفس تدوير الشبكات الخارجية العادل.
+    var startIoEnabled by remember(config) { mutableStateOf((config["startIo"] as? Map<*, *>)?.get("enabled") as? Boolean ?: false) }
     var estimatedCpm by remember(config) { mutableStateOf((config["estimatedCpmUsd"] as? Number)?.toString() ?: "2") }
 
     LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -227,6 +231,14 @@ private fun ExternalNetworksSection(viewModel: AdminViewModel) {
         item {
             NetworkCard("Taboola", taboolaEnabled, { taboolaEnabled = it }, taboolaSnippet) { taboolaSnippet = it }
         }
+        item {
+            SimpleNetworkCard(
+                title = "Start.io (بانر أصلي — App ID: ${StartIoAds.APP_ID})",
+                subtitle = "شبكة SDK حقيقية داخل التطبيق فقط (لا تظهر على الموقع) — لا حاجة للصق أي كود.",
+                enabled = startIoEnabled,
+                onEnabledChange = { startIoEnabled = it }
+            )
+        }
 
         item {
             OutlinedTextField(
@@ -244,6 +256,7 @@ private fun ExternalNetworksSection(viewModel: AdminViewModel) {
                         "adsterra" to mapOf("enabled" to adsterraEnabled, "snippet" to "", "appSafe" to adsterraApkEnabled),
                         "adsterraUnits" to adsterraUnitToggles,
                         "taboola" to mapOf("enabled" to taboolaEnabled, "snippet" to taboolaSnippet.trim()),
+                        "startIo" to mapOf("enabled" to startIoEnabled),
                         "estimatedCpmUsd" to (estimatedCpm.toDoubleOrNull() ?: 2.0)
                     )
                 )
@@ -296,6 +309,20 @@ private fun AdsterraUnitsCard(
                 Text("متوافقة مع نسخة APK (مفتاح شامل)", fontSize = 12.sp, color = SlateMuted)
                 Switch(checked = apkEnabled, onCheckedChange = onApkEnabledChange)
             }
+        }
+    }
+}
+
+/** Simpler sibling of [NetworkCard] for a native-SDK network with no snippet to paste (Start.io). */
+@Composable
+private fun SimpleNetworkCard(title: String, subtitle: String, enabled: Boolean, onEnabledChange: (Boolean) -> Unit) {
+    DarkCard {
+        Column(Modifier.padding(12.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(title, fontWeight = FontWeight.Bold)
+                Switch(checked = enabled, onCheckedChange = onEnabledChange)
+            }
+            Text(subtitle, fontSize = 11.sp, color = SlateMuted, modifier = Modifier.padding(top = 4.dp))
         }
     }
 }

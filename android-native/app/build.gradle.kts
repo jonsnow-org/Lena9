@@ -98,6 +98,9 @@ dependencies {
     implementation("com.google.firebase:firebase-analytics-ktx")
     implementation("com.google.firebase:firebase-messaging-ktx")
 
+    // ---- Start.io (شبكة إعلانات SDK أصلي — بانر فقط، انظر ui/ads/StartIoAds.kt) ----
+    implementation("com.startapp:inapp-sdk:5.+")
+
     // ---- شبكة (نقاط server.ts) ----
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
     implementation("com.squareup.retrofit2:converter-kotlinx-serialization:2.11.0")
