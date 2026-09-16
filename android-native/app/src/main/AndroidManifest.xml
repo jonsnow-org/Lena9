@@ -37,17 +37,6 @@
             </intent-filter>
         </activity>
 
-        <!-- ⚠️ كانت غائبة عن هذا الملف بالكامل — أي Activity غير مُعلَنة هنا يرفض
-             نظام أندرويد فتحها (ActivityNotFoundException)، وكان هذا الاستثناء
-             يُبتلع بصمت داخل catch في LiteriumApplication.kt، فيسقط التنفيذ
-             لسلوك النظام الافتراضي (نافذة عطل قصيرة تختفي تلقائياً) بدل شاشة
-             التشخيص القابلة للنسخ المقصودة أصلاً — هذا بالضبط سبب "الرسالة
-             تظهر وتختفي بسرعة" الذي أبلغ عنه المستخدم. -->
-        <activity
-            android:name=".CrashReportActivity"
-            android:exported="false"
-            android:theme="@style/Theme.Literium" />
-
         <activity
             android:name=".ErrorLogActivity"
             android:exported="false"
