@@ -99,7 +99,10 @@ dependencies {
     implementation("com.google.firebase:firebase-messaging-ktx")
 
     // ---- Start.io (شبكة إعلانات SDK أصلي — بانر فقط، انظر ui/ads/StartIoAds.kt) ----
-    implementation("com.startapp:inapp-sdk:5.+")
+    // مثبَّت على إصدار محدد (لا 5.+) عمداً: 5.3.2 رفع الحد الأدنى لـcompileSdk إلى 37 (هذا
+    // المشروع على compileSdk=36، والحد الأقصى الموصى به لـAGP 8.7.2 هو 35 أصلاً) — فشل بناء
+    // CI فعلياً بهذا السبب. 5.3.1 لا يفرض أي حد أدنى (minCompileSdk=1 في aar-metadata).
+    implementation("com.startapp:inapp-sdk:5.3.1")
 
     // ---- شبكة (نقاط server.ts) ----
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
