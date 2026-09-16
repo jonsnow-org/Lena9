@@ -7,8 +7,6 @@ import android.os.Build
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.google.firebase.ktx.Firebase
 import com.google.firebase.ktx.initialize
-import com.startapp.sdk.adsbase.StartAppSDK
-import studio.ai.literium.literium_app.ui.ads.StartIoAds
 
 /**
  * معالج عطل مبكر — نفس فلسفة CrashHandlerApplication في flutter_app القديم:
@@ -34,15 +32,13 @@ class LiteriumApplication : Application() {
         Firebase.initialize(this)
         createNotificationChannel()
 
-        // تهيئة Start.io مبكراً وبلا شرط — مجرد التهيئة لا تعرض أي إعلان بحد ذاتها (بخلاف
-        // returnAdsEnabled=false أدناه الذي يمنع تحديداً إعلانه البيني التلقائي الخاص بها عند
-        // العودة للتطبيق). العرض الفعلي مقيّد بالكامل بمفتاح Firestore الإداري
-        // (ExternalAdsSettingsStore.Config.startIo.enabled) قبل أن يُركَّب أي Banner — انظر
-        // ui/ads/StartIoAds.kt وAdSlot.kt لبقية سلسلة القرار، بما يطابق أسلوب كل شبكة خارجية
-        // أخرى في هذا التطبيق (تفعيل/تعطيل حي من لوحة التحكم دون أي بناء جديد).
-        StartAppSDK.initParams(this, StartIoAds.APP_ID)
-            .setReturnAdsEnabled(false)
-            .init()
+        // ⚠️ Start.io عمداً غير مُهيَّأ هنا — كان يُهيَّأ سابقاً عند كل إقلاع بلا شرط، وهذا بالضبط
+        // ما جعل شاشة موافقة الخصوصية الخاصة بـStart.io نفسها تظهر تلقائياً لكل مستخدم عند فتح
+        // التطبيق، بمعزل تام عن مفتاح التفعيل الإداري (الذي لا يتحكم إلا بعرض الـBanner، لا بتهيئة
+        // الـSDK نفسه). التهيئة انتقلت لتكون كسولة تماماً — StartIoAds.ensureInitialized(context)
+        // تُستدعى فقط داخل StartIoBannerView لحظة تركيب بانر حقيقي فعلاً، وهذا المسار نفسه لا
+        // يُركَّب إطلاقاً إلا حين يكون startIo مفعَّلاً من لوحة التحكم وفاز فعلاً بدور التدوير — فما لم
+        // يُفعِّله الأدمن صراحة، الـSDK بأكمله (تهيئة، شاشة موافقة، أي جمع بيانات) لا يعمل مطلقاً.
 
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
