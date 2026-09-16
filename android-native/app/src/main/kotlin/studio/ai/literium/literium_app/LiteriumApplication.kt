@@ -7,6 +7,8 @@ import android.os.Build
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.google.firebase.ktx.Firebase
 import com.google.firebase.ktx.initialize
+import com.startapp.sdk.adsbase.StartAppSDK
+import studio.ai.literium.literium_app.ui.ads.StartIoAds
 
 /**
  * معالج عطل مبكر — نفس فلسفة CrashHandlerApplication في flutter_app القديم:
@@ -31,6 +33,16 @@ class LiteriumApplication : Application() {
         instance = this
         Firebase.initialize(this)
         createNotificationChannel()
+
+        // تهيئة Start.io مبكراً وبلا شرط — مجرد التهيئة لا تعرض أي إعلان بحد ذاتها (بخلاف
+        // returnAdsEnabled=false أدناه الذي يمنع تحديداً إعلانه البيني التلقائي الخاص بها عند
+        // العودة للتطبيق). العرض الفعلي مقيّد بالكامل بمفتاح Firestore الإداري
+        // (ExternalAdsSettingsStore.Config.startIo.enabled) قبل أن يُركَّب أي Banner — انظر
+        // ui/ads/StartIoAds.kt وAdSlot.kt لبقية سلسلة القرار، بما يطابق أسلوب كل شبكة خارجية
+        // أخرى في هذا التطبيق (تفعيل/تعطيل حي من لوحة التحكم دون أي بناء جديد).
+        StartAppSDK.initParams(this, StartIoAds.APP_ID)
+            .setReturnAdsEnabled(false)
+            .init()
 
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
