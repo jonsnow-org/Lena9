@@ -505,8 +505,13 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
     setVerifyEmailStatus(verified ? 'verified' : 'idle');
   };
 
-  // Drafts stored locally
-  const savedDraft = JSON.parse(localStorage.getItem('literium_article_editor_draft') || '{}');
+  // Drafts stored locally — المفتاح مربوط بمعرّف المستخدم الحالي صراحة (يطابق
+  // ArticleEditorModal.tsx تماماً)؛ كان مفتاحاً ثابتاً مشتركاً بين كل الحسابات
+  // فيسرّب مسودة غير منشورة لحساب "أ" إلى أي حساب آخر يسجّل الدخول لاحقاً على
+  // نفس الجهاز، بل وحتى عبر النسخ الاحتياطي التلقائي لبيانات أندرويد إلى جهاز مختلف.
+  const savedDraft = JSON.parse(
+    localStorage.getItem(`literium_article_editor_draft_${currentUser.id}`) || '{}'
+  );
   const hasDraft = Boolean(savedDraft.title || savedDraft.content);
 
   // AI Quota computation

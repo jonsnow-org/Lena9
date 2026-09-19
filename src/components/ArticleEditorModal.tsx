@@ -84,7 +84,13 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
   onConsumeAiQuota,
   onOpenImageStudio
 }) => {
-  const draftKey = 'literium_article_editor_draft';
+  // مفتاح خاص بكل مستخدم صراحة (uid داخل اسم المفتاح نفسه): مفتاح ثابت مشترك
+  // بين كل الحسابات كان يعني أن مسودة غير منشورة لحساب "أ" تظهر فوراً لحساب "ب"
+  // بمجرد تسجيل الدخول على نفس الجهاز/المتصفح — بل وتنتقل حتى عبر نسخ احتياطي
+  // بيانات أندرويد التلقائي (Auto Backup) إلى جهاز آخر مختلف تماماً طالما يستخدم
+  // نفس حساب جوجل، لأن localStorage الخاص بالـWebView يُنسخ ضمن هذا النسخ
+  // الاحتياطي. ربط المفتاح بمعرّف المستخدم يمنع هذا التسرب من جذوره.
+  const draftKey = currentUser ? `literium_article_editor_draft_${currentUser.id}` : null;
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -125,7 +131,7 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
         Array.isArray(initialArticle.tags) ? initialArticle.tags.join(', ') : 'أدب, فكر, قراءات'
       );
     } else {
-      const savedDraft = JSON.parse(localStorage.getItem(draftKey) || '{}');
+      const savedDraft = JSON.parse((draftKey ? localStorage.getItem(draftKey) : null) || '{}');
       setTitle(savedDraft.title || '');
       setDescription(savedDraft.description || '');
       setContent(savedDraft.content || '');
@@ -172,7 +178,7 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
 
   // Auto save draft to localStorage
   useEffect(() => {
-    if (!initialArticle && (title || content || description)) {
+    if (draftKey && !initialArticle && (title || content || description)) {
       const timer = setTimeout(() => {
         const draftObj = {
           title,
@@ -197,7 +203,7 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
 
       return () => clearTimeout(timer);
     }
-  }, [title, description, content, category, subCategory, featuredImage, videoUrl, uploadedVideoUrl, sourceUrl, isLocked, lockedPrice, tagsInput, initialArticle]);
+  }, [draftKey, title, description, content, category, subCategory, featuredImage, videoUrl, uploadedVideoUrl, sourceUrl, isLocked, lockedPrice, tagsInput, initialArticle]);
 
   if (!isOpen) return null;
 
@@ -374,7 +380,7 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
   };
 
   const confirmClearDraft = () => {
-    localStorage.removeItem(draftKey);
+    if (draftKey) localStorage.removeItem(draftKey);
     setTitle('');
     setDescription('');
     setContent('');
@@ -419,7 +425,7 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
         status
       );
 
-      if (!initialArticle) {
+      if (!initialArticle && draftKey) {
         localStorage.removeItem(draftKey);
       }
       onClose();
