@@ -32,6 +32,11 @@ interface AuthModalProps {
   externalError?: string | null;
   initialRole?: UserRole;
   initialMode?: 'login' | 'register';
+  // شاشة تسجيل دخول إلزامية (تطبيق أندرويد الأصيل عند أول فتح بلا جلسة
+  // محفوظة): لا مجال لإغلاقها والعودة لأي محتوى خلفها — فقط تسجيل الدخول
+  // أو إنشاء حساب يُخرج المستخدم منها. إخفاء زر الإغلاق (X) وحده كافٍ هنا
+  // لأن الخلفية أصلاً لا تحتوي أي معالج نقر لإغلاق النافذة.
+  mandatory?: boolean;
 }
 
 const WRITER_SPECIALTY_PRESETS = [
@@ -75,7 +80,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onGoogleSignIn,
   externalError,
   initialRole = 'writer',
-  initialMode = 'login'
+  initialMode = 'login',
+  mandatory = false
 }) => {
   const [mode, setMode] = useState<'login' | 'register'>(initialMode);
   const [role, setRole] = useState<UserRole>('writer');
@@ -220,12 +226,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          {!mandatory && (
+            <button
+              onClick={onClose}
+              className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
         </div>
 
         {/* Modal Body */}

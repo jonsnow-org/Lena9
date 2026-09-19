@@ -46,6 +46,7 @@ import {
 } from './types';
 
 import { REVENUE_SHARES } from './constants/revenueShares';
+import { isRunningAsInstalledApp } from './utils/installState';
 import { LandingPage } from './components/LandingPage';
 import { TopHeader } from './components/TopHeader';
 import { BottomNav } from './components/BottomNav';
@@ -467,6 +468,12 @@ export function App() {
     const hasRealSession = Boolean(localStorage.getItem('literium_current_user_id'));
     return !hasRealSession;
   });
+  // ثابتة طوال عمر الجلسة (لا تتغيّر بلا إعادة تشغيل التطبيق فعلياً): تفصل
+  // مسار التطبيق الأصيل (APK) عن مسار المتصفح. من يفتح التطبيق المثبَّت بلا
+  // جلسة محقَّقة يجب ألا يرى صفحة الهبوط الدعائية إطلاقاً — بل شاشة تسجيل
+  // دخول/إنشاء حساب إلزامية مباشرة (انظر منطق `showLandingPage` أدناه)،
+  // بينما زوار المتصفح عبر رابط عادي يستمرون برؤية صفحة الهبوط كما كانت.
+  const [isNativeApp] = useState<boolean>(() => isRunningAsInstalledApp());
   const [authModalRole, setAuthModalRole] = useState<UserRole>('reader');
   const [authModalMode, setAuthModalMode] = useState<'login' | 'register'>('login');
 
@@ -3387,6 +3394,49 @@ export function App() {
       if (exitTimer) window.clearTimeout(exitTimer);
     };
   }, []);
+
+  // طلب صريح: من يثبّت التطبيق (APK) ويفتحه لأول مرة بلا جلسة محقَّقة يجب
+  // ألا يرى صفحة الهبوط الدعائية إطلاقاً — بل شاشة تسجيل دخول/إنشاء حساب
+  // إلزامية مباشرة (مع خيار نسيت كلمة السر، مبني بالفعل داخل AuthModal).
+  // بمجرد نجاح تسجيل الدخول/التسجيل، مستمع onAuthStateChanged أعلاه هو من
+  // يضبط showLandingPage(false) فيدخل المستخدم إلى الموقع تلقائياً — تماماً
+  // كما يحدث اليوم لزوار المتصفح بعد تسجيل الدخول من صفحة الهبوط.
+  if (showLandingPage && isNativeApp) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-brand-950 via-slate-950 to-slate-950 flex items-center justify-center p-6">
+        <div className="flex flex-col items-center gap-3 text-center">
+          <div className="w-16 h-16 rounded-3xl bg-brand-600/15 border border-brand-500/30 flex items-center justify-center">
+            <BookOpen className="w-8 h-8 text-brand-300" />
+          </div>
+          <h1 className="text-xl font-black text-white">ليتيريوم</h1>
+          <p className="text-xs text-slate-400 max-w-xs">
+            سجّل الدخول أو أنشئ حساباً جديداً للمتابعة إلى المنصة
+          </p>
+        </div>
+
+        <AuthModal
+          isOpen={true}
+          mandatory
+          onClose={() => {}}
+          initialRole={authModalRole}
+          initialMode={authModalMode}
+          onGoogleSignIn={(role) => handleRealGoogleSignIn(role)}
+          externalError={authTriggerError}
+        />
+
+        {passwordResetCode && (
+          <ResetPasswordModal
+            oobCode={passwordResetCode}
+            onClose={() => setPasswordResetCode(null)}
+            onSuccess={() => {
+              setPasswordResetCode(null);
+              setAuthModalMode('login');
+            }}
+          />
+        )}
+      </div>
+    );
+  }
 
   // Show Landing Page for new visitors or when explicitly opened
   if (showLandingPage) {
