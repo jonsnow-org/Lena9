@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Send, Paperclip, X, Loader2 } from 'lucide-react';
+import { Send, Paperclip, Link2, X, Loader2 } from 'lucide-react';
 import { User } from '../types';
 import { uploadAdMedia, fetchMediaUploadStatus } from '../services/mediaApi';
 import { VideoPlayer } from './VideoPlayer';
+
+const VIDEO_URL_PATTERN = /\.(mp4|webm|ogg|mov)(\?.*)?$/i;
 
 const MAX_TWEET_LENGTH = 280;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
@@ -59,6 +61,15 @@ export const TweetComposer: React.FC<TweetComposerProps> = ({
   const [imageUploading, setImageUploading] = useState(false);
   const [imageError, setImageError] = useState('');
   const [uploadConfigured, setUploadConfigured] = useState<boolean | null>(null);
+  // حقل "رابط جاهز" — بديل يدوي دائم المتاح لرفع الملفات (لا يظهر فقط عند
+  // فشل الرفع). كان هذا المسار موجوداً فعلياً في المدونة والإعلانات
+  // (MediaUploadInput.tsx) وغائباً تماماً عن التغريد؛ هذا بالضبط ما جعل أي
+  // عطل حقيقي أو مؤقت في خدمة الرفع (Cloudinary/الخادم) يبدو "معطَّلاً
+  // بالكامل" في قسم تغريد تحديداً بلا أي مخرج، بينما المدونة/الإعلانات
+  // تستمران بالعمل عملياً عبر لصق رابط خارجي دون أن يلاحظ أحد أن الرفع
+  // المباشر نفسه كان متعثراً. الآن نفس شبكة الأمان متاحة في الحالتين.
+  const [showUrlField, setShowUrlField] = useState(false);
+  const [urlInput, setUrlInput] = useState('');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const remaining = MAX_TWEET_LENGTH - content.length;
@@ -83,8 +94,19 @@ export const TweetComposer: React.FC<TweetComposerProps> = ({
       setUploadConfigured(true);
       fileInputRef.current?.click();
     } else {
-      setImageError('تعذّر الاتصال بخدمة رفع الوسائط. تحقق من اتصالك وحاول مجدداً خلال لحظات.');
+      setImageError('تعذّر الاتصال بخدمة رفع الوسائط. يمكنك لصق رابط جاهز بدلاً من ذلك، أو المحاولة لاحقاً.');
+      setShowUrlField(true);
     }
+  };
+
+  const handleUrlSubmit = () => {
+    const url = urlInput.trim();
+    if (!url) return;
+    setImageError('');
+    setImageUrl(url);
+    setMediaType(VIDEO_URL_PATTERN.test(url) ? 'video' : 'image');
+    setUrlInput('');
+    setShowUrlField(false);
   };
 
   const handleImageFile = async (file: File) => {
@@ -179,6 +201,33 @@ export const TweetComposer: React.FC<TweetComposerProps> = ({
             </div>
           )}
 
+          {showUrlField && !imageUploading && (
+            <div className="flex items-center gap-1.5">
+              <input
+                type="url"
+                dir="ltr"
+                value={urlInput}
+                onChange={(e) => setUrlInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleUrlSubmit();
+                  }
+                }}
+                placeholder="https://... رابط صورة أو فيديو مباشر"
+                className="flex-1 min-w-0 px-3 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs outline-hidden focus:border-brand-500 text-start"
+              />
+              <button
+                type="button"
+                onClick={handleUrlSubmit}
+                disabled={!urlInput.trim()}
+                className="px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white text-[11px] font-bold shrink-0"
+              >
+                إرفاق
+              </button>
+            </div>
+          )}
+
           {imageUrl && !imageUploading && (
             <div className="relative inline-block">
               {mediaType === 'video' ? (
@@ -209,6 +258,18 @@ export const TweetComposer: React.FC<TweetComposerProps> = ({
                 title="إرفاق صورة أو فيديو قصير"
               >
                 <Paperclip className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setImageError('');
+                  setShowUrlField((s) => !s);
+                }}
+                disabled={imageUploading}
+                className="p-2 rounded-lg text-slate-400 hover:text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-950/20 active:scale-90 transition-all disabled:opacity-40"
+                title="أو الصق رابط صورة/فيديو جاهزاً"
+              >
+                <Link2 className="w-4 h-4" />
               </button>
               <span
                 className={`text-[11px] font-mono font-bold ${

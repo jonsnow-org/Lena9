@@ -72,7 +72,11 @@ const InlineImageAttach: React.FC<{
       setConfigured(true);
       fileInputRef.current?.click();
     } else {
-      onError('تعذّر الاتصال بخدمة رفع الصور. حاول مجدداً خلال لحظات.');
+      // بديل يدوي مصغَّر (بدل حقل كامل لا تتسع له صف تعليق مضغوط): رابط
+      // خارجي جاهز — نفس شبكة الأمان المتاحة في المدونة/الإعلانات عبر
+      // MediaUploadInput.tsx، بدل تعطيل الإرفاق بالكامل بلا أي مخرج.
+      const url = window.prompt('تعذّر الاتصال بخدمة رفع الصور. الصق رابط صورة جاهزاً بدلاً من ذلك:');
+      if (url && url.trim()) onImageUrlChange(url.trim());
     }
   };
 
