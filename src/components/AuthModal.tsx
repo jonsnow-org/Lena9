@@ -20,6 +20,7 @@ import { registerWithEmail, loginWithEmail, resetPassword, getAuthErrorMessage }
 import { REVENUE_SHARES } from '../constants/revenueShares';
 import { CREATOR_ELIGIBILITY_THRESHOLDS } from '../utils/creatorEligibility';
 import { getSavedAccounts, forgetAccount, SavedAccount } from '../utils/savedAccounts';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -135,6 +136,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setUseNewAccountForm(accounts.length === 0);
     }
   }, [initialRole, initialMode, isOpen]);
+  // mandatory (شاشة تسجيل الدخول الإلزامية للتطبيق الأصيل بلا جلسة) يجب
+  // ألا تُغلَق بـEsc كما لا تُغلَق بزر X — نفس القاعدة بالضبط.
+  useEscapeToClose(onClose, isOpen && !mandatory);
 
   if (!isOpen) return null;
 

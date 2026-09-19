@@ -36,6 +36,7 @@ import { VideoUrlInput, VideoEmbed } from './VideoEmbed';
 import { MediaUploadInput } from './MediaUploadInput';
 import { VideoPlayer } from './VideoPlayer';
 import { getRemainingAiUses } from '../utils/aiQuota';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { REVENUE_SHARES } from '../constants/revenueShares';
 
 interface ArticleEditorModalProps {
@@ -204,6 +205,7 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
       return () => clearTimeout(timer);
     }
   }, [draftKey, title, description, content, category, subCategory, featuredImage, videoUrl, uploadedVideoUrl, sourceUrl, isLocked, lockedPrice, tagsInput, initialArticle]);
+  useEscapeToClose(onClose, isOpen);
 
   if (!isOpen) return null;
 

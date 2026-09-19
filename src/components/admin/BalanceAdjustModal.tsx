@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { DollarSign, AlertTriangle, X, CheckCircle2, ShieldCheck } from 'lucide-react';
 import { User } from '../../types';
+import { useEscapeToClose } from '../../hooks/useEscapeToClose';
 
 export type AdjustableBalanceField = 'walletBalance' | 'availableBalance' | 'pendingEarnings' | 'lifetimeEarnings';
 
@@ -49,6 +50,7 @@ export const BalanceAdjustModal: React.FC<BalanceAdjustModalProps> = ({
   const [reason, setReason] = useState('');
   const [confirming, setConfirming] = useState(false);
   const [successFlash, setSuccessFlash] = useState(false);
+  useEscapeToClose(onClose, isOpen);
 
   if (!isOpen || !user) return null;
 

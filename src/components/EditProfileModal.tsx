@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { X, Camera, Loader2, Save, CheckCircle2, AlertCircle } from 'lucide-react';
 import { User } from '../types';
 import { fetchMediaUploadStatus, uploadAdMedia } from '../services/mediaApi';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 
 interface EditProfileModalProps {
   isOpen: boolean;
@@ -46,6 +47,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, curr
     fetchMediaUploadStatus().then(setUploadConfigured);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, currentUser.id]);
+  useEscapeToClose(onClose, isOpen);
 
   if (!isOpen) return null;
 

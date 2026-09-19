@@ -12,6 +12,7 @@ import {
 import { User } from '../types';
 import { createDepositRequest, createPayoutRequest } from '../services/firestoreService';
 import { MIN_PAYOUT_USD, MIN_DEPOSIT_USD } from '../constants/payoutRules';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 
 interface MoneyRequestModalProps {
   isOpen: boolean;
@@ -57,6 +58,13 @@ export const MoneyRequestModal: React.FC<MoneyRequestModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [isDone, setIsDone] = useState(false);
 
+  const handleClose = () => {
+    setIsDone(false);
+    setError(null);
+    onClose();
+  };
+  useEscapeToClose(handleClose, isOpen);
+
   if (!isOpen) return null;
 
   const availableBalance = (currentUser as any).availableBalance ?? 0;
@@ -97,12 +105,6 @@ export const MoneyRequestModal: React.FC<MoneyRequestModalProps> = ({
     } finally {
       setIsSubmitting(false);
     }
-  };
-
-  const handleClose = () => {
-    setIsDone(false);
-    setError(null);
-    onClose();
   };
 
   const myRequests = requests.filter((r) => r.userId === currentUser.id);

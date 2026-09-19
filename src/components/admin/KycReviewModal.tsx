@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { User } from '../../types';
 import { fetchKycDocumentForReview, KycDocumentReview } from '../../services/kycApi';
+import { useEscapeToClose } from '../../hooks/useEscapeToClose';
 
 interface KycReviewModalProps {
   isOpen: boolean;
@@ -61,6 +62,7 @@ export const KycReviewModal: React.FC<KycReviewModalProps> = ({
       cancelled = true;
     };
   }, [isOpen, user?.id]);
+  useEscapeToClose(onClose, isOpen);
 
   if (!isOpen || !user) return null;
 

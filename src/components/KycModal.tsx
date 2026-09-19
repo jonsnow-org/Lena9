@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { KycDetails } from '../types';
 import { submitKycDocument } from '../services/kycApi';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 
 interface KycModalProps {
   isOpen: boolean;
@@ -55,6 +56,7 @@ export const KycModal: React.FC<KycModalProps> = ({
       if (previewUrl) URL.revokeObjectURL(previewUrl);
     };
   }, [previewUrl]);
+  useEscapeToClose(onClose, isOpen);
 
   if (!isOpen) return null;
 

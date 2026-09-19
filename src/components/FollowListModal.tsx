@@ -2,6 +2,7 @@ import React from 'react';
 import { X, Users, CheckCircle2 } from 'lucide-react';
 import { User, AdCampaign } from '../types';
 import { AdTickerBar } from './AdTickerBar';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 
 interface FollowListModalProps {
   title: string;
@@ -27,6 +28,8 @@ export const FollowListModal: React.FC<FollowListModalProps> = ({
   onClose,
   campaigns = []
 }) => {
+  useEscapeToClose(onClose);
+
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-xs p-0 sm:p-4" onClick={onClose}>
       <div

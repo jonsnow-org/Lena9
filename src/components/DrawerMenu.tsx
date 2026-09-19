@@ -25,6 +25,7 @@ import { getRemainingAiUses } from '../utils/aiQuota';
 import { getTranslator } from '../data/translations';
 import { isEligibleForMonetization } from '../utils/creatorEligibility';
 import { useAppUpdate } from '../hooks/useAppUpdate';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { isRunningAsInstalledApp } from '../utils/installState';
 
 interface DrawerMenuProps {
@@ -104,6 +105,7 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
   // الدوري يعمل بالخلفية باستمرار كما كان بالعنصر العائم السابق.
   const {updateAvailable, applyUpdate} = useAppUpdate();
   const [isInstalledApp] = useState(isRunningAsInstalledApp);
+  useEscapeToClose(onClose, isOpen);
 
   if (!isOpen) return null;
 

@@ -20,6 +20,7 @@ import {
 import { User } from '../types';
 import { getRemainingAiUses } from '../utils/aiQuota';
 import { REVENUE_SHARES } from '../constants/revenueShares';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 
 interface AiAssistantModalProps {
   isOpen: boolean;
@@ -67,6 +68,7 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, isLoading]);
+  useEscapeToClose(onClose, isOpen);
 
   if (!isOpen) return null;
 

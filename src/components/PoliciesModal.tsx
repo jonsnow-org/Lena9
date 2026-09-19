@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Shield, X, FileText, AlertTriangle, Scale, Lock } from 'lucide-react';
 import { REVENUE_SHARES } from '../constants/revenueShares';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 
 interface PoliciesModalProps {
   isOpen: boolean;
@@ -14,6 +15,7 @@ export const PoliciesModal: React.FC<PoliciesModalProps> = ({
   initialTab = 'privacy'
 }) => {
   const [tab, setTab] = useState<'privacy' | 'terms' | 'restricted'>(initialTab);
+  useEscapeToClose(onClose, isOpen);
 
   if (!isOpen) return null;
 

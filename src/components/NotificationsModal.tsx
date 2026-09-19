@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { AppNotification, AdCampaign } from '../types';
 import { AdTickerBar } from './AdTickerBar';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 
 interface NotificationsModalProps {
   isOpen: boolean;
@@ -57,6 +58,8 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
   campaigns = [],
   viewerId = null
 }) => {
+  useEscapeToClose(onClose, isOpen);
+
   if (!isOpen) return null;
 
   const getIcon = (type: string) => {

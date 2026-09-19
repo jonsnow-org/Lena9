@@ -19,6 +19,7 @@ import confetti from 'canvas-confetti';
 import { AdCampaign, PricingModel, AdPlacementType, PromotionKind } from '../types';
 import { VideoUrlInput } from './VideoEmbed';
 import { MediaUploadInput } from './MediaUploadInput';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 
 // سعر خفيف مقصود لحملات ترويج القنوات/الحسابات الاجتماعية — أقل من سعر
 // البانر العادي ($0.08) لأنها زر دعوة بسيط لا مساحة بانر كاملة، ولأن
@@ -92,6 +93,7 @@ export const NewCampaignModal: React.FC<NewCampaignModalProps> = ({
   const [targetCategory, setTargetCategory] = useState<string>('all');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  useEscapeToClose(onClose, isOpen);
 
   if (!isOpen) return null;
 

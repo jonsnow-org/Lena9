@@ -10,6 +10,7 @@ import {
   Award
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 
 interface BetaTesting20ModalProps {
   isOpen: boolean;
@@ -28,6 +29,7 @@ export const BetaTesting20Modal: React.FC<BetaTesting20ModalProps> = ({
 
   // Simulated 20 testers roster
   const [testersCount, setTestersCount] = useState(18);
+  useEscapeToClose(onClose, isOpen);
 
   if (!isOpen) return null;
 

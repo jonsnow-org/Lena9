@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { X, Bell, BellOff, MessageCircle, UserPlus, Reply, Megaphone, Loader2, CheckCircle2 } from 'lucide-react';
 import { User } from '../types';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 
 interface NotificationSettingsModalProps {
   isOpen: boolean;
@@ -78,6 +79,7 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
     setPromotional(currentUser.notificationPrefs?.promotional !== false);
     setSaved(false);
   }, [isOpen, currentUser.id, currentUser.notificationPrefs]);
+  useEscapeToClose(onClose, isOpen);
 
   if (!isOpen) return null;
 

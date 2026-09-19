@@ -31,6 +31,7 @@ import {
   formatAiExpiryDate,
   getRemainingAiUses
 } from '../utils/aiQuota';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 
 interface SubscriptionModalProps {
   isOpen: boolean;
@@ -84,6 +85,7 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
       setSuccessDetails(null);
     }
   }, [isOpen]);
+  useEscapeToClose(onClose, isOpen);
 
   if (!isOpen) return null;
 

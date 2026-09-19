@@ -1,6 +1,7 @@
 import React, {useEffect, useState} from 'react';
 import {AlertCircle, CheckCircle2, KeyRound, Loader2, X} from 'lucide-react';
 import {confirmNewPassword, getAuthErrorMessage, verifyResetCode} from '../firebase';
+import {useEscapeToClose} from '../hooks/useEscapeToClose';
 
 interface ResetPasswordModalProps {
   oobCode: string;
@@ -15,6 +16,7 @@ interface ResetPasswordModalProps {
 // سياقها مختلف تماماً: المستخدم قادم من بريده الإلكتروني، لا من داخل
 // التطبيق نفسه.
 export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({oobCode, onClose, onSuccess}) => {
+  useEscapeToClose(onClose);
   const [verifying, setVerifying] = useState(true);
   const [email, setEmail] = useState<string | null>(null);
   const [linkError, setLinkError] = useState<string | null>(null);

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, Rocket, Clock, MousePointerClick, AlertCircle, Loader2, CheckCircle2, Wallet } from 'lucide-react';
 import { Article, User, PromotionPricingModel } from '../types';
 import { requestArticlePromotion } from '../services/firestoreService';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 
 interface PromoteArticleModalProps {
   isOpen: boolean;
@@ -40,6 +41,13 @@ export const PromoteArticleModal: React.FC<PromoteArticleModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [isDone, setIsDone] = useState(false);
 
+  const handleClose = () => {
+    setIsDone(false);
+    setError(null);
+    onClose();
+  };
+  useEscapeToClose(handleClose, isOpen);
+
   if (!isOpen || !article) return null;
 
   const selectedDuration = DURATION_OPTIONS.find((d) => d.hours === durationHours) || DURATION_OPTIONS[1];
@@ -75,12 +83,6 @@ export const PromoteArticleModal: React.FC<PromoteArticleModalProps> = ({
     } finally {
       setIsSubmitting(false);
     }
-  };
-
-  const handleClose = () => {
-    setIsDone(false);
-    setError(null);
-    onClose();
   };
 
   return (

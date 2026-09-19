@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { User } from '../types';
 import { requestAiImageGeneration } from '../services/imageApi';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 
 interface ImageStudioModalProps {
   isOpen: boolean;
@@ -80,6 +81,9 @@ export const ImageStudioModal: React.FC<ImageStudioModalProps> = ({
       setPrompt(initialPrompt);
     }
   }, [initialPrompt]);
+  // بلا !isLoading هنا: Esc كان سيُغلق النافذة أثناء توليد صورة فعلي قيد
+  // التنفيذ رغم أن زر X نفسه معطَّل عمداً في هذه الحالة بالضبط.
+  useEscapeToClose(onClose, isOpen && !isLoading);
 
   if (!isOpen) return null;
 

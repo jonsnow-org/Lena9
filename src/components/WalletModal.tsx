@@ -33,6 +33,7 @@ import {
   PaymentStatus,
   PayoutAccountStatus
 } from '../services/paymentsApi';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 
 interface WalletModalProps {
   isOpen: boolean;
@@ -120,6 +121,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     if (!isOpen || activeTab !== 'withdraw' || !paymentStatus?.automated) return;
     fetchPayoutAccountStatus().then(setPayoutAccountStatus).catch(() => setPayoutAccountStatus(null));
   }, [isOpen, activeTab, paymentStatus?.automated]);
+  useEscapeToClose(onClose, isOpen);
 
   if (!isOpen) return null;
 
