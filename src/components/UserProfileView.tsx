@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react';
 import {
   User as UserIcon,
   Rocket,
@@ -53,7 +53,8 @@ import {
   UserPlus,
   MessageSquare,
   Star,
-  Bot
+  Bot,
+  Loader2
 } from 'lucide-react';
 import { User, Article, UserRole, AdCampaign, LanguageCode, ArticlePromotion, FraudFlag, Tweet, TweetComment } from '../types';
 import { SocialLinksEditor } from './SocialLinksEditor';
@@ -76,19 +77,40 @@ import {
 import { ThemePresetKey } from '../constants/themePresets';
 import { BackgroundPresetKey } from '../constants/backgroundPresets';
 import { ExternalAdsConfig } from '../utils/externalAdsStore';
-import { AdminOverviewTab } from './admin/AdminOverviewTab';
-import { AdminFinanceTab } from './admin/AdminFinanceTab';
-import { AdminAdsTab } from './admin/AdminAdsTab';
 import { AdvertiserDashboard } from './AdvertiserDashboard';
-import { AdminContentTab } from './admin/AdminContentTab';
-import { AdminUsersTab } from './admin/AdminUsersTab';
-import { AdminFraudTab } from './admin/AdminFraudTab';
-import { AdminSettingsTab } from './admin/AdminSettingsTab';
-import { AdminAnalyticsTab } from './admin/AdminAnalyticsTab';
-import { AdminChatsTab } from './admin/AdminChatsTab';
-import { AdminBotsTab } from './admin/AdminBotsTab';
-import { BalanceAdjustModal, AdjustableBalanceField } from './admin/BalanceAdjustModal';
-import { KycReviewModal } from './admin/KycReviewModal';
+import type { AdjustableBalanceField } from './admin/BalanceAdjustModal';
+// تحميل كسول (code-splitting) لتبويبات الأدمن العشرة + نافذتيه — كانت
+// مستوردة بشكل ثابت أعلى الملف رغم أن UserProfileView هذا يُعرَض لكل
+// مستخدم (قارئ/كاتب/معلن) لا للأدمن فقط، فيُحمَّل نحو 4500 سطر من كود
+// خاص بالأدمن حصراً ضمن حزمة كل زائر عادي بلا أي داعٍ — لن يعرض 99% منهم
+// هذا القسم إطلاقاً. React.lazy يجعل كل واحدة منها ملفاً منفصلاً يُجلَب
+// فقط حين يفتح أدمن حقيقي قسمه فعلياً. الاستيراد ديناميكي بصيغة .then()
+// لأن هذه المكوّنات export مُسمّى (named export) لا افتراضي، وReact.lazy
+// يتطلب وحدة بمخرج افتراضي (default) تحديداً.
+const AdminOverviewTab = lazy(() =>
+  import('./admin/AdminOverviewTab').then((m) => ({ default: m.AdminOverviewTab }))
+);
+const AdminFinanceTab = lazy(() =>
+  import('./admin/AdminFinanceTab').then((m) => ({ default: m.AdminFinanceTab }))
+);
+const AdminAdsTab = lazy(() => import('./admin/AdminAdsTab').then((m) => ({ default: m.AdminAdsTab })));
+const AdminContentTab = lazy(() =>
+  import('./admin/AdminContentTab').then((m) => ({ default: m.AdminContentTab }))
+);
+const AdminUsersTab = lazy(() => import('./admin/AdminUsersTab').then((m) => ({ default: m.AdminUsersTab })));
+const AdminFraudTab = lazy(() => import('./admin/AdminFraudTab').then((m) => ({ default: m.AdminFraudTab })));
+const AdminSettingsTab = lazy(() =>
+  import('./admin/AdminSettingsTab').then((m) => ({ default: m.AdminSettingsTab }))
+);
+const AdminAnalyticsTab = lazy(() =>
+  import('./admin/AdminAnalyticsTab').then((m) => ({ default: m.AdminAnalyticsTab }))
+);
+const AdminChatsTab = lazy(() => import('./admin/AdminChatsTab').then((m) => ({ default: m.AdminChatsTab })));
+const AdminBotsTab = lazy(() => import('./admin/AdminBotsTab').then((m) => ({ default: m.AdminBotsTab })));
+const BalanceAdjustModal = lazy(() =>
+  import('./admin/BalanceAdjustModal').then((m) => ({ default: m.BalanceAdjustModal }))
+);
+const KycReviewModal = lazy(() => import('./admin/KycReviewModal').then((m) => ({ default: m.KycReviewModal })));
 
 type AdminSection =
   | 'overview'
@@ -1541,8 +1563,19 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
               </div>
             </div>
 
-            {/* محتوى القسم النشط */}
+            {/* محتوى القسم النشط — كل تبويب هنا يُجلَب كسولاً (انظر تعليق
+                الاستيراد أعلى الملف)، فيَحتاج حد Suspense مشترك واحد يظهر
+                أثناء تنزيل كود ذلك التبويب تحديداً (لحظة واحدة أول فتح فقط،
+                يُخزَّن بعدها في ذاكرة المتصفح كأي ملف ثابت آخر). */}
             <div className="rounded-3xl bg-slate-950 border border-slate-800 p-3 sm:p-4">
+              <Suspense
+                fallback={
+                  <div className="flex items-center justify-center py-16 text-slate-500 text-xs font-bold gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>جارٍ تحميل القسم...</span>
+                  </div>
+                }
+              >
               {effectiveAdminSection === 'overview' && (
                 <AdminOverviewTab
                   currentUser={currentUser}
@@ -1664,24 +1697,29 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   adminUserId={currentUser.id}
                 />
               )}
+              </Suspense>
             </div>
           </div>
 
           {/* تعديل رصيد مستخدم يدوياً / مراجعة KYC — نفس المودالين اللذين
-              كانا يُفتحان من داخل AdminDashboard المحذوف. */}
-          <BalanceAdjustModal
-            isOpen={Boolean(selectedUserForBalance)}
-            user={selectedUserForBalance}
-            onClose={() => setSelectedUserForBalance(null)}
-            onAdjustBalance={onAdjustBalance}
-          />
-          <KycReviewModal
-            isOpen={Boolean(selectedUserForKyc)}
-            user={selectedUserForKyc}
-            onClose={() => setSelectedUserForKyc(null)}
-            onApproveKyc={onApproveKyc}
-            onRejectKyc={onRejectKyc}
-          />
+              كانا يُفتحان من داخل AdminDashboard المحذوف. fallback={null}
+              آمن هنا: كلاهما مغلق فعلياً (isOpen=false) إلى أن يضغط الأدمن
+              زراً صريحاً لفتحه، فلا يظهر أي فراغ ملحوظ للمستخدم العادي. */}
+          <Suspense fallback={null}>
+            <BalanceAdjustModal
+              isOpen={Boolean(selectedUserForBalance)}
+              user={selectedUserForBalance}
+              onClose={() => setSelectedUserForBalance(null)}
+              onAdjustBalance={onAdjustBalance}
+            />
+            <KycReviewModal
+              isOpen={Boolean(selectedUserForKyc)}
+              user={selectedUserForKyc}
+              onClose={() => setSelectedUserForKyc(null)}
+              onApproveKyc={onApproveKyc}
+              onRejectKyc={onRejectKyc}
+            />
+          </Suspense>
         </div>
       )}
 
