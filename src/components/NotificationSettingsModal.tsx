@@ -106,7 +106,7 @@ export const NotificationSettingsModal: React.FC<NotificationSettingsModalProps>
             <Bell className="w-4 h-4 text-brand-600 dark:text-brand-400" />
             إعدادات الإشعارات
           </h3>
-          <button onClick={onClose} className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">
+          <button onClick={onClose} aria-label="إغلاق" className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">
             <X className="w-5 h-5" />
           </button>
         </div>

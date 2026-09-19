@@ -306,6 +306,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
 
           <button
             onClick={onClose}
+            aria-label="إغلاق"
             className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
           >
             <X className="w-5 h-5" />

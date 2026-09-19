@@ -166,7 +166,7 @@ export const AdminChatsTab: React.FC<AdminChatsTabProps> = ({ users }) => {
                 <Flag className="w-4 h-4" />
                 وضع الإشراف — أنت تقرأ هذه المحادثة دون علم الطرفين
               </div>
-              <button onClick={() => setOpenConversation(null)} className="p-1 text-slate-400 hover:text-white">
+              <button onClick={() => setOpenConversation(null)} aria-label="إغلاق" className="p-1 text-slate-400 hover:text-white">
                 <X className="w-4 h-4" />
               </button>
             </div>

@@ -98,6 +98,7 @@ export const BalanceAdjustModal: React.FC<BalanceAdjustModalProps> = ({
           </div>
           <button
             onClick={onClose}
+            aria-label="إغلاق"
             className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
           >
             <X className="w-5 h-5" />

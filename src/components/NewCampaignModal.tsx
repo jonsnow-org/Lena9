@@ -227,6 +227,7 @@ export const NewCampaignModal: React.FC<NewCampaignModalProps> = ({
           </div>
           <button
             onClick={onClose}
+            aria-label="إغلاق"
             className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
           >
             <X className="w-5 h-5" />

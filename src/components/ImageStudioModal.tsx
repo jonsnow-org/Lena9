@@ -209,6 +209,7 @@ export const ImageStudioModal: React.FC<ImageStudioModalProps> = ({
             <button
               onClick={onClose}
               disabled={isLoading}
+              aria-label="إغلاق"
               className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors disabled:opacity-50"
             >
               <X className="w-5 h-5" />

@@ -177,6 +177,7 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
 
             <button
               onClick={onClose}
+              aria-label="إغلاق"
               className="p-1.5 rounded-xl text-slate-300 hover:text-white hover:bg-white/10 active:scale-95 transition-all"
             >
               <X className="w-5 h-5" />

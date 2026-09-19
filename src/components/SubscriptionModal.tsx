@@ -172,6 +172,7 @@ export const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
 
             <button
               onClick={onClose}
+              aria-label="إغلاق"
               className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 active:scale-95 transition-all"
             >
               <X className="w-5 h-5" />

@@ -62,6 +62,7 @@ export const BetaTesting20Modal: React.FC<BetaTesting20ModalProps> = ({
           </div>
           <button
             onClick={onClose}
+            aria-label="إغلاق"
             className="p-1.5 rounded-xl text-slate-300 hover:text-white"
           >
             <X className="w-5 h-5" />

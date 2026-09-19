@@ -169,6 +169,7 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
 
             <button
               onClick={onClose}
+              aria-label="إغلاق القائمة"
               className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
             >
               <X className="w-5 h-5" />

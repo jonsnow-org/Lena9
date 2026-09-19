@@ -95,6 +95,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, curr
           <h3 className="font-black text-base text-slate-900 dark:text-white">تعديل الملف الشخصي</h3>
           <button
             onClick={onClose}
+            aria-label="إغلاق"
             className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
           >
             <X className="w-5 h-5" />
