@@ -1,0 +1,61 @@
+name: Keep Render Service Awake
+
+# لماذا سير عمل منفصل عن health-check.yml: ذاك مخصَّص لاكتشاف انقطاع
+# الموقع (فحوصات قصيرة + Issue بعلامة site-down)، وهذا مخصَّص حصراً لمنع
+# نوم خدمة Render المجانية أصلاً — همّان مختلفان تماماً لا يجب خلطهما في
+# نفس المهمة.
+#
+# ⚠️ السبب الجذري الفعلي وراء استمرار ظهور شاشة "إيقاظ الخدمة" رغم كل
+# محاولات ضبط health-check.yml على فاصل زمني أقصر (30 ثم 10 دقائق): جدولة
+# GitHub Actions (schedule) موثَّقة رسمياً بأنها "best effort" بلا أي ضمان
+# لالتزام دقيق بالفاصل الزمني المطلوب. تحقّقنا فعلياً من سجل التشغيل
+# ووجدنا فجوات حقيقية تصل حتى 5 ساعات بين تشغيل وآخر رغم أن الملف يطلب كل
+# 10-30 دقيقة — أي تعديل إضافي على رقم الفاصل الزمني في cron وحده لن يغيّر
+# شيئاً لأن المشكلة في موثوقية المُشغِّل نفسه لا في الرقم المكتوب.
+#
+# الحل هنا: مهمة واحدة تعمل بشكل متواصل مدة ~5 ساعات و50 دقيقة (قريباً من
+# الحد الأقصى الافتراضي لمهام GitHub Actions البالغ 360 دقيقة)، تُرسل طلباً
+# لنقطة الصحة كل 4 دقائق طوال هذه المدة (أقل من مهلة نوم Render المجانية
+# ~15 دقيقة بهامش أمان كبير)، ثم تُعيد تشغيل نفسها تلقائياً عبر GitHub API
+# مباشرة قبل انتهائها — سلسلة ذاتية الاستمرار لا تعتمد على دقة جدولة
+# GitHub إطلاقاً. جدولة cron أدناه احتياط/بذرة إقلاع فقط (لو انقطعت السلسلة
+# لأي سبب — تعطيل تلقائي بعد 60 يوم خمول تام في المستودع مثلاً).
+#
+# التكلفة صفر: هذا مستودع عام (public) — دقائق GitHub Actions غير محدودة
+# ومجانية بالكامل على المستودعات العامة على مشغّلات GitHub نفسها، محقَّق
+# فعلياً (get_workflow_run_usage أعاد billable=0ms على تشغيل حقيقي).
+# لو أصبح المستودع خاصاً يوماً، يجب إعادة النظر في هذا التصميم فوراً.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 */5 * * *'
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: keep-render-awake
+  cancel-in-progress: false
+
+jobs:
+  keep-awake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - name: Ping /api/health every 4 minutes for ~5h50m
+        run: |
+          END=$((SECONDS + 350 * 60))
+          while [ "$SECONDS" -lt "$END" ]; do
+            status=$(curl -sS -m 20 -o /dev/null -w "%{http_code}" https://literium-wjct.onrender.com/api/health || echo "000")
+            echo "$(date -u '+%Y-%m-%d %H:%M:%S') UTC — ping status: $status"
+            sleep 240
+          done
+
+      - name: Re-trigger this workflow to keep the chain going
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run keep-render-awake.yml --ref ${{ github.ref_name }} --repo ${{ github.repository }}
