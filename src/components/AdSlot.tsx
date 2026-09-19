@@ -98,6 +98,41 @@ export function resetAdSlotCounter() {
   renderedAdsOnPage = 0;
   adRotationSeed = Math.floor(Math.random() * 997);
 }
+
+/**
+ * مؤقّت تناوب دوري مشترك — كانت الإزاحة (adRotationSeed) تتجدد فقط عند
+ * الانتقال بين الشاشات (resetAdSlotCounter)، فمن يبقى طويلاً على نفس
+ * الشاشة (مقال طويل، تمرير خلاصة بلا تنقّل) كان يرى نفس الحملة/الشبكة
+ * بلا أي تغيّر مهما طال بقاؤه — فرص ظهور غير متساوية فعلياً بين أنواع
+ * الإعلانات رغم تجمّع الدوران العادل نظرياً. الآن مؤقّت واحد مشترك (لا
+ * مؤقّت مستقل لكل موضع — يبقى الجميع متزامناً على نفس الإزاحة كما كان
+ * الحال داخل الشاشة الواحدة) يحدّث الإزاحة كل 30 ثانية بالضبط: نفس الحد
+ * الأدنى الذي تفرضه سياسة AdSense نفسها لأي تحديث تلقائي لإعلان بلا فعل
+ * حقيقي من المستخدم (تحديث أسرع من ذلك يُصنَّف "impression مصطنع" ومخاطرة
+ * حقيقية على الحساب لاحقاً) — أسرع من "لا نهائي" حالياً، وآمن سياسياً في
+ * آن. المؤقّت كسول تماماً: لا يبدأ إلا عند أول اشتراك (أول <AdSlot> فعلي
+ * على الشاشة)، ويتوقف تلقائياً حين لا يبقى أي مشترك (لا إعلانات ظاهرة).
+ */
+const ROTATION_TICK_MS = 30_000;
+const rotationSubscribers = new Set<(seed: number) => void>();
+let rotationTickerHandle: ReturnType<typeof setInterval> | null = null;
+
+function subscribeAdRotationTick(cb: (seed: number) => void): () => void {
+  rotationSubscribers.add(cb);
+  if (!rotationTickerHandle) {
+    rotationTickerHandle = setInterval(() => {
+      adRotationSeed = Math.floor(Math.random() * 997);
+      rotationSubscribers.forEach((fn) => fn(adRotationSeed));
+    }, ROTATION_TICK_MS);
+  }
+  return () => {
+    rotationSubscribers.delete(cb);
+    if (rotationSubscribers.size === 0 && rotationTickerHandle) {
+      clearInterval(rotationTickerHandle);
+      rotationTickerHandle = null;
+    }
+  };
+}
 /** يحجز الرقم التالي في عدّاد الإعلانات المشترك — يُستخدم من أي مكوّن
  *  إعلاني آخر خارج <AdSlot> نفسه (مثل SmartAdBanner) حتى يخضع لنفس الحد
  *  الأقصى (3 وحدات/صفحة) بدل عدّه بمعزل عن بقية المواضع. */
@@ -132,7 +167,11 @@ export const AdSlot: React.FC<AdSlotProps> = ({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const hasLoggedImpression = useRef(false);
   const [slotIndex] = useState(() => renderedAdsOnPage++);
-  const [rotationSeed] = useState(() => adRotationSeed);
+  // كانت مجمَّدة عند القيمة اللحظية للإزاحة وقت التركيب فقط (useState بلا
+  // مُحدِّث يُستدعى لاحقاً) — الآن تتابع المؤقّت المشترك أعلاه فتتغيّر فعلياً
+  // كل 30 ثانية طوال بقاء الموضع ظاهراً على الشاشة، لا عند التنقّل فقط.
+  const [rotationSeed, setRotationSeed] = useState(() => adRotationSeed);
+  useEffect(() => subscribeAdRotationTick(setRotationSeed), []);
   const [platformAdsEnabled, setPlatformAdsEnabled] = useState(getPlatformAdsEnabled());
   const [externalAdsConfig, setExternalAdsConfig] = useState(getExternalAdsConfig());
 
@@ -247,6 +286,40 @@ export const AdSlot: React.FC<AdSlotProps> = ({
       : externalCandidate
     : externalCandidate;
 
+  // Adsterra لم يعد لها كود لصق وحيد — تُختار وحدة واحدة من الكتالوج
+  // الثابت بنفس إزاحة الدوران (محسوبة هنا مرة واحدة، لا داخل الـJSX لاحقاً
+  // فقط، لأن هوية الوحدة المعروضة فعلياً تلزم أيضاً لإعادة ضبط تتبّع
+  // الظهور أدناه حين تتغيّر الوحدة المعروضة بفعل تجدّد rotationSeed).
+  const isAdsterraNetwork = Boolean(externalNetwork) && externalNetwork === externalAdsConfig.adsterra;
+  const adsterraUnit = isAdsterraNetwork
+    ? pickAdsterraUnit(externalAdsConfig.adsterraUnits, slotIndex + rotationSeed)
+    : null;
+
+  // هوية "ما يُعرض فعلياً الآن" — حملة داخلية بمعرّفها، أو شبكة خارجية
+  // (ومعها وحدة Adsterra المحدَّدة تحديداً إن كانت هي الشبكة). تتغيّر مع كل
+  // تجدّد لـrotationSeed كلما اختار التجمّع عنصراً مختلفاً فعلياً.
+  const displayIdentityKey = selectedCampaign
+    ? `campaign:${selectedCampaign.id}`
+    : externalNetwork
+    ? isAdsterraNetwork
+      ? `adsterra:${adsterraUnit?.id ?? 'none'}`
+      : `network:${externalNetwork.snippet.slice(0, 60)}`
+    : null;
+
+  // بلا هذا التصفير، بمجرد تسجيل ظهور أول إعلان في هذا الموضع يبقى
+  // hasLoggedImpression.current=true إلى الأبد (ref لا يُعاد تصفيره بتغيّر
+  // الاعتماديات وحدها) — فحين يُبدّل التناوب الدوري أعلاه المعلن/الشبكة
+  // المعروضة فعلياً في نفس الموضع الثابت على الشاشة، لا يُسجَّل أي ظهور
+  // جديد للطرف الجديد رغم أنه ظهر فعلياً لمستخدم حقيقي. تصفيره عند تغيّر
+  // هوية المعروض فعلياً يضمن احتساب ظهور مستقل لكل طرف يتناوب عليه الموضع.
+  const previousIdentityKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (previousIdentityKeyRef.current !== displayIdentityKey) {
+      previousIdentityKeyRef.current = displayIdentityKey;
+      hasLoggedImpression.current = false;
+    }
+  }, [displayIdentityKey]);
+
   // تسجيل الظهور فقط بعد بقاء 50% من الإعلان مرئياً لمدة ثانية متواصلة
   // (Viewability) — وليس عند مجرد دخوله الشاشة للحظة عابرة أثناء التمرير
   // السريع. أي خروج من نطاق الرؤية قبل اكتمال الثانية يُلغي المؤقّت
@@ -298,7 +371,7 @@ export const AdSlot: React.FC<AdSlotProps> = ({
       if (dwellTimer) clearTimeout(dwellTimer);
       observer.disconnect();
     };
-  }, [selectedCampaign, trackExternalWriterView, slotId, articleId, writerId, viewerId]);
+  }, [selectedCampaign, displayIdentityKey, trackExternalWriterView, slotId, articleId, writerId, viewerId]);
 
   const handleClick = () => {
     if (!selectedCampaign) return;
@@ -325,15 +398,9 @@ export const AdSlot: React.FC<AdSlotProps> = ({
   // الموضع — نعرض كودها كما هو، بدون أي تتبّع إفصاح/نقر خاص بنا (تتبُّع
   // هذه الشبكات مستقل تماماً ومُدار من طرفها).
   if (!selectedCampaign && externalNetwork) {
-    // Adsterra لم يعد لها كود لصق وحيد — كتالوج وحدات ثابت في الشيفرة
-    // (`ADSTERRA_UNITS`)، تُختار منه وحدة واحدة مفعّلة فعلياً بنفس إزاحة
-    // الدوران المستخدمة لبقية الموضع، فتتنوّع المقاسات المعروضة عبر
-    // مواضع الصفحة المختلفة بدل مقاس 250px ثابت للجميع.
-    const isAdsterra = externalNetwork === externalAdsConfig.adsterra;
-    const adsterraUnit = isAdsterra
-      ? pickAdsterraUnit(externalAdsConfig.adsterraUnits, slotIndex + rotationSeed)
-      : null;
-    if (isAdsterra && !adsterraUnit) return null;
+    // isAdsterraNetwork/adsterraUnit محسوبتان أعلاه بالفعل (لازمتان أيضاً
+    // لهوية تتبّع الظهور) — إعادة استخدامهما هنا بدل حساب مكرَّر.
+    if (isAdsterraNetwork && !adsterraUnit) return null;
     const snippet = adsterraUnit ? adsterraUnit.snippet : externalNetwork.snippet;
     const heightPx = adsterraUnit ? adsterraUnit.heightPx : 250;
     const widthPx = adsterraUnit && adsterraUnit.widthPx > 0 ? adsterraUnit.widthPx : undefined;
