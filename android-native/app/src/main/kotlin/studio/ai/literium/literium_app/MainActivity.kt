@@ -14,6 +14,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.webkit.JsPromptResult
 import android.webkit.JsResult
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebView
@@ -124,6 +125,168 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    /**
+     * منذ أندرويد O، محرّك WebView يعمل دوماً في عملية (process) منفصلة عن عملية التطبيق
+     * — هذا هو السبب الأرجح للإغلاق الإجباري الذي كان يحدث عند أول فتح للتطبيق فقط ثم
+     * يختفي عند إعادة الفتح: مباشرة بعد التثبيت يكون الجهاز تحت ضغط إدخال/إخراج وذاكرة
+     * (فهرسة الحزمة، تهيئة مجلد بيانات WebView لأول مرة...)، فتموت عملية المحرّك بسهولة
+     * أكبر من المعتاد. بلا تخصيص [WebViewClient.onRenderProcessGone]، السلوك الافتراضي
+     * الموثَّق رسمياً لأندرويد هو **إسقاط عملية التطبيق المضيف بأكملها** حين تموت عملية
+     * المحرّك — أي عطل حقيقي، لكنه عطل على مستوى النظام لا استثناء Java، فلا يظهر إطلاقاً
+     * في AppErrorLog ولا Crashlytics (وهذا يفسّر عدم وجود أي أثر مسجَّل لهذا العطل تحديداً).
+     * الحل: عند موت المحرّك، إزالة WebView المعطوب من شجرة العرض وتدميره، ثم بناء نسخة
+     * جديدة كاملة الإعداد وإدراجها في نفس المكان بدل ترك النظام يُسقط التطبيق بأكمله.
+     */
+    private fun buildWebView(context: android.content.Context, startUrl: String): WebView {
+        return WebView(context).apply {
+            webViewRef = this
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+            settings.javaScriptEnabled = true
+            settings.domStorageEnabled = true
+            settings.mediaPlaybackRequiresUserGesture = false
+            settings.allowFileAccess = true
+            overScrollMode = View.OVER_SCROLL_NEVER
+            settings.userAgentString =
+                "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 " +
+                    "(KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36 " +
+                    "LiteriumNativeApp/1"
+
+            webViewClient = object : WebViewClient() {
+                override fun shouldOverrideUrlLoading(
+                    view: WebView?,
+                    request: android.webkit.WebResourceRequest?
+                ): Boolean {
+                    val url = request?.url ?: return false
+                    if (url.host?.endsWith(PRODUCTION_HOST) == true) {
+                        return false
+                    }
+                    return try {
+                        startActivity(Intent(Intent.ACTION_VIEW, url))
+                        true
+                    } catch (_: Exception) {
+                        false
+                    }
+                }
+
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    super.onPageFinished(view, url)
+                    if (view?.title?.contains(REAL_APP_TITLE_MARKER, ignoreCase = true) == true) {
+                        pageReadyState.value = true
+                        try {
+                            FirebaseMessaging.getInstance().token
+                                .addOnSuccessListener { token -> bridgeFcmTokenToWebView(token) }
+                                .addOnFailureListener { e ->
+                                    AppErrorLog.record(this@MainActivity, "جلب رمز FCM", e)
+                                }
+                        } catch (e: Exception) {
+                            AppErrorLog.record(this@MainActivity, "جلب رمز FCM", e)
+                        }
+                    }
+                }
+
+                override fun onRenderProcessGone(view: WebView?, detail: RenderProcessGoneDetail?): Boolean {
+                    AppErrorLog.record(
+                        this@MainActivity,
+                        "توقف عملية محرّك WebView (Renderer)",
+                        RuntimeException(
+                            "didCrash=${detail?.didCrash()} rendererPriorityAtExit=${detail?.rendererPriorityAtExit()}"
+                        )
+                    )
+                    val crashed = view ?: return false
+                    val parent = crashed.parent as? ViewGroup ?: return false
+                    val index = parent.indexOfChild(crashed)
+                    val lastUrl = crashed.url
+                    parent.removeView(crashed)
+                    crashed.destroy()
+                    val fresh = buildWebView(this@MainActivity, lastUrl ?: startUrl)
+                    parent.addView(
+                        fresh,
+                        index,
+                        ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                    )
+                    return true
+                }
+            }
+
+            webChromeClient = object : WebChromeClient() {
+                override fun onShowFileChooser(
+                    webView: WebView?,
+                    filePathCallback: ValueCallback<Array<Uri>>?,
+                    fileChooserParams: FileChooserParams?
+                ): Boolean {
+                    pendingFileCallback = filePathCallback
+                    val intent = fileChooserParams?.createIntent()
+                        ?: Intent(Intent.ACTION_GET_CONTENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                            type = "*/*"
+                        }
+                    return try {
+                        fileChooserLauncher.launch(intent)
+                        true
+                    } catch (_: Exception) {
+                        pendingFileCallback = null
+                        false
+                    }
+                }
+
+                override fun onJsAlert(
+                    view: WebView?,
+                    url: String?,
+                    message: String?,
+                    result: JsResult?
+                ): Boolean {
+                    AlertDialog.Builder(this@MainActivity)
+                        .setMessage(message)
+                        .setPositiveButton("حسناً") { _, _ -> result?.confirm() }
+                        .setOnCancelListener { result?.confirm() }
+                        .setCancelable(false)
+                        .show()
+                    return true
+                }
+
+                override fun onJsConfirm(
+                    view: WebView?,
+                    url: String?,
+                    message: String?,
+                    result: JsResult?
+                ): Boolean {
+                    AlertDialog.Builder(this@MainActivity)
+                        .setMessage(message)
+                        .setPositiveButton("موافق") { _, _ -> result?.confirm() }
+                        .setNegativeButton("إلغاء") { _, _ -> result?.cancel() }
+                        .setOnCancelListener { result?.cancel() }
+                        .show()
+                    return true
+                }
+
+                override fun onJsPrompt(
+                    view: WebView?,
+                    url: String?,
+                    message: String?,
+                    defaultValue: String?,
+                    result: JsPromptResult?
+                ): Boolean {
+                    val input = EditText(this@MainActivity).apply {
+                        setText(defaultValue)
+                    }
+                    AlertDialog.Builder(this@MainActivity)
+                        .setMessage(message)
+                        .setView(input)
+                        .setPositiveButton("موافق") { _, _ -> result?.confirm(input.text.toString()) }
+                        .setNegativeButton("إلغاء") { _, _ -> result?.cancel() }
+                        .setOnCancelListener { result?.cancel() }
+                        .show()
+                    return true
+                }
+            }
+
+            loadUrl(startUrl)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -188,180 +351,7 @@ class MainActivity : ComponentActivity() {
                     Box(modifier = Modifier.fillMaxSize()) {
                     AndroidView(
                         modifier = Modifier.fillMaxSize(),
-                        factory = {
-                            WebView(context).apply {
-                                webViewRef = this
-                                layoutParams = ViewGroup.LayoutParams(
-                                    ViewGroup.LayoutParams.MATCH_PARENT,
-                                    ViewGroup.LayoutParams.MATCH_PARENT
-                                )
-                                settings.javaScriptEnabled = true
-                                settings.domStorageEnabled = true
-                                settings.mediaPlaybackRequiresUserGesture = false
-                                settings.allowFileAccess = true
-                                // الموقع نفسه يملك بالفعل سحب-للتحديث حقيقياً (لمسة
-                                // متتبَّعة + كبسولة "اسحب/أفلت للتحديث" + إعادة جلب فعلية
-                                // للمقالات — انظر handleTouchStart/handleRefreshFeed في
-                                // App.tsx)، لكن توهج الارتداد (overscroll glow) الافتراضي
-                                // لـWebView كان يظهر فوقه في نفس اللحظة فيبدو الأمر مجرد
-                                // "سحب وارتداد" عام بلا أي فعل حقيقي، ويطغى بصرياً على
-                                // كبسولة الموقع الحقيقية. تعطيله هنا يترك مؤشر الموقع
-                                // الحقيقي وحده هو ما يظهر.
-                                overScrollMode = View.OVER_SCROLL_NEVER
-                                // ⚠️ استبدال كامل لسلسلة User-Agent الافتراضية، لا إلحاق فقط:
-                                // WebView الافتراضي في أندرويد يضع علامة "; wv)" ضمن الجزء الأول
-                                // من السلسلة (ومعها "Version/4.0" قبل Chrome/) — وهذه بالضبط
-                                // العلامة التي يبحث عنها Google لمنع تسجيل الدخول (Sign-In) داخل
-                                // أي WebView (حماية أمنية من Google، ليست خللاً في هذا التطبيق).
-                                // نفس الحل المستخدم سابقاً في flutter_app (main.dart): سلسلة
-                                // Chrome/Android عادية تماماً بلا "; wv)" ولا "Version/x.x"، مع
-                                // إلحاق "LiteriumNativeApp/1" في النهاية فقط — بعد
-                                // "Mobile Safari/537.36" — ليتحقق منها navigator.userAgent في
-                                // كود الموقع (isRunningAsInstalledApp في installState.ts) لتمييز
-                                // زوار التطبيق الأصيل عن زوار المتصفح، دون كسر تسجيل الدخول عبر Google.
-                                settings.userAgentString =
-                                    "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 " +
-                                        "(KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36 " +
-                                        "LiteriumNativeApp/1"
-
-                                webViewClient = object : WebViewClient() {
-                                    // روابط خارجية (mailto:, tel:, نطاقات خارج موقعنا) تُفتح بمتصفح
-                                    // النظام الافتراضي عبر Intent عادي — وليس Custom Tabs — فلا يظهر
-                                    // إشعار "قيد التشغيل في Chrome" في هذه الحالة أيضاً.
-                                    override fun shouldOverrideUrlLoading(
-                                        view: WebView?,
-                                        request: android.webkit.WebResourceRequest?
-                                    ): Boolean {
-                                        val url = request?.url ?: return false
-                                        if (url.host?.endsWith(PRODUCTION_HOST) == true) {
-                                            return false
-                                        }
-                                        return try {
-                                            startActivity(Intent(Intent.ACTION_VIEW, url))
-                                            true
-                                        } catch (_: Exception) {
-                                            false
-                                        }
-                                    }
-
-                                    // إن كانت الخدمة نائمة (سبات Render بعد قلة نشاط)، أول استجابة
-                                    // فعلية ليست تطبيقنا إطلاقاً بل صفحة "إيقاظ الخدمة" الخاصة بـ
-                                    // Render نفسها — HTML صالح تماماً فيُطلق onPageFinished مثل أي
-                                    // تحميل ناجح عادي، فلا يكفي مجرد "انتهى التحميل" وحده. العنوان هو
-                                    // الفارق الموثوق الوحيد المتاح هنا: صفحة الموقع الحقيقية فقط تحمل
-                                    // "LITERIUM" (index.html)، فتُكشف شاشة البداية عند تطابقه فقط —
-                                    // تبقى ظاهرة أثناء صفحة الإيقاظ، وتُخفى تلقائياً بعد إعادة تحميل
-                                    // Render نفسها للصفحة الحقيقية دون أي وميض لواجهتها للمستخدم إطلاقاً.
-                                    override fun onPageFinished(view: WebView?, url: String?) {
-                                        super.onPageFinished(view, url)
-                                        if (view?.title?.contains(REAL_APP_TITLE_MARKER, ignoreCase = true) == true) {
-                                            pageReadyState.value = true
-                                            // جسر الرمز الحالي في كل تحميل صفحة حقيقي — حالة JS تُعاد
-                                            // تصفيرها عند كل تحميل، فلا يكفي جسر الرمز مرة واحدة فقط
-                                            // عند إقلاع التطبيق الأول. try/catch احترازي: أي فشل في
-                                            // Firebase Messaging (خدمات جوجل غير جاهزة بعد على جهاز
-                                            // حديث التثبيت مثلاً) يجب ألا يُسقط التطبيق بالكامل — هذا
-                                            // مجرد تحسين ثانوي (تسجيل push)، لا وظيفة أساسية.
-                                            try {
-                                                FirebaseMessaging.getInstance().token
-                                                    .addOnSuccessListener { token -> bridgeFcmTokenToWebView(token) }
-                                                    .addOnFailureListener { e ->
-                                                        AppErrorLog.record(this@MainActivity, "جلب رمز FCM", e)
-                                                    }
-                                            } catch (e: Exception) {
-                                                AppErrorLog.record(this@MainActivity, "جلب رمز FCM", e)
-                                            }
-                                        }
-                                    }
-                                }
-
-                                webChromeClient = object : WebChromeClient() {
-                                    // لمس <input type="file"> في الموقع (رفع صورة مقال/رسالة/وثيقة
-                                    // KYC) — منتقي ملفات حقيقي من الجهاز، مطابق لسلوك نسخة Flutter
-                                    // السابقة (file_picker) لكن بلا أي تبعية خارجية هنا.
-                                    override fun onShowFileChooser(
-                                        webView: WebView?,
-                                        filePathCallback: ValueCallback<Array<Uri>>?,
-                                        fileChooserParams: FileChooserParams?
-                                    ): Boolean {
-                                        pendingFileCallback = filePathCallback
-                                        val intent = fileChooserParams?.createIntent()
-                                            ?: Intent(Intent.ACTION_GET_CONTENT).apply {
-                                                addCategory(Intent.CATEGORY_OPENABLE)
-                                                type = "*/*"
-                                            }
-                                        return try {
-                                            fileChooserLauncher.launch(intent)
-                                            true
-                                        } catch (_: Exception) {
-                                            pendingFileCallback = null
-                                            false
-                                        }
-                                    }
-
-                                    // ⚠️ بلا هذه التخصيصات الثلاثة، أي alert()/confirm()/prompt() في
-                                    // كود الموقع (يوجد منها عشرات عبر التطبيق — تأكيدات حذف، رسائل خطأ،
-                                    // تأكيد نسخ رابط مشاركة...) يعرضها WebView بتصميمه الافتراضي الذي
-                                    // يبدأ دائماً بجملة "تعرض الصفحة في '<الرابط الكامل>' :" قبل نص
-                                    // الرسالة نفسها — سلوك أمني قياسي في WebView (تمييز حوار الصفحة عن
-                                    // حوار النظام)، لكنه يكشف رابط الاستضافة الخام (onrender.com) للمستخدم
-                                    // ويجعل كل حوار في التطبيق يبدو كتحذير متصفح لا كجزء من تطبيق أصيل —
-                                    // هذا بالضبط ما ظهر في مشكلة "نافذة المشاركة المربكة". حوار نظام نظيف
-                                    // بلا أي ذكر للرابط يحل المشكلة لكل الحوارات دفعة واحدة.
-                                    override fun onJsAlert(
-                                        view: WebView?,
-                                        url: String?,
-                                        message: String?,
-                                        result: JsResult?
-                                    ): Boolean {
-                                        AlertDialog.Builder(this@MainActivity)
-                                            .setMessage(message)
-                                            .setPositiveButton("حسناً") { _, _ -> result?.confirm() }
-                                            .setOnCancelListener { result?.confirm() }
-                                            .setCancelable(false)
-                                            .show()
-                                        return true
-                                    }
-
-                                    override fun onJsConfirm(
-                                        view: WebView?,
-                                        url: String?,
-                                        message: String?,
-                                        result: JsResult?
-                                    ): Boolean {
-                                        AlertDialog.Builder(this@MainActivity)
-                                            .setMessage(message)
-                                            .setPositiveButton("موافق") { _, _ -> result?.confirm() }
-                                            .setNegativeButton("إلغاء") { _, _ -> result?.cancel() }
-                                            .setOnCancelListener { result?.cancel() }
-                                            .show()
-                                        return true
-                                    }
-
-                                    override fun onJsPrompt(
-                                        view: WebView?,
-                                        url: String?,
-                                        message: String?,
-                                        defaultValue: String?,
-                                        result: JsPromptResult?
-                                    ): Boolean {
-                                        val input = EditText(this@MainActivity).apply {
-                                            setText(defaultValue)
-                                        }
-                                        AlertDialog.Builder(this@MainActivity)
-                                            .setMessage(message)
-                                            .setView(input)
-                                            .setPositiveButton("موافق") { _, _ -> result?.confirm(input.text.toString()) }
-                                            .setNegativeButton("إلغاء") { _, _ -> result?.cancel() }
-                                            .setOnCancelListener { result?.cancel() }
-                                            .show()
-                                        return true
-                                    }
-                                }
-
-                                loadUrl(startUrl)
-                            }
-                        }
+                        factory = { buildWebView(context, startUrl) }
                     )
 
                     // تُغطي WebView بالكامل حتى تتحقق شاشة العنوان الحقيقي أعلاه — يستمر
