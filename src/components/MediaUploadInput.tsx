@@ -10,7 +10,14 @@ function getUploadConfigured(): Promise<boolean> {
   if (cachedConfigured !== null) return Promise.resolve(cachedConfigured);
   if (!inFlight) {
     inFlight = fetchMediaUploadStatus().then((v) => {
-      cachedConfigured = v;
+      // لا نخزّن نتيجة سلبية (false) بشكل دائم في هذا المتغيّر المشترك بين
+      // كل حقول الرفع في الجلسة — فشل واحد عابر (الخادم لا يزال يستيقظ من
+      // سبات استضافة Render مثلاً، أو انقطاع شبكة لحظي) كان يُجمَّد كـ"غير
+      // مفعّل" لبقية الجلسة كاملة، فيعطّل الرفع حتى بعد أن يصبح الخادم
+      // جاهزاً فعلياً بعد ثوانٍ. فقط "متاح" يُحفَظ (لا حاجة لإعادة تحقق
+      // بعدها)؛ "غير متاح" تُعاد محاولته عند أول استخدام تالٍ لأي حقل.
+      if (v) cachedConfigured = v;
+      inFlight = null;
       return v;
     });
   }

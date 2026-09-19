@@ -60,17 +60,20 @@ const InlineImageAttach: React.FC<{
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [configured, setConfigured] = useState<boolean | null>(null);
 
+  // بنفس منطق TweetComposer: نتيجة سلبية لا تُحفَظ أبداً (تبقى configured
+  // بلا تغيير)، فلا يُعطَّل الإرفاق نهائياً بسبب فشل تحقق عابر واحد فقط.
   const handlePick = async () => {
-    let ok = configured;
-    if (ok === null) {
-      ok = await fetchMediaUploadStatus();
-      setConfigured(ok);
-    }
-    if (!ok) {
-      onError('رفع الصور غير مفعّل على الخادم حالياً.');
+    if (configured) {
+      fileInputRef.current?.click();
       return;
     }
-    fileInputRef.current?.click();
+    const ok = await fetchMediaUploadStatus();
+    if (ok) {
+      setConfigured(true);
+      fileInputRef.current?.click();
+    } else {
+      onError('تعذّر الاتصال بخدمة رفع الصور. حاول مجدداً خلال لحظات.');
+    }
   };
 
   const handleFile = async (file: File) => {

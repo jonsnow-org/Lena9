@@ -66,18 +66,25 @@ export const TweetComposer: React.FC<TweetComposerProps> = ({
   const canSubmit = content.trim().length > 0 && !isOverLimit && !isPosting && !imageUploading;
 
   const handlePickImage = async () => {
-    if (uploadConfigured === null) {
-      const configured = await fetchMediaUploadStatus();
-      setUploadConfigured(configured);
-      if (!configured) {
-        setImageError('رفع الوسائط غير مفعّل على الخادم حالياً.');
-        return;
-      }
-    } else if (!uploadConfigured) {
-      setImageError('رفع الوسائط غير مفعّل على الخادم حالياً.');
+    setImageError('');
+    // بمجرد تأكيد التفعيل مرة، لا حاجة لإعادة التحقق. لكن نتيجة سلبية لا
+    // تُحفَظ أبداً في uploadConfigured (يبقى null) — فشل التحقق مرة واحدة
+    // (غالباً خادم Render لا يزال يستيقظ من سبات، أو انقطاع شبكة عابر) كان
+    // يُعطِّل زر الإرفاق نهائياً لبقية عمر هذا المكوّن بلا أي إعادة محاولة،
+    // وهذا بالضبط ما بدا وكأن "الرفع لا يعمل في قسم تغريد" تحديداً بينما هو
+    // يعمل في المدونة/الإعلانات فقط لأن حظّهما أوفر توقيتاً لا لفرق حقيقي
+    // في الكود. كل ضغطة تالية تعيد المحاولة من الصفر إن لم تنجح سابقاً.
+    if (uploadConfigured) {
+      fileInputRef.current?.click();
       return;
     }
-    fileInputRef.current?.click();
+    const configured = await fetchMediaUploadStatus();
+    if (configured) {
+      setUploadConfigured(true);
+      fileInputRef.current?.click();
+    } else {
+      setImageError('تعذّر الاتصال بخدمة رفع الوسائط. تحقق من اتصالك وحاول مجدداً خلال لحظات.');
+    }
   };
 
   const handleImageFile = async (file: File) => {
