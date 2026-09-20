@@ -258,13 +258,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
         {/* Modal Body */}
         <div className="p-6 space-y-5 max-h-[75vh] overflow-y-auto">
-          {(authError || externalError) && (
-            <div className="p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400 text-xs font-medium flex items-center gap-2.5">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>{authError || externalError}</span>
-            </div>
-          )}
-
           {/* اختيار حساب محفوظ على هذا الجهاز، أو الدخول بحساب مختلف */}
           {mode === 'login' && savedAccounts.length > 0 && !useNewAccountForm && (
             <div className="space-y-2.5">
@@ -592,6 +585,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 </button>
               )}
             </div>
+            )}
+
+            {/* رسالة الخطأ كانت تظهر أعلى النافذة، بينما زر الإرسال أسفل نموذج
+                طويل (خصوصاً التسجيل) — فيضغط المستخدم الزر ولا يرى أي تغيير
+                لأنه لم يعد يشاهد أعلى الشاشة أصلاً، فيبدو الزر "لا يستجيب"
+                رغم أن الخطأ ظهر فعلاً، فقط خارج الجزء المرئي. الآن تظهر هنا
+                مباشرة فوق الزر نفسه، حيث ينظر المستخدم أصلاً. */}
+            {!isForgotPassword && (authError || externalError) && (
+              <div className="p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400 text-xs font-medium flex items-center gap-2.5">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{authError || externalError}</span>
+              </div>
             )}
 
             <button
