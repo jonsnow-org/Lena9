@@ -4143,6 +4143,9 @@ export function App() {
                   likedTweetIds={tweetLikes.filter((l) => l.userId === currentUserId).map((l) => l.tweetId)}
                   favoritedTweetIds={favoritedTweetIds}
                   campaigns={campaigns}
+                  users={users}
+                  articles={articles}
+                  followsData={followsData}
                   onPostTweet={handlePostTweet}
                   focusComposeTrigger={tweetComposeFocusTrigger}
                   searchQuery={tweetSearchQuery}
@@ -4670,6 +4673,9 @@ export function App() {
           onReact={(type) => handleReactToArticle(readingArticle.id, type)}
           sponsoredCampaign={campaigns.find((c) => c.status === 'active' && c.placementType === 'writer')}
           currentUserId={currentUser.id}
+          users={users}
+          articles={articles}
+          followsData={followsData}
           onWriterProfileClick={(wId) => {
             const w = users.find((u) => u.id === wId);
             if (w) {

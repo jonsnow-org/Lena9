@@ -10,6 +10,13 @@ const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
 interface TweetCardProps {
   tweet: Tweet;
+  /** وسم "كاتب/قارئ مسجل" الحقيقي المحسوب من الأهلية الفعلية الحالية
+   *  لصاحب التغريدة (انظر resolveAuthorMemberLabel) — وليس tweet.authorRole
+   *  المخزَّن وقت النشر (يحمل دائماً قيمة role الأصلية بصرف النظر عن
+   *  الأهلية الفعلية، وكل حساب جديد role='writer' افتراضياً). undefined
+   *  فقط إن تعذّر إيجاد صاحب التغريدة في قائمة المستخدمين الحالية.
+   */
+  authorLabel?: string;
   currentUser: User;
   isLiked: boolean;
   isFavorited: boolean;
@@ -128,6 +135,7 @@ const InlineImageAttach: React.FC<{
 
 export const TweetCard: React.FC<TweetCardProps> = ({
   tweet,
+  authorLabel,
   currentUser,
   isLiked,
   isFavorited,
@@ -214,7 +222,7 @@ export const TweetCard: React.FC<TweetCardProps> = ({
               <span className="font-bold text-sm text-slate-900 dark:text-white truncate">
                 {tweet.authorName}
               </span>
-              {tweet.authorRole === 'writer' && (
+              {authorLabel === 'كاتب' && (
                 <span className="text-[9px] px-1.5 py-0.2 rounded bg-teal-600 text-white font-bold shrink-0">
                   الكاتب
                 </span>

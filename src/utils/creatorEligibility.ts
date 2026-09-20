@@ -113,3 +113,46 @@ export function getMemberStatusLabel(
   if (role === 'admin') return 'مالك المنصة';
   return isMonetizationEligible ? 'كاتب' : 'قارئ مسجل';
 }
+
+/**
+ * يحسب وسم الحالة الصحيح (نفس getMemberStatusLabel أعلاه) لصاحب أي محتوى
+ * بمعرّفه فقط — بديل ضروري في أي مكان يعرض تفاعلات (تغريدات/تعليقات) لا
+ * يملك سوى معرّف الكاتب ودوره المخزَّن وقت إنشاء التغريدة/التعليق نفسه
+ * (authorRole/userRole)، لا حالته الحالية. الاعتماد على ذلك المخزَّن كان
+ * الخطأ الجذري: كل تسجيل جديد role='writer' افتراضياً (انظر AuthModal.tsx)،
+ * فتظهر شارة "الكاتب" فوراً لأي حساب جديد بلا أي متابعين أو مقالات أو
+ * توثيق KYC فعلياً — تماماً عكس النظام الموثَّق أعلاه. هذه الدالة تعيد
+ * حساب الأهلية الحقيقية الحالية من بيانات المستخدم/المقالات/المتابعين
+ * الفعلية بدل الثقة بالحقل المخزَّن القديم.
+ */
+export function resolveAuthorMemberLabel(
+  authorId: string,
+  users: User[],
+  articles: Article[],
+  followsData: { followingId: string }[]
+): string {
+  const author = users.find((u) => u.id === authorId);
+  if (!author) return 'قارئ مسجل';
+  const followersCount = followsData.filter((f) => f.followingId === authorId).length;
+  const eligible = isEligibleForMonetization(author, articles, followersCount);
+  return getMemberStatusLabel(author.role, eligible);
+}
+
+/**
+ * بناء خريطة (معرّف ← وسم) لمجموعة معرّفات دفعة واحدة — يُستخدم في رأس
+ * قوائم التغريدات/التعليقات لحساب كل كاتب فريد ظاهر على الشاشة مرة واحدة
+ * فقط بدل إعادة حساب نفس الكاتب في كل بطاقة/تعليق يظهر فيها مراراً.
+ */
+export function buildMemberLabelMap(
+  authorIds: string[],
+  users: User[],
+  articles: Article[],
+  followsData: { followingId: string }[]
+): Record<string, string> {
+  const uniqueIds = Array.from(new Set(authorIds));
+  const map: Record<string, string> = {};
+  uniqueIds.forEach((id) => {
+    map[id] = resolveAuthorMemberLabel(id, users, articles, followsData);
+  });
+  return map;
+}

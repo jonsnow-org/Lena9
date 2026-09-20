@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   ArrowRight,
   Heart,
@@ -29,13 +29,14 @@ import {
   Sliders
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { Article, Comment, ReactionType, AdCampaign } from '../types';
+import { Article, Comment, ReactionType, AdCampaign, User } from '../types';
 import { formatDateAr, formatDateTimeAr, timeAgoAr } from '../utils/dateFormat';
 import { SmartAdBanner } from './SmartAdBanner';
 import { AdSlot } from './AdSlot';
 import { VideoEmbed } from './VideoEmbed';
 import { VideoPlayer } from './VideoPlayer';
 import { REVENUE_SHARES } from '../constants/revenueShares';
+import { buildMemberLabelMap } from '../utils/creatorEligibility';
 
 type ReaderTheme = 'default' | 'sepia' | 'charcoal';
 type ReaderFontSize = 'sm' | 'md' | 'lg' | 'xl';
@@ -63,6 +64,13 @@ interface ArticleReaderProps {
   currentUserId?: string;
   campaigns?: AdCampaign[];
   isAdFree?: boolean;
+  /** لحساب وسم "الكاتب/قارئ مسجل" الحقيقي لكل معلّق/رادّ (انظر
+   *  resolveAuthorMemberLabel) بدل الثقة بـComment.userRole/CommentReply.userRole
+   *  المخزَّنين وقت النشر — يحملان دائماً قيمة role الأصلية بصرف النظر عن
+   *  الأهلية الفعلية، وكل حساب جديد role='writer' افتراضياً. */
+  users?: User[];
+  articles?: Article[];
+  followsData?: { followingId: string }[];
 }
 
 export const ArticleReader: React.FC<ArticleReaderProps> = ({
@@ -87,7 +95,10 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
   currentUserId,
   campaigns = [],
   isAdFree = false,
-  onReact
+  onReact,
+  users = [],
+  articles = [],
+  followsData = []
 }) => {
   const [activeReaction, setActiveReaction] = useState<ReactionType | null>(null);
   const [newCommentText, setNewCommentText] = useState('');
@@ -95,6 +106,14 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
   const [replyText, setReplyText] = useState('');
   const [showShareModal, setShowShareModal] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+
+  // خريطة (معرّف معلّق ← وسم حقيقي) لكل معلّقين/رادّين فريدين على هذا
+  // المقال — بدل الثقة بـComment.userRole/CommentReply.userRole المخزَّنين
+  // وقت النشر (انظر resolveAuthorMemberLabel لسبب عدم كفايتهما).
+  const commenterLabels = useMemo(() => {
+    const ids = comments.flatMap((c) => [c.userId, ...c.replies.map((r) => r.userId)]);
+    return buildMemberLabelMap(ids, users, articles, followsData);
+  }, [comments, users, articles, followsData]);
 
   // Reading Experience Customization State
   const [fontSize, setFontSize] = useState<ReaderFontSize>(() => {
@@ -939,7 +958,7 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
                           <span className="font-bold text-xs sm:text-sm">
                             {comm.userName}
                           </span>
-                          {comm.userRole === 'writer' && (
+                          {commenterLabels[comm.userId] === 'كاتب' && (
                             <span className="text-[10px] px-1.5 py-0.2 rounded bg-teal-600 text-white font-bold">
                               الكاتب
                             </span>
@@ -1015,7 +1034,7 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
                               <span className="font-bold">
                                 {rep.userName}
                               </span>
-                              {rep.userRole === 'writer' && (
+                              {commenterLabels[rep.userId] === 'كاتب' && (
                                 <span className="text-[9px] px-1.5 py-0.2 rounded bg-teal-600 text-white font-bold">
                                   الكاتب
                                 </span>

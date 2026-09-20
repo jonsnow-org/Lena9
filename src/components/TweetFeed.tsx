@@ -1,10 +1,11 @@
 import React, { useMemo } from 'react';
 import { MessageSquare } from 'lucide-react';
-import { Tweet, TweetComment, User, AdCampaign } from '../types';
+import { Tweet, TweetComment, User, AdCampaign, Article } from '../types';
 import { TweetComposer } from './TweetComposer';
 import { TweetCard } from './TweetCard';
 import { TweetCardSkeleton } from './TweetCardSkeleton';
 import { AdSlot } from './AdSlot';
+import { buildMemberLabelMap } from '../utils/creatorEligibility';
 
 interface TweetFeedProps {
   currentUser: User;
@@ -13,6 +14,12 @@ interface TweetFeedProps {
   likedTweetIds: string[];
   favoritedTweetIds: string[];
   campaigns?: AdCampaign[];
+  /** لحساب وسم "الكاتب/قارئ مسجل" الحقيقي لكل صاحب تغريدة (انظر
+   *  resolveAuthorMemberLabel) بدل الثقة بـtweet.authorRole المخزَّن وقت
+   *  النشر — يحمل قيمة role الأصلية دائماً بصرف النظر عن الأهلية الفعلية. */
+  users: User[];
+  articles: Article[];
+  followsData: { followingId: string }[];
   onPostTweet: (content: string, imageUrl?: string, mediaType?: 'image' | 'video') => void | Promise<void>;
   /** يتغيّر كلما ضُغط زر الكتابة العائم وكان المستخدم في وضع التغريد — يُستخدَم
    *  لتمرير الصفحة إلى المُنشئ وتركيز حقل الكتابة، بدل فتح محرر مقال كامل لا
@@ -51,6 +58,9 @@ export const TweetFeed: React.FC<TweetFeedProps> = ({
   likedTweetIds,
   favoritedTweetIds,
   campaigns = [],
+  users,
+  articles,
+  followsData,
   onPostTweet,
   focusComposeTrigger,
   searchQuery,
@@ -77,6 +87,13 @@ export const TweetFeed: React.FC<TweetFeedProps> = ({
         t.authorUsername.toLowerCase().includes(q)
     );
   }, [tweets, searchQuery]);
+
+  // خريطة (معرّف كاتب ← وسم حقيقي) محسوبة مرة واحدة لكل كتّاب فريدين
+  // ظاهرين حالياً، بدل إعادة حساب نفس الكاتب في كل تغريدة له.
+  const authorLabels = useMemo(
+    () => buildMemberLabelMap(filteredTweets.map((t) => t.authorId), users, articles, followsData),
+    [filteredTweets, users, articles, followsData]
+  );
 
   return (
     <div className="space-y-4">
@@ -105,6 +122,7 @@ export const TweetFeed: React.FC<TweetFeedProps> = ({
             )}
             <TweetCard
               tweet={tweet}
+              authorLabel={authorLabels[tweet.authorId]}
               currentUser={currentUser}
               isLiked={likedTweetIds.includes(tweet.id)}
               isFavorited={favoritedTweetIds.includes(tweet.id)}
