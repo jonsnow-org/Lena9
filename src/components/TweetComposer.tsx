@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Send, Paperclip, Link2, X, Loader2 } from 'lucide-react';
+import { Send, Paperclip, X, Loader2 } from 'lucide-react';
 import { User } from '../types';
 import { uploadAdMedia, fetchMediaUploadStatus } from '../services/mediaApi';
 import { VideoPlayer } from './VideoPlayer';
@@ -61,14 +61,14 @@ export const TweetComposer: React.FC<TweetComposerProps> = ({
   const [imageUploading, setImageUploading] = useState(false);
   const [imageError, setImageError] = useState('');
   const [uploadConfigured, setUploadConfigured] = useState<boolean | null>(null);
-  // حقل "رابط جاهز" — بديل يدوي دائم المتاح لرفع الملفات (لا يظهر فقط عند
-  // فشل الرفع). كان هذا المسار موجوداً فعلياً في المدونة والإعلانات
-  // (MediaUploadInput.tsx) وغائباً تماماً عن التغريد؛ هذا بالضبط ما جعل أي
-  // عطل حقيقي أو مؤقت في خدمة الرفع (Cloudinary/الخادم) يبدو "معطَّلاً
-  // بالكامل" في قسم تغريد تحديداً بلا أي مخرج، بينما المدونة/الإعلانات
-  // تستمران بالعمل عملياً عبر لصق رابط خارجي دون أن يلاحظ أحد أن الرفع
-  // المباشر نفسه كان متعثراً. الآن نفس شبكة الأمان متاحة في الحالتين.
-  const [showUrlField, setShowUrlField] = useState(false);
+  // لوحة إرفاق واحدة قابلة للطي والإغلاق — زر "إرفاق" وحيد يفتحها عند
+  // الطلب فقط (بدل فتح منتقي الملفات مباشرة بلا تحذير)، وتحوي داخلها كِلا
+  // الخيارين معاً (رفع من الجهاز / لصق رابط جاهز) مع زر إغلاق صريح. الإصدار
+  // السابق كان يفتح صفاً منفصلاً دائماً بلا إغلاق بمجرد فشل رفع واحد —
+  // فيبقى شريط خطأ أحمر عالقاً في صندوق التغريد الرئيسي الذي يراه كل
+  // مستخدم، بلا أي طريقة لإخفائه. هذا التصميم يحتوي كل شيء في مكان واحد
+  // مضغوط يُغلَق تلقائياً عند النجاح، أو يدوياً بضغطة X في أي وقت.
+  const [attachPanelOpen, setAttachPanelOpen] = useState(false);
   const [urlInput, setUrlInput] = useState('');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -81,10 +81,8 @@ export const TweetComposer: React.FC<TweetComposerProps> = ({
     // بمجرد تأكيد التفعيل مرة، لا حاجة لإعادة التحقق. لكن نتيجة سلبية لا
     // تُحفَظ أبداً في uploadConfigured (يبقى null) — فشل التحقق مرة واحدة
     // (غالباً خادم Render لا يزال يستيقظ من سبات، أو انقطاع شبكة عابر) كان
-    // يُعطِّل زر الإرفاق نهائياً لبقية عمر هذا المكوّن بلا أي إعادة محاولة،
-    // وهذا بالضبط ما بدا وكأن "الرفع لا يعمل في قسم تغريد" تحديداً بينما هو
-    // يعمل في المدونة/الإعلانات فقط لأن حظّهما أوفر توقيتاً لا لفرق حقيقي
-    // في الكود. كل ضغطة تالية تعيد المحاولة من الصفر إن لم تنجح سابقاً.
+    // يُعطِّل زر الإرفاق نهائياً لبقية عمر هذا المكوّن بلا أي إعادة محاولة.
+    // كل ضغطة تالية تعيد المحاولة من الصفر إن لم تنجح سابقاً.
     if (uploadConfigured) {
       fileInputRef.current?.click();
       return;
@@ -94,8 +92,7 @@ export const TweetComposer: React.FC<TweetComposerProps> = ({
       setUploadConfigured(true);
       fileInputRef.current?.click();
     } else {
-      setImageError('تعذّر الاتصال بخدمة رفع الوسائط. يمكنك لصق رابط جاهز بدلاً من ذلك، أو المحاولة لاحقاً.');
-      setShowUrlField(true);
+      setImageError('تعذّر الاتصال بخدمة رفع الملفات الآن. الصق رابطاً جاهزاً بدلاً من ذلك، أو حاول لاحقاً.');
     }
   };
 
@@ -106,7 +103,13 @@ export const TweetComposer: React.FC<TweetComposerProps> = ({
     setImageUrl(url);
     setMediaType(VIDEO_URL_PATTERN.test(url) ? 'video' : 'image');
     setUrlInput('');
-    setShowUrlField(false);
+    setAttachPanelOpen(false);
+  };
+
+  const closeAttachPanel = () => {
+    setAttachPanelOpen(false);
+    setImageError('');
+    setUrlInput('');
   };
 
   const handleImageFile = async (file: File) => {
@@ -142,6 +145,7 @@ export const TweetComposer: React.FC<TweetComposerProps> = ({
       const result = await uploadAdMedia(file, 'tweet');
       setImageUrl(result.url);
       setMediaType(isVideo ? 'video' : 'image');
+      setAttachPanelOpen(false);
     } catch (err: any) {
       setImageError(err?.message || 'تعذر رفع الملف.');
     } finally {
@@ -194,37 +198,68 @@ export const TweetComposer: React.FC<TweetComposerProps> = ({
             }}
           />
 
-          {imageUploading && (
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 text-xs text-slate-500">
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              <span>جاري رفع الملف...</span>
-            </div>
-          )}
+          {attachPanelOpen && !imageUrl && (
+            <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-3 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">إرفاق صورة أو فيديو قصير</span>
+                <button
+                  type="button"
+                  onClick={closeAttachPanel}
+                  aria-label="إغلاق"
+                  className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
 
-          {showUrlField && !imageUploading && (
-            <div className="flex items-center gap-1.5">
-              <input
-                type="url"
-                dir="ltr"
-                value={urlInput}
-                onChange={(e) => setUrlInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleUrlSubmit();
-                  }
-                }}
-                placeholder="https://... رابط صورة أو فيديو مباشر"
-                className="flex-1 min-w-0 px-3 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs outline-hidden focus:border-brand-500 text-start"
-              />
-              <button
-                type="button"
-                onClick={handleUrlSubmit}
-                disabled={!urlInput.trim()}
-                className="px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white text-[11px] font-bold shrink-0"
-              >
-                إرفاق
-              </button>
+              {imageUploading ? (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white dark:bg-slate-900 text-xs text-slate-500">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>جاري رفع الملف...</span>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handlePickImage}
+                  className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 hover:border-brand-400"
+                >
+                  <Paperclip className="w-3.5 h-3.5" />
+                  <span>رفع من الجهاز</span>
+                </button>
+              )}
+
+              <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
+                <span className="flex-1 h-px bg-slate-200 dark:bg-slate-700" />
+                <span>أو</span>
+                <span className="flex-1 h-px bg-slate-200 dark:bg-slate-700" />
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="url"
+                  dir="ltr"
+                  value={urlInput}
+                  onChange={(e) => setUrlInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleUrlSubmit();
+                    }
+                  }}
+                  placeholder="https://... رابط صورة أو فيديو مباشر"
+                  className="flex-1 min-w-0 px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs outline-hidden focus:border-brand-500 text-start"
+                />
+                <button
+                  type="button"
+                  onClick={handleUrlSubmit}
+                  disabled={!urlInput.trim()}
+                  className="px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white text-[11px] font-bold shrink-0"
+                >
+                  إرفاق
+                </button>
+              </div>
+
+              {imageError && <p className="text-[11px] text-rose-500 font-medium">{imageError}</p>}
             </div>
           )}
 
@@ -246,30 +281,27 @@ export const TweetComposer: React.FC<TweetComposerProps> = ({
             </div>
           )}
 
-          {imageError && <p className="text-[11px] text-rose-500 font-medium">{imageError}</p>}
-
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={handlePickImage}
+                onClick={() => {
+                  if (attachPanelOpen) {
+                    closeAttachPanel();
+                  } else {
+                    setImageError('');
+                    setAttachPanelOpen(true);
+                  }
+                }}
                 disabled={imageUploading}
-                className="p-2 rounded-lg text-slate-400 hover:text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-950/20 active:scale-90 transition-all disabled:opacity-40"
+                className={`p-2 rounded-lg transition-all active:scale-90 disabled:opacity-40 ${
+                  attachPanelOpen
+                    ? 'text-brand-600 bg-brand-50 dark:bg-brand-950/20'
+                    : 'text-slate-400 hover:text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-950/20'
+                }`}
                 title="إرفاق صورة أو فيديو قصير"
               >
                 <Paperclip className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setImageError('');
-                  setShowUrlField((s) => !s);
-                }}
-                disabled={imageUploading}
-                className="p-2 rounded-lg text-slate-400 hover:text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-950/20 active:scale-90 transition-all disabled:opacity-40"
-                title="أو الصق رابط صورة/فيديو جاهزاً"
-              >
-                <Link2 className="w-4 h-4" />
               </button>
               <span
                 className={`text-[11px] font-mono font-bold ${
