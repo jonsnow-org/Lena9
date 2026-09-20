@@ -92,7 +92,7 @@ export const TweetComposer: React.FC<TweetComposerProps> = ({
       setUploadConfigured(true);
       fileInputRef.current?.click();
     } else {
-      setImageError('تعذّر الاتصال بخدمة رفع الملفات الآن. الصق رابطاً جاهزاً بدلاً من ذلك، أو حاول لاحقاً.');
+      setImageError('رفع الملفات من الجهاز غير مفعّل على هذا الخادم بعد. الصق رابطاً جاهزاً بدلاً من ذلك.');
     }
   };
 
