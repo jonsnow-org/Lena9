@@ -1,0 +1,67 @@
+name: Client Error Reports
+
+# يجمع أخطاء المتصفح الحقيقية المُرسَلة تلقائياً من كل عميل (انظر
+# src/utils/errorLog.ts ونقطة /api/client-errors/report في server.ts) —
+# بديل الزر العائم "سجل الأخطاء" الذي كان يُعرض مباشرة لكل مستخدم عادي على
+# تطبيق حي (غير احترافي إطلاقاً). كل تشغيل هنا يسحب الدفعة الحالية
+# المخزَّنة في Firestore عبر الخادم ويفتح/يحدّث Issue واحد بمحتواها بدل ذلك
+# — نفس أسلوب health-check.yml تماماً (gh CLI + GITHUB_TOKEN الافتراضي).
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/30 * * * *'
+
+permissions:
+  issues: write
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch pending client error reports
+        id: fetch
+        run: |
+          status=$(curl -sS -o /tmp/body.json -w "%{http_code}" --max-time 30 \
+            -H "x-bots-cron-secret: ${{ secrets.BOTS_CRON_SECRET }}" \
+            https://literium-wjct.onrender.com/api/client-errors/pending || echo "000")
+          echo "HTTP $status"
+          cat /tmp/body.json || true
+          if [ "$status" != "200" ]; then
+            echo "count=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          count=$(node -e "console.log((JSON.parse(require('fs').readFileSync('/tmp/body.json','utf8')).count)||0)")
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+
+      - name: Build issue body from entries
+        if: steps.fetch.outputs.count != '0'
+        run: |
+          node -e "
+            const data = JSON.parse(require('fs').readFileSync('/tmp/body.json', 'utf8'));
+            const body = data.entries.map((e) => {
+              const stack = (e.stack || '').slice(0, 1500);
+              return '**' + (e.source || 'unknown') + '** — ' + (e.time || '') + '\n' +
+                (e.page || '') + '\n\n\`' + e.message + '\`\n\n<details><summary>Stack</summary>\n\n\`\`\`\n' +
+                stack + '\n\`\`\`\n</details>';
+            }).join('\n\n---\n\n');
+            require('fs').writeFileSync('/tmp/issue-body.md', body);
+          "
+
+      - name: Ensure the client-errors label exists
+        if: steps.fetch.outputs.count != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh label create client-errors --color FBCA04 --description "Auto-reported browser errors from src/utils/errorLog.ts" --repo ${{ github.repository }} || true
+
+      - name: Open or update the report issue
+        if: steps.fetch.outputs.count != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          existing=$(gh issue list --repo ${{ github.repository }} --label client-errors --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo ${{ github.repository }} --body-file /tmp/issue-body.md
+          else
+            gh issue create --repo ${{ github.repository }} --title "🐛 تقرير أخطاء عملاء تلقائي" --label client-errors --body-file /tmp/issue-body.md
+          fi

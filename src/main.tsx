@@ -3,7 +3,6 @@ import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import {SplashScreen} from './components/SplashScreen.tsx';
 import {ErrorBoundary} from './components/ErrorBoundary.tsx';
-import {ErrorLogButton} from './components/ErrorLogButton.tsx';
 import './index.css';
 import {applyStoredThemePresetImmediately} from './utils/themeEngine';
 import {initErrorLog} from './utils/errorLog';
@@ -39,8 +38,6 @@ function Root() {
       <ErrorBoundary>
         <App />
       </ErrorBoundary>
-      {/* عمداً خارج ErrorBoundary — يبقى يعمل حتى لو تعطّل App بالكامل. */}
-      <ErrorLogButton />
     </>
   );
 }

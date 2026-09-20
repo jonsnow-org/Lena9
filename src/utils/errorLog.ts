@@ -4,6 +4,12 @@
  * مُعالَجة (`unhandledrejection`)، وطلبات fetch الفاشلة — في مكان واحد، بصيغة
  * نص جاهز للنسخ مباشرة. نظير مباشر لـ AppErrorLog في نسخة APK (Kotlin).
  *
+ * كل خطأ يُرفَع تلقائياً أيضاً لنقطة /api/client-errors/report على الخادم
+ * (Firestore، ثم سير GitHub Actions دوري يجمعها في Issue واحد) — بديل زر
+ * "سجل الأخطاء" العائم الذي كان يعرض شارة رقمية أمام كل مستخدم عادي على
+ * تطبيق حي، وهو أمر غير احترافي إطلاقاً. الرفع صامت تماماً ولا يُعاد
+ * تسجيله كخطأ عند فشله بدوره (كي لا يدخل في حلقة تسجيل ذاتية).
+ *
  * عمداً بلا أي اعتماد على React — يُستورَد في main.tsx قبل تحميل <App/>
  * ويُسجَّل بمجرد الاستيراد (أثر جانبي)، حتى يلتقط أعطالاً تحدث قبل أن يُرسم
  * أي شيء على الشاشة إطلاقاً.
@@ -20,8 +26,39 @@ export interface LoggedError {
 const STORAGE_KEY = 'literium_error_log';
 const MAX_ENTRIES = 50;
 
-type Listener = () => void;
-const listeners = new Set<Listener>();
+// مرجع خام لـ fetch مأخوذ عند تحميل هذه الوحدة — قبل أن يُغلِّفه
+// initErrorLog أدناه لالتقاط طلبات الشبكة الفاشلة. استخدام المرجع الملتف
+// لإرسال تقرير الخطأ نفسه كان سيُنشئ حلقة: فشل هذا الإرسال نفسه سيُسجَّل
+// كخطأ آخر يُرسَل بدوره... إلخ.
+const rawFetch = typeof window !== 'undefined' ? window.fetch.bind(window) : null;
+
+// يمنع إرسال نفس الخطأ (نفس المصدر + الرسالة) أكثر من مرة واحدة في هذه
+// الجلسة — خطأ متكرر عشرات المرات (كحلقة عرض معطوبة) يجب أن يظهر مرة
+// واحدة فقط في التقرير، لا أن يُغرق الخادم بنفس الرسالة مراراً.
+const reportedSignatures = new Set<string>();
+
+function reportToServer(entry: LoggedError): void {
+  if (!rawFetch) return;
+  const signature = `${entry.source}::${entry.message}`;
+  if (reportedSignatures.has(signature)) return;
+  reportedSignatures.add(signature);
+  try {
+    rawFetch('/api/client-errors/report', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source: entry.source,
+        message: entry.message,
+        stack: entry.stack,
+        time: entry.time,
+        page: window.location.href,
+        userAgent: navigator.userAgent
+      })
+    }).catch(() => {});
+  } catch {
+    // إرسال التقرير نفسه ليس وظيفة حرجة — تجاهل صامت لأي فشل.
+  }
+}
 
 function readAll(): LoggedError[] {
   try {
@@ -57,34 +94,10 @@ export function logError(source: string, error: unknown, extra?: string): void {
     current.unshift(entry);
     while (current.length > MAX_ENTRIES) current.pop();
     writeAll(current);
-    listeners.forEach((cb) => {
-      try {
-        cb();
-      } catch {
-        /* لا تسمح لمستمع معطوب بإسقاط باقي المستمعين */
-      }
-    });
+    reportToServer(entry);
   } catch {
     // تسجيل الخطأ نفسه يجب ألا يُسبّب خطأ آخر أبداً.
   }
-}
-
-export function getErrorLog(): LoggedError[] {
-  return readAll();
-}
-
-export function clearErrorLog(): void {
-  try {
-    localStorage.removeItem(STORAGE_KEY);
-  } catch {
-    /* تجاهل صامت */
-  }
-  listeners.forEach((cb) => cb());
-}
-
-export function subscribeErrorLog(cb: Listener): () => void {
-  listeners.add(cb);
-  return () => listeners.delete(cb);
 }
 
 /** نص جاهز للنسخ مباشرة — معلومات المتصفح/الصفحة ثم كل الأخطاء الأحدث أولاً. */

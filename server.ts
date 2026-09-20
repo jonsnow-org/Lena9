@@ -2742,6 +2742,79 @@ async function startServer() {
   });
 
   // ------------------------------------------------------------------
+  // تقارير أخطاء العميل التلقائية (src/utils/errorLog.ts)
+  // ------------------------------------------------------------------
+  // بديل الزر العائم "سجل الأخطاء" الذي كان يعرض شارة رقمية أمام كل مستخدم
+  // عادي على تطبيق حي — غير احترافي إطلاقاً. كل خطأ متصفح حقيقي يُخزَّن هنا
+  // في Firestore بصمت، ويجمعه سير GitHub Actions دوري (client-error-
+  // reports.yml) في Issue واحد بدل أن يراه أي مستخدم.
+  const CLIENT_ERROR_MAX_PER_MINUTE = 40;
+  let clientErrorWindowStart = Date.now();
+  let clientErrorCountThisWindow = 0;
+
+  app.post('/api/client-errors/report', async (req, res) => {
+    // نقطة عامة بلا مصادقة (يجب أن تعمل حتى قبل تسجيل الدخول) — حد بسيط
+    // إجمالي كل دقيقة عبر كل الزوار مجتمعين يكفي لمنع إغراقها بلا داع، دون
+    // أي تعقيد إضافي غير ضروري لتشخيص أعطال حقيقية.
+    const now = Date.now();
+    if (now - clientErrorWindowStart > 60_000) {
+      clientErrorWindowStart = now;
+      clientErrorCountThisWindow = 0;
+    }
+    if (clientErrorCountThisWindow >= CLIENT_ERROR_MAX_PER_MINUTE) {
+      return res.status(429).json({ ok: false });
+    }
+    clientErrorCountThisWindow++;
+
+    // بلا Firebase Admin لا مكان لتخزين التقرير — تجاهل صامت، لا نُفشل
+    // تجربة المستخدم أو نسجّل خطأً آخر بسبب هذا.
+    if (!isAdminConfigured()) {
+      return res.json({ ok: true });
+    }
+    try {
+      const { source, message, stack, time, page, userAgent } = req.body || {};
+      if (!message || typeof message !== 'string') {
+        return res.status(400).json({ ok: false });
+      }
+      await getAdminDb()
+        .collection('clientErrorReports')
+        .add({
+          source: String(source || 'unknown').slice(0, 200),
+          message: String(message).slice(0, 500),
+          stack: String(stack || '').slice(0, 3000),
+          time: String(time || new Date().toISOString()).slice(0, 40),
+          page: String(page || '').slice(0, 300),
+          userAgent: String(userAgent || '').slice(0, 300),
+          createdAt: new Date().toISOString()
+        });
+      res.json({ ok: true });
+    } catch (err) {
+      // فشل تسجيل الخطأ نفسه لا يجب أن يظهر للمستخدم بأي شكل.
+      res.json({ ok: true });
+    }
+  });
+
+  // يُستدعى فقط من سير client-error-reports.yml (نفس مفتاح BOTS_CRON_SECRET
+  // المستخدم لدورة البوتات — لا حاجة لسرّ منفصل). يحذف الدفعة فور تسليمها
+  // للسير الذي يفتح/يحدّث Issue بمحتواها مباشرة، فلا داعٍ للاحتفاظ بنسخة
+  // دائمة هنا بعد ذلك.
+  app.get('/api/client-errors/pending', async (req, res) => {
+    if (!requireBotsCronSecret(req, res)) return;
+    if (!isAdminConfigured()) {
+      return res.json({ count: 0, entries: [] });
+    }
+    try {
+      const db = getAdminDb();
+      const snap = await db.collection('clientErrorReports').limit(30).get();
+      const entries = snap.docs.map((doc) => doc.data());
+      await Promise.all(snap.docs.map((doc) => doc.ref.delete()));
+      res.json({ count: entries.length, entries });
+    } catch (err: any) {
+      res.status(500).json({ count: 0, entries: [], error: err?.message });
+    }
+  });
+
+  // ------------------------------------------------------------------
   // التحقق من الهوية (KYC) — فحص آلي حقيقي بمطابقة الاسم على الوثيقة
   // ------------------------------------------------------------------
   // كان طلب KYC نصياً بحتاً (نوع الوثيقة + رقمها فقط) بلا أي صورة إطلاقاً،
