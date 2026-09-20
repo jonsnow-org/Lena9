@@ -1895,7 +1895,11 @@ export function App() {
       setArticles(freshArticles);
       setTweets(freshTweets);
     } catch (err) {
+      // كان هذا الفشل صامتاً تماماً (console.error فقط) — يدوّر مؤشر
+      // التحديث ثم يتوقف بلا أي تغيير وبلا أي تفسير، فيبدو للمستخدم أن
+      // "زر التحديث لا يفعل شيئاً" رغم وجود سبب حقيقي (غالباً انقطاع شبكة).
       console.error('تعذر تحديث الخلاصة:', err);
+      alert('تعذر تحديث المحتوى الآن. تحقق من اتصالك بالإنترنت وحاول مجدداً.');
     } finally {
       setIsRefreshing(false);
     }
@@ -2168,19 +2172,12 @@ export function App() {
     }
   };
 
-  const handleShareTweet = async (tweet: Tweet) => {
-    const shareUrl = `${window.location.origin}${window.location.pathname}?tweet=${tweet.id}`;
-    try {
-      if (navigator.share) {
-        await navigator.share({ text: tweet.content, url: shareUrl });
-      } else {
-        await navigator.clipboard.writeText(shareUrl);
-        alert('تم نسخ رابط التغريدة.');
-      }
-      incrementTweetSharesInFirestore(tweet.id).catch((err) => console.error('تعذر تحديث عدد المشاركات:', err));
-    } catch {
-      // المستخدم ألغى نافذة المشاركة — لا حاجة لأي إجراء.
-    }
+  // الإجراء الفعلي (مشاركة نظام حقيقية أو بطاقة معاينة بديلة) أصبح في
+  // TweetCard نفسه (نفس أسلوب handleShareArticle/ArticleReader) — هذه
+  // الدالة تسجّل الإحصائية فقط بصرف النظر عن نجاح إتمام المشاركة فعلياً،
+  // تماماً كما يعمل عدّاد مشاركة المقالات.
+  const handleShareTweet = (tweet: Tweet) => {
+    incrementTweetSharesInFirestore(tweet.id).catch((err) => console.error('تعذر تحديث عدد المشاركات:', err));
   };
 
   const handlePostTweetComment = async (tweetId: string, content: string, imageUrl?: string) => {

@@ -74,7 +74,9 @@ export const TweetComposer: React.FC<TweetComposerProps> = ({
 
   const remaining = MAX_TWEET_LENGTH - content.length;
   const isOverLimit = remaining < 0;
-  const canSubmit = content.trim().length > 0 && !isOverLimit && !isPosting && !imageUploading;
+  // يمكن نشر تغريدة بصورة/فيديو فقط بلا أي نص إطلاقاً — نفس سلوك منصات
+  // التغريد المعروفة؛ النص مطلوب فقط في حال عدم وجود أي مرفق أصلاً.
+  const canSubmit = (content.trim().length > 0 || !!imageUrl) && !isOverLimit && !isPosting && !imageUploading;
 
   // اكتشاف رابط صورة/فيديو مباشر دُوِّن داخل نص التغريدة نفسه وعرض معاينته
   // تلقائياً — بدل حقل رابط منفصل يفتحه المستخدم يدوياً بخطوة إضافية. هذا

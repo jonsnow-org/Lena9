@@ -5,6 +5,7 @@ import { timeAgoAr } from '../utils/dateFormat';
 import { uploadAdMedia, fetchMediaUploadStatus } from '../services/mediaApi';
 import { submitUserReport } from '../services/firestoreService';
 import { VideoPlayer } from './VideoPlayer';
+import { ShareModal } from './ShareModal';
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
@@ -161,8 +162,31 @@ export const TweetCard: React.FC<TweetCardProps> = ({
   const [reportReason, setReportReason] = useState<'abusive' | 'harassment' | 'spam' | 'other'>('abusive');
   const [reportDetails, setReportDetails] = useState('');
   const [isSubmittingReport, setIsSubmittingReport] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
 
   const canDelete = currentUser.id === tweet.authorId || currentUser.role === 'admin';
+
+  const shareUrl = `${window.location.origin}${window.location.pathname}?tweet=${tweet.id}`;
+
+  // نفس أسلوب ArticleReader تماماً: onShare يسجّل إحصائية المشاركة فقط
+  // (الآن)، بينما الإجراء الفعلي هنا — مشاركة نظام حقيقية إن دعمها الجهاز،
+  // وإلا بطاقة معاينة بديلة (ShareModal) بدل نسخ رابط عارٍ فوراً بلا أي
+  // شيء آخر كما كان يحدث سابقاً.
+  const handleShareClick = async () => {
+    onShare(tweet);
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          text: tweet.content || 'شاهد هذه التغريدة على ليتيريوم',
+          url: shareUrl
+        });
+        return;
+      } catch (err: any) {
+        if (err?.name === 'AbortError') return;
+      }
+    }
+    setShowShareModal(true);
+  };
 
   const handleSubmitReport = async () => {
     setIsSubmittingReport(true);
@@ -259,7 +283,7 @@ export const TweetCard: React.FC<TweetCardProps> = ({
                 عرض الملف الشخصي
               </button>
               <button
-                onClick={() => onShare(tweet)}
+                onClick={handleShareClick}
                 className="w-full flex items-center gap-2 px-3.5 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 font-bold"
               >
                 <Share2 className="w-3.5 h-3.5" />
@@ -354,10 +378,12 @@ export const TweetCard: React.FC<TweetCardProps> = ({
         </div>
       )}
 
-      {/* Content */}
-      <p className="text-sm text-slate-800 dark:text-slate-100 leading-relaxed whitespace-pre-wrap break-words select-text">
-        {tweet.content}
-      </p>
+      {/* Content — قد تكون فارغة لتغريدة صورة/فيديو بلا نص إطلاقاً */}
+      {tweet.content && (
+        <p className="text-sm text-slate-800 dark:text-slate-100 leading-relaxed whitespace-pre-wrap break-words select-text">
+          {tweet.content}
+        </p>
+      )}
 
       {tweet.imageUrl && (
         tweet.mediaType === 'video' ? (
@@ -386,7 +412,7 @@ export const TweetCard: React.FC<TweetCardProps> = ({
           icon={<MessageSquare className="w-4 h-4" />}
         />
         <TweetActionButton
-          onClick={() => onShare(tweet)}
+          onClick={handleShareClick}
           hoverClass="hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/20"
           label={String(tweet.sharesCount || 0)}
           icon={<Share2 className="w-4 h-4" />}
@@ -544,6 +570,15 @@ export const TweetCard: React.FC<TweetCardProps> = ({
           )}
         </div>
       )}
+
+      <ShareModal
+        isOpen={showShareModal}
+        onClose={() => setShowShareModal(false)}
+        title={`${tweet.authorName} على ليتيريوم`}
+        excerpt={tweet.content}
+        imageUrl={tweet.mediaType !== 'video' ? tweet.imageUrl : undefined}
+        url={shareUrl}
+      />
     </div>
   );
 };

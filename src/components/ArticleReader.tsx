@@ -12,8 +12,6 @@ import {
   Send,
   CornerDownLeft,
   DollarSign,
-  Copy,
-  Check,
   Eye,
   ShieldCheck,
   Type,
@@ -32,6 +30,7 @@ import confetti from 'canvas-confetti';
 import { Article, Comment, ReactionType, AdCampaign, User } from '../types';
 import { formatDateAr, formatDateTimeAr, timeAgoAr } from '../utils/dateFormat';
 import { SmartAdBanner } from './SmartAdBanner';
+import { ShareModal } from './ShareModal';
 import { AdSlot } from './AdSlot';
 import { VideoEmbed } from './VideoEmbed';
 import { VideoPlayer } from './VideoPlayer';
@@ -105,7 +104,6 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
   const [replyingToCommentId, setReplyingToCommentId] = useState<string | null>(null);
   const [replyText, setReplyText] = useState('');
   const [showShareModal, setShowShareModal] = useState(false);
-  const [copiedLink, setCopiedLink] = useState(false);
 
   // خريطة (معرّف معلّق ← وسم حقيقي) لكل معلّقين/رادّين فريدين على هذا
   // المقال — بدل الثقة بـComment.userRole/CommentReply.userRole المخزَّنين
@@ -310,22 +308,6 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
       }
     }
     setShowShareModal(true);
-  };
-
-  const handleCopyShareLink = async () => {
-    const shareUrl = getShareUrl();
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-    } catch {
-      const input = document.createElement('input');
-      input.value = shareUrl;
-      document.body.appendChild(input);
-      input.select();
-      document.execCommand('copy');
-      document.body.removeChild(input);
-    }
-    setCopiedLink(true);
-    setTimeout(() => setCopiedLink(false), 2000);
   };
 
   // Styling maps based on font size and theme
@@ -1066,73 +1048,14 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
         )}
 
         {/* Share Modal */}
-        {showShareModal && (
-          <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-            <div className="w-full max-w-sm rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 shadow-2xl animate-android-in">
-              <h4 className="font-bold text-base text-slate-900 dark:text-white mb-2 text-center">
-                مشاركة المقال
-              </h4>
-              <p className="text-xs text-slate-500 dark:text-slate-400 text-center mb-4">
-                شارك هذا المقال مع أصدقائك عبر المنصات الاجتماعية أو انسخ الرابط المباشر
-              </p>
-
-              <div className="grid grid-cols-4 gap-2 mb-4">
-                <a
-                  href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(article.title)}&url=${encodeURIComponent(getShareUrl())}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex flex-col items-center gap-1.5 p-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-xs font-semibold"
-                >
-                  <span className="text-lg">𝕏</span>
-                  <span className="text-[10px]">تويتر</span>
-                </a>
-                <a
-                  href={`https://api.whatsapp.com/send?text=${encodeURIComponent(article.title + ' ' + getShareUrl())}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex flex-col items-center gap-1.5 p-2.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 hover:bg-emerald-100 text-xs font-semibold"
-                >
-                  <span className="text-lg">💬</span>
-                  <span className="text-[10px]">واتساب</span>
-                </a>
-                <a
-                  href={`https://t.me/share/url?url=${encodeURIComponent(getShareUrl())}&text=${encodeURIComponent(article.title)}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex flex-col items-center gap-1.5 p-2.5 rounded-2xl bg-sky-50 dark:bg-sky-950/50 text-sky-600 hover:bg-sky-100 text-xs font-semibold"
-                >
-                  <span className="text-lg">✈️</span>
-                  <span className="text-[10px]">تيليجرام</span>
-                </a>
-                <a
-                  href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(getShareUrl())}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex flex-col items-center gap-1.5 p-2.5 rounded-2xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 hover:bg-blue-100 text-xs font-semibold"
-                >
-                  <span className="text-lg">📘</span>
-                  <span className="text-[10px]">فيسبوك</span>
-                </a>
-              </div>
-
-              <div className="flex gap-2">
-                <button
-                  onClick={handleCopyShareLink}
-                  className="flex-1 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all active:scale-95"
-                >
-                  {copiedLink ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                  <span>{copiedLink ? 'تم نسخ الرابط!' : 'نسخ رابط المقال'}</span>
-                </button>
-                <button
-                  onClick={() => setShowShareModal(false)}
-                  className="px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold text-xs hover:bg-slate-200 active:scale-95"
-                >
-                  إغلاق
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        <ShareModal
+          isOpen={showShareModal}
+          onClose={() => setShowShareModal(false)}
+          title={article.title}
+          excerpt={article.description}
+          imageUrl={article.coverImage}
+          url={getShareUrl()}
+        />
       </div>
     </div>
   );
