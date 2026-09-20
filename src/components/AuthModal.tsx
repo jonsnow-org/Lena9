@@ -5,7 +5,6 @@ import {
   X,
   BookOpen,
   PenTool,
-  Megaphone,
   ArrowRight,
   Building,
   AlertCircle,
@@ -13,7 +12,8 @@ import {
   Trash2,
   UserCog,
   Info,
-  CheckCircle2
+  CheckCircle2,
+  ChevronDown
 } from 'lucide-react';
 import { UserRole } from '../types';
 import { registerWithEmail, loginWithEmail, resetPassword, getAuthErrorMessage } from '../firebase';
@@ -112,6 +112,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [resetSent, setResetSent] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
 
+  // نافذة التسجيل كانت طويلة جداً — شروط احتساب الأرباح الكاملة (5 بنود) +
+  // مربع توضيحي عن الإعلانات + نبذة/تخصصات/صورة كانت كلها مفروضة أمام
+  // المستخدم قبل حتى وصوله لحقلي البريد وكلمة المرور، فيغرق فيها بدل رؤية
+  // نموذج تسجيل الدخول بوضوح. الآن الاسم فقط ظاهر دائماً (قصير)، وبقية
+  // التفاصيل (شروط الأرباح، وتخصيص الملف الشخصي) خلف سطر واحد قابل للطي،
+  // مطويّاً افتراضياً — يمكن تسجيل حساب كامل بأربعة حقول فقط.
+  const [showEligibilityDetails, setShowEligibilityDetails] = useState(false);
+  const [showProfileExtras, setShowProfileExtras] = useState(false);
+  // قائمة التخصصات كانت 17 زراً معروضة كلها دفعة واحدة على عدة صفوف — أصبحت
+  // الآن قائمة منسدلة واحدة: ضغطة تفتحها للاختيار، ضغطة أخرى (أو "تم") تطويها.
+  const [specialtyDropdownOpen, setSpecialtyDropdownOpen] = useState(false);
+
   useEffect(() => {
     setRole('writer');
     if (initialMode) setMode(initialMode);
@@ -121,6 +133,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setResetSubmitting(false);
     setResetSent(false);
     setResetError(null);
+    setShowEligibilityDetails(false);
+    setShowProfileExtras(false);
+    setSpecialtyDropdownOpen(false);
 
     // إفراغ الحقول في كل مرة تُفتح فيها النافذة.
     if (isOpen) {
@@ -386,52 +401,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             )}
 
             {mode === 'register' && !isForgotPassword && (
-              <div className="space-y-3.5 p-4 rounded-2xl bg-teal-50/40 dark:bg-teal-950/20 border border-teal-200/60 dark:border-teal-900/40">
-                <div className="flex items-center gap-1.5 text-xs font-bold text-teal-800 dark:text-teal-300">
-                  <PenTool className="w-4 h-4 text-teal-600" />
-                  <span>بيانات الكاتب والملف الأدبي:</span>
-                </div>
-
-                {/* شروط تحقيق الربح والانضمام لبرنامج شركاء المحتوى */}
-                <div className="p-3.5 rounded-xl bg-white/80 dark:bg-slate-900/50 border border-teal-200/60 dark:border-teal-900/40 space-y-2.5">
-                  <div className="flex items-center gap-1.5 text-xs font-extrabold text-teal-800 dark:text-teal-300">
-                    <Info className="w-4 h-4 text-teal-600 shrink-0" />
-                    <span>شروط الانضمام لبرنامج شركاء المحتوى (احتساب الأرباح)</span>
-                  </div>
-                  <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
-                    الكتابة والقراءة والنشر متاحة فوراً لأي حساب مسجل دون قيد. لكن احتساب أرباح الإعلانات ومبيعات المقالات المقفلة يبدأ فقط بعد تحقيق كل الشروط التالية معاً:
-                  </p>
-                  <ul className="space-y-1.5">
-                    {[
-                      `${CREATOR_ELIGIBILITY_THRESHOLDS.MIN_FOLLOWERS} متابع على الأقل`,
-                      `${CREATOR_ELIGIBILITY_THRESHOLDS.MIN_VALID_VIEWS.toLocaleString('ar-EG')} مشاهدة موثوقة على الأقل لمقالاتك المنشورة`,
-                      `${CREATOR_ELIGIBILITY_THRESHOLDS.MIN_ACCOUNT_AGE_DAYS} يوماً على الأقل على عمر الحساب`,
-                      `${CREATOR_ELIGIBILITY_THRESHOLDS.MIN_PUBLISHED_ARTICLES} مقالات منشورة على الأقل`,
-                      'توثيق الهوية (KYC) — شرط إلزامي لسحب الأرباح'
-                    ].map((cond) => (
-                      <li key={cond} className="flex items-start gap-1.5 text-[11px] text-slate-700 dark:text-slate-300 font-medium">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-teal-600 shrink-0 mt-0.5" />
-                        <span>{cond}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  <div className="pt-2 border-t border-teal-200/50 dark:border-teal-900/30 space-y-1 text-[11px]">
-                    <p className="font-bold text-slate-800 dark:text-slate-200">حصة الكاتب من الأرباح بعد تحقيق الأهلية:</p>
-                    <p className="text-slate-600 dark:text-slate-400">• إعلانات داخل المقالات: <span className="font-bold text-teal-600 dark:text-teal-400">{REVENUE_SHARES.IN_ARTICLE_ADS.LABEL}</span></p>
-                    <p className="text-slate-600 dark:text-slate-400">• إعلانات الملف الشخصي: <span className="font-bold text-teal-600 dark:text-teal-400">{REVENUE_SHARES.WRITER_PROFILE_ADS.LABEL}</span></p>
-                    <p className="text-slate-600 dark:text-slate-400">• مبيعات المقالات المقفلة: <span className="font-bold text-teal-600 dark:text-teal-400">{REVENUE_SHARES.LOCKED_ARTICLES.LABEL}</span></p>
-                  </div>
-                </div>
-
-                {/* توضيح بخصوص الإعلانات والترويج */}
-                <div className="p-3 rounded-xl bg-cyan-50/50 dark:bg-cyan-950/20 border border-cyan-200/60 dark:border-cyan-900/40 flex items-start gap-2.5 text-cyan-900 dark:text-cyan-200">
-                  <Megaphone className="w-4 h-4 text-cyan-600 shrink-0 mt-0.5" />
-                  <div className="text-[11px] leading-relaxed">
-                    <span className="font-extrabold">للراغبين بالإعلان والترويج: </span>
-                    <span>الترويج والإعلان متاح لجميع الحسابات المسجلة ولا يتطلب أي اشتراك خاص، بل يحتاج فقط لفتح حساب في المنصة وإيداع الرصيد في محفظتك لإطلاق حملاتك فوراً.</span>
-                  </div>
-                </div>
-
+              <div className="space-y-2.5">
                 <div>
                   <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
                     الاسم الكامل / الاسم الأدبي
@@ -444,55 +414,141 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     className="w-full px-3.5 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs outline-hidden focus:border-teal-500"
                   />
                 </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">نبذة تعريفية قصيرة</label>
-                  <textarea
-                    value={writerBio}
-                    onChange={(e) => setWriterBio(e.target.value)}
-                    rows={2}
-                    placeholder="نبذة عن مسيرتك الأدبية واهتماماتك الكتابية"
-                    className="w-full px-3.5 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs outline-hidden focus:border-teal-500 resize-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1.5">التخصصات والاهتمامات (اختر واحد أو أكثر):</label>
-                  <div className="flex flex-wrap gap-1.5">
-                    {WRITER_SPECIALTY_PRESETS.map((spec) => (
-                      <button
-                        key={spec}
-                        type="button"
-                        onClick={() => toggleSpecialty(spec)}
-                        className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all ${
-                          selectedSpecialties.includes(spec)
-                            ? 'bg-teal-600 text-white border-teal-600'
-                            : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
-                        }`}
-                      >
-                        {spec}
-                      </button>
-                    ))}
+
+                {/* شروط احتساب الأرباح — سطر موجز مطويّ افتراضياً بدل صندوق
+                    كامل بخمسة شروط يُفرَض على كل مسجّل قبل وصوله لحقلي
+                    البريد وكلمة المرور. */}
+                <button
+                  type="button"
+                  onClick={() => setShowEligibilityDetails((v) => !v)}
+                  className="w-full flex items-center justify-between gap-2 px-3.5 py-2 rounded-xl bg-teal-50/60 dark:bg-teal-950/20 border border-teal-200/60 dark:border-teal-900/40 text-[11px] font-bold text-teal-800 dark:text-teal-300"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <Info className="w-3.5 h-3.5 shrink-0" />
+                    <span>شروط احتساب أرباح الإعلانات والمقالات المقفلة</span>
+                  </span>
+                  <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform ${showEligibilityDetails ? 'rotate-180' : ''}`} />
+                </button>
+                {showEligibilityDetails && (
+                  <div className="p-3.5 rounded-xl bg-white/80 dark:bg-slate-900/50 border border-teal-200/60 dark:border-teal-900/40 space-y-2.5">
+                    <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+                      الكتابة والقراءة والنشر متاحة فوراً لأي حساب مسجل دون قيد. لكن احتساب أرباح الإعلانات ومبيعات المقالات المقفلة يبدأ فقط بعد تحقيق كل الشروط التالية معاً:
+                    </p>
+                    <ul className="space-y-1.5">
+                      {[
+                        `${CREATOR_ELIGIBILITY_THRESHOLDS.MIN_FOLLOWERS} متابع على الأقل`,
+                        `${CREATOR_ELIGIBILITY_THRESHOLDS.MIN_VALID_VIEWS.toLocaleString('ar-EG')} مشاهدة موثوقة على الأقل لمقالاتك المنشورة`,
+                        `${CREATOR_ELIGIBILITY_THRESHOLDS.MIN_ACCOUNT_AGE_DAYS} يوماً على الأقل على عمر الحساب`,
+                        `${CREATOR_ELIGIBILITY_THRESHOLDS.MIN_PUBLISHED_ARTICLES} مقالات منشورة على الأقل`,
+                        'توثيق الهوية (KYC) — شرط إلزامي لسحب الأرباح'
+                      ].map((cond) => (
+                        <li key={cond} className="flex items-start gap-1.5 text-[11px] text-slate-700 dark:text-slate-300 font-medium">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-teal-600 shrink-0 mt-0.5" />
+                          <span>{cond}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    <div className="pt-2 border-t border-teal-200/50 dark:border-teal-900/30 space-y-1 text-[11px]">
+                      <p className="font-bold text-slate-800 dark:text-slate-200">حصة الكاتب من الأرباح بعد تحقيق الأهلية:</p>
+                      <p className="text-slate-600 dark:text-slate-400">• إعلانات داخل المقالات: <span className="font-bold text-teal-600 dark:text-teal-400">{REVENUE_SHARES.IN_ARTICLE_ADS.LABEL}</span></p>
+                      <p className="text-slate-600 dark:text-slate-400">• إعلانات الملف الشخصي: <span className="font-bold text-teal-600 dark:text-teal-400">{REVENUE_SHARES.WRITER_PROFILE_ADS.LABEL}</span></p>
+                      <p className="text-slate-600 dark:text-slate-400">• مبيعات المقالات المقفلة: <span className="font-bold text-teal-600 dark:text-teal-400">{REVENUE_SHARES.LOCKED_ARTICLES.LABEL}</span></p>
+                    </div>
                   </div>
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1.5">صورة الملف الأدبي:</label>
-                  <div className="flex gap-2">
-                    {WRITER_AVATAR_PRESETS.map((url) => (
+                )}
+
+                {/* تخصيص الملف الشخصي — نبذة/تخصصات/صورة، كلها اختيارية
+                    وقابلة للتعديل لاحقاً من الإعدادات، فلا داعي لفرضها هنا
+                    قبل وصول المستخدم لحقلي البريد وكلمة المرور. */}
+                <button
+                  type="button"
+                  onClick={() => setShowProfileExtras((v) => !v)}
+                  className="w-full flex items-center justify-between gap-2 px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-[11px] font-bold text-slate-600 dark:text-slate-300"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <PenTool className="w-3.5 h-3.5 shrink-0" />
+                    <span>تخصيص الملف الشخصي (اختياري)</span>
+                  </span>
+                  <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform ${showProfileExtras ? 'rotate-180' : ''}`} />
+                </button>
+                {showProfileExtras && (
+                  <div className="space-y-3 p-3.5 rounded-xl bg-slate-50/60 dark:bg-slate-800/30 border border-slate-200 dark:border-slate-700">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">نبذة تعريفية قصيرة</label>
+                      <textarea
+                        value={writerBio}
+                        onChange={(e) => setWriterBio(e.target.value)}
+                        rows={2}
+                        placeholder="نبذة عن مسيرتك الأدبية واهتماماتك الكتابية"
+                        className="w-full px-3.5 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs outline-hidden focus:border-teal-500 resize-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1.5">التخصصات والاهتمامات:</label>
                       <button
-                        key={url}
                         type="button"
-                        onClick={() => setSelectedAvatar(url)}
-                        className={`rounded-full overflow-hidden border-2 transition-all ${
-                          selectedAvatar === url ? 'border-teal-500 ring-2 ring-teal-500/30' : 'border-transparent opacity-60 hover:opacity-100'
-                        }`}
+                        onClick={() => setSpecialtyDropdownOpen((v) => !v)}
+                        className="w-full flex items-center justify-between gap-2 px-3.5 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-start"
                       >
-                        <img src={url} alt="" className="w-10 h-10 object-cover" />
+                        <span className="truncate text-slate-700 dark:text-slate-300 font-medium">
+                          {selectedSpecialties.length > 0 ? selectedSpecialties.join('، ') : 'اختر تخصصاً واحداً أو أكثر'}
+                        </span>
+                        <ChevronDown
+                          className={`w-3.5 h-3.5 shrink-0 text-slate-400 transition-transform ${specialtyDropdownOpen ? 'rotate-180' : ''}`}
+                        />
                       </button>
-                    ))}
+                      {specialtyDropdownOpen && (
+                        <div className="mt-1.5 p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 space-y-1 max-h-56 overflow-y-auto">
+                          {WRITER_SPECIALTY_PRESETS.map((spec) => {
+                            const checked = selectedSpecialties.includes(spec);
+                            return (
+                              <button
+                                key={spec}
+                                type="button"
+                                onClick={() => toggleSpecialty(spec)}
+                                className={`w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-bold text-start transition-colors ${
+                                  checked
+                                    ? 'bg-teal-600/10 text-teal-700 dark:text-teal-300'
+                                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'
+                                }`}
+                              >
+                                <span>{spec}</span>
+                                {checked && <CheckCircle2 className="w-3.5 h-3.5 text-teal-600 shrink-0" />}
+                              </button>
+                            );
+                          })}
+                          <button
+                            type="button"
+                            onClick={() => setSpecialtyDropdownOpen(false)}
+                            className="w-full mt-1 px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-bold"
+                          >
+                            تم
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1.5">صورة الملف الأدبي:</label>
+                      <div className="flex gap-2">
+                        {WRITER_AVATAR_PRESETS.map((url) => (
+                          <button
+                            key={url}
+                            type="button"
+                            onClick={() => setSelectedAvatar(url)}
+                            className={`rounded-full overflow-hidden border-2 transition-all ${
+                              selectedAvatar === url ? 'border-teal-500 ring-2 ring-teal-500/30' : 'border-transparent opacity-60 hover:opacity-100'
+                            }`}
+                          >
+                            <img src={url} alt="" className="w-10 h-10 object-cover" />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500">
+                      يمكن تعديل كل ما سبق لاحقاً من إعدادات الملف الشخصي.
+                    </p>
                   </div>
-                  <p className="mt-1.5 text-[10px] text-slate-400 dark:text-slate-500">
-                    يمكن تغييرها لاحقاً من إعدادات الملف الشخصي.
-                  </p>
-                </div>
+                )}
               </div>
             )}
 
