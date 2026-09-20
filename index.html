@@ -2,7 +2,12 @@
 <html lang="ar" dir="rtl">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <!-- interactive-widget=resizes-content: بدونها كانت لوحة المفاتيح على أندرويد
+         (متصفح أو التطبيق كـTWA) تُغطّي أسفل أي نافذة بارتفاع ثابت (كنافذة
+         تسجيل الدخول) دون أن يُعاد حساب المساحة المرئية الفعلية، فيختفي حقل
+         كلمة المرور وزر الإرسال خلف اللوحة بلا أي وسيلة لتمريرهما للظهور —
+         هذا ما أبلغ عنه المستخدم بالضبط ("الخانات مخفية بسبب لوحة المفاتيح"). -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
     <meta name="theme-color" content="#0d9488" />
     <!-- تحقق ملكية الموقع لشبكة Monetag (النسخة الخاصة بالناشرين من PropellerAds) -->
     <meta name="monetag" content="bb537a0829c59e9fd612b87f53384943" />
