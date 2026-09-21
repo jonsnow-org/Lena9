@@ -15,80 +15,43 @@ on:
   schedule:
     - cron: '0 6 * * *'
 
-permissions:
-  issues: write
-
 jobs:
   run-daily-cycle:
     runs-on: ubuntu-latest
     steps:
       - name: POST /api/bots/run-daily-cycle
-        id: call
         run: |
           # 280s: الدورة تستدعي Gemini تتابعياً حتى 4 مرات (مقال + تغريدة +
           # تعليقان)، وقد يتجاوز مجموعها 60 ثانية بسهولة — أثبت ذلك تشغيل
           # حقيقي فشل بخطأ "curl: (28) Operation timed out after 60002ms".
-          #
-          # ⚠️ عمداً بلا exit 1 هنا حتى عند الفشل — أول محاولة لخطوات فتح/إغلاق
-          # Issue التشخيصي أدناه استخدمت if: failure() بعد exit 1 في هذه
-          # الخطوة، ولم تُنفَّذ فعلياً لسبب غير واضح (لا Issue ظهر رغم فشل حقيقي
-          # مؤكَّد). القيمة الشرطية أدناه (نجاح/فشل عبر output لا حالة الخطوة
-          # نفسها) هي بالضبط أسلوب health-check.yml المُثبَت عمله فعلياً.
           status=$(curl -sS -o /tmp/body.txt -w "%{http_code}" --max-time 280 \
             -X POST \
             -H "x-bots-cron-secret: ${{ secrets.BOTS_CRON_SECRET }}" \
             https://literium-wjct.onrender.com/api/bots/run-daily-cycle || echo "000")
           echo "HTTP $status"
           cat /tmp/body.txt || true
-          echo "status=$status" >> "$GITHUB_OUTPUT"
 
-      # خطوة واحدة تعمل دائماً (always()) بلا أي شرط YAML على outputs/failure()
-      # إطلاقاً — كلا الأسلوبين السابقين (if: failure() ثم if:
-      # steps.call.outputs.status != '200') لم يُنفَّذا فعلياً هنا لسبب غير
-      # مفهوم رغم فشل حقيقي مؤكَّد مرتين متتاليتين، فبات التفرّع نفسه داخل
-      # bash فقط (curl/gh نفسهما مضمونا التنفيذ دائماً هنا) هو الخيار الوحيد
-      # المضمون لتشخيص هذا بشكل قاطع.
-      - name: Report result and open/close the diagnostic issue
-        if: always()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          status="${{ steps.call.outputs.status }}"
-          echo "Reporting for HTTP status: $status"
-          gh label create bots-cycle-failed --color B60205 --description "Bots daily publishing cycle call failed" --repo ${{ github.repository }} || true
-          existing=$(gh issue list --repo ${{ github.repository }} --label bots-cycle-failed --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
-          if [ "$status" = "200" ]; then
-            if [ -n "$existing" ]; then
-              {
-                echo "✅ نجح استدعاء دورة البوتات عند $(date -u +"%Y-%m-%dT%H:%M:%SZ") UTC — الاستجابة:"
-                echo ""
-                echo '```'
-                cat /tmp/body.txt 2>/dev/null || true
-                echo '```'
-              } > /tmp/issue-body.md
-              gh issue comment "$existing" --repo ${{ github.repository }} --body-file /tmp/issue-body.md
-              gh issue close "$existing" --repo ${{ github.repository }}
-            fi
-          else
-            {
-              echo "فشل استدعاء دورة البوتات اليومية عند $(date -u +"%Y-%m-%dT%H:%M:%SZ") UTC — HTTP $status."
-              echo ""
-              echo '```'
-              cat /tmp/body.txt 2>/dev/null || echo "(لا يوجد جسم استجابة)"
-              echo '```'
-            } > /tmp/issue-body.md
-            if [ -n "$existing" ]; then
-              gh issue comment "$existing" --repo ${{ github.repository }} --body-file /tmp/issue-body.md
-            else
-              gh issue create --repo ${{ github.repository }} --title "🤖 فشل دورة نشر البوتات اليومية" --label bots-cycle-failed --body-file /tmp/issue-body.md
-            fi
-          fi
-
-      - name: Fail the job if the call didn't return 200
-        if: always()
-        run: |
-          status="${{ steps.call.outputs.status }}"
+          # ⚠️ محاولات سابقة استخدمت gh CLI (label create/issue create) هنا
+          # مباشرة لفتح Issue تشخيصي عند الفشل — لم تُنفَّذ فعلياً لسبب غير
+          # مفهوم رغم فشل حقيقي مؤكَّد مرتين متتاليتين (لا Issue ظهر إطلاقاً،
+          # حتى مع if: always() وبلا أي شرط YAML). بدل الاستمرار بتخمين سبب
+          # عدم عمل gh هنا تحديداً، نُعيد استخدام مسار مُثبَت العمل فعلياً
+          # اليوم (client-error-reports.yml يجمع من Firestore عبر هذه النقطة
+          # ويفتح Issue بنجاح) — إرسال الفشل كـ"خطأ عميل" عادي، فيظهر في نفس
+          # تقرير الأخطاء المُجمَّع كل 30 دقيقة بدل تكرار محاولة gh هنا.
           if [ "$status" != "200" ]; then
+            body_content=$(cat /tmp/body.txt 2>/dev/null | head -c 2000)
+            curl -sS -X POST https://literium-wjct.onrender.com/api/client-errors/report \
+              -H "Content-Type: application/json" \
+              -d "$(node -e "
+                console.log(JSON.stringify({
+                  source: 'bots-daily-cycle.yml',
+                  message: 'HTTP ${status}: bots cycle call failed',
+                  stack: process.argv[1],
+                  time: new Date().toISOString(),
+                  page: 'github-actions://bots-daily-cycle'
+                }))
+              " "$body_content")" || true
             echo "::error::فشل استدعاء دورة البوتات اليومية (HTTP $status)"
             exit 1
           fi
