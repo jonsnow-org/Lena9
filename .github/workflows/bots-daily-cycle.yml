@@ -28,6 +28,12 @@ jobs:
           # 280s: الدورة تستدعي Gemini تتابعياً حتى 4 مرات (مقال + تغريدة +
           # تعليقان)، وقد يتجاوز مجموعها 60 ثانية بسهولة — أثبت ذلك تشغيل
           # حقيقي فشل بخطأ "curl: (28) Operation timed out after 60002ms".
+          #
+          # ⚠️ عمداً بلا exit 1 هنا حتى عند الفشل — أول محاولة لخطوات فتح/إغلاق
+          # Issue التشخيصي أدناه استخدمت if: failure() بعد exit 1 في هذه
+          # الخطوة، ولم تُنفَّذ فعلياً لسبب غير واضح (لا Issue ظهر رغم فشل حقيقي
+          # مؤكَّد). القيمة الشرطية أدناه (نجاح/فشل عبر output لا حالة الخطوة
+          # نفسها) هي بالضبط أسلوب health-check.yml المُثبَت عمله فعلياً.
           status=$(curl -sS -o /tmp/body.txt -w "%{http_code}" --max-time 280 \
             -X POST \
             -H "x-bots-cron-secret: ${{ secrets.BOTS_CRON_SECRET }}" \
@@ -35,22 +41,15 @@ jobs:
           echo "HTTP $status"
           cat /tmp/body.txt || true
           echo "status=$status" >> "$GITHUB_OUTPUT"
-          if [ "$status" != "200" ]; then
-            echo "::error::فشل استدعاء دورة البوتات اليومية (HTTP $status)"
-            exit 1
-          fi
 
-      # نفس مشكلة سجلات health-check.yml: سجلات تشغيل هذا السير غير قابلة
-      # للقراءة أحياناً عبر أدوات فحص خارجية — فتح Issue بمحتوى الاستجابة
-      # الفعلي هو الوسيلة الموثوقة الوحيدة لتشخيص أي فشل لاحقاً.
       - name: Ensure the bots-cycle-failed label exists
-        if: failure()
+        if: steps.call.outputs.status != '200'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh label create bots-cycle-failed --color B60205 --description "Bots daily publishing cycle call failed" --repo ${{ github.repository }} || true
 
       - name: Open or update the failure issue
-        if: failure()
+        if: steps.call.outputs.status != '200'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -69,7 +68,7 @@ jobs:
           fi
 
       - name: Close the failure issue once healthy again
-        if: success()
+        if: steps.call.outputs.status == '200'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -85,3 +84,9 @@ jobs:
             gh issue comment "$existing" --repo ${{ github.repository }} --body-file /tmp/issue-body.md
             gh issue close "$existing" --repo ${{ github.repository }}
           fi
+
+      - name: Fail the job if the call didn't return 200
+        if: steps.call.outputs.status != '200'
+        run: |
+          echo "::error::فشل استدعاء دورة البوتات اليومية (HTTP ${{ steps.call.outputs.status }})"
+          exit 1
