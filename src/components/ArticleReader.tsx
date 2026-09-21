@@ -109,7 +109,11 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
   // المقال — بدل الثقة بـComment.userRole/CommentReply.userRole المخزَّنين
   // وقت النشر (انظر resolveAuthorMemberLabel لسبب عدم كفايتهما).
   const commenterLabels = useMemo(() => {
-    const ids = comments.flatMap((c) => [c.userId, ...c.replies.map((r) => r.userId)]);
+    // ⚠️ تعليقات قديمة أُنشئت قبل إضافة نظام الردود لم تُخزَّن أصلاً بحقل
+    // replies (undefined لا مصفوفة فارغة) — كان c.replies.map يرمي "Cannot
+    // read properties of undefined (reading 'map')" ويُسقط قراءة المقال
+    // بالكامل عبر ErrorBoundary لأي مستخدم يفتح مقالاً فيه تعليق كهذا.
+    const ids = comments.flatMap((c) => [c.userId, ...(c.replies || []).map((r) => r.userId)]);
     return buildMemberLabelMap(ids, users, articles, followsData);
   }, [comments, users, articles, followsData]);
 
