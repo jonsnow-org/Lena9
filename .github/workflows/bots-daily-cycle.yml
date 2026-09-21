@@ -54,17 +54,18 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          body_content=$(cat /tmp/body.txt 2>/dev/null || echo "(لا يوجد جسم استجابة)")
-          body="فشل استدعاء دورة البوتات اليومية عند $(date -u +"%Y-%m-%dT%H:%M:%SZ") UTC — HTTP ${{ steps.call.outputs.status }}.
-
-\`\`\`
-$body_content
-\`\`\`"
+          {
+            echo "فشل استدعاء دورة البوتات اليومية عند $(date -u +"%Y-%m-%dT%H:%M:%SZ") UTC — HTTP ${{ steps.call.outputs.status }}."
+            echo ""
+            echo '```'
+            cat /tmp/body.txt 2>/dev/null || echo "(لا يوجد جسم استجابة)"
+            echo '```'
+          } > /tmp/issue-body.md
           existing=$(gh issue list --repo ${{ github.repository }} --label bots-cycle-failed --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
           if [ -n "$existing" ]; then
-            gh issue comment "$existing" --repo ${{ github.repository }} --body "$body"
+            gh issue comment "$existing" --repo ${{ github.repository }} --body-file /tmp/issue-body.md
           else
-            gh issue create --repo ${{ github.repository }} --title "🤖 فشل دورة نشر البوتات اليومية" --label bots-cycle-failed --body "$body"
+            gh issue create --repo ${{ github.repository }} --title "🤖 فشل دورة نشر البوتات اليومية" --label bots-cycle-failed --body-file /tmp/issue-body.md
           fi
 
       - name: Close the failure issue once healthy again
@@ -74,6 +75,13 @@ $body_content
         run: |
           existing=$(gh issue list --repo ${{ github.repository }} --label bots-cycle-failed --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
           if [ -n "$existing" ]; then
-            gh issue comment "$existing" --repo ${{ github.repository }} --body "✅ نجح استدعاء دورة البوتات عند $(date -u +"%Y-%m-%dT%H:%M:%SZ") UTC — الاستجابة: \`$(cat /tmp/body.txt 2>/dev/null)\`"
+            {
+              echo "✅ نجح استدعاء دورة البوتات عند $(date -u +"%Y-%m-%dT%H:%M:%SZ") UTC — الاستجابة:"
+              echo ""
+              echo '```'
+              cat /tmp/body.txt 2>/dev/null || true
+              echo '```'
+            } > /tmp/issue-body.md
+            gh issue comment "$existing" --repo ${{ github.repository }} --body-file /tmp/issue-body.md
             gh issue close "$existing" --repo ${{ github.repository }}
           fi
