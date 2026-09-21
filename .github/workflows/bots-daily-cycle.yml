@@ -42,51 +42,53 @@ jobs:
           cat /tmp/body.txt || true
           echo "status=$status" >> "$GITHUB_OUTPUT"
 
-      - name: Ensure the bots-cycle-failed label exists
-        if: steps.call.outputs.status != '200'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh label create bots-cycle-failed --color B60205 --description "Bots daily publishing cycle call failed" --repo ${{ github.repository }} || true
-
-      - name: Open or update the failure issue
-        if: steps.call.outputs.status != '200'
+      # خطوة واحدة تعمل دائماً (always()) بلا أي شرط YAML على outputs/failure()
+      # إطلاقاً — كلا الأسلوبين السابقين (if: failure() ثم if:
+      # steps.call.outputs.status != '200') لم يُنفَّذا فعلياً هنا لسبب غير
+      # مفهوم رغم فشل حقيقي مؤكَّد مرتين متتاليتين، فبات التفرّع نفسه داخل
+      # bash فقط (curl/gh نفسهما مضمونا التنفيذ دائماً هنا) هو الخيار الوحيد
+      # المضمون لتشخيص هذا بشكل قاطع.
+      - name: Report result and open/close the diagnostic issue
+        if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          {
-            echo "فشل استدعاء دورة البوتات اليومية عند $(date -u +"%Y-%m-%dT%H:%M:%SZ") UTC — HTTP ${{ steps.call.outputs.status }}."
-            echo ""
-            echo '```'
-            cat /tmp/body.txt 2>/dev/null || echo "(لا يوجد جسم استجابة)"
-            echo '```'
-          } > /tmp/issue-body.md
+          status="${{ steps.call.outputs.status }}"
+          echo "Reporting for HTTP status: $status"
+          gh label create bots-cycle-failed --color B60205 --description "Bots daily publishing cycle call failed" --repo ${{ github.repository }} || true
           existing=$(gh issue list --repo ${{ github.repository }} --label bots-cycle-failed --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
-          if [ -n "$existing" ]; then
-            gh issue comment "$existing" --repo ${{ github.repository }} --body-file /tmp/issue-body.md
+          if [ "$status" = "200" ]; then
+            if [ -n "$existing" ]; then
+              {
+                echo "✅ نجح استدعاء دورة البوتات عند $(date -u +"%Y-%m-%dT%H:%M:%SZ") UTC — الاستجابة:"
+                echo ""
+                echo '```'
+                cat /tmp/body.txt 2>/dev/null || true
+                echo '```'
+              } > /tmp/issue-body.md
+              gh issue comment "$existing" --repo ${{ github.repository }} --body-file /tmp/issue-body.md
+              gh issue close "$existing" --repo ${{ github.repository }}
+            fi
           else
-            gh issue create --repo ${{ github.repository }} --title "🤖 فشل دورة نشر البوتات اليومية" --label bots-cycle-failed --body-file /tmp/issue-body.md
-          fi
-
-      - name: Close the failure issue once healthy again
-        if: steps.call.outputs.status == '200'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          existing=$(gh issue list --repo ${{ github.repository }} --label bots-cycle-failed --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
-          if [ -n "$existing" ]; then
             {
-              echo "✅ نجح استدعاء دورة البوتات عند $(date -u +"%Y-%m-%dT%H:%M:%SZ") UTC — الاستجابة:"
+              echo "فشل استدعاء دورة البوتات اليومية عند $(date -u +"%Y-%m-%dT%H:%M:%SZ") UTC — HTTP $status."
               echo ""
               echo '```'
-              cat /tmp/body.txt 2>/dev/null || true
+              cat /tmp/body.txt 2>/dev/null || echo "(لا يوجد جسم استجابة)"
               echo '```'
             } > /tmp/issue-body.md
-            gh issue comment "$existing" --repo ${{ github.repository }} --body-file /tmp/issue-body.md
-            gh issue close "$existing" --repo ${{ github.repository }}
+            if [ -n "$existing" ]; then
+              gh issue comment "$existing" --repo ${{ github.repository }} --body-file /tmp/issue-body.md
+            else
+              gh issue create --repo ${{ github.repository }} --title "🤖 فشل دورة نشر البوتات اليومية" --label bots-cycle-failed --body-file /tmp/issue-body.md
+            fi
           fi
 
       - name: Fail the job if the call didn't return 200
-        if: steps.call.outputs.status != '200'
+        if: always()
         run: |
-          echo "::error::فشل استدعاء دورة البوتات اليومية (HTTP ${{ steps.call.outputs.status }})"
-          exit 1
+          status="${{ steps.call.outputs.status }}"
+          if [ "$status" != "200" ]; then
+            echo "::error::فشل استدعاء دورة البوتات اليومية (HTTP $status)"
+            exit 1
+          fi
