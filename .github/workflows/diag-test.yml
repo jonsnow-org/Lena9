@@ -1,0 +1,17 @@
+name: Diagnostic gh Issue Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create a test issue unconditionally
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue create --repo ${{ github.repository }} --title "diag-test $(date -u +%s)" --body "diagnostic test, safe to close/delete"
