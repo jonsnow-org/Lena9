@@ -762,6 +762,17 @@ export function App() {
     const resetCode = getPasswordResetCodeFromUrl();
     if (resetCode) setPasswordResetCode(resetCode);
 
+    // رابط مباشر لصفحة قانونية (?legal=privacy مثلاً) — مطلوب فعلياً لأول
+    // مرة هنا: نماذج نشر التطبيق على متاجر أندرويد البديلة (Samsung Galaxy
+    // Store، Amazon Appstore، Uptodown...) تطلب رابط "Privacy Policy URL"
+    // عاماً يعمل مباشرة بلا تسجيل دخول ولا فتح تطبيق أولاً — قبل هذا لم يكن
+    // هناك أي رابط مباشر إطلاقاً لهذه الصفحات، فقط حالة داخلية تُفتح بالتنقل
+    // اليدوي من تذييل الصفحة.
+    const legalParam = new URLSearchParams(window.location.search).get('legal');
+    if (legalParam === 'privacy' || legalParam === 'terms' || legalParam === 'about' || legalParam === 'contact') {
+      setLegalSection(legalParam);
+    }
+
     const params = new URLSearchParams(window.location.search);
     const payment = params.get('payment');
     const payoutConnect = params.get('payoutConnect');
