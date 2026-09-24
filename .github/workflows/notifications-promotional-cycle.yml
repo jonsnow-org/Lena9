@@ -23,7 +23,7 @@ jobs:
         run: |
           status=$(curl -sS -o /tmp/body.txt -w "%{http_code}" --max-time 120 \
             -X POST \
-            -H "x-notifications-cron-secret: ${{ secrets.NOTIFICATIONS_CRON_SECRET }}" \
+            -H "x-notifications-cron-secret: ${{ secrets.NOTIFICATIONS_CRON_SECRET || secrets.BOTS_CRON_SECRET }}" \
             https://literium-wjct.onrender.com/api/notifications/promotional-cycle || echo "000")
           echo "HTTP $status"
           cat /tmp/body.txt || true

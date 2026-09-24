@@ -2053,7 +2053,9 @@ async function startServer() {
   });
 
   function requireNotificationsCronSecret(req: express.Request, res: express.Response): boolean {
-    const expected = process.env.NOTIFICATIONS_CRON_SECRET;
+    // يكفي سرّ واحد مشترك لكل نبضات الجدولة — BOTS_CRON_SECRET مضبوط أصلاً على
+    // الخادم وفي GitHub، فلا حاجة لإنشاء سرّ ثانٍ منفصل في مكانين.
+    const expected = process.env.NOTIFICATIONS_CRON_SECRET || process.env.BOTS_CRON_SECRET;
     if (!expected) {
       res.status(503).json({
         error: 'not_configured',
