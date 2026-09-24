@@ -82,6 +82,13 @@ interface ServerQuotaRecord {
 }
 const userQuotas = new Map<string, ServerQuotaRecord>();
 
+setInterval(() => {
+  const cutoff = Date.now() - 48 * 60 * 60 * 1000;
+  for (const [uid, rec] of userQuotas) {
+    if (rec.lastResetTime < cutoff) userQuotas.delete(uid);
+  }
+}, 6 * 60 * 60 * 1000);
+
 // الحد اليومي المجاني — مصدر واحد للرقم حتى لا يتكرر في الرسائل
 const freeDailyLimitForMessage = 10;
 
@@ -330,6 +337,10 @@ async function startServer() {
     try {
       const { prompt, userRole, language, userId, isSubscriber, plan } = req.body;
 
+      if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
+        return res.status(400).json({ error: 'invalid_prompt', message: 'يرجى كتابة سؤال أو استفسار.' });
+      }
+
       // 1. Mandatory Login & Quota Check
       const quotaCheck = verifyAndConsumeServerQuota(userId, isSubscriber, plan);
       if (!quotaCheck.allowed) {
@@ -464,6 +475,13 @@ async function startServer() {
   // الذاكرة لأنها مكافأة إضافية فوق الحصة المجانية الأساسية، وميزة الاشتراك
   // نفسها ليست موضع الشكوى الحالية.
   const subscriberDailyImageQuotas = new Map<string, { usedToday: number; lastResetTime: number }>();
+
+  setInterval(() => {
+    const cutoff = Date.now() - 48 * 60 * 60 * 1000;
+    for (const [uid, rec] of subscriberDailyImageQuotas) {
+      if (rec.lastResetTime < cutoff) subscriberDailyImageQuotas.delete(uid);
+    }
+  }, 6 * 60 * 60 * 1000);
 
   app.post('/api/ai/generate-image', async (req, res) => {
     if (!isAdminConfigured()) {
@@ -2261,89 +2279,6 @@ async function startServer() {
     } catch (error: any) {
       console.error('Writing assistant error:', error);
       res.status(500).json({ error: 'Failed to process AI writing assistant request' });
-    }
-  });
-
-  // AI Interactive Platform Chat Assistant (المساعد الذكي لمنصة ليتيريوم)
-  app.post('/api/ai/chat', async (req, res) => {
-    try {
-      const { prompt, userRole, userId, isSubscriber, plan } = req.body;
-
-      if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
-        return res.status(400).json({ error: 'invalid_prompt', message: 'يرجى كتابة سؤال أو استفسار.' });
-      }
-
-      // 1. Quota Check
-      const quotaCheck = verifyAndConsumeServerQuota(userId, isSubscriber, plan);
-      if (!quotaCheck.allowed) {
-        if (quotaCheck.reason === 'auth_required') {
-          return res.status(401).json({
-            error: 'auth_required',
-            message: 'يتطلب استخدام المساعد الذكي تسجيل الدخول أولاً.'
-          });
-        }
-        return res.status(429).json({
-          error: 'quota_exceeded',
-          message: `لقد استنفدت حد الاستخدام المجاني لليوم (${freeDailyLimitForMessage}/${freeDailyLimitForMessage}). يرجى الاشتراك في إحدى باقات Pro للمتابعة.`
-        });
-      }
-
-      const client = getGeminiClient();
-      let replyText = '';
-
-      if (client) {
-        const systemInstruction = `أنت المساعد الذكي الرسمي لمنصة "ليتيريوم" (LITERIUM) - المنصة العربية الرائدة للأدب والفكر والتقنية وتقاسم أرباح الإعلانات والمقالات المدفوعة.
-معلومات المنصة الأساسية والدقيقة:
-1. تقاسم الأرباح للكتاب: يحصل الكاتب على ${REVENUE_SHARES.IN_ARTICLE_ADS.WRITER_PERCENT}% من عائدات إعلانات Google AdSense داخل مقالاته، و${REVENUE_SHARES.LOCKED_ARTICLES.WRITER_PERCENT}% من صافي مبيعات المقالات المقفولة (الحصرية).
-2. الإعلانات والحملات للمعلنين: تدعم المنصة نماذج الدفع بالنقرة (CPC)، الدفع بألف ظهور (CPM)، والإعلانات الثابتة (Fixed Duration) في الواجهة الرئيسية.
-3. السحب المالي والمحافظ: الحد الأدنى للسحب هو 50$ عبر Stripe Connect أو USDT-TRC20، ويتطلب استكمال توثيق الهوية (KYC) لأمان المعاملات.
-4. باقات الذكاء الاصطناعي: 10 استخدامات مجانية يومياً، 200 استخدام شهرياً لمشتركي Pro، واستخدام غير محدود لمشتركي VIP السنوي.
-5. دور المستخدم الحالي في المنصة: (${userRole || 'قارئ'}).
-
-التعليمات:
-- أجب بلغة عربية فصحى راقية وموجزة وواضحة (2 إلى 4 فقرات مركزة).
-- قدم نصائح دقيقة ومباشرة تفيد المستخدم في استكشاف المنصة والكتابة أو الإعلان أو إدارة الأرباح.`;
-
-        try {
-          const response = await client.models.generateContent({
-            model: 'gemini-3.7-flash',
-            contents: prompt.trim(),
-            config: {
-              systemInstruction,
-              maxOutputTokens: 1000,
-              tools: [{ googleSearch: {} }]
-            }
-          });
-          replyText = response.text || '';
-        } catch (genErr: any) {
-          console.error('AI chat generation error, trying without tools fallback:', genErr?.message || genErr);
-          try {
-            const fallbackRes = await client.models.generateContent({
-              model: 'gemini-3.7-flash',
-              contents: prompt.trim(),
-              config: {
-                systemInstruction,
-                maxOutputTokens: 1000
-              }
-            });
-            replyText = fallbackRes.text || '';
-          } catch {
-            // fallback handled below
-          }
-        }
-      }
-
-      if (!replyText) {
-        replyText = `أهلاً بك! في منصة "ليتيريوم" يمكنك استكشاف أحدث المقالات الأدبية والفكرية، أو البدء بنشر مقالاتك وكسب ${REVENUE_SHARES.IN_ARTICLE_ADS.WRITER_PERCENT}% من إعلانات AdSense و${REVENUE_SHARES.LOCKED_ARTICLES.WRITER_PERCENT}% من المقالات المقفولة. كما يمكنك إطلاق حملات إعلانية مستهدفة وسحب أرباحك فور وصولها إلى 50$. كيف يمكنني مساعدتك أكثر اليوم؟`;
-      }
-
-      res.json({
-        reply: replyText,
-        remainingUses: quotaCheck.remaining
-      });
-    } catch (error: any) {
-      console.error('AI chat endpoint error:', error);
-      res.status(500).json({ error: 'Failed to process AI chat request' });
     }
   });
 

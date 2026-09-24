@@ -1,26 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
-  Sparkles,
   Search,
   RefreshCw,
-  SlidersHorizontal,
-  Plus,
   BookOpen,
   PenTool,
-  Megaphone,
-  TrendingUp,
-  Bookmark,
-  Heart,
-  CheckCircle2,
-  Lock,
-  ArrowRight,
-  ShieldCheck,
-  Zap,
-  Info,
   ChevronUp,
   X
 } from 'lucide-react';
-import confetti from 'canvas-confetti';
 
 import {
   Article,
@@ -3727,7 +3713,7 @@ export function App() {
             onShowFollowers={() => handleShowFollowers(viewingWriterProfile.id)}
             onShowFollowing={() => handleShowFollowing(viewingWriterProfile.id)}
           />
-        ) : activeTab === 'profile' ? (
+        ) : (activeTab === 'profile' || activeTab === 'articles' || activeTab === 'saved') && currentUser.id !== 'guest' ? (
           <UserProfileView
             currentUser={currentUser}
             articles={articles}
@@ -3736,7 +3722,7 @@ export function App() {
             followersCount={followsData.filter((f) => f.followingId === currentUser.id).length}
             memberStatusLabel={memberStatusLabel}
             campaigns={campaigns}
-            initialWriterTab={writerActiveTab}
+            initialWriterTab={activeTab === 'profile' ? writerActiveTab : 'blog'}
             onWriterTabChange={setWriterActiveTab}
             onOpenNewCampaign={() => setIsNewCampaignOpen(true)}
             onSelectArticle={(art) => setReadingArticle(art)}
@@ -3855,9 +3841,6 @@ export function App() {
               );
               await resolveFraudFlagInFirestore(flagId, action);
             }}
-            /* تعديل رصيد مستخدم يدوياً من الأدمن — amount هنا فرق يُضاف
-               لقيمة الحقل الحالية (موجب = إضافة، سالب = خصم)، وليس رقماً
-               مطلقاً. */
             onAdjustBalance={async (userId, field, amount, reason) => {
               const target = users.find((u) => u.id === userId);
               if (!target) return;
@@ -3868,7 +3851,6 @@ export function App() {
               );
               try {
                 await adminAdjustUserBalance(userId, { [field]: next } as any);
-                // سجلّ تدقيق دائم — من عدّل، لمَن، أي حقل، بأي مبلغ، ولماذا.
                 await logManualBalanceAdjustment({
                   userId,
                   field,
@@ -3943,206 +3925,6 @@ export function App() {
             bookmarkedArticleIds={bookmarkedArticleIds}
             campaigns={campaigns}
             viewerId={currentUserId || null}
-          />
-        ) : (activeTab === 'articles' || activeTab === 'saved') && currentUser.id !== 'guest' ? (
-          <UserProfileView
-            currentUser={currentUser}
-            articles={articles}
-            bookmarkedArticleIds={bookmarkedArticleIds}
-            followingCount={followedWriterIds.length}
-            followersCount={followsData.filter((f) => f.followingId === currentUser.id).length}
-            memberStatusLabel={memberStatusLabel}
-            campaigns={campaigns}
-            initialWriterTab="blog"
-            onWriterTabChange={setWriterActiveTab}
-            onOpenNewCampaign={() => setIsNewCampaignOpen(true)}
-            onSelectArticle={(art) => setReadingArticle(art)}
-            onOpenWallet={() => setIsWalletOpen(true)}
-            onOpenKyc={() => setIsKycOpen(true)}
-            onOpenBeta20={() => setIsBeta20Open(true)}
-            onOpenPolicies={() => setLegalSection('privacy')}
-            onOpenArticleEditor={(art) => {
-              setEditingArticle(art || null);
-              setIsArticleEditorOpen(true);
-            }}
-            onEditArticle={(art) => {
-              setEditingArticle(art);
-              setIsArticleEditorOpen(true);
-            }}
-            onDeleteArticle={handleDeleteArticle}
-            onPromoteArticle={(art) => setPromotingArticle(art)}
-            promotions={promotions}
-            onSaveSocialLinks={handleSaveSocialLinks}
-            onSaveProfile={handleSaveProfile}
-            pendingKycCount={pendingKycCount}
-            pendingMoneyCount={pendingMoneyCount}
-            pendingFraudCount={pendingFraudCount}
-            onOpenSubscription={() => setIsSubscriptionOpen(true)}
-            onSwitchUserRole={handleSwitchRole}
-            theme={theme}
-            onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-            language={language}
-            onToggleLanguage={() => setLanguage(LANGUAGE_CYCLE[(LANGUAGE_CYCLE.indexOf(language) + 1) % LANGUAGE_CYCLE.length])}
-            onLogout={handleLogout}
-            users={users}
-            fraudFlags={fraudFlags}
-            depositRequests={depositRequests}
-            payoutRequests={payoutRequests}
-            purchaseRequests={purchaseRequests}
-            adEvents={adEvents}
-            earningsRecords={earningsRecords}
-            manualBalanceAdjustments={manualBalanceAdjustments}
-            onProcessAdEvents={handleProcessAdEvents}
-            estimatedExternalCpmUsd={externalAdsConfig.estimatedCpmUsd}
-            onProcessExternalAdRevenue={handleProcessExternalAdRevenue}
-            onUpdatePurchaseRequest={handleUpdatePurchaseRequest}
-            onUpdateMoneyRequest={handleUpdateMoneyRequest}
-            onUpdatePromotionStatus={handleUpdatePromotionStatus}
-            onBroadcastMessage={(text) =>
-              broadcastMessageToAllUsers(
-                currentUser.id,
-                users.map((u) => u.id),
-                text
-              )
-            }
-            onUpdateUserRole={async (userId, newRole) => {
-              setUsers((prev) =>
-                prev.map((u) => (u.id === userId ? { ...u, role: newRole } : u))
-              );
-              await updateUserRoleInFirestore(userId, newRole);
-            }}
-            onToggleUserVerified={async (userId) => {
-              const target = users.find((u) => u.id === userId);
-              const nextVerified = !(target?.isVerified);
-              setUsers((prev) =>
-                prev.map((u) => (u.id === userId ? { ...u, isVerified: nextVerified } : u))
-              );
-              await setUserVerifiedInFirestore(userId, nextVerified);
-            }}
-            onApproveKyc={async (userId) => {
-              setUsers((prev) =>
-                prev.map((u) =>
-                  u.id === userId
-                    ? {
-                        ...u,
-                        isKycVerified: true,
-                        kycDetails: u.kycDetails ? { ...u.kycDetails, status: 'verified' } : undefined
-                      }
-                    : u
-                )
-              );
-              await setUserKycApprovedInFirestore(userId);
-              await markKycDocumentReviewed(userId, 'approved', currentUser.id);
-            }}
-            onRejectKyc={handleRejectKyc}
-            onBanUser={async (userId) => {
-              const target = users.find((u) => u.id === userId);
-              const nextBanned = !(target?.isBanned);
-              setUsers((prev) =>
-                prev.map((u) => (u.id === userId ? { ...u, isBanned: nextBanned } : u))
-              );
-              await setUserBannedInFirestore(userId, nextBanned);
-            }}
-            onUpdateCampaignStatus={async (campaignId, status) => {
-              setCampaigns((prev) =>
-                prev.map((c) => (c.id === campaignId ? { ...c, status } : c))
-              );
-              await setCampaignStatusInFirestore(campaignId, status);
-            }}
-            onReviewCampaign={handleReviewCampaign}
-            onToggleCampaignStatus={handleToggleCampaignStatus}
-            onDeleteCampaign={handleDeleteCampaign}
-            onUpdateArticleStatus={async (articleId, status) => {
-              setArticles((prev) =>
-                prev.map((a) => (a.id === articleId ? { ...a, status } : a))
-              );
-              await setArticleStatusInFirestore(articleId, status);
-            }}
-            onDeleteArticleAsAdmin={handleDeleteArticleAsAdmin}
-            onResolveFraudFlag={async (flagId, action) => {
-              setFraudFlags((prev) =>
-                prev.map((f) =>
-                  f.id === flagId
-                    ? {
-                        ...f,
-                        status: action === 'resolved' ? 'reviewed' : 'dismissed'
-                      }
-                    : f
-                )
-              );
-              await resolveFraudFlagInFirestore(flagId, action);
-            }}
-            onAdjustBalance={async (userId, field, amount, reason) => {
-              const target = users.find((u) => u.id === userId);
-              if (!target) return;
-              const current = Number((target as any)[field] ?? 0);
-              const next = Number((current + amount).toFixed(2));
-              setUsers((prev) =>
-                prev.map((u) => (u.id === userId ? ({ ...u, [field]: next } as any) : u))
-              );
-              try {
-                await adminAdjustUserBalance(userId, { [field]: next } as any);
-                await logManualBalanceAdjustment({
-                  userId,
-                  field,
-                  amount,
-                  newValue: next,
-                  reason,
-                  adjustedBy: currentUser.id
-                });
-              } catch (err) {
-                console.error('تعذر حفظ تعديل الرصيد:', err);
-                alert('تعذر حفظ تعديل الرصيد. حاول مجدداً.');
-              }
-            }}
-            onReleaseEarning={async (earning) => {
-              const targetUser = users.find((u) => u.id === earning.userId);
-              if (!targetUser) {
-                alert('تعذر إيجاد بيانات هذا المستخدم لتحرير أرباحه.');
-                return;
-              }
-              const currentPending = (targetUser as any).pendingEarnings || 0;
-              const currentAvailable = (targetUser as any).availableBalance || 0;
-              try {
-                await adminReleaseEarnings(earning.userId, currentPending, currentAvailable, earning.amount);
-                await markEarningReleasedInFirestore(earning.id);
-                setEarningsRecords((prev) =>
-                  prev.map((e) => (e.id === earning.id ? { ...e, status: 'released' } : e))
-                );
-              } catch (err) {
-                console.error('تعذر تحرير الربح:', err);
-                alert('تعذر تحرير هذا الربح. تحقق من اتصالك ثم حاول مجدداً.');
-              }
-            }}
-            onSelectUser={(u) => setViewingWriterProfile(u)}
-            followersCountByUserId={followersCountByUserId}
-            currentThemePreset={themePreset}
-            onChangeThemePreset={handleChangeThemePreset}
-            currentBackgroundPreset={backgroundPreset}
-            onChangeBackgroundPreset={handleChangeBackgroundPreset}
-            platformAdsEnabled={platformAdsEnabled}
-            onTogglePlatformAds={handleTogglePlatformAds}
-            externalAdsConfig={externalAdsConfig}
-            onSaveExternalAdsConfig={handleSaveExternalAdsConfig}
-            publishingBotsEnabled={publishingBotsEnabled}
-            onTogglePublishingBots={handleTogglePublishingBots}
-            onSeedBotAccounts={handleSeedBotAccounts}
-            initialAdminSection={adminActiveTab}
-            onAdminSectionChange={setAdminActiveTab}
-            tweets={tweets.filter((t) => t.authorId === currentUser.id)}
-            tweetComments={tweetComments}
-            likedTweetIds={tweetLikes.filter((l) => l.userId === currentUser.id).map((l) => l.tweetId)}
-            favoritedTweetIds={favoritedTweetIds}
-            favoritedTweets={tweets.filter((t) => favoritedTweetIds.includes(t.id))}
-            onDeleteTweet={handleDeleteTweet}
-            onToggleTweetLike={handleToggleTweetLike}
-            onToggleTweetFavorite={handleToggleTweetFavorite}
-            onShareTweet={handleShareTweet}
-            onAddTweetComment={handlePostTweetComment}
-            onLikeTweetComment={handleToggleTweetCommentLike}
-            onReplyToTweetComment={handleReplyToTweetComment}
-            onShowFollowers={() => handleShowFollowers(currentUser.id)}
-            onShowFollowing={() => handleShowFollowing(currentUser.id)}
           />
         ) : activeTab === 'campaigns' && currentUser.id !== 'guest' ? (
           <AdvertiserDashboard
@@ -4524,7 +4306,6 @@ export function App() {
                       />
                     )}
                     <ArticleCard
-                      key={article.id}
                       article={article}
                       onSelect={(art) => setReadingArticle(art)}
                       onFollowAuthor={handleToggleFollow}
