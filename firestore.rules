@@ -30,6 +30,18 @@ service cloud.firestore {
         .affectedKeys().hasAny(protectedFields);
     }
 
+    // عدّاد عام (مشاهدات/إعجابات/مشاركات/تعليقات): أي زائر يستطيع تحريكه
+    // خطوة واحدة فقط (+1 أو -1 حسب المسموح)، لا ضبطه على رقم عشوائي.
+    function counterStep(field, minStep, maxStep) {
+      return !(field in request.resource.data.diff(resource.data).affectedKeys())
+        || (
+          request.resource.data[field] is int
+          && request.resource.data[field] >= 0
+          && request.resource.data[field] - resource.data.get(field, 0) >= minStep
+          && request.resource.data[field] - resource.data.get(field, 0) <= maxStep
+        );
+    }
+
     // معرّف الطرف الآخر في محادثة ثنائية من مصفوفة participants (عنصران
     // فقط دوماً) — يُستخدم للتحقق من قوائم الحظر عند إرسال رسالة جديدة.
     function otherParticipant(participants) {
@@ -138,7 +150,9 @@ service cloud.firestore {
           && resource.data.writerId == request.auth.uid
           && noChangeTo([
                'writerId',
-               'revenueFromAds', 'revenueFromSales', 'totalRevenue', 'purchasesCount'
+               'revenueFromAds', 'revenueFromSales', 'totalRevenue', 'purchasesCount',
+               'viewsCount', 'sharesCount', 'likesCount', 'commentsCount',
+               'rating', 'ratingsCount', 'ratingsSum'
              ])
         )
         || isAdmin()
@@ -146,6 +160,13 @@ service cloud.firestore {
           isSignedIn()
           && request.resource.data.diff(resource.data).affectedKeys()
                .hasOnly(['viewsCount', 'likesCount', 'sharesCount', 'commentsCount', 'rating', 'ratingsCount', 'ratingsSum'])
+          && counterStep('viewsCount', 1, 1)
+          && counterStep('sharesCount', 1, 1)
+          && counterStep('likesCount', -1, 1)
+          && counterStep('commentsCount', -1, 1)
+          && counterStep('ratingsCount', -1, 1)
+          && (!('rating' in request.resource.data.diff(resource.data).affectedKeys())
+              || (request.resource.data.rating >= 0 && request.resource.data.rating <= 5))
         );
 
       allow delete: if isSignedIn() && (resource.data.writerId == request.auth.uid || isAdmin());
@@ -396,21 +417,31 @@ service cloud.firestore {
     // (وليس الكُتّاب فقط)، بنفس صلاحيات المقالات من حيث الحذف.
     match /tweets/{tweetId} {
       allow read: if true;
+      // تغريدة بوسائط فقط (صورة/فيديو بلا نص) مسموحة؛ الفارغة كلياً لا.
       allow create: if isSignedIn()
         && request.resource.data.authorId == request.auth.uid
         && request.resource.data.content is string
-        && request.resource.data.content.size() > 0
-        && request.resource.data.content.size() <= 280;
+        && request.resource.data.content.size() <= 280
+        && (
+          request.resource.data.content.size() > 0
+          || (request.resource.data.get('imageUrl', '') is string && request.resource.data.get('imageUrl', '').size() > 0)
+        );
       // أي مستخدم مسجّل يستطيع فقط تحديث عدّادات الإعجاب/التعليقات/
       // المشاركة (لا يستطيع تعديل نص تغريدة غيره)، وصاحب التغريدة أو
       // الأدمن يملكان تعديلاً كاملاً.
       allow update: if
-        (isSignedIn() && resource.data.authorId == request.auth.uid)
+        (
+          isSignedIn() && resource.data.authorId == request.auth.uid
+          && noChangeTo(['authorId', 'likesCount', 'commentsCount', 'sharesCount'])
+        )
         || isAdmin()
         || (
           isSignedIn()
           && request.resource.data.diff(resource.data).affectedKeys()
                .hasOnly(['likesCount', 'commentsCount', 'sharesCount'])
+          && counterStep('likesCount', -1, 1)
+          && counterStep('commentsCount', -1, 1)
+          && counterStep('sharesCount', 1, 1)
         );
       allow delete: if isSignedIn() && (resource.data.authorId == request.auth.uid || isAdmin());
     }

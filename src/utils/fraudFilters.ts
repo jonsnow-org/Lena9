@@ -36,6 +36,10 @@ const CLICK_DEDUP_WINDOW_MS = 24 * 60 * 60 * 1000;
 const ABNORMAL_CTR_THRESHOLD = 0.25;
 /** حد أقصى معقول لأحداث الزوار غير المسجّلين لكل حملة في الساعة */
 const MAX_ANON_EVENTS_PER_HOUR = 200;
+/** لا يُحتسب ظهور نفس الإعلان لنفس المستخدم أكثر من مرة كل 30 دقيقة */
+const IMPRESSION_DEDUP_WINDOW_MS = 30 * 60 * 1000;
+/** حد مشاهدات الزوار المجهولين لإعلانات مقالات كاتب واحد في الساعة */
+const MAX_ANON_WRITER_VIEWS_PER_HOUR = 60;
 
 /**
  * يفحص حدثاً واحداً في سياق بقية الأحداث ويعيد حكماً بصلاحيته.
@@ -111,6 +115,32 @@ export function evaluateAdEvent(
     });
     if (anonSameHour.length > MAX_ANON_EVENTS_PER_HOUR) {
       reasons.push('كثافة أحداث غير طبيعية من زوار غير مسجّلين');
+    }
+  }
+
+  // ---- الفلتر 7: تكرار ظهور نفس الإعلان لنفس المستخدم (إعادة تحميل متكررة) ----
+  if (event.eventType === 'impression' && event.viewerId) {
+    const duplicate = allEvents.some((e) => {
+      if (e.id === event.id || e.eventType !== 'impression' || e.viewerId !== event.viewerId) return false;
+      if (e.slotId !== event.slotId || (e.articleId || '') !== (event.articleId || '')) return false;
+      if ((e.campaignId || '') !== (event.campaignId || '') || (e.promotionId || '') !== (event.promotionId || '')) return false;
+      const t = new Date(e.createdAt).getTime();
+      return t < eventTime && eventTime - t < IMPRESSION_DEDUP_WINDOW_MS;
+    });
+    if (duplicate) {
+      reasons.push('ظهور مكرر لنفس الإعلان لنفس المستخدم خلال 30 دقيقة');
+    }
+  }
+
+  // ---- الفلتر 8: كثافة مشاهدات مجهولة على إعلانات مقالات كاتب واحد ----
+  if (!event.viewerId && !event.campaignId && event.writerId) {
+    const anonSameHour = allEvents.filter((e) => {
+      if (e.viewerId || e.campaignId || e.writerId !== event.writerId) return false;
+      const t = new Date(e.createdAt).getTime();
+      return Math.abs(eventTime - t) < 60 * 60 * 1000;
+    });
+    if (anonSameHour.length > MAX_ANON_WRITER_VIEWS_PER_HOUR) {
+      reasons.push('كثافة مشاهدات مجهولة غير طبيعية على إعلانات كاتب واحد');
     }
   }
 

@@ -82,6 +82,8 @@ import { consumeAiUsage, applySubscriptionUpgrade } from './utils/aiQuota';
 import { rememberAccount } from './utils/savedAccounts';
 import { isEligibleForMonetization, getMemberStatusLabel } from './utils/creatorEligibility';
 import { normalizeArabicSearch } from './utils/arabicSearch';
+import { rotateArticles, pickFeatured } from './utils/feedRotation';
+import { setNativeSystemBars } from './utils/nativeBridge';
 import { getTranslator } from './data/translations';
 import { applyThemePreset, applyBackgroundPreset, syncBackgroundOverlayMode } from './utils/themeEngine';
 import { subscribePlatformAdsEnabled, getPlatformAdsEnabled } from './utils/platformAdsStore';
@@ -149,6 +151,7 @@ import {
   deleteNotificationInFirestore,
   clearAllNotificationsInFirestore,
   incrementArticleViewInFirestore,
+  incrementArticleCounterInFirestore,
   subscribeToArticleRatings,
   rateArticleInFirestore,
   syncArticleRatingSummary,
@@ -438,6 +441,8 @@ export function App() {
   const [isTweetSearchExpanded, setIsTweetSearchExpanded] = useState<boolean>(false);
   const [tweetSearchQuery, setTweetSearchQuery] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
+  // بذرة ترتيب خلاصة المدونة — تتجدد مع كل فتح وكل تحديث فيتبدل ترتيب المقالات فعلاً.
+  const [feedSeed, setFeedSeed] = useState(() => Date.now());
   const [pullDistance, setPullDistance] = useState(0);
   const [showScrollTop, setShowScrollTop] = useState(false);
   // رقم متزايد يُمرَّر لـTweetComposer عبر TweetFeed — زر الكتابة العائم
@@ -1118,8 +1123,16 @@ export function App() {
       const writerEarnings: Record<string, number> = {};
       const validEvents: any[] = [];
       const skippedEvents: any[] = [];
+      // نفس فلاتر الاحتيال المطبقة على الحملات الداخلية — لم يكن هذا المسار يفحص
+      // شيئاً إطلاقاً، فكانت مشاهدة الكاتب لإعلانات مقاله نفسه تُدفع له.
+      const { suspicious } = evaluateAdEventBatch(sorted as any, {});
+      const suspiciousIds = new Set(suspicious.map((e) => e.id));
 
       unprocessed.forEach((ev: any) => {
+        if (suspiciousIds.has(ev.id)) {
+          skippedEvents.push(ev);
+          return;
+        }
         const slotConfig = SLOT_CONFIG[ev.slotId as AdSlotId];
         const writerShare = slotConfig?.writerShare ?? 0;
         if (!ev.writerId || writerShare <= 0) {
@@ -1163,7 +1176,7 @@ export function App() {
 
       alert(
         `تم احتساب ${validEvents.length} مشاهدة إعلان خارجي وإيداع حصص الكُتّاب` +
-          (skippedEvents.length > 0 ? ` (${skippedEvents.length} مشاهدة لم تُحتسب لعدم أهلية الكاتب بعد)` : '') +
+          (skippedEvents.length > 0 ? ` (${skippedEvents.length} مشاهدة لم تُحتسب: كاتب غير مؤهل بعد أو نشاط مشبوه أو مكرر)` : '') +
           '.' +
           (remainingAfterBatch > 0
             ? ` تبقّى ${remainingAfterBatch} مشاهدة أخرى — اضغط الزر مجدداً لمعالجة الدفعة التالية.`
@@ -1780,7 +1793,7 @@ export function App() {
     // تفشل بصمت لأي فرق شكلي شائع (أ/إ/آ/ا، ى/ي، ة/ه، تشكيل، مسافات
     // زائدة) بين ما يكتبه المستخدم والحقل الفعلي، فيبدو البحث معطّلاً.
     const q = normalizeArabicSearch(searchQuery);
-    return articles.filter((art) => {
+    const matched = articles.filter((art) => {
       const matchCategory = selectedCategory === 'all' || art.category === selectedCategory;
       if (!q) return matchCategory;
 
@@ -1794,7 +1807,11 @@ export function App() {
 
       return matchCategory && matchSearch;
     });
-  }, [articles, users, selectedCategory, searchQuery]);
+    // نتائج البحث تبقى بالأحدث أولاً؛ التصفح العادي يتناوب مع كل تحديث.
+    return q ? matched : rotateArticles(matched, feedSeed);
+  }, [articles, users, selectedCategory, searchQuery, feedSeed]);
+
+  const featuredArticles = useMemo(() => pickFeatured(articles, feedSeed), [articles, feedSeed]);
 
   // نتائج البحث عن حسابات المستخدمين مباشرة (بالاسم أو معرّف المستخدم)،
   // تُعرض فوق نتائج المقالات عند وجود نص بحث فعلي.
@@ -1844,6 +1861,8 @@ export function App() {
   };
 
   const pullRafRef = useRef<number | null>(null);
+  const pullDistanceRef = useRef(0);
+  const isRefreshingRef = useRef(false);
   const handleTouchMove = (e: React.TouchEvent) => {
     const scrollY = window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
     if (touchStartPosRef.current > 0 && scrollY <= 1) {
@@ -1861,6 +1880,7 @@ export function App() {
             // الصفر الذي صفّره التحرير للتو، وهذا بالضبط ما جعله يبدو عالقاً
             // للأسفل بلا عودة تلقائية رغم رفع الإصبع.
             if (touchStartPosRef.current > 0) {
+              pullDistanceRef.current = dampened;
               setPullDistance(dampened);
             }
           });
@@ -1868,7 +1888,8 @@ export function App() {
       } else if (diff < -5) {
         // سحب لأعلى للتمرير العادي — يتم فك التعليق فوراً ليتحكم المتصفح بالتمرير
         touchStartPosRef.current = 0;
-        if (pullDistance > 0) {
+        if (pullDistanceRef.current > 0) {
+          pullDistanceRef.current = 0;
           setPullDistance(0);
         }
       }
@@ -1883,9 +1904,10 @@ export function App() {
       cancelAnimationFrame(pullRafRef.current);
       pullRafRef.current = null;
     }
-    if (pullDistance > 55) {
+    if (pullDistanceRef.current > 55) {
       handleRefreshFeed();
     }
+    pullDistanceRef.current = 0;
     setPullDistance(0);
     touchStartPosRef.current = 0;
   };
@@ -1897,13 +1919,15 @@ export function App() {
   // اتصال فورية، فتبقى البطاقات القديمة ظاهرة مهما ضغط المستخدم "تحديث" لأن
   // لا شيء كان يطلب بيانات جديدة أصلاً. الآن تجلب نسخة طازجة حقيقية دائماً.
   const handleRefreshFeed = async () => {
+    if (isRefreshingRef.current) return;
+    isRefreshingRef.current = true;
     setIsRefreshing(true);
     try {
       const [freshArticles, freshTweets] = await Promise.all([
         fetchArticlesOnce(),
         fetchTweetsOnce()
       ]);
-      setArticles(freshArticles);
+      if (freshArticles.length > 0) setArticles(freshArticles);
       setTweets(freshTweets);
     } catch (err) {
       // كان هذا الفشل صامتاً تماماً (console.error فقط) — يدوّر مؤشر
@@ -1912,7 +1936,10 @@ export function App() {
       console.error('تعذر تحديث الخلاصة:', err);
       alert('تعذر تحديث المحتوى الآن. تحقق من اتصالك بالإنترنت وحاول مجدداً.');
     } finally {
+      setFeedSeed(Date.now());
+      isRefreshingRef.current = false;
       setIsRefreshing(false);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
 
@@ -2411,9 +2438,7 @@ export function App() {
       setArticles((prev) =>
         prev.map((a) => (a.id === articleId ? { ...a, commentsCount: newCount } : a))
       );
-      updateArticleStatsInFirestore(articleId, { commentsCount: newCount }).catch((err) =>
-        console.error('تعذر تحديث عدد التعليقات:', err)
-      );
+      incrementArticleCounterInFirestore(articleId, 'commentsCount');
     } catch (err) {
       console.error('تعذر إضافة التعليق:', err);
       alert('تعذر نشر التعليق. تحقق من اتصالك ثم حاول مجدداً.');
@@ -2480,9 +2505,7 @@ export function App() {
     setArticles((prev) =>
       prev.map((a) => (a.id === article.id ? { ...a, sharesCount: (a.sharesCount || 0) + 1 } : a))
     );
-    updateArticleStatsInFirestore(article.id, { sharesCount: (article.sharesCount || 0) + 1 }).catch(
-      (err) => console.error('تعذر تحديث عدد المشاركات:', err)
-    );
+    incrementArticleCounterInFirestore(article.id, 'sharesCount');
     if (article.writerId && article.writerId !== currentUserId && isAuthenticated) {
       createNotificationInFirestore({
         userId: article.writerId,
@@ -2497,17 +2520,37 @@ export function App() {
 
   // تسجيل مشاهدة حقيقية مرة واحدة لكل مقال بكل جلسة تصفح — لم يكن هناك
   // أي تسجيل مشاهدات إطلاقاً من قبل رغم عرض الرقم بالواجهة.
+  // مكافحة تضخيم المشاهدات: لا تُحتسب مشاهدة الكاتب لمقاله، ولا فتح عابر
+  // أقل من 5 ثوانٍ، ولا تكرار من نفس الجهاز لنفس المقال خلال 12 ساعة
+  // (إعادة تحميل الصفحة كانت تحتسب مشاهدة جديدة في كل مرة).
   useEffect(() => {
     if (!readingArticle) return;
     if (viewedArticleIdsRef.current.has(readingArticle.id)) return;
-    viewedArticleIdsRef.current.add(readingArticle.id);
-
-    const newCount = (readingArticle.viewsCount || 0) + 1;
-    setArticles((prev) =>
-      prev.map((a) => (a.id === readingArticle.id ? { ...a, viewsCount: newCount } : a))
-    );
+    if (readingArticle.writerId && readingArticle.writerId === currentUserId) return;
 
     const articleId = readingArticle.id;
+    const storageKey = `literium_viewed_${articleId}`;
+    try {
+      const last = Number(localStorage.getItem(storageKey) || 0);
+      if (last && Date.now() - last < 12 * 60 * 60 * 1000) {
+        viewedArticleIdsRef.current.add(articleId);
+        return;
+      }
+    } catch {
+      // التخزين محجوب — نكتفي بمنع التكرار داخل الجلسة
+    }
+
+    const timer = window.setTimeout(() => {
+    viewedArticleIdsRef.current.add(articleId);
+    try {
+      localStorage.setItem(storageKey, String(Date.now()));
+    } catch {
+      // تجاهل
+    }
+    setArticles((prev) =>
+      prev.map((a) => (a.id === articleId ? { ...a, viewsCount: (a.viewsCount || 0) + 1 } : a))
+    );
+
     (async () => {
       // الكتابة تتطلب جلسة موقّعة (ولو مجهولة) حسب قواعد الأمان. الزائر
       // الذي فتح مقالاً دون أن يُعجب أو يُقيّم من قبل ليس لديه أي جلسة
@@ -2522,6 +2565,8 @@ export function App() {
       if (!uid) return;
       await incrementArticleViewInFirestore(articleId);
     })().catch((err) => console.error('تعذر تسجيل المشاهدة:', err));
+    }, 5000);
+    return () => window.clearTimeout(timer);
   }, [readingArticle?.id]);
 
   // تقييمات المستخدم الحالي بالنجوم لكل مقال (لمعرفة تقييمه الحالي وعرضه
@@ -3388,10 +3433,34 @@ export function App() {
       setIsDrawerOpen(false);
       return true;
     }
+    // كما في التطبيقات الأصيلة: الرجوع من أي تبويب آخر يعود للرئيسية أولاً.
+    if (activeTab !== 'feed') {
+      setActiveTab('feed');
+      return true;
+    }
     return false;
   };
 
+  // داخل تطبيق أندرويد: زر الرجوع يُعالَج أصلياً (MainActivity يستدعي هذه الدالة
+  // مباشرة) بدل حواجز history التي كانت تتطلب عدة ضغطات قبل الخروج.
   useEffect(() => {
+    if (!isNativeApp) return;
+    const w = window as unknown as { __literiumHandleBack?: () => boolean };
+    w.__literiumHandleBack = () => closeTopmostOverlayRef.current();
+    document.documentElement.classList.add('native-app');
+    return () => {
+      delete w.__literiumHandleBack;
+    };
+  }, [isNativeApp]);
+
+  // شريطا الحالة والتنقل في التطبيق يأخذان لون رأس الصفحة نفسه.
+  useEffect(() => {
+    if (!isNativeApp) return;
+    setNativeSystemBars(theme === 'dark' ? '#020617' : '#ffffff', theme !== 'dark');
+  }, [isNativeApp, theme]);
+
+  useEffect(() => {
+    if (isNativeApp) return;
     window.history.pushState({ literiumBackGuard: true }, '');
     let exitArmed = false;
     let exitTimer: number | null = null;
@@ -3622,7 +3691,7 @@ export function App() {
                   transform: !isRefreshing ? `rotate(${pullDistance * 4}deg)` : undefined
                 }}
               />
-              <span>{isRefreshing ? 'جاري تحديث المقالات...' : pullDistance > 55 ? 'أفلت للتحديث' : 'اسحب للتحديث'}</span>
+              <span>{isRefreshing ? (homeFeedMode === 'tweet' ? 'جاري تحديث التغريدات...' : 'جاري تحديث المقالات...') : pullDistance > 55 ? 'أفلت للتحديث' : 'اسحب للتحديث'}</span>
             </div>
           </div>
         )}
@@ -4283,7 +4352,7 @@ export function App() {
               {/* 1. Featured Articles Carousel */}
               {selectedCategory === 'all' && !searchQuery && (
                 <FeaturedArticlesSection
-                  articles={articles}
+                  articles={featuredArticles}
                   onSelectArticle={(art) => setReadingArticle(art)}
                   onBookmark={handleToggleBookmark}
                   bookmarkedIds={bookmarkedArticleIds}
@@ -4387,7 +4456,7 @@ export function App() {
               {/* Main Articles Heading */}
               <div className="flex items-center justify-between px-1">
                 <h2 className="font-extrabold text-base sm:text-lg text-slate-900 dark:text-white">
-                  {selectedCategory === 'all' ? 'أحدث المقالات المنشورة' : categoryFilters.find((c) => c.id === selectedCategory)?.label}
+                  {selectedCategory === 'all' ? 'مقالات مختارة لك' : categoryFilters.find((c) => c.id === selectedCategory)?.label}
                 </h2>
                 <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
                   {filteredArticles.length} مقال متاح
@@ -4477,7 +4546,7 @@ export function App() {
         </div>
 
         {/* التذييل — روابط الصفحات القانونية مطلوبة في كل صفحة لقبول AdSense */}
-        <SiteFooter onOpenLegal={(sec) => setLegalSection(sec)} />
+        {!isNativeApp && <SiteFooter onOpenLegal={(sec) => setLegalSection(sec)} />}
       </main>
 
       {/* زر عائم لبدء الكتابة — في الجهة اليسرى، ويُخفى أثناء قراءة مقال لتجنب

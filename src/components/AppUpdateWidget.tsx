@@ -1,7 +1,7 @@
 import React, {useEffect, useState} from 'react';
 import {Download, RefreshCw} from 'lucide-react';
 import {useAppUpdate} from '../hooks/useAppUpdate';
-import {isRunningAsInstalledApp} from '../utils/installState';
+import {isRunningAsInstalledApp, hasAppOnThisDevice, isAndroidDevice, detectInstalledRelatedApp} from '../utils/installState';
 import {subscribeToAppPublishedOnStores} from '../services/firestoreService';
 
 // عنصر عائم مستقل تماماً عن App (كشاشة البدء SplashScreen) — لا يحتاج أي
@@ -21,6 +21,20 @@ import {subscribeToAppPublishedOnStores} from '../services/firestoreService';
 export const AppUpdateWidget: React.FC = () => {
   const {updateAvailable, applyUpdate} = useAppUpdate();
   const [isInstalledApp] = useState(isRunningAsInstalledApp);
+  // زر التحميل العائم: أندرويد فقط (APK لا يعمل على آيفون/حاسوب)، ويختفي
+  // عن أي جهاز فُتح عليه التطبيق مؤخراً حتى لو تصفّح الموقع من Chrome.
+  const [showDownloadButton, setShowDownloadButton] = useState(() => !hasAppOnThisDevice() && isAndroidDevice());
+
+  useEffect(() => {
+    if (!showDownloadButton) return;
+    let cancelled = false;
+    detectInstalledRelatedApp().then((installed) => {
+      if (installed && !cancelled) setShowDownloadButton(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [showDownloadButton]);
   const [publishedOnStores, setPublishedOnStores] = useState(false);
   const isArabic = (localStorage.getItem('literium_lang') || 'ar') === 'ar';
 
@@ -32,7 +46,7 @@ export const AppUpdateWidget: React.FC = () => {
 
   const showUpdateButton = isInstalledApp && updateAvailable && !publishedOnStores;
 
-  if (isInstalledApp && !showUpdateButton) return null;
+  if (!showUpdateButton && !showDownloadButton) return null;
 
   const labels = isArabic
     ? {download: 'تحميل التطبيق', update: 'تحديث'}
@@ -60,7 +74,7 @@ export const AppUpdateWidget: React.FC = () => {
         </button>
       )}
 
-      {!isInstalledApp && (
+      {showDownloadButton && (
         <a
           href="/downloads/Literium.apk"
           download="Literium.apk"

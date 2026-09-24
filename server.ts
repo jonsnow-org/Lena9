@@ -1713,18 +1713,29 @@ async function startServer() {
       const stateSnap = await stateRef.get();
       const state = stateSnap.exists
         ? (stateSnap.data() as any)
-        : { lastRunDate: null, articleRotationIndex: 0, tweetRotationIndex: 0 };
+        : { articleRotationIndex: 0 };
 
-      // ضمان عدم التكرار: لو استُدعي هذا المسار أكثر من مرة في نفس اليوم
-      // (إعادة محاولة يدوية من السير، أو تشغيل يدوي إضافي)، لا يُنشر شيء
-      // إضافي — يكفي مقال وتغريدة واحدة فقط يومياً كما يشترط النظام.
-      if (state.lastRunDate === todayKey) {
-        return res.json({ success: true, skipped: true, reason: 'already_ran_today' });
+      // كل بوت ينشر مقالاً وتغريدة واحدة يومياً. السير يستدعي هذا المسار عدة
+      // مرات يومياً، وكل استدعاء ينشر لبوت واحد لم ينشر بعد اليوم — توزيع
+      // المحتوى على مدار اليوم بدل دفعة واحدة، وضمن مهلة الطلب لكل استدعاء.
+      const postedToday: string[] =
+        state.postedDate === todayKey && Array.isArray(state.postedBotIds) ? state.postedBotIds : [];
+      const startIndex = (state.articleRotationIndex || 0) % bots.length;
+      let pickedIndex = -1;
+      for (let i = 0; i < bots.length; i++) {
+        const idx = (startIndex + i) % bots.length;
+        if (!postedToday.includes(bots[idx].id)) {
+          pickedIndex = idx;
+          break;
+        }
+      }
+      if (pickedIndex === -1) {
+        return res.json({ success: true, skipped: true, reason: 'all_bots_posted_today' });
       }
 
       const client = getGeminiClient();
-      const articleBot = bots[state.articleRotationIndex % bots.length];
-      const tweetBot = bots[state.tweetRotationIndex % bots.length];
+      const articleBot = bots[pickedIndex];
+      const tweetBot = articleBot;
 
       const articleTopic = (articleBot.topics && articleBot.topics[0]) || 'general';
       const nowIso = new Date().toISOString();
@@ -2014,12 +2025,13 @@ async function startServer() {
       await interactWith(articleId, 'article', articleBot.id, articleContent, articleTopic);
       await interactWith(tweetId, 'tweet', tweetBot.id, tweetContent, (tweetBot.topics && tweetBot.topics[0]) || 'general');
 
-      // 4) تحديث حالة الدورة (منع التكرار اليومي + تدوير الكاتب التالي)
+      // 4) تحديث حالة الدورة (تسجيل البوت كناشر اليوم + تدوير البداية التالية)
       await stateRef.set(
         {
           lastRunDate: todayKey,
-          articleRotationIndex: (state.articleRotationIndex + 1) % bots.length,
-          tweetRotationIndex: (state.tweetRotationIndex + 1) % bots.length,
+          postedDate: todayKey,
+          postedBotIds: [...postedToday, articleBot.id],
+          articleRotationIndex: (pickedIndex + 1) % bots.length,
           updatedAt: nowIso
         },
         { merge: true }

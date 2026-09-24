@@ -9,6 +9,7 @@
 // فوق كل خلفية بعد تبديل اللون — لأن كل مكان في الواجهة مبني على منطق
 // "درجة فاتحة + نص داكن" أو "درجة داكنة + نص فاتح" بغضّ النظر عن اللون.
 export type ThemePresetKey =
+  | 'teal'
   | 'purple'
   | 'red'
   | 'amber'
@@ -31,10 +32,29 @@ export interface ThemePresetDefinition {
 }
 
 export const THEME_PRESETS: Record<ThemePresetKey, ThemePresetDefinition> = {
+  teal: {
+    key: 'teal',
+    label: 'فيروزي ليتيريوم (افتراضي)',
+    labelEn: 'Literium Teal (Default)',
+    swatch: '#0d9488',
+    shades: {
+      '50': 'oklch(98.4% 0.014 180.72)',
+      '100': 'oklch(95.3% 0.051 180.801)',
+      '200': 'oklch(91% 0.096 180.426)',
+      '300': 'oklch(85.5% 0.138 181.071)',
+      '400': 'oklch(77.7% 0.152 181.912)',
+      '500': 'oklch(70.4% 0.14 182.503)',
+      '600': 'oklch(60% 0.118 184.704)',
+      '700': 'oklch(51.1% 0.096 186.391)',
+      '800': 'oklch(43.7% 0.078 188.216)',
+      '900': 'oklch(38.6% 0.063 188.416)',
+      '950': 'oklch(27.7% 0.046 192.524)'
+    }
+  },
   purple: {
     key: 'purple',
-    label: 'بنفسجي (افتراضي)',
-    labelEn: 'Purple (Default)',
+    label: 'بنفسجي',
+    labelEn: 'Purple',
     swatch: '#9333ea',
     shades: {
       '50': 'oklch(97.7% 0.014 308.299)',
@@ -242,7 +262,8 @@ export const THEME_PRESETS: Record<ThemePresetKey, ThemePresetDefinition> = {
   }
 };
 
-export const DEFAULT_THEME_PRESET: ThemePresetKey = 'purple';
+// نفس لون الشعار وشريط الحالة وtheme-color، فلا يتنافس لونان أساسيان في الواجهة.
+export const DEFAULT_THEME_PRESET: ThemePresetKey = 'teal';
 
 export function isValidThemePreset(value: unknown): value is ThemePresetKey {
   return typeof value === 'string' && Object.prototype.hasOwnProperty.call(THEME_PRESETS, value);

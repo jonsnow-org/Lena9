@@ -108,6 +108,15 @@ export async function saveArticleToFirestore(
       !article.id.startsWith('art_mock_');
 
     if (isExistingDoc && article.id) {
+      // العدّادات والأرباح يملكها الخادم/التفاعلات فقط — نسخة المحرر المحلية قد
+      // تكون أقدم من الخادم، فحفظها كان يُرجع المشاهدات/الإعجابات لقيم قديمة.
+      for (const key of [
+        'viewsCount', 'likesCount', 'sharesCount', 'commentsCount', 'purchasesCount',
+        'rating', 'ratingsCount', 'ratingsSum',
+        'revenueFromAds', 'revenueFromSales', 'totalRevenue'
+      ]) {
+        delete cleanData[key];
+      }
       const artRef = doc(db, 'articles', article.id);
       await setDoc(
         artRef,
@@ -163,6 +172,18 @@ export async function updateArticleStatsInFirestore(
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, `articles/${articleId}`);
     throw error;
+  }
+}
+
+export async function incrementArticleCounterInFirestore(
+  articleId: string,
+  field: 'sharesCount' | 'commentsCount',
+  delta: 1 | -1 = 1
+): Promise<void> {
+  try {
+    await updateDoc(doc(db, 'articles', articleId), { [field]: increment(delta) });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `articles/${articleId}`);
   }
 }
 
