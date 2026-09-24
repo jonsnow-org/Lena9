@@ -128,7 +128,10 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
   const [showAppearanceMenu, setShowAppearanceMenu] = useState(false);
 
   // Scroll & Progress Tracking
-  const [readingProgress, setReadingProgress] = useState(0);
+  // شريط التقدّم يُحدَّث مباشرة عبر ref لا عبر حالة React: التحديث بالحالة كان يعيد
+  // رسم المقال كاملاً في كل حدث تمرير، وهذا ما جعل التمرير داخل المقال ثقيلاً.
+  const progressBarRef = useRef<HTMLDivElement>(null);
+  const lastSavedProgressRef = useRef(-1);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -169,8 +172,11 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
     const totalScroll = scrollHeight - clientHeight;
     if (totalScroll > 0) {
       const progress = Math.min(100, Math.max(0, Math.round((scrollTop / totalScroll) * 100)));
-      setReadingProgress(progress);
+      if (progressBarRef.current) progressBarRef.current.style.transform = `scaleX(${progress / 100})`;
       setShowScrollTop(scrollTop > 400);
+      // الكتابة في localStorage متزامنة ومكلفة — مرة كل 5% فقط بدل كل حدث تمرير.
+      if (progress > 5 && progress < 95 && Math.abs(progress - lastSavedProgressRef.current) < 5) return;
+      lastSavedProgressRef.current = progress;
 
       // Save reading progress every scroll threshold
       if (progress > 5 && progress < 95) {
@@ -355,8 +361,9 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
         {/* Top Reading Progress Bar */}
         <div className="w-full bg-slate-200 dark:bg-slate-800 h-1 relative overflow-hidden shrink-0">
           <div
-            className="h-full bg-gradient-to-r from-teal-500 via-cyan-500 to-amber-500 transition-all duration-150"
-            style={{ width: `${readingProgress}%` }}
+            className="h-full w-full bg-gradient-to-r from-teal-500 via-cyan-500 to-amber-500 will-change-transform"
+            ref={progressBarRef}
+            style={{ transform: 'scaleX(0)', transformOrigin: 'right' }}
           />
         </div>
 

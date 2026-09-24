@@ -237,7 +237,7 @@ export const TweetCard: React.FC<TweetCardProps> = ({
           onClick={() => onSelectAuthor?.(tweet.authorId)}
           className="flex items-center gap-2.5 min-w-0 text-start active:opacity-70 transition-opacity"
         >
-          <img
+          <img loading="lazy" decoding="async"
             src={tweet.authorAvatar}
             alt={tweet.authorName}
             referrerPolicy="no-referrer"
@@ -391,7 +391,7 @@ export const TweetCard: React.FC<TweetCardProps> = ({
         tweet.mediaType === 'video' ? (
           <VideoPlayer src={tweet.imageUrl} className="w-full max-h-96 rounded-xl border border-slate-200 dark:border-slate-800" />
         ) : (
-          <img
+          <img loading="lazy" decoding="async"
             src={tweet.imageUrl}
             alt=""
             className="w-full max-h-96 object-cover rounded-xl border border-slate-200 dark:border-slate-800"
@@ -464,7 +464,7 @@ export const TweetCard: React.FC<TweetCardProps> = ({
             )}
             {commentImageUrl && !commentImageUploading && (
               <div className="relative inline-block ms-8">
-                <img src={commentImageUrl} alt="" className="max-h-24 rounded-lg border border-slate-200 dark:border-slate-700 object-cover" />
+                <img loading="lazy" decoding="async" src={commentImageUrl} alt="" className="max-h-24 rounded-lg border border-slate-200 dark:border-slate-700 object-cover" />
                 <button
                   type="button"
                   onClick={() => setCommentImageUrl('')}
@@ -487,7 +487,7 @@ export const TweetCard: React.FC<TweetCardProps> = ({
                   className="p-3 rounded-xl bg-slate-50/70 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800"
                 >
                   <div className="flex items-center gap-2 mb-1.5">
-                    <img
+                    <img loading="lazy" decoding="async"
                       src={comm.userAvatar}
                       alt={comm.userName}
                       referrerPolicy="no-referrer"
@@ -498,7 +498,7 @@ export const TweetCard: React.FC<TweetCardProps> = ({
                   </div>
                   <p className="text-xs leading-relaxed mb-2 select-text">{comm.content}</p>
                   {comm.imageUrl && (
-                    <img
+                    <img loading="lazy" decoding="async"
                       src={comm.imageUrl}
                       alt=""
                       className="max-h-56 w-full object-cover rounded-lg border border-slate-200 dark:border-slate-700 mb-2"
@@ -552,7 +552,7 @@ export const TweetCard: React.FC<TweetCardProps> = ({
                           className="p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-700/60 text-[11px]"
                         >
                           <div className="flex items-center gap-1.5 mb-0.5">
-                            <img
+                            <img loading="lazy" decoding="async"
                               src={rep.userAvatar}
                               alt={rep.userName}
                               referrerPolicy="no-referrer"

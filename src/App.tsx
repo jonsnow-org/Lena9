@@ -84,6 +84,7 @@ import { isEligibleForMonetization, getMemberStatusLabel } from './utils/creator
 import { normalizeArabicSearch } from './utils/arabicSearch';
 import { rotateArticles, pickFeatured } from './utils/feedRotation';
 import { setNativeSystemBars } from './utils/nativeBridge';
+import { useIncrementalList } from './hooks/useIncrementalList';
 import { getTranslator } from './data/translations';
 import { applyThemePreset, applyBackgroundPreset, syncBackgroundOverlayMode } from './utils/themeEngine';
 import { subscribePlatformAdsEnabled, getPlatformAdsEnabled } from './utils/platformAdsStore';
@@ -443,7 +444,6 @@ export function App() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   // بذرة ترتيب خلاصة المدونة — تتجدد مع كل فتح وكل تحديث فيتبدل ترتيب المقالات فعلاً.
   const [feedSeed, setFeedSeed] = useState(() => Date.now());
-  const [pullDistance, setPullDistance] = useState(0);
   const [showScrollTop, setShowScrollTop] = useState(false);
   // رقم متزايد يُمرَّر لـTweetComposer عبر TweetFeed — زر الكتابة العائم
   // يزيده بدل فتح محرر مقال حين يكون المستخدم في وضع التغريد.
@@ -1812,6 +1812,11 @@ export function App() {
   }, [articles, users, selectedCategory, searchQuery, feedSeed]);
 
   const featuredArticles = useMemo(() => pickFeatured(articles, feedSeed), [articles, feedSeed]);
+  const {
+    visible: visibleArticles,
+    hasMore: hasMoreArticles,
+    sentinelRef: articlesSentinelRef
+  } = useIncrementalList<Article>(filteredArticles, `${feedSeed}|${selectedCategory}|${searchQuery}`);
 
   // نتائج البحث عن حسابات المستخدمين مباشرة (بالاسم أو معرّف المستخدم)،
   // تُعرض فوق نتائج المقالات عند وجود نص بحث فعلي.
@@ -1854,62 +1859,65 @@ export function App() {
     });
   };
 
-  // Pull to refresh handlers
-  const handleTouchStart = (e: React.TouchEvent) => {
-    const scrollY = window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
-    touchStartPosRef.current = scrollY <= 1 ? e.touches[0].clientY : 0;
-  };
-
+  // السحب للتحديث بأسلوب أندرويد الأصلي (SwipeRefreshLayout): دائرة تنزل من
+  // أعلى وتدور مع الإصبع. تُحرَّك مباشرة عبر ref في كل إطار — كانت حالة React
+  // (pullDistance) تعيد رسم التطبيق كاملاً في كل إطار سحب، ومؤشر نصي يُدرَج داخل
+  // الصفحة فيدفع المحتوى لأسفل، وهذان سبب ثقل السحب.
+  const PULL_THRESHOLD = 70;
+  const pullIndicatorRef = useRef<HTMLDivElement>(null);
   const pullRafRef = useRef<number | null>(null);
   const pullDistanceRef = useRef(0);
   const isRefreshingRef = useRef(false);
-  const handleTouchMove = (e: React.TouchEvent) => {
+
+  const renderPullIndicator = (distance: number, animate: boolean) => {
+    const el = pullIndicatorRef.current;
+    if (!el) return;
+    el.style.transition = animate ? 'transform 220ms ease-out, opacity 220ms ease-out' : 'none';
+    el.style.transform = `translate3d(0, ${distance - 56}px, 0) rotate(${distance * 3}deg)`;
+    el.style.opacity = String(Math.min(1, distance / 40));
+    el.dataset.armed = distance >= PULL_THRESHOLD ? '1' : '0';
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
     const scrollY = window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
-    if (touchStartPosRef.current > 0 && scrollY <= 1) {
-      const currentY = e.touches[0].clientY;
-      const diff = currentY - touchStartPosRef.current;
-      if (diff > 0) {
-        // سحب لأسفل عند قمة الصفحة لتحديث الخلاصة
-        const dampened = Math.min(diff * 0.45, 90);
-        if (pullRafRef.current === null) {
-          pullRafRef.current = requestAnimationFrame(() => {
-            pullRafRef.current = null;
-            // إن رُفع الإصبع (أو أُلغيت اللمسة) بين جدولة هذا الإطار وتنفيذه،
-            // يكون handleTouchEnd/Cancel قد صفّر touchStartPosRef بالفعل —
-            // فتطبيق dampened القديمة هنا كان "يُحيي" شريط السحب من جديد فوق
-            // الصفر الذي صفّره التحرير للتو، وهذا بالضبط ما جعله يبدو عالقاً
-            // للأسفل بلا عودة تلقائية رغم رفع الإصبع.
-            if (touchStartPosRef.current > 0) {
-              pullDistanceRef.current = dampened;
-              setPullDistance(dampened);
-            }
-          });
-        }
-      } else if (diff < -5) {
-        // سحب لأعلى للتمرير العادي — يتم فك التعليق فوراً ليتحكم المتصفح بالتمرير
-        touchStartPosRef.current = 0;
-        if (pullDistanceRef.current > 0) {
-          pullDistanceRef.current = 0;
-          setPullDistance(0);
-        }
-      }
+    touchStartPosRef.current = scrollY <= 1 && !isRefreshingRef.current ? e.touches[0].clientY : 0;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (touchStartPosRef.current <= 0) return;
+    const scrollY = window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
+    if (scrollY > 1) return;
+    const diff = e.touches[0].clientY - touchStartPosRef.current;
+    if (diff < -5) {
+      touchStartPosRef.current = 0;
+      pullDistanceRef.current = 0;
+      renderPullIndicator(0, true);
+      return;
+    }
+    if (diff <= 0) return;
+    pullDistanceRef.current = Math.min(diff * 0.5, 110);
+    if (pullRafRef.current === null) {
+      pullRafRef.current = requestAnimationFrame(() => {
+        pullRafRef.current = null;
+        if (touchStartPosRef.current > 0) renderPullIndicator(pullDistanceRef.current, false);
+      });
     }
   };
 
   const handleTouchEnd = () => {
-    // إلغاء أي إطار rAF لا يزال بانتظار التنفيذ من آخر touchmove قبل الرفع
-    // مباشرة — بدونه كان يُنفَّذ في الإطار التالي ويكتب فوق التصفير أدناه
-    // بقيمة سحب قديمة غير صفرية، فيبقى الشريط ظاهراً رغم انتهاء اللمسة.
     if (pullRafRef.current !== null) {
       cancelAnimationFrame(pullRafRef.current);
       pullRafRef.current = null;
     }
-    if (pullDistanceRef.current > 55) {
-      handleRefreshFeed();
-    }
+    const pulled = pullDistanceRef.current;
     pullDistanceRef.current = 0;
-    setPullDistance(0);
     touchStartPosRef.current = 0;
+    if (pulled >= PULL_THRESHOLD) {
+      renderPullIndicator(PULL_THRESHOLD, true);
+      handleRefreshFeed();
+    } else if (pulled > 0) {
+      renderPullIndicator(0, true);
+    }
   };
 
   // كانت هذه الدالة عرضاً بصرياً فقط (مؤشر دوران 750ms ثم يختفي) بلا أي طلب
@@ -1939,6 +1947,7 @@ export function App() {
       setFeedSeed(Date.now());
       isRefreshingRef.current = false;
       setIsRefreshing(false);
+      renderPullIndicator(0, true);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
@@ -3679,22 +3688,15 @@ export function App() {
         onTouchCancel={handleTouchEnd}
         className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 pb-28 sm:pb-24 relative"
       >
-        {/* Pull to Refresh Android Visual Pill */}
-        {(pullDistance > 0 || isRefreshing) && (
-          <div className="flex justify-center mb-4 animate-android-in">
-            <div className="px-4 py-2 rounded-full bg-white dark:bg-slate-900 border border-teal-200 dark:border-teal-800 shadow-md flex items-center gap-2 text-xs font-bold text-teal-600 dark:text-teal-400">
-              <RefreshCw
-                className={`w-4 h-4 ${
-                  isRefreshing ? 'animate-spin text-teal-600' : ''
-                }`}
-                style={{
-                  transform: !isRefreshing ? `rotate(${pullDistance * 4}deg)` : undefined
-                }}
-              />
-              <span>{isRefreshing ? (homeFeedMode === 'tweet' ? 'جاري تحديث التغريدات...' : 'جاري تحديث المقالات...') : pullDistance > 55 ? 'أفلت للتحديث' : 'اسحب للتحديث'}</span>
-            </div>
-          </div>
-        )}
+        {/* مؤشر السحب للتحديث — دائرة أندرويد عائمة لا تدفع المحتوى */}
+        <div
+          ref={pullIndicatorRef}
+          aria-hidden="true"
+          className="pull-indicator fixed left-1/2 top-16 -ml-5 z-30 w-10 h-10 rounded-full bg-white dark:bg-slate-800 shadow-lg ring-1 ring-black/5 flex items-center justify-center pointer-events-none"
+          style={{ transform: 'translate3d(0, -56px, 0)', opacity: 0 }}
+        >
+          <RefreshCw className={`w-5 h-5 text-brand-600 dark:text-brand-400 ${isRefreshing ? 'animate-spin' : ''}`} />
+        </div>
 
         {/* Unified Role & Tab Based View Router */}
         {/* مفتاح React أدناه (key) يُعيد تركيب هذا الغلاف عند كل تبديل فعلي
@@ -4466,7 +4468,7 @@ export function App() {
               {/* Loading Skeletons when refreshing، أو عند التحميل الأول قبل
                   وصول أي بيانات حقيقية (بدل رسالة "لا توجد مقالات" الفارغة
                   التي كانت تومض للحظة على جهاز جديد بلا ذاكرة محلية) */}
-              {isRefreshing || !articlesLoaded ? (
+              {!articlesLoaded ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
                   {[1, 2, 3, 4, 5, 6].map((n) => (
                     <ArticleCardSkeleton key={n} />
@@ -4493,7 +4495,7 @@ export function App() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-                  {filteredArticles.map((article, idx) => (
+                  {visibleArticles.map((article, idx) => (
                     <React.Fragment key={article.id}>
                     {/* home_feed_1/2 لوضعية "كل الأقسام" فقط، وcategory_feed
                         عند تصفح قسم محدد — بدل عرض موضع الصفحة الرئيسية
@@ -4536,6 +4538,11 @@ export function App() {
                     />
                     </React.Fragment>
                   ))}
+                </div>
+              )}
+              {articlesLoaded && hasMoreArticles && (
+                <div ref={articlesSentinelRef} className="flex justify-center py-6" aria-hidden="true">
+                  <RefreshCw className="w-5 h-5 text-brand-500 animate-spin" />
                 </div>
               )}
               </>

@@ -1,11 +1,12 @@
 import React, { useMemo } from 'react';
-import { MessageSquare } from 'lucide-react';
+import { MessageSquare, RefreshCw } from 'lucide-react';
 import { Tweet, TweetComment, User, AdCampaign, Article } from '../types';
 import { TweetComposer } from './TweetComposer';
 import { TweetCard } from './TweetCard';
 import { TweetCardSkeleton } from './TweetCardSkeleton';
 import { AdSlot } from './AdSlot';
 import { buildMemberLabelMap } from '../utils/creatorEligibility';
+import { useIncrementalList } from '../hooks/useIncrementalList';
 
 interface TweetFeedProps {
   currentUser: User;
@@ -50,6 +51,7 @@ interface TweetFeedProps {
 // فأكثر، فتبقى إعلانات الشبكات الخارجية هنا (أولويتها في tweet_feed) بلا
 // أي فرصة للظهور عملياً. عتبة أقل تضمن ظهورها فعلياً.
 const TWEETS_PER_AD = 3;
+const EMPTY_COMMENTS: TweetComment[] = [];
 
 export const TweetFeed: React.FC<TweetFeedProps> = ({
   currentUser,
@@ -88,11 +90,21 @@ export const TweetFeed: React.FC<TweetFeedProps> = ({
     );
   }, [tweets, searchQuery]);
 
+  // أول ظهور لقائمة تغريدات مختلفة (بحث جديد) يبدأ من الدفعة الأولى مجدداً.
+  const { visible: visibleTweets, hasMore, sentinelRef } = useIncrementalList<Tweet>(filteredTweets, searchQuery);
+
+  // تعليقات كل تغريدة مجمَّعة مرة واحدة بدل تصفية كل التعليقات لكل بطاقة في كل رسم.
+  const commentsByTweet = useMemo(() => {
+    const map: Record<string, TweetComment[]> = {};
+    for (const c of comments) (map[c.tweetId] ||= []).push(c);
+    return map;
+  }, [comments]);
+
   // خريطة (معرّف كاتب ← وسم حقيقي) محسوبة مرة واحدة لكل كتّاب فريدين
   // ظاهرين حالياً، بدل إعادة حساب نفس الكاتب في كل تغريدة له.
   const authorLabels = useMemo(
-    () => buildMemberLabelMap(filteredTweets.map((t) => t.authorId), users, articles, followsData),
-    [filteredTweets, users, articles, followsData]
+    () => buildMemberLabelMap(visibleTweets.map((t) => t.authorId), users, articles, followsData),
+    [visibleTweets, users, articles, followsData]
   );
 
   return (
@@ -115,7 +127,7 @@ export const TweetFeed: React.FC<TweetFeedProps> = ({
           </p>
         </div>
       ) : (
-        filteredTweets.map((tweet, idx) => (
+        visibleTweets.map((tweet, idx) => (
           <React.Fragment key={tweet.id}>
             {idx > 0 && idx % TWEETS_PER_AD === 0 && (
               <AdSlot slotId="tweet_feed" campaigns={campaigns} viewerId={currentUser.id !== 'guest' ? currentUser.id : null} />
@@ -126,7 +138,7 @@ export const TweetFeed: React.FC<TweetFeedProps> = ({
               currentUser={currentUser}
               isLiked={likedTweetIds.includes(tweet.id)}
               isFavorited={favoritedTweetIds.includes(tweet.id)}
-              comments={comments.filter((c) => c.tweetId === tweet.id)}
+              comments={commentsByTweet[tweet.id] || EMPTY_COMMENTS}
               onToggleLike={onToggleLike}
               onToggleFavorite={onToggleFavorite}
               onShare={onShare}
@@ -138,6 +150,11 @@ export const TweetFeed: React.FC<TweetFeedProps> = ({
             />
           </React.Fragment>
         ))
+      )}
+      {!isLoading && hasMore && (
+        <div ref={sentinelRef} className="flex justify-center py-6" aria-hidden="true">
+          <RefreshCw className="w-5 h-5 text-brand-500 animate-spin" />
+        </div>
       )}
     </div>
   );

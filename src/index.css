@@ -238,3 +238,14 @@
   padding-left: 1.25rem;
   border-radius: 0 0.75rem 0.75rem 0;
 }
+
+/* الضبابية الخلفية (backdrop-filter) يعيد WebView أندرويد حسابها في كل إطار تمرير
+   حين تقع فوق محتوى متحرك (الأزرار العائمة، الرأس، خلفيات النوافذ) — السبب الأول
+   لثقل التمرير داخل التطبيق. على الأجهزة اللمسية تبقى الخلفيات المعتمة شبه الصلبة
+   نفسها بلا ضبابية، فيبقى الشكل تقريباً كما هو. */
+@media (pointer: coarse) {
+  *, *::before, *::after {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+}

@@ -94,7 +94,7 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
             className="flex items-center gap-2.5 cursor-pointer py-1"
             onClick={() => onWriterProfileClick && onWriterProfileClick(article.writerId)}
           >
-            <img
+            <img loading="lazy" decoding="async"
               src={article.writerAvatar}
               alt={article.writerName}
               referrerPolicy="no-referrer"
