@@ -162,3 +162,23 @@ jobs:
           done
           echo "::error::Failed to push the synced APK after 5 attempts."
           exit 1
+
+      # قناة توزيع رسمية بلا أي حساب متجر: صفحة إصدارات GitHub للمستودع نفسه —
+      # رابط ثابت لكل نسخة، وتطبيق Obtainium يتابعها ويحدّث التطبيق تلقائياً.
+      - name: Prepare release asset
+        if: github.ref_name == 'main'
+        run: cp android-native/app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/Literium.apk"
+
+      - name: Publish GitHub Release
+        if: github.ref_name == 'main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Literium 1.0.${{ github.run_number }}
+          make_latest: true
+          files: ${{ runner.temp }}/Literium.apk
+          body: |
+            تطبيق ليتيريوم — منصة الأدب والفكر العربي.
+
+            التثبيت: حمّل ملف Literium.apk أدناه وافتحه على جهاز أندرويد.
+            التحديث التلقائي: أضف رابط هذه الصفحة في تطبيق Obtainium.

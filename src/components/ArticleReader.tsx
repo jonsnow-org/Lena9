@@ -31,6 +31,7 @@ import { Article, Comment, ReactionType, AdCampaign, User } from '../types';
 import { formatDateAr, formatDateTimeAr, timeAgoAr } from '../utils/dateFormat';
 import { SmartAdBanner } from './SmartAdBanner';
 import { ShareModal } from './ShareModal';
+import { nativeShare } from '../utils/nativeBridge';
 import { AdSlot } from './AdSlot';
 import { VideoEmbed } from './VideoEmbed';
 import { VideoPlayer } from './VideoPlayer';
@@ -299,6 +300,7 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
   const handleShareClick = async () => {
     onShare?.();
     const shareUrl = getShareUrl();
+    if (nativeShare({ title: article.title, text: article.description || article.title, url: shareUrl })) return;
     if (navigator.share) {
       try {
         await navigator.share({
@@ -860,10 +862,7 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
 
             <div className="flex items-center gap-2">
               <button
-                onClick={() => {
-                  setShowShareModal(true);
-                  onShare?.();
-                }}
+                onClick={handleShareClick}
                 className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold transition-colors active:scale-95"
               >
                 <Share2 className="w-4 h-4" />

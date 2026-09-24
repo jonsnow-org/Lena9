@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   X,
   User as UserIcon,
@@ -26,7 +26,7 @@ import { getTranslator } from '../data/translations';
 import { isEligibleForMonetization } from '../utils/creatorEligibility';
 import { useAppUpdate } from '../hooks/useAppUpdate';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
-import { isRunningAsInstalledApp } from '../utils/installState';
+import { hasAppOnThisDevice, detectInstalledRelatedApp } from '../utils/installState';
 
 interface DrawerMenuProps {
   isOpen: boolean;
@@ -104,7 +104,13 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
   // isOpen، فهذا لا يُعيد التركيب عند كل فتح/إغلاق، ويبقي فحص التحديث
   // الدوري يعمل بالخلفية باستمرار كما كان بالعنصر العائم السابق.
   const {updateAvailable, applyUpdate} = useAppUpdate();
-  const [isInstalledApp] = useState(isRunningAsInstalledApp);
+  const [hasApp, setHasApp] = useState(hasAppOnThisDevice);
+  useEffect(() => {
+    if (hasApp) return;
+    detectInstalledRelatedApp().then((installed) => {
+      if (installed) setHasApp(true);
+    });
+  }, [hasApp]);
   useEscapeToClose(onClose, isOpen);
 
   if (!isOpen) return null;
@@ -409,9 +415,9 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
             {/* تحميل التطبيق (في المتصفح فقط) / تحديث التطبيق (يظهر فقط عند
                 وجود نشر أحدث من النسخة الحالية، ويختفي تلقائياً بعده) —
                 بجانب قسم اللغة عمداً بناءً على طلب صاحب المشروع. */}
-            {(!isInstalledApp || updateAvailable) && (
+            {(!hasApp || updateAvailable) && (
               <div className="flex items-center gap-2">
-                {!isInstalledApp && (
+                {!hasApp && (
                   <a
                     href="/downloads/Literium.apk"
                     download="Literium.apk"

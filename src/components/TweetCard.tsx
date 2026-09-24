@@ -6,6 +6,7 @@ import { uploadAdMedia, fetchMediaUploadStatus } from '../services/mediaApi';
 import { submitUserReport } from '../services/firestoreService';
 import { VideoPlayer } from './VideoPlayer';
 import { ShareModal } from './ShareModal';
+import { nativeShare } from '../utils/nativeBridge';
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
@@ -174,6 +175,7 @@ export const TweetCard: React.FC<TweetCardProps> = ({
   // شيء آخر كما كان يحدث سابقاً.
   const handleShareClick = async () => {
     onShare(tweet);
+    if (nativeShare({ title: `تغريدة ${tweet.authorName}`, text: tweet.content.slice(0, 200), url: shareUrl })) return;
     if (navigator.share) {
       try {
         await navigator.share({

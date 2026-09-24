@@ -16,6 +16,12 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Literium">
 
+        <!-- يربط التطبيق بالموقع حتى يستطيع Chrome إخبار الموقع بأن التطبيق مثبَّت
+             (navigator.getInstalledRelatedApps) فيُخفي زر "تحميل التطبيق". -->
+        <meta-data
+            android:name="asset_statements"
+            android:resource="@string/asset_statements" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

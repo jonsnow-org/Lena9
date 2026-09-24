@@ -18,7 +18,12 @@ import android.webkit.RenderProcessGoneDetail
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebView
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebViewClient
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 import android.widget.EditText
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
@@ -35,6 +40,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Text
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -92,6 +105,10 @@ class MainActivity : ComponentActivity() {
     // تُقرأ/تُكتب من onPageFinished (Compose state، آمنة من نفس خيط الواجهة الذي
     // يُشغَّل عليه WebViewClient دائماً) — تتحكم بإخفاء شاشة البداية أدناه.
     private var pageReadyState = mutableStateOf(false)
+    // فشل تحميل الصفحة الرئيسية (انقطاع شبكة/خادم) — تُعرض شاشة أصيلة بدل
+    // صفحة Chrome الافتراضية "تعذر الوصول إلى صفحة الويب" التي تكشف أنه متصفح.
+    private var loadFailedState = mutableStateOf(false)
+    private var lastShareAt = 0L
     private val revealTimeoutHandler = Handler(Looper.getMainLooper())
 
     private val fileChooserLauncher = registerForActivityResult(
@@ -125,6 +142,68 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    private fun applySystemBars(colorHex: String, lightBackground: Boolean) {
+        val color = try { Color.parseColor(colorHex) } catch (_: Exception) { return }
+        window.statusBarColor = color
+        window.navigationBarColor = color
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            isAppearanceLightStatusBars = lightBackground
+            isAppearanceLightNavigationBars = lightBackground
+        }
+    }
+
+    private fun openNativeShareSheet(title: String, text: String, url: String) {
+        val now = System.currentTimeMillis()
+        if (now - lastShareAt < 1_000L) return
+        lastShareAt = now
+        val body = listOf(text, url).filter { it.isNotBlank() }.joinToString("\n")
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, title)
+            putExtra(Intent.EXTRA_TEXT, body)
+        }
+        try {
+            startActivity(Intent.createChooser(send, title.ifBlank { "مشاركة" }))
+        } catch (e: Exception) {
+            AppErrorLog.record(this, "فتح نافذة المشاركة", e)
+        }
+    }
+
+    /**
+     * قناة رسائل بين الموقع والتطبيق، مقيَّدة بأصل موقعنا فقط — إطارات الإعلانات
+     * (iframes) من نطاقات أخرى لا ترى هذا الكائن إطلاقاً، بخلاف addJavascriptInterface
+     * الذي يُحقن في كل إطار بلا تمييز.
+     */
+    private fun installNativeBridge(webView: WebView) {
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) return
+        WebViewCompat.addWebMessageListener(
+            webView,
+            "LiteriumNative",
+            setOf("https://$PRODUCTION_HOST")
+        ) { _, message, _, isMainFrame, _ ->
+            if (!isMainFrame) return@addWebMessageListener
+            val json = try { JSONObject(message.data ?: return@addWebMessageListener) } catch (_: Exception) { return@addWebMessageListener }
+            when (json.optString("type")) {
+                "share" -> openNativeShareSheet(
+                    json.optString("title"),
+                    json.optString("text"),
+                    json.optString("url")
+                )
+                "systemBars" -> applySystemBars(json.optString("color"), json.optBoolean("light"))
+                "haptic" -> webView.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
+            }
+        }
+    }
+
+    private fun showExitDialog() {
+        AlertDialog.Builder(this@MainActivity)
+            .setTitle("الخروج من التطبيق")
+            .setMessage("هل تريد الخروج من تطبيق ليتيريوم؟")
+            .setPositiveButton("خروج") { _, _ -> finish() }
+            .setNegativeButton("إلغاء", null)
+            .show()
+    }
+
     /**
      * منذ أندرويد O، محرّك WebView يعمل دوماً في عملية (process) منفصلة عن عملية التطبيق
      * — هذا هو السبب الأرجح للإغلاق الإجباري الذي كان يحدث عند أول فتح للتطبيق فقط ثم
@@ -149,6 +228,17 @@ class MainActivity : ComponentActivity() {
             settings.mediaPlaybackRequiresUserGesture = false
             settings.allowFileAccess = true
             overScrollMode = View.OVER_SCROLL_NEVER
+            isVerticalScrollBarEnabled = false
+            isHorizontalScrollBarEnabled = false
+            setBackgroundColor(Color.parseColor("#0D2968"))
+            installNativeBridge(this)
+            // أي رابط تنزيل (ملف/APK) يُسلَّم للنظام بدل أن يبدو الضغط عليه بلا أثر.
+            setDownloadListener { url, _, _, _, _ ->
+                try {
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                } catch (_: Exception) {
+                }
+            }
             settings.userAgentString =
                 "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 " +
                     "(KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36 " +
@@ -171,9 +261,34 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                override fun onReceivedError(
+                    view: WebView?,
+                    request: WebResourceRequest?,
+                    error: WebResourceError?
+                ) {
+                    super.onReceivedError(view, request, error)
+                    if (request?.isForMainFrame == true) {
+                        loadFailedState.value = true
+                    }
+                }
+
+                override fun onReceivedHttpError(
+                    view: WebView?,
+                    request: WebResourceRequest?,
+                    errorResponse: WebResourceResponse?
+                ) {
+                    super.onReceivedHttpError(view, request, errorResponse)
+                    val code = errorResponse?.statusCode ?: 0
+                    // 502/503/504: الخادم ينتقل لنسخة جديدة أو يستيقظ — نفس شاشة إعادة المحاولة.
+                    if (request?.isForMainFrame == true && code in 500..599) {
+                        loadFailedState.value = true
+                    }
+                }
+
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
                     if (view?.title?.contains(REAL_APP_TITLE_MARKER, ignoreCase = true) == true) {
+                        loadFailedState.value = false
                         pageReadyState.value = true
                         try {
                             FirebaseMessaging.getInstance().token
@@ -302,12 +417,10 @@ class MainActivity : ComponentActivity() {
         // المحتوى فعلياً حسب حواف النظام (أدناه، عبر windowInsetsPadding) بدل الاعتماد على
         // عدم استدعاء enableEdgeToEdge وحده. نفس لون العلامة التجارية المعتمد في
         // manifest.json (theme_color) على الشريطين لتطابق ما يظهر عند تثبيت الموقع كـPWA.
-        window.statusBarColor = Color.parseColor("#0D9488")
-        window.navigationBarColor = Color.parseColor("#0D9488")
-        WindowCompat.getInsetsController(window, window.decorView).apply {
-            isAppearanceLightStatusBars = false
-            isAppearanceLightNavigationBars = false
-        }
+        // لون شاشة البداية نفسه؛ بعد التحميل يضبط الموقع لون الشريطين ليطابق رأس
+        // الصفحة الفعلي (فاتح/داكن) عبر قناة LiteriumNative — فلا يبدو شريط
+        // الحالة "إطار متصفح" منفصلاً فوق المحتوى.
+        applySystemBars("#0D2968", false)
 
         val startUrl = resolveStartUrl(intent?.data)
 
@@ -319,20 +432,25 @@ class MainActivity : ComponentActivity() {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 val webView = webViewRef
-                if (webView != null && webView.canGoBack()) {
-                    webView.goBack()
+                if (webView != null && pageReadyState.value && !loadFailedState.value) {
+                    // زر الرجوع يُغلق أعلى شاشة مفتوحة داخل التطبيق (مقال، ملف، نافذة...)
+                    // كما في أي تطبيق أصيل؛ وعند الشاشة الرئيسية يظهر تأكيد الخروج مباشرة.
+                    webView.evaluateJavascript(
+                        "(function(){try{return window.__literiumHandleBack?window.__literiumHandleBack():null}catch(e){return null}})()"
+                    ) { result ->
+                        when (result) {
+                            "true" -> Unit
+                            "false" -> showExitDialog()
+                            else -> if (webView.canGoBack()) webView.goBack() else showExitDialog()
+                        }
+                    }
                 } else {
                     // طلب صريح: تأكيد خروج واحد واضح بدل الاعتماد على ضغطتي رجوع
                     // متتاليتين (نمط "double back to exit" الذي كان يعتمد على منطق
                     // التنبيه (toast) الخاص بالموقع نفسه عبر popstate — غير موثوق هنا
                     // لأن هذا الكولباك يعترض زر الرجوع الفعلي للنظام قبل وصوله لأي
                     // منطق JS في الصفحة أصلاً). حوار نظام أصيل واضح لا لبس فيه.
-                    AlertDialog.Builder(this@MainActivity)
-                        .setTitle("الخروج من التطبيق")
-                        .setMessage("هل تريد الخروج من تطبيق ليتيريوم؟")
-                        .setPositiveButton("خروج") { _, _ -> finish() }
-                        .setNegativeButton("إلغاء", null)
-                        .show()
+                    showExitDialog()
                 }
             }
         })
@@ -341,6 +459,7 @@ class MainActivity : ComponentActivity() {
             LiteriumTheme {
                 val context = LocalContext.current
                 val pageReady by pageReadyState
+                val loadFailed by loadFailedState
                 Surface(
                     modifier = Modifier
                         .fillMaxSize()
@@ -390,6 +509,58 @@ class MainActivity : ComponentActivity() {
                                         .padding(top = 24.dp)
                                         .size(32.dp)
                                 )
+                            }
+                        }
+                    }
+
+                    if (loadFailed) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(ComposeColor(0xFF0D2968)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.padding(32.dp)
+                            ) {
+                                Image(
+                                    painter = painterResource(id = R.drawable.ic_launcher_foreground),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(110.dp)
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text(
+                                    text = "تعذّر الاتصال",
+                                    color = ComposeColor.White,
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "تحقق من اتصالك بالإنترنت ثم حاول مجدداً.",
+                                    color = ComposeColor(0xCCFFFFFF),
+                                    fontSize = 14.sp,
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(24.dp))
+                                Button(
+                                    onClick = {
+                                        loadFailedState.value = false
+                                        val wv = webViewRef
+                                        if (wv?.url.isNullOrBlank() || wv?.url?.startsWith("https://") != true) {
+                                            wv?.loadUrl(startUrl)
+                                        } else {
+                                            wv?.reload()
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = ComposeColor(0xFF0D9488),
+                                        contentColor = ComposeColor.White
+                                    )
+                                ) {
+                                    Text(text = "إعادة المحاولة", fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
                     }

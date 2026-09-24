@@ -40,5 +40,13 @@
       "form_factor": "wide",
       "label": "الصفحة الرئيسية لمنصة ليتيريوم على الحاسوب"
     }
-  ]
+  ],
+  "related_applications": [
+    {
+      "platform": "play",
+      "id": "studio.ai.literium.literium_app",
+      "url": "https://literium-wjct.onrender.com/downloads/Literium.apk"
+    }
+  ],
+  "prefer_related_applications": false
 }
