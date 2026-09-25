@@ -77,8 +77,7 @@ const DEFAULT_CONFIG: ExternalAdsConfig = {
   adsterra: { enabled: true, snippet: '', appSafe: true },
   adsterraUnits: defaultAdsterraUnitsEnabled(),
   taboola: { ...EMPTY_NETWORK },
-  // مفعّلة افتراضياً بنفس منطق Adsterra: كود المالك الحقيقي، ثابت في الشيفرة.
-  monetag: { enabled: true },
+  monetag: { enabled: false },
   estimatedCpmUsd: 2
 };
 
@@ -131,19 +130,14 @@ export function subscribeExternalAdsConfig(cb: (config: ExternalAdsConfig) => vo
  * بهذا الفحص إطلاقاً ويستمر بعرض كل الشبكات المفعّلة كما هي دائماً؛
  * القيد يُطبَّق فقط حين isRunningInNativeApp() تُرجع true فعلياً.
  */
-export function pickActiveExternalNetwork(config: ExternalAdsConfig): ExternalAdNetworkConfig | null {
-  const insideNativeApp = isRunningInNativeApp();
-  const isEligible = (net: ExternalAdNetworkConfig) =>
-    net.enabled && net.snippet.trim() && (!insideNativeApp || net.appSafe);
-  const isAdsterraEligible = (net: ExternalAdNetworkConfig) =>
-    net.enabled &&
-    (!insideNativeApp || net.appSafe) &&
-    ADSTERRA_UNITS.some((u) => (config.adsterraUnits ?? {})[u.id] !== false);
-
-  if (isEligible(config.propellerAds)) return config.propellerAds;
-  if (isAdsterraEligible(config.adsterra)) return config.adsterra;
-  if (isEligible(config.taboola)) return config.taboola;
-  return null;
+export function pickActiveExternalNetwork(config: ExternalAdsConfig, seed?: number): ExternalAdNetworkConfig | null {
+  const all = getAllEligibleExternalNetworks(config);
+  if (all.length === 0) return null;
+  if (seed !== undefined && all.length > 1) {
+    const idx = ((seed % all.length) + all.length) % all.length;
+    return all[idx];
+  }
+  return all[0];
 }
 
 /**

@@ -22,6 +22,7 @@ import {
 import { User, Article, AdCampaign } from '../types';
 import { formatDateTimeAr } from '../utils/dateFormat';
 import { AdSlot } from './AdSlot';
+import { AdTickerBar } from './AdTickerBar';
 import { getCreatorEligibility, getMemberStatusLabel } from '../utils/creatorEligibility';
 
 interface WriterProfileViewProps {
@@ -475,6 +476,7 @@ export const WriterProfileView: React.FC<WriterProfileViewProps> = ({
               )}
             </div>
           </div>
+          <AdTickerBar slotId="writer_about" campaigns={campaigns} viewerId={currentUserId} externalPriority minHeightPx={56} />
         </div>
       )}
     </div>
