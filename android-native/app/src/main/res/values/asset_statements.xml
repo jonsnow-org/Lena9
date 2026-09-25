@@ -1,4 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="asset_statements" translatable="false">[{\"include\": \"https://literium-wjct.onrender.com/.well-known/assetlinks.json\"}]</string>
+    <string name="asset_statements" translatable="false">[{\"include\": \"https://literium.ai.studio/.well-known/assetlinks.json\"},{\"include\": \"https://literium-wjct.onrender.com/.well-known/assetlinks.json\"}]</string>
 </resources>

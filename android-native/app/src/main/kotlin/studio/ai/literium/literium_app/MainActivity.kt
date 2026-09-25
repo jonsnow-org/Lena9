@@ -68,13 +68,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import studio.ai.literium.literium_app.ui.theme.LiteriumTheme
 
-private const val PRODUCTION_HOST = "literium-wjct.onrender.com"
-private const val BASE_URL = "https://$PRODUCTION_HOST/"
+private val HOSTS = arrayOf(
+    "literium.ai.studio",
+    "literium-wjct.onrender.com"
+)
 
-// عنوان الصفحة الحقيقي (index.html) لتمييزه عن صفحة "إيقاظ الخدمة" المؤقتة التي
-// يعرضها Render نفسه عندما تكون الخدمة نائمة (الخطة المجانية توقفها بعد قلة نشاط) —
-// تلك الصفحة HTML صالحة أيضاً فتُطلق onPageFinished مثل أي صفحة حقيقية، لذا العنوان
-// وحده هو الفارق الموثوق المتاح هنا لتمييز "جاهز فعلاً" عن "لا يزال يُوقظ الخادم".
 private const val REAL_APP_TITLE_MARKER = "LITERIUM"
 
 /**
@@ -85,29 +83,27 @@ private const val REAL_APP_TITLE_MARKER = "LITERIUM"
  * عبر خدمة Custom Tabs إطلاقاً، فلا يوجد أي التزام إشعار من النظام — هذا بالضبط ما يجعل تطبيقات
  * Capacitor/Cordova الهجينة لا تُظهر هذا الإشعار مطلقاً خلافاً لأي تطبيق TWA.
  */
-private fun resolveStartUrl(uri: Uri?): String {
-    if (uri == null) return BASE_URL
+private fun resolveStartUrl(uri: Uri?, host: String = HOSTS[0]): String {
+    val base = "https://$host/"
+    if (uri == null) return base
     val oobCode = uri.getQueryParameter("oobCode")
     if (uri.getQueryParameter("mode") == "resetPassword" && !oobCode.isNullOrBlank()) {
-        return "${BASE_URL}?mode=resetPassword&oobCode=$oobCode"
+        return "${base}?mode=resetPassword&oobCode=$oobCode"
     }
     val articleId = uri.getQueryParameter("article")
     if (!articleId.isNullOrBlank()) {
-        return "${BASE_URL}?article=$articleId"
+        return "${base}?article=$articleId"
     }
-    return BASE_URL
+    return base
 }
 
 class MainActivity : ComponentActivity() {
 
     private var webViewRef: WebView? = null
     private var pendingFileCallback: ValueCallback<Array<Uri>>? = null
-    // تُقرأ/تُكتب من onPageFinished (Compose state، آمنة من نفس خيط الواجهة الذي
-    // يُشغَّل عليه WebViewClient دائماً) — تتحكم بإخفاء شاشة البداية أدناه.
     private var pageReadyState = mutableStateOf(false)
-    // فشل تحميل الصفحة الرئيسية (انقطاع شبكة/خادم) — تُعرض شاشة أصيلة بدل
-    // صفحة Chrome الافتراضية "تعذر الوصول إلى صفحة الويب" التي تكشف أنه متصفح.
     private var loadFailedState = mutableStateOf(false)
+    private var activeHostIndex = 0
     private var lastShareAt = 0L
     private val revealTimeoutHandler = Handler(Looper.getMainLooper())
 
@@ -179,7 +175,7 @@ class MainActivity : ComponentActivity() {
         WebViewCompat.addWebMessageListener(
             webView,
             "LiteriumNative",
-            setOf("https://$PRODUCTION_HOST")
+            HOSTS.map { "https://$it" }.toSet()
         ) { _, message, _, isMainFrame, _ ->
             if (!isMainFrame) return@addWebMessageListener
             val json = try { JSONObject(message.data ?: return@addWebMessageListener) } catch (_: Exception) { return@addWebMessageListener }
@@ -250,7 +246,7 @@ class MainActivity : ComponentActivity() {
                     request: android.webkit.WebResourceRequest?
                 ): Boolean {
                     val url = request?.url ?: return false
-                    if (url.host?.endsWith(PRODUCTION_HOST) == true) {
+                    if (HOSTS.any { url.host?.endsWith(it) == true }) {
                         return false
                     }
                     return try {
@@ -268,7 +264,12 @@ class MainActivity : ComponentActivity() {
                 ) {
                     super.onReceivedError(view, request, error)
                     if (request?.isForMainFrame == true) {
-                        loadFailedState.value = true
+                        if (activeHostIndex < HOSTS.size - 1) {
+                            activeHostIndex++
+                            view?.loadUrl(resolveStartUrl(intent?.data, HOSTS[activeHostIndex]))
+                        } else {
+                            loadFailedState.value = true
+                        }
                     }
                 }
 
@@ -279,9 +280,13 @@ class MainActivity : ComponentActivity() {
                 ) {
                     super.onReceivedHttpError(view, request, errorResponse)
                     val code = errorResponse?.statusCode ?: 0
-                    // 502/503/504: الخادم ينتقل لنسخة جديدة أو يستيقظ — نفس شاشة إعادة المحاولة.
                     if (request?.isForMainFrame == true && code in 500..599) {
-                        loadFailedState.value = true
+                        if (activeHostIndex < HOSTS.size - 1) {
+                            activeHostIndex++
+                            view?.loadUrl(resolveStartUrl(intent?.data, HOSTS[activeHostIndex]))
+                        } else {
+                            loadFailedState.value = true
+                        }
                     }
                 }
 
@@ -316,7 +321,7 @@ class MainActivity : ComponentActivity() {
                     val lastUrl = crashed.url
                     parent.removeView(crashed)
                     crashed.destroy()
-                    val fresh = buildWebView(this@MainActivity, lastUrl ?: startUrl)
+                    val fresh = buildWebView(this@MainActivity, lastUrl ?: resolveStartUrl(intent?.data, HOSTS[activeHostIndex]))
                     parent.addView(
                         fresh,
                         index,
@@ -422,7 +427,7 @@ class MainActivity : ComponentActivity() {
         // الحالة "إطار متصفح" منفصلاً فوق المحتوى.
         applySystemBars("#0D2968", false)
 
-        val startUrl = resolveStartUrl(intent?.data)
+        val startUrl = resolveStartUrl(intent?.data, HOSTS[activeHostIndex])
 
         // شبكة أمان: إن لم يتحقق شرط العنوان الحقيقي خلال 45 ثانية لأي سبب غير متوقع
         // (تغيّر عنوان الصفحة الحقيقية، أو صفحة إيقاظ لا تُعيد التوجيه تلقائياً) — يُكشف
@@ -547,12 +552,8 @@ class MainActivity : ComponentActivity() {
                                 Button(
                                     onClick = {
                                         loadFailedState.value = false
-                                        val wv = webViewRef
-                                        if (wv?.url.isNullOrBlank() || wv?.url?.startsWith("https://") != true) {
-                                            wv?.loadUrl(startUrl)
-                                        } else {
-                                            wv?.reload()
-                                        }
+                                        activeHostIndex = 0
+                                        webViewRef?.loadUrl(resolveStartUrl(intent?.data, HOSTS[activeHostIndex]))
                                     },
                                     colors = ButtonDefaults.buttonColors(
                                         containerColor = ComposeColor(0xFF0D9488),
@@ -573,7 +574,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        webViewRef?.loadUrl(resolveStartUrl(intent.data))
+        webViewRef?.loadUrl(resolveStartUrl(intent.data, HOSTS[activeHostIndex]))
     }
 
     // foregroundTokenListener مُسجَّل فقط بين onResume/onPause عمداً (وليس طوال

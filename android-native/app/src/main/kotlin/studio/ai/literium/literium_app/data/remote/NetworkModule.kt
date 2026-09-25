@@ -14,21 +14,11 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 /**
- * Singleton Retrofit/OkHttp wiring for [LiteriumApiService], talking to the
- * live `server.ts` deployment at `https://literium-wjct.onrender.com`
- * (Render — replaces the AI Studio "Publish" host, which never ran the
- * Node/Express backend at all, so every `/api` route call there silently
- * failed; static-asset-only client writes like Firestore deletes still
- * worked, which is why only server-authoritative actions looked broken).
+ * Singleton Retrofit/OkHttp wiring for [LiteriumApiService].
  *
- * This does NOT attach an `Authorization` header globally via an
- * interceptor — unlike a typical "always attach the bearer token" setup,
- * roughly half of `server.ts`'s endpoints (see [ApiErrorBody]'s file KDoc)
- * take no auth header at all and trust a client-supplied `userId` instead,
- * so a blanket interceptor would be misleading about what the server
- * actually checks. Instead, [authorizationHeader] is a small suspend
- * helper repositories call explicitly before hitting an endpoint that
- * genuinely requires it (per [LiteriumApiService]'s per-method KDoc).
+ * يبقى BASE_URL مُثبَّتاً على Render لأن server.ts (AI، دفع، بوتات) لا يعمل
+ * على AI Studio (استضافة ثابتة فقط). WebView في MainActivity يتولّى الانتقال
+ * بين المضيفين للواجهة — أما استدعاءات API فتعمل فقط حين يكون Render متاحاً.
  */
 object NetworkModule {
 
