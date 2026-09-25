@@ -1,36 +1,9 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
-/**
- * يُدرج كود HTML/JS جاهز من شبكة إعلانية خارجية (PropellerAds/Adsterra/
- * Monetag) داخل <iframe> معزول تماماً بحجم ثابت صغير — وليس مباشرة في DOM
- * صفحتنا كما كان سابقاً.
- *
- * ⚠️ السبب: أغلب هذه الشبكات (تنسيقات مثل "In-Page Push"/"Social Bar" لدى
- * Adsterra/Monetag) عبارة عن سكربت يُدرج نفسه في document.body مباشرة
- * ويتحكم بموضعه وحجمه بنفسه (position: fixed يغطي الشاشة، بمعزل تام عن أي
- * حاوية CSS نضعه فيها) — لهذا كان يظهر كبطاقة عائمة تغطي أعلى الشاشة بدل
- * البقاء داخل شريطه المخصَّص. الـ iframe يمنحه صفحة/document منفصلة تماماً
- * خاصة به: أي "تثبيت نفسه في body" يحدث داخل body الخاص بالـ iframe نفسه لا
- * body صفحتنا، فيبقى محصوراً فعلياً داخل حجم الصندوق الذي نحدده هنا مهما
- * حاول الكود تجاوزه.
- *
- * كل موضع (AdSlot/AdTickerBar) يحصل الآن على iframe مستقل خاص به — عزل
- * كامل يعني عدم وجود تعارض بين نسخ متعددة من نفس الشبكة على نفس الصفحة،
- * فلا حاجة بعد الآن لمنطق "نفّذ الكود مرة واحدة فقط لكل تحميل صفحة" الذي
- * كان ضرورياً حين كان الجميع يشترك في نفس body الحقيقي.
- */
 interface ExternalAdScriptProps {
   snippet: string;
   className?: string;
-  /** ارتفاع الحاوية بالبكسل — شريط صغير ثابت الحجم لا يكبر مهما حاول كود
-   *  الشبكة نفسه (افتراضياً 90، مناسب لوحدة بانر قياسية صغيرة). */
   heightPx?: number;
-  /** عرض الحاوية بالبكسل — لوحدات إعلانية أضيق من عرض الحاوية الأب
-   *  (مثل 160×300/160×600/468×60/728×90 من Adsterra)، بدل تمديدها لعرض
-   *  100% وترك الوحدة الحقيقية صغيرة داخل مساحة أوسع بلا داعٍ. تُترك
-   *  المساحة الزائدة حول الوحدة فارغة ومُوسَّطة (margin: 0 auto). القيمة
-   *  الافتراضية `undefined` تعني عرض 100% كالسابق تماماً (Native Banner
-   *  وبقية الشبكات التي لا مقاس ثابت لها). */
   widthPx?: number;
 }
 
@@ -41,12 +14,16 @@ export const ExternalAdScript: React.FC<ExternalAdScriptProps> = ({
   widthPx
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const [adLoaded, setAdLoaded] = useState(false);
+  const [hidden, setHidden] = useState(false);
 
   useEffect(() => {
     const container = containerRef.current;
     const trimmed = snippet.trim();
     if (!container || !trimmed) return;
 
+    setAdLoaded(false);
+    setHidden(false);
     container.innerHTML = '';
     const iframe = document.createElement('iframe');
     iframe.style.width = '100%';
@@ -54,43 +31,65 @@ export const ExternalAdScript: React.FC<ExternalAdScriptProps> = ({
     iframe.style.border = '0';
     iframe.style.display = 'block';
     iframe.setAttribute('scrolling', 'no');
-    // ⚠️ allow-same-origin: أُزيلت سابقاً بالكامل لمنع تنسيقات عدائية (Social
-    // Bar/In-Page Push) من حقن عناصرها مباشرة في صفحتنا الحقيقية عبر
-    // window.parent.document — لكن هذا العزل الصارم (أصل معزول/opaque تماماً)
-    // جعل شبكات الإعلان الحقيقية (Adsterra وغيرها) ترفض عرض أي إعلان إطلاقاً:
-    // أغلب سكربتات الشبكات تتحقق من إمكانية الوصول لأصل الصفحة الحقيقية قبل
-    // العرض (وقاية من احتيال "تكديس الإعلانات" بإخفائها في إطارات معزولة)،
-    // وإن فشل التحقق تعرض صندوقاً فارغاً بصمت دون أي خطأ ظاهر — وهذا بالضبط
-    // ما لاحظه المستخدم (لا إعلان يظهر إطلاقاً منذ أسبوع، لأي شبكة).
-    //
-    // القرار الآن: كتالوج الوحدات الإعلانية ثابت ومُحدَّد يدوياً في الكود
-    // (ADSTERRA_UNITS) — لم يعد هناك مربع لصق حر للأدمن يسمح بحقن أي كود
-    // عدائي عشوائي، فخطر "تنسيق يستولي على الشاشة" لم يعد قائماً عملياً طالما
-    // بقي الكتالوج محدوداً بوحدات بانر/Native Banner ثابتة المقاس فقط (كما
-    // هو الآن). لذا نعيد allow-same-origin لاستعادة عرض الإعلانات الحقيقية.
     iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox');
     iframe.srcdoc =
       '<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">' +
       '<style>html,body{margin:0;padding:0;overflow:hidden;background:transparent}</style></head><body>' +
       trimmed +
       '</body></html>';
+
+    iframe.addEventListener('load', () => {
+      setTimeout(() => {
+        try {
+          const doc = iframe.contentDocument;
+          if (doc) {
+            const body = doc.body;
+            const hasVisibleContent =
+              body.scrollHeight > 10 &&
+              (body.children.length > 0 || body.innerHTML.trim().length > 100);
+            const imgs = body.querySelectorAll('img, iframe, canvas, video, object, embed');
+            const hasMedia = imgs.length > 0;
+            const hasText = body.innerText.trim().length > 5;
+            if (hasVisibleContent && (hasMedia || hasText)) {
+              setAdLoaded(true);
+            } else {
+              setHidden(true);
+            }
+          } else {
+            setAdLoaded(true);
+          }
+        } catch {
+          setAdLoaded(true);
+        }
+      }, 3000);
+    });
+
     container.appendChild(iframe);
 
+    const fallbackTimer = setTimeout(() => {
+      if (!adLoaded) setHidden(true);
+    }, 8000);
+
     return () => {
+      clearTimeout(fallbackTimer);
       container.innerHTML = '';
     };
   }, [snippet]);
 
   if (!snippet.trim()) return null;
+  if (hidden) return null;
+
   return (
     <div
       ref={containerRef}
       className={className}
-      style={
-        widthPx
+      style={{
+        ...(widthPx
           ? { height: heightPx, width: widthPx, maxWidth: '100%', margin: '0 auto', overflow: 'hidden' }
-          : { height: heightPx, overflow: 'hidden' }
-      }
+          : { height: heightPx, overflow: 'hidden' }),
+        opacity: adLoaded ? 1 : 0.3,
+        transition: 'opacity 0.3s ease'
+      }}
     />
   );
 };

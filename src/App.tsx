@@ -63,7 +63,6 @@ import { DrawerMenu } from './components/DrawerMenu';
 import { NotificationSettingsModal } from './components/NotificationSettingsModal';
 import { SubscriptionModal } from './components/SubscriptionModal';
 import { NewCampaignModal } from './components/NewCampaignModal';
-import { MonetagVignetteLoader } from './components/MonetagVignetteLoader';
 import { consumeAiUsage, applySubscriptionUpgrade } from './utils/aiQuota';
 import { rememberAccount } from './utils/savedAccounts';
 import { isEligibleForMonetization, getMemberStatusLabel } from './utils/creatorEligibility';
@@ -3641,7 +3640,6 @@ export function App() {
 
   return (
     <div className="min-h-screen flex flex-col text-slate-900 dark:text-slate-100 transition-colors font-sans antialiased">
-      <MonetagVignetteLoader />
       {/* Top Fixed Header */}
       <TopHeader
         currentUser={currentUser}

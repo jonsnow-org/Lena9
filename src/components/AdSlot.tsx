@@ -83,7 +83,7 @@ export const SLOT_CONFIG: Record<AdSlotId, SlotConfig> = {
  * بقرار صريح: المرحلة الحالية بناء وتطوير واكتساب قاعدة أعضاء، ولا تقديم
  * لبرنامج AdSense قريباً. يجب خفضها مجدداً إلى 3 قبل أي تقديم فعلي له.
  */
-export const MAX_ADS_PER_PAGE = 5;
+export const MAX_ADS_PER_PAGE = 8;
 let renderedAdsOnPage = 0;
 // إزاحة دوران عشوائية تتغيّر مع كل انتقال شاشة (انظر resetAdSlotCounter) —
 // دون هذه الإزاحة كان اختيار الحملة الداخلية "eligible[slotIndex % length]"
@@ -229,8 +229,8 @@ export const AdSlot: React.FC<AdSlotProps> = ({
    */
   const externalCandidate: ExternalAdNetworkConfig | null = useMemo(() => {
     if (!platformAdsEnabled) return null;
-    return pickActiveExternalNetwork(externalAdsConfig);
-  }, [platformAdsEnabled, externalAdsConfig]);
+    return pickActiveExternalNetwork(externalAdsConfig, slotIndex + rotationSeed);
+  }, [platformAdsEnabled, externalAdsConfig, slotIndex, rotationSeed]);
 
   /**
    * تجمّع دوران عادل — لمواضع "منصة" العامة فقط (home_hero, home_feed_1/2,
@@ -280,10 +280,8 @@ export const AdSlot: React.FC<AdSlotProps> = ({
     ? null
     : isPlatformSlot
     ? selectedPoolItem?.network || null
-    : config.internalPriority
-    ? internalCandidate
-      ? null
-      : externalCandidate
+    : internalCandidate
+    ? null
     : externalCandidate;
 
   // Adsterra لم يعد لها كود لصق وحيد — تُختار وحدة واحدة من الكتالوج

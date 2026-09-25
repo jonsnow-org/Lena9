@@ -10,6 +10,7 @@ import {
 } from '../utils/externalAdsStore';
 import { ExternalAdScript } from './ExternalAdScript';
 import { claimAdSlotIndex, MAX_ADS_PER_PAGE } from './AdSlot';
+import { pickAdsterraUnit } from '../constants/adsterraUnits';
 
 interface AdTickerBarProps {
   campaigns?: AdCampaign[];
@@ -63,8 +64,8 @@ export const AdTickerBar: React.FC<AdTickerBarProps> = ({
 
   const externalNetwork: ExternalAdNetworkConfig | null = useMemo(() => {
     if (!platformAdsEnabled) return null;
-    return pickActiveExternalNetwork(externalAdsConfig);
-  }, [platformAdsEnabled, externalAdsConfig]);
+    return pickActiveExternalNetwork(externalAdsConfig, slotIndex);
+  }, [platformAdsEnabled, externalAdsConfig, slotIndex]);
 
   // بأولوية خارجية: تُستبعَد الحملات الداخلية كلياً من الدوران طالما توجد
   // شبكة خارجية مؤهَّلة — لا مجرد احتياط كما في الوضع الافتراضي.
@@ -97,9 +98,15 @@ export const AdTickerBar: React.FC<AdTickerBarProps> = ({
   if (slotIndex >= MAX_ADS_PER_PAGE) return null;
 
   if (!campaign && externalNetwork) {
+    const isAdsterra = externalNetwork === externalAdsConfig.adsterra;
+    const adsterraUnit = isAdsterra ? pickAdsterraUnit(externalAdsConfig.adsterraUnits, slotIndex) : null;
+    if (isAdsterra && !adsterraUnit) return null;
+    const adSnippet = adsterraUnit ? adsterraUnit.snippet : externalNetwork.snippet;
+    const adHeight = adsterraUnit ? Math.min(adsterraUnit.heightPx, minHeightPx) : minHeightPx;
+    if (!adSnippet.trim()) return null;
     return (
       <div className="w-full rounded-xl overflow-hidden border border-slate-200/70 dark:border-slate-700/50 bg-slate-50 dark:bg-slate-800/60">
-        <ExternalAdScript snippet={externalNetwork.snippet} className="w-full" heightPx={minHeightPx} />
+        <ExternalAdScript snippet={adSnippet} className="w-full" heightPx={adHeight} />
       </div>
     );
   }

@@ -61,6 +61,7 @@ import { SocialLinksEditor } from './SocialLinksEditor';
 import { EditProfileModal } from './EditProfileModal';
 import { TweetCard } from './TweetCard';
 import { AdSlot } from './AdSlot';
+import { AdTickerBar } from './AdTickerBar';
 import { auth, resendVerificationEmail, checkAndReloadEmailVerification, OWNER_ADMIN_EMAIL } from '../firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { MailWarning } from 'lucide-react';
@@ -792,6 +793,10 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
           </div>
         </div>
       </div>
+
+      {currentUser.role !== 'admin' && (
+        <AdTickerBar slotId="profile_top" campaigns={safeCampaigns} viewerId={currentUser.id} externalPriority minHeightPx={56} />
+      )}
 
       {/* ========================================================================= */}
       {/* 2. المدونة والتغريد — متاحة لأي حساب مسجَّل (قارئ/كاتب/معلن)، وليست
