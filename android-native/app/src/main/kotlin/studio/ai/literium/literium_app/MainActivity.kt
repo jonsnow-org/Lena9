@@ -69,8 +69,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import studio.ai.literium.literium_app.ui.theme.LiteriumTheme
 
 private val HOSTS = arrayOf(
-    "literium.ai.studio",
-    "literium-wjct.onrender.com"
+    "literium-wjct.onrender.com",
+    "literium.ai.studio"
 )
 
 private const val REAL_APP_TITLE_MARKER = "LITERIUM"

@@ -5,17 +5,23 @@ interface ExternalAdScriptProps {
   className?: string;
   heightPx?: number;
   widthPx?: number;
+  onHide?: () => void;
 }
 
 export const ExternalAdScript: React.FC<ExternalAdScriptProps> = ({
   snippet,
   className,
   heightPx = 90,
-  widthPx
+  widthPx,
+  onHide
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [adLoaded, setAdLoaded] = useState(false);
   const [hidden, setHidden] = useState(false);
+  const onHideRef = useRef(onHide);
+  onHideRef.current = onHide;
+  const adLoadedRef = useRef(adLoaded);
+  adLoadedRef.current = adLoaded;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -54,6 +60,7 @@ export const ExternalAdScript: React.FC<ExternalAdScriptProps> = ({
               setAdLoaded(true);
             } else {
               setHidden(true);
+              onHideRef.current?.();
             }
           } else {
             setAdLoaded(true);
@@ -67,7 +74,10 @@ export const ExternalAdScript: React.FC<ExternalAdScriptProps> = ({
     container.appendChild(iframe);
 
     const fallbackTimer = setTimeout(() => {
-      if (!adLoaded) setHidden(true);
+      if (!adLoadedRef.current) {
+        setHidden(true);
+        onHideRef.current?.();
+      }
     }, 8000);
 
     return () => {

@@ -172,6 +172,8 @@ export const AdSlot: React.FC<AdSlotProps> = ({
   // كل 30 ثانية طوال بقاء الموضع ظاهراً على الشاشة، لا عند التنقّل فقط.
   const [rotationSeed, setRotationSeed] = useState(() => adRotationSeed);
   useEffect(() => subscribeAdRotationTick(setRotationSeed), []);
+  const [externalAdHidden, setExternalAdHidden] = useState(false);
+  const externalAdHiddenKeyRef = useRef<string | null>(null);
   const [platformAdsEnabled, setPlatformAdsEnabled] = useState(getPlatformAdsEnabled());
   const [externalAdsConfig, setExternalAdsConfig] = useState(getExternalAdsConfig());
 
@@ -400,6 +402,11 @@ export const AdSlot: React.FC<AdSlotProps> = ({
     // لهوية تتبّع الظهور) — إعادة استخدامهما هنا بدل حساب مكرَّر.
     if (isAdsterraNetwork && !adsterraUnit) return null;
     const snippet = adsterraUnit ? adsterraUnit.snippet : externalNetwork.snippet;
+    if (externalAdHiddenKeyRef.current !== snippet) {
+      externalAdHiddenKeyRef.current = snippet;
+      if (externalAdHidden) setExternalAdHidden(false);
+    }
+    if (externalAdHidden) return null;
     const heightPx = adsterraUnit ? adsterraUnit.heightPx : 250;
     const widthPx = adsterraUnit && adsterraUnit.widthPx > 0 ? adsterraUnit.widthPx : undefined;
     return (
@@ -414,6 +421,7 @@ export const AdSlot: React.FC<AdSlotProps> = ({
           className="w-full rounded-xl overflow-hidden border border-slate-200/70 dark:border-slate-700/50"
           heightPx={heightPx}
           widthPx={widthPx}
+          onHide={() => setExternalAdHidden(true)}
         />
       </div>
     );
