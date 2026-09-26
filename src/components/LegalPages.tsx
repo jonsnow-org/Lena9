@@ -1,6 +1,6 @@
 import React from 'react';
 import { Shield, FileText, Info, Mail, ArrowRight } from 'lucide-react';
-import { REVENUE_SHARES } from '../constants/revenueShares';
+import { REVENUE_SHARES, WRITER_MONETIZATION_ENABLED } from '../constants/revenueShares';
 import { MIN_PAYOUT_USD, EARNINGS_HOLD_DAYS } from '../constants/payoutRules';
 
 export type LegalSection = 'privacy' | 'terms' | 'about' | 'contact';
@@ -112,7 +112,7 @@ export const LegalPages: React.FC<LegalPagesProps> = ({ section, onChangeSection
                 items={[
                   'تشغيل حسابك وتقديم خدمات المنصة',
                   'عرض المحتوى والإعلانات المناسبة لك',
-                  'حساب أرباح الكتّاب وإحصاءات الحملات الإعلانية',
+                  WRITER_MONETIZATION_ENABLED ? 'حساب أرباح الكتّاب وإحصاءات الحملات الإعلانية' : 'احتساب مكافآت المهام وإحصاءات الحملات الإعلانية',
                   'كشف ومنع الاحتيال وإساءة الاستخدام',
                   'تحسين المنصة وتطوير خدماتها',
                   'التواصل معك بخصوص حسابك أو تحديثات الخدمة'
@@ -221,7 +221,7 @@ export const LegalPages: React.FC<LegalPagesProps> = ({ section, onChangeSection
                 items={[
                   'يجب أن تكون المعلومات التي تقدمها عند التسجيل صحيحة ودقيقة',
                   'أنت مسؤول عن الحفاظ على سرية بيانات دخولك وعن كل نشاط يتم من حسابك',
-                  'يُمنع إنشاء حسابات متعددة بغرض التلاعب بالإحصاءات أو الأرباح',
+                  `يُمنع إنشاء حسابات متعددة بغرض التلاعب بالإحصاءات أو ${WRITER_MONETIZATION_ENABLED ? 'الأرباح' : 'المكافآت'}`,
                   'يحق للمنصة تعليق أو إغلاق أي حساب يخالف هذه الشروط'
                 ]}
               />
@@ -259,7 +259,9 @@ export const LegalPages: React.FC<LegalPagesProps> = ({ section, onChangeSection
                 يُرجى الإبلاغ عنه عبر صفحة "اتصل بنا".
               </P>
 
-              <H2>الأرباح والمدفوعات</H2>
+              <H2>{WRITER_MONETIZATION_ENABLED ? 'الأرباح والمدفوعات' : 'المكافآت والمدفوعات'}</H2>
+              {WRITER_MONETIZATION_ENABLED ? (
+              <>
               <P>
                 يكسب الكاتب حصة من عائدات الإعلانات التي تظهر في صفحته الشخصية وداخل مقالاته،
                 ومن مبيعات مقالاته الحصرية، وفق النسب التالية:
@@ -272,9 +274,16 @@ export const LegalPages: React.FC<LegalPagesProps> = ({ section, onChangeSection
                   'إعلانات الصفحة الرئيسية وصفحات التصنيفات: المنصة 100%'
                 ]}
               />
+              </>
+              ) : (
+              <P>
+                النشر والقراءة على المنصة مجانيان. يمكن للأعضاء المسجّلين الحصول على مكافآت
+                صغيرة عند إتمام مهام الحملات الإعلانية الموثّقة، وتخضع للشروط التالية:
+              </P>
+              )}
               <P>
                 <strong className="text-slate-900 dark:text-white">فترة التجميد:</strong> تبقى
-                الأرباح في حالة معلّقة لمدة {HOLD_DAYS} يوماً من تاريخ تسجيلها قبل أن تصبح
+                {WRITER_MONETIZATION_ENABLED ? 'الأرباح' : 'المكافآت'} في حالة معلّقة لمدة {HOLD_DAYS} يوماً من تاريخ تسجيلها قبل أن تصبح
                 قابلة للسحب، وذلك للتحقق من صحتها.
               </P>
               <P>
@@ -285,12 +294,12 @@ export const LegalPages: React.FC<LegalPagesProps> = ({ section, onChangeSection
                 <strong className="text-slate-900 dark:text-white">
                   النقرات والمشاهدات الصالحة:
                 </strong>{' '}
-                تُحتسب الأرباح على أساس التفاعلات الصالحة فقط بعد تصفية الاحتيال. لا تُحتسب
+                تُحتسب {WRITER_MONETIZATION_ENABLED ? 'الأرباح' : 'المكافآت'} على أساس التفاعلات الصالحة فقط بعد تصفية الاحتيال. لا تُحتسب
                 النقرات أو المشاهدات المرفوضة.
               </P>
               <P>
                 <strong className="text-slate-900 dark:text-white">حق الإلغاء:</strong> تحتفظ
-                المنصة بحق إلغاء أي أرباح يثبت أنها ناتجة عن نشاط احتيالي أو مخالف، حتى بعد
+                المنصة بحق إلغاء أي {WRITER_MONETIZATION_ENABLED ? 'أرباح' : 'مكافآت'} يثبت أنها ناتجة عن نشاط احتيالي أو مخالف، حتى بعد
                 إضافتها إلى الرصيد، وقبل صرفها.
               </P>
               <P>سلوك محظور صراحةً:</P>
@@ -303,7 +312,7 @@ export const LegalPages: React.FC<LegalPagesProps> = ({ section, onChangeSection
                 ]}
               />
               <P>
-                مخالفة أي مما سبق تؤدي إلى إلغاء الأرباح وإغلاق الحساب نهائياً.
+                مخالفة أي مما سبق تؤدي إلى إلغاء {WRITER_MONETIZATION_ENABLED ? 'الأرباح' : 'المكافآت'} وإغلاق الحساب نهائياً.
               </P>
 
               <H2>المعلنون</H2>
@@ -372,7 +381,7 @@ export const LegalPages: React.FC<LegalPagesProps> = ({ section, onChangeSection
 
               <H2>التزامنا</H2>
               <P>
-                نلتزم بجودة المحتوى، وشفافية توزيع الأرباح، واحترام خصوصية مستخدمينا.
+                نلتزم بجودة المحتوى، و{WRITER_MONETIZATION_ENABLED ? 'شفافية توزيع الأرباح' : 'شفافية المعاملات'}، واحترام خصوصية مستخدمينا.
               </P>
             </>
           )}

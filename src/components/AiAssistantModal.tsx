@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { User } from '../types';
 import { getRemainingAiUses } from '../utils/aiQuota';
-import { REVENUE_SHARES } from '../constants/revenueShares';
+import { REVENUE_SHARES, WRITER_MONETIZATION_ENABLED } from '../constants/revenueShares';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 
 interface AiAssistantModalProps {
@@ -55,7 +55,9 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
     {
       id: 'm1',
       sender: 'ai',
-      text: 'مرحباً بك! أنا المساعد الذكي لمنصة "ليتيريوم" (LITERIUM). يسعدني إرشادك في كل ما يتعلق بقراءة المقالات، كتابة ونشر المحتوى، تقاسم أرباح Google AdSense والمقالات المقفولة، وإطلاق الحملات الإعلانية. كيف أساعدك اليوم؟',
+      text: WRITER_MONETIZATION_ENABLED
+        ? 'مرحباً بك! أنا المساعد الذكي لمنصة "ليتيريوم" (LITERIUM). يسعدني إرشادك في كل ما يتعلق بقراءة المقالات، كتابة ونشر المحتوى، تقاسم أرباح Google AdSense والمقالات المقفولة، وإطلاق الحملات الإعلانية. كيف أساعدك اليوم؟'
+        : 'مرحباً بك! أنا المساعد الذكي لمنصة "ليتيريوم" (LITERIUM). يسعدني إرشادك في كل ما يتعلق بقراءة المقالات، كتابة ونشر المحتوى، وإطلاق الحملات الإعلانية. كيف أساعدك اليوم؟',
       timestamp: 'الآن'
     }
   ]);
@@ -145,7 +147,9 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
       const fallbackMsg: Message = {
         id: `ai_${Date.now()}`,
         sender: 'ai',
-        text: `يسرني مساعدتك في منصة ليتيريوم! يمكنك استكشاف المقالات، كتابة مقال جديد بربح ${REVENUE_SHARES.IN_ARTICLE_ADS.WRITER_PERCENT}% من الإعلانات و${REVENUE_SHARES.LOCKED_ARTICLES.WRITER_PERCENT}% من المقالات المقفولة، أو إطلاق حملة إعلانية كمعلن.`,
+        text: WRITER_MONETIZATION_ENABLED
+          ? `يسرني مساعدتك في منصة ليتيريوم! يمكنك استكشاف المقالات، كتابة مقال جديد بربح ${REVENUE_SHARES.IN_ARTICLE_ADS.WRITER_PERCENT}% من الإعلانات و${REVENUE_SHARES.LOCKED_ARTICLES.WRITER_PERCENT}% من المقالات المقفولة، أو إطلاق حملة إعلانية كمعلن.`
+          : 'يسرني مساعدتك في منصة ليتيريوم! يمكنك استكشاف المقالات، كتابة مقال جديد، أو إطلاق حملة إعلانية كمعلن.',
         timestamp: 'الآن'
       };
       setMessages((prev) => [...prev, fallbackMsg]);
@@ -259,14 +263,16 @@ export const AiAssistantModal: React.FC<AiAssistantModalProps> = ({
           <>
             {/* Quick Shortcuts */}
             <div className="flex items-center gap-1.5 px-4 py-2 bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 overflow-x-auto text-[11px] font-bold text-slate-600 dark:text-slate-300">
+              {WRITER_MONETIZATION_ENABLED && (
               <button
                 onClick={() => handleSend('كيف يتم توزيع أرباح إعلانات Google AdSense والمقالات المقفولة؟')}
                 className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 hover:bg-teal-50 dark:hover:bg-teal-950/50 border border-slate-200 dark:border-slate-700 shrink-0"
               >
                 💰 نظام الأرباح
               </button>
+              )}
               <button
-                onClick={() => handleSend('كيف أقوم بتوثيق حسابي (KYC) وسحب الأرباح؟')}
+                onClick={() => handleSend(WRITER_MONETIZATION_ENABLED ? 'كيف أقوم بتوثيق حسابي (KYC) وسحب الأرباح؟' : 'كيف أقوم بتوثيق حسابي (KYC) وسحب رصيدي؟')}
                 className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 hover:bg-teal-50 dark:hover:bg-teal-950/50 border border-slate-200 dark:border-slate-700 shrink-0"
               >
                 🛡️ توثيق KYC والسحب

@@ -31,7 +31,7 @@ import {
   TweetComment
 } from './types';
 
-import { REVENUE_SHARES } from './constants/revenueShares';
+import { REVENUE_SHARES, WRITER_MONETIZATION_ENABLED } from './constants/revenueShares';
 import { isRunningAsInstalledApp } from './utils/installState';
 import { LandingPage } from './components/LandingPage';
 import { TopHeader } from './components/TopHeader';
@@ -997,7 +997,7 @@ export function App() {
         if (ev.writerId) {
           const writerUser = users.find((u) => u.id === ev.writerId);
           const writerFollowersCount = followsData.filter((f) => f.followingId === ev.writerId).length;
-          if (isEligibleForMonetization(writerUser, articles, writerFollowersCount)) {
+          if (WRITER_MONETIZATION_ENABLED && isEligibleForMonetization(writerUser, articles, writerFollowersCount)) {
             const share = String(ev.slotId || '').startsWith('writer_profile')
               ? REVENUE_SHARES.WRITER_PROFILE_ADS.WRITER
               : REVENUE_SHARES.IN_ARTICLE_ADS.WRITER;
@@ -1126,7 +1126,7 @@ export function App() {
         }
         const writerUser = users.find((u) => u.id === ev.writerId);
         const writerFollowersCount = followsData.filter((f) => f.followingId === ev.writerId).length;
-        if (!isEligibleForMonetization(writerUser, articles, writerFollowersCount)) {
+        if (!WRITER_MONETIZATION_ENABLED || !isEligibleForMonetization(writerUser, articles, writerFollowersCount)) {
           skippedEvents.push(ev);
           return;
         }
@@ -1289,7 +1289,7 @@ export function App() {
         // بشكل طبيعي (المشتري دفع فعلاً)، لكن حصة الكاتب لا تُحتسب لرصيده
         // إلا إذا استوفى شروط منشئ المحتوى + تحقق الهوية (KYC).
         const writerFollowersCount = writer ? followsData.filter((f) => f.followingId === writer.id).length : 0;
-        if (writer && isEligibleForMonetization(writer, articles, writerFollowersCount)) {
+        if (WRITER_MONETIZATION_ENABLED && writer && isEligibleForMonetization(writer, articles, writerFollowersCount)) {
           const share = Number((price * REVENUE_SHARES.LOCKED_ARTICLES.WRITER).toFixed(2));
           await adminAdjustUserBalance(writer.id, {
             pendingEarnings: Number(((writer.pendingEarnings ?? 0) + share).toFixed(2)),
@@ -3490,6 +3490,28 @@ export function App() {
     };
   }, []);
 
+  // الصفحات القانونية — متاحة للزوار غير المسجّلين أيضاً،
+  // وبلا أي إعلانات (شرط من سياسات AdSense).
+  if (legalSection) {
+    return (
+      <>
+        <LegalPages
+          section={legalSection}
+          onChangeSection={(sec) => setLegalSection(sec)}
+          onBack={() => setLegalSection(null)}
+        />
+        {showExitToast && (
+          <div className="fixed bottom-6 inset-x-0 z-[60] flex justify-center pointer-events-none px-4">
+            <div className="px-4 py-2.5 rounded-full bg-slate-900/95 text-white text-xs font-bold shadow-2xl animate-fade-in">
+              اضغط رجوع مرة أخرى للخروج
+            </div>
+          </div>
+        )}
+      </>
+    );
+  }
+
+
   // طلب صريح: من يثبّت التطبيق (APK) ويفتحه لأول مرة بلا جلسة محقَّقة يجب
   // ألا يرى صفحة الهبوط الدعائية إطلاقاً — بل شاشة تسجيل دخول/إنشاء حساب
   // إلزامية مباشرة (مع خيار نسيت كلمة السر، مبني بالفعل داخل AuthModal).
@@ -3614,27 +3636,6 @@ export function App() {
           </div>
         )}
       </div>
-    );
-  }
-
-  // الصفحات القانونية — متاحة للزوار غير المسجّلين أيضاً،
-  // وبلا أي إعلانات (شرط من سياسات AdSense).
-  if (legalSection) {
-    return (
-      <>
-        <LegalPages
-          section={legalSection}
-          onChangeSection={(sec) => setLegalSection(sec)}
-          onBack={() => setLegalSection(null)}
-        />
-        {showExitToast && (
-          <div className="fixed bottom-6 inset-x-0 z-[60] flex justify-center pointer-events-none px-4">
-            <div className="px-4 py-2.5 rounded-full bg-slate-900/95 text-white text-xs font-bold shadow-2xl animate-fade-in">
-              اضغط رجوع مرة أخرى للخروج
-            </div>
-          </div>
-        )}
-      </>
     );
   }
 
@@ -4595,7 +4596,7 @@ export function App() {
           setUsers((prev) =>
             prev.map((u) =>
               u.id === currentUser.id
-                ? { ...u, walletBalance: newBal, availableBalance: newBal }
+                ? { ...u, walletBalance: newBal }
                 : u
             )
           );

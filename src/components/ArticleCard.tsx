@@ -2,6 +2,7 @@ import React from 'react';
 import { Eye, Heart, MessageSquare, Lock, CheckCircle2, Bookmark, Calendar, ArrowLeft, Sparkles, Clock } from 'lucide-react';
 import { Article } from '../types';
 import { formatDateTimeAr, formatDateAr } from '../utils/dateFormat';
+import { WRITER_MONETIZATION_ENABLED } from '../constants/revenueShares';
 
 interface ArticleCardProps {
   article: Article;
@@ -67,7 +68,7 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({
             {getCategoryLabel(article.category)}
           </span>
 
-          {article.isLocked ? (
+          {WRITER_MONETIZATION_ENABLED && article.isLocked ? (
             <span className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 px-3 py-1 text-xs font-black text-slate-950 shadow-md">
               <Lock className="w-3.5 h-3.5 stroke-[2.5]" />
               <span>مقال حصري ({article.lockedPrice || 2.99}$)</span>

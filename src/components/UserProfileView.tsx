@@ -67,7 +67,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { MailWarning } from 'lucide-react';
 import { getCreatorEligibility } from '../utils/creatorEligibility';
 import { CreatorEligibilityCard } from './CreatorEligibilityCard';
-import { REVENUE_SHARES } from '../constants/revenueShares';
+import { REVENUE_SHARES, WRITER_MONETIZATION_ENABLED } from '../constants/revenueShares';
 import { MIN_PAYOUT_USD, EARNINGS_HOLD_DAYS } from '../constants/payoutRules';
 import {
   getRemainingAiUses,
@@ -928,14 +928,16 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
 
                 <div className="p-4 sm:p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
                   <div className="flex items-center justify-between text-slate-400 mb-2">
-                    <span className="text-xs font-bold">الأرباح التراكمية</span>
+                    <span className="text-xs font-bold">{WRITER_MONETIZATION_ENABLED ? 'الأرباح التراكمية' : 'إجمالي المكافآت'}</span>
                     <DollarSign className="w-4 h-4 text-amber-500" />
                   </div>
                   <h3 className="text-2xl font-black text-slate-900 dark:text-white">
                     ${(currentUser.lifetimeEarnings || 0).toFixed(2)}
                   </h3>
                   <p className="text-[11px] text-amber-600 font-bold mt-1">
-                    {REVENUE_SHARES.IN_ARTICLE_ADS.WRITER_PERCENT}% إعلانات + {REVENUE_SHARES.LOCKED_ARTICLES.WRITER_PERCENT}% مبيعات
+                    {WRITER_MONETIZATION_ENABLED
+                      ? `${REVENUE_SHARES.IN_ARTICLE_ADS.WRITER_PERCENT}% إعلانات + ${REVENUE_SHARES.LOCKED_ARTICLES.WRITER_PERCENT}% مبيعات`
+                      : 'من مهام الحملات الإعلانية'}
                   </p>
                 </div>
 
@@ -987,7 +989,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   }`}
                 >
                   <DollarSign className="w-3.5 h-3.5" />
-                  <span>سحب الأرباح والتقارير المالية</span>
+                  <span>{WRITER_MONETIZATION_ENABLED ? 'سحب الأرباح والتقارير المالية' : 'الرصيد والسحب'}</span>
                 </button>
                 <button
                   onClick={() => setControlPanelSubView('literary')}
@@ -1154,7 +1156,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
                                 {art.category}
                               </span>
-                              {art.isLocked && (
+                              {WRITER_MONETIZATION_ENABLED && art.isLocked && (
                                 <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500 text-slate-950">
                                   مقفول ({art.lockedPrice}$)
                                 </span>
@@ -1303,7 +1305,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
               {/* شروط تفعيل احتساب الأرباح — كانت سابقاً تظهر فقط في صفحة
                   "استوديو الكاتب" المنفصلة (WriterDashboard) التي أُلغيت
                   كوجهة تنقّل قائمة بذاتها؛ محتواها دُمج هنا كي لا يُفقد. */}
-              {currentUser.role !== 'admin' && (
+              {WRITER_MONETIZATION_ENABLED && currentUser.role !== 'admin' && (
                 <CreatorEligibilityCard eligibility={creatorEligibility} onOpenKyc={onOpenKyc} />
               )}
 
@@ -1343,7 +1345,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   <span className="text-xs font-bold text-teal-400">الرصيد المتاح للسحب</span>
                   <h3 className="text-3xl font-black text-white mt-1">${(currentUser.availableBalance ?? 0).toFixed(2)}</h3>
                   <p className="text-xs text-slate-400 mt-1">
-                    الحد الأدنى للسحب: ${MIN_PAYOUT_USD} • تُراجَع الطلبات يدوياً وتُصرف عبر USDT أو تحويل بنكي بعد فترة تجميد {EARNINGS_HOLD_DAYS} يوماً من تسجيل الأرباح
+                    الحد الأدنى للسحب: ${MIN_PAYOUT_USD} • تُراجَع الطلبات يدوياً وتُصرف عبر USDT أو تحويل بنكي بعد فترة تجميد {EARNINGS_HOLD_DAYS} يوماً من تسجيل {WRITER_MONETIZATION_ENABLED ? 'الأرباح' : 'المكافآت'}
                   </p>
                 </div>
                 <button
@@ -1351,12 +1353,13 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   className="px-6 py-3 rounded-2xl bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-xs sm:text-sm shadow-lg shadow-teal-500/20 active:scale-95 transition-all flex items-center gap-2"
                 >
                   <DollarSign className="w-4 h-4" />
-                  <span>طلب سحب الأرباح الآن</span>
+                  <span>{WRITER_MONETIZATION_ENABLED ? 'طلب سحب الأرباح الآن' : 'طلب سحب الرصيد'}</span>
                 </button>
               </div>
 
               {/* Earnings breakdown table — computed from this writer's own
                   articles rather than fixed placeholder figures. */}
+              {WRITER_MONETIZATION_ENABLED && (
               <div className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
                 <h4 className="font-extrabold text-sm text-slate-900 dark:text-white">تفاصيل ومصادر الأرباح</h4>
                 <div className="space-y-2">
@@ -1376,6 +1379,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                   </div>
                 </div>
               </div>
+              )}
             </div>
           )}
 

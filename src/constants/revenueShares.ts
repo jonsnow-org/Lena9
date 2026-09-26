@@ -3,6 +3,12 @@
  * Centralized single source of truth for platform vs writer profit splits.
  */
 
+// مفتاح مؤقت: false يوقف احتساب أي أرباح للكتّاب (إعلانات مقالاتهم/ملفاتهم،
+// مبيعات المقالات المقفلة) ويخفي كل ذكر لها في الواجهة. الكود والبيانات
+// محفوظة كما هي؛ إعادته إلى true تعيد النظام كاملاً. لا يمسّ الإعلانات
+// الخارجية (للمالك) ولا مكافآت مهام الأعضاء في الإعلانات الداخلية.
+export const WRITER_MONETIZATION_ENABLED = false;
+
 export const REVENUE_SHARES = {
   // 1. Ads inside writer articles: 55% Writer / 45% Platform
   IN_ARTICLE_ADS: {

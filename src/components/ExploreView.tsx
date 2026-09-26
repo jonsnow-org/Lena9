@@ -19,6 +19,7 @@ import { Article, AdCampaign, User } from '../types';
 import { formatDateTimeAr } from '../utils/dateFormat';
 import { normalizeArabicSearch } from '../utils/arabicSearch';
 import { AdTickerBar } from './AdTickerBar';
+import { WRITER_MONETIZATION_ENABLED } from '../constants/revenueShares';
 
 interface ExploreViewProps {
   articles: Article[];
@@ -139,7 +140,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
           { id: 'trending', label: '🔥 الأكثر رواجاً', icon: Flame },
           { id: 'top_rated', label: '⭐ الأعلى تقييماً', icon: Award },
           { id: 'writers', label: '✍️ كبار الكُتّاب', icon: Users },
-          { id: 'locked', label: '💎 مقالات مميزة وحصرية', icon: Sparkles }
+          ...(WRITER_MONETIZATION_ENABLED ? [{ id: 'locked', label: '💎 مقالات مميزة وحصرية', icon: Sparkles }] : [])
         ].map((tab) => (
           <button
             key={tab.id}
@@ -310,7 +311,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                         <Heart className="w-3 h-3 text-rose-500" />
                         <span>{art.likesCount}</span>
                       </span>
-                      {art.isLocked && (
+                      {WRITER_MONETIZATION_ENABLED && art.isLocked && (
                         <span className="text-amber-500 font-bold">
                           💎 {art.lockedPrice || 2.99}$
                         </span>

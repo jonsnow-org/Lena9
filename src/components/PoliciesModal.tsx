@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Shield, X, FileText, AlertTriangle, Scale, Lock } from 'lucide-react';
-import { REVENUE_SHARES } from '../constants/revenueShares';
+import { REVENUE_SHARES, WRITER_MONETIZATION_ENABLED } from '../constants/revenueShares';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
+import { MIN_PAYOUT_USD } from '../constants/payoutRules';
 
 interface PoliciesModalProps {
   isOpen: boolean;
@@ -59,7 +60,7 @@ export const PoliciesModal: React.FC<PoliciesModalProps> = ({
                 : 'border-transparent text-slate-500 hover:text-slate-900'
             }`}
           >
-            شروط الاستخدام ونظام الأرباح
+            {WRITER_MONETIZATION_ENABLED ? 'شروط الاستخدام ونظام الأرباح' : 'شروط الاستخدام'}
           </button>
           <button
             onClick={() => setTab('restricted')}
@@ -89,7 +90,7 @@ export const PoliciesModal: React.FC<PoliciesModalProps> = ({
               <p>
                 • بيانات التسجيل الأساسية: البريد الإلكتروني، الاسم، ورقم الهاتف عند التفعيل.<br />
                 • بيانات التوثيق (KYC): وثائق الهوية الوطنية للتحقق من الكتّاب والمعلنين قبل سحب وإيداع الأموال.<br />
-                • بيانات الاستخدام والتحليلات: إحصائيات قراءة المقالات ومرات الظهور لحساب الأرباح بدقة.
+                • بيانات الاستخدام والتحليلات: إحصائيات قراءة المقالات ومرات الظهور {WRITER_MONETIZATION_ENABLED ? 'لحساب الأرباح بدقة' : 'لقياس أداء الحملات بدقة'}.
               </p>
               <h5 className="font-bold text-slate-900 dark:text-white pt-2">
                 2. إعلانات Google AdSense:
@@ -103,11 +104,13 @@ export const PoliciesModal: React.FC<PoliciesModalProps> = ({
           {tab === 'terms' && (
             <div className="space-y-3">
               <h4 className="font-bold text-base text-slate-900 dark:text-white">
-                شروط الاستخدام ونموذج تقاسم العوائد المالية
+                {WRITER_MONETIZATION_ENABLED ? 'شروط الاستخدام ونموذج تقاسم العوائد المالية' : 'شروط الاستخدام'}
               </h4>
               <p>
                 تحكم هذه الاتفاقية العلاقة بين منصة ليتيريوم وكافة أطراف المنظومة:
               </p>
+              {WRITER_MONETIZATION_ENABLED ? (
+              <>
               <h5 className="font-bold text-slate-900 dark:text-white pt-2">
                 1. نموذج تقاسم عوائد الإعلانات:
               </h5>
@@ -122,11 +125,28 @@ export const PoliciesModal: React.FC<PoliciesModalProps> = ({
               <p>
                 يحق للكاتب الموثق تحديد سعر فتح المقال الحصري، ويحصل على <strong>{REVENUE_SHARES.LOCKED_ARTICLES.WRITER_PERCENT}%</strong> من قيمة المبيعات المباشرة وتستقطع المنصة {REVENUE_SHARES.LOCKED_ARTICLES.PLATFORM_PERCENT}% كرسوم معالجة وتشغيل.
               </p>
+              </>
+              ) : (
+              <>
+              <h5 className="font-bold text-slate-900 dark:text-white pt-2">
+                1. النشر والقراءة:
+              </h5>
+              <p>
+                النشر والقراءة مجانيان لجميع الأعضاء. عوائد الإعلانات المعروضة على المنصة تعود لإدارة المنصة لتغطية تكاليف الخوادم والتشغيل.
+              </p>
+              <h5 className="font-bold text-slate-900 dark:text-white pt-2">
+                2. مكافآت مهام الحملات:
+              </h5>
+              <p>
+                يحصل العضو المسجّل على مكافأة صغيرة عند إتمام مهمة حملة إعلانية موثّقة، وتخضع لفترة تجميد قبل أن تصبح قابلة للسحب.
+              </p>
+              </>
+              )}
               <h5 className="font-bold text-slate-900 dark:text-white pt-2">
                 3. شروط السحب المالي:
               </h5>
               <p>
-                الحد الأدنى لطلب السحب هو 10 دولارات، ويتم التحويل خلال 24 ساعة عبر وسائل الدفع المعتمدة (USDT, Bank Wire, Stripe, PayPal).
+                الحد الأدنى لطلب السحب هو {MIN_PAYOUT_USD} دولاراً، ويتم التحويل خلال 24 ساعة عبر وسائل الدفع المعتمدة (USDT, Bank Wire, Stripe, PayPal).
               </p>
             </div>
           )}

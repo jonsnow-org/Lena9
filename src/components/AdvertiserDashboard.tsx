@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { AdCampaign } from '../types';
 import { SmartAiGuidanceCard } from './SmartAiGuidanceCard';
-import { REVENUE_SHARES } from '../constants/revenueShares';
+import { REVENUE_SHARES, WRITER_MONETIZATION_ENABLED } from '../constants/revenueShares';
 
 interface AdvertiserDashboardProps {
   campaigns: AdCampaign[];
@@ -226,7 +226,7 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
                           {camp.pricingModel === 'fixed' ? 'ثابت (مدة)' : camp.pricingModel === 'cpm' ? 'CPM (ظهور)' : 'CPC (نقرات)'}
                         </span>
                         <span className="text-[10px] px-2 py-0.5 rounded-full bg-brand-500/20 text-brand-300 border border-brand-500/30 font-bold">
-                          {camp.placementType === 'platform' ? 'إعلان المنصة (100%)' : `إعلان مقالات الكُتّاب (${REVENUE_SHARES.IN_ARTICLE_ADS.WRITER_PERCENT}/${REVENUE_SHARES.IN_ARTICLE_ADS.PLATFORM_PERCENT})`}
+                          {camp.placementType === 'platform' ? 'إعلان المنصة (100%)' : WRITER_MONETIZATION_ENABLED ? `إعلان مقالات الكُتّاب (${REVENUE_SHARES.IN_ARTICLE_ADS.WRITER_PERCENT}/${REVENUE_SHARES.IN_ARTICLE_ADS.PLATFORM_PERCENT})` : 'إعلان داخل المقالات'}
                         </span>
                       </div>
 

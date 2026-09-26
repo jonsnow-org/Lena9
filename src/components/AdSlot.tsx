@@ -15,6 +15,7 @@ import {
 import { ExternalAdScript } from './ExternalAdScript';
 import { SocialPromoCta } from './SocialPromoCta';
 import { pickAdsterraUnit } from '../constants/adsterraUnits';
+import { WRITER_MONETIZATION_ENABLED } from '../constants/revenueShares';
 
 /**
  * رموز المواضع الإعلانية المعتمدة في المنصة.
@@ -332,7 +333,7 @@ export const AdSlot: React.FC<AdSlotProps> = ({
   // الحقيقية (50% مرئي لمدة ثانية متواصلة) المستخدم أصلاً للحملات
   // الداخلية — بلا هذا الفرع كانت مشاهدات الإعلان الخارجي في مقالات/ملفات
   // الكُتّاب تمرّ دون أي أثر يُحتسب منه عائد الكاتب لاحقاً.
-  const trackExternalWriterView = Boolean(externalNetwork) && config.beneficiary === 'writer';
+  const trackExternalWriterView = WRITER_MONETIZATION_ENABLED && Boolean(externalNetwork) && config.beneficiary === 'writer';
   useEffect(() => {
     if ((!selectedCampaign && !trackExternalWriterView) || hasLoggedImpression.current) return;
     const el = containerRef.current;

@@ -35,7 +35,7 @@ import { nativeShare } from '../utils/nativeBridge';
 import { AdSlot } from './AdSlot';
 import { VideoEmbed } from './VideoEmbed';
 import { VideoPlayer } from './VideoPlayer';
-import { REVENUE_SHARES } from '../constants/revenueShares';
+import { REVENUE_SHARES, WRITER_MONETIZATION_ENABLED } from '../constants/revenueShares';
 import { buildMemberLabelMap } from '../utils/creatorEligibility';
 
 type ReaderTheme = 'default' | 'sepia' | 'charcoal';
@@ -141,7 +141,7 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
   const [showAudioControls, setShowAudioControls] = useState(false);
   const [audioErrorNotice, setAudioErrorNotice] = useState<string | null>(null);
 
-  const isLocked = article.isLocked && !isUnlockedByCurrentUser;
+  const isLocked = WRITER_MONETIZATION_ENABLED && article.isLocked && !isUnlockedByCurrentUser;
 
   // استئناف القراءة تلقائياً وبهدوء من آخر موضع محفوظ (بدل بانر يسأل
   // المستخدم عن نسبة مئوية قد لا تُطابق الموضع الفعلي بدقة، لأن ارتفاع
@@ -571,7 +571,7 @@ export const ArticleReader: React.FC<ArticleReaderProps> = ({
                 : 'مقالات عامة'}
             </span>
 
-            {article.isLocked && (
+            {WRITER_MONETIZATION_ENABLED && article.isLocked && (
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs font-bold border border-amber-500/20">
                 <Lock className="w-3.5 h-3.5" />
                 <span>مقال حصري مدفوع ({article.lockedPrice || 2.99}$)</span>

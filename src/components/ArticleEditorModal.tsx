@@ -37,7 +37,7 @@ import { MediaUploadInput } from './MediaUploadInput';
 import { VideoPlayer } from './VideoPlayer';
 import { getRemainingAiUses } from '../utils/aiQuota';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
-import { REVENUE_SHARES } from '../constants/revenueShares';
+import { REVENUE_SHARES, WRITER_MONETIZATION_ENABLED } from '../constants/revenueShares';
 
 interface ArticleEditorModalProps {
   isOpen: boolean;
@@ -689,7 +689,7 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
                     <span className="px-3 py-1 rounded-xl bg-brand-600 text-white text-xs font-bold shadow-md">
                       {category}
                     </span>
-                    {isLocked && (
+                    {WRITER_MONETIZATION_ENABLED && isLocked && (
                       <span className="px-3 py-1 rounded-xl bg-amber-500 text-slate-950 text-xs font-black flex items-center gap-1 shadow-md">
                         <Lock className="w-3 h-3" />
                         <span>مقال حصري مدفوع (${lockedPrice})</span>
@@ -976,6 +976,7 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
               </div>
 
               {/* Monetization / Locking Options */}
+              {WRITER_MONETIZATION_ENABLED && (
               <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/10 via-teal-500/10 to-transparent border border-amber-500/30 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -1042,6 +1043,7 @@ export const ArticleEditorModal: React.FC<ArticleEditorModalProps> = ({
                   </div>
                 )}
               </div>
+              )}
             </form>
           )}
         </div>

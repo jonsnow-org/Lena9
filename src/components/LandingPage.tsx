@@ -27,7 +27,7 @@ import {
   MessageSquare
 } from 'lucide-react';
 import { Article, User, UserRole, AdCampaign } from '../types';
-import { REVENUE_SHARES } from '../constants/revenueShares';
+import { REVENUE_SHARES, WRITER_MONETIZATION_ENABLED } from '../constants/revenueShares';
 import { CREATOR_ELIGIBILITY_THRESHOLDS } from '../utils/creatorEligibility';
 import { AdTickerBar } from './AdTickerBar';
 
@@ -162,7 +162,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           <Sparkles className="w-3.5 h-3.5 text-amber-400" />
           <span className="font-bold">المجتمع الأدبي والثقافي الرقمي الأول</span>
           <span className="w-1.5 h-1.5 rounded-full bg-teal-400" />
-          <span className="text-slate-400 hidden sm:inline">نظام تقاسم أرباح حقيقي للكُتّاب والمعلنين</span>
+          <span className="text-slate-400 hidden sm:inline">{WRITER_MONETIZATION_ENABLED ? 'نظام تقاسم أرباح حقيقي للكُتّاب والمعلنين' : 'مساحة حرة للقرّاء والكتّاب والمعلنين'}</span>
         </div>
 
         {/* Hero Display Headline */}
@@ -172,7 +172,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 
         {/* Clear Mission Tagline */}
         <p className="mt-5 text-base sm:text-lg lg:text-xl text-slate-300 max-w-3xl mx-auto leading-relaxed font-medium">
-          منصة أدبية عربية تتيح <span className="text-brand-300 font-bold">للقراء القراءة</span>، و<span className="text-teal-300 font-bold">للكتاب النشر والربح</span>، و<span className="text-cyan-300 font-bold">للمعلنين الإعلان</span>.
+          منصة أدبية عربية تتيح <span className="text-brand-300 font-bold">للقراء القراءة</span>، و<span className="text-teal-300 font-bold">{WRITER_MONETIZATION_ENABLED ? 'للكتاب النشر والربح' : 'للكتاب النشر'}</span>، و<span className="text-cyan-300 font-bold">للمعلنين الإعلان</span>.
         </p>
 
         {/* Primary Role Action CTAs */}
@@ -225,9 +225,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           </div>
           <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 backdrop-blur-md">
             <span className="text-2xl sm:text-3xl font-black text-teal-400">
-              {REVENUE_SHARES.IN_ARTICLE_ADS.WRITER_PERCENT}% - {REVENUE_SHARES.LOCKED_ARTICLES.WRITER_PERCENT}%
+              {WRITER_MONETIZATION_ENABLED ? `${REVENUE_SHARES.IN_ARTICLE_ADS.WRITER_PERCENT}% - ${REVENUE_SHARES.LOCKED_ARTICLES.WRITER_PERCENT}%` : 'مجاني'}
             </span>
-            <p className="text-xs text-slate-400 font-medium mt-1">نسبة أرباح الكتّاب</p>
+            <p className="text-xs text-slate-400 font-medium mt-1">{WRITER_MONETIZATION_ENABLED ? 'نسبة أرباح الكتّاب' : 'النشر للكتّاب'}</p>
           </div>
           <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800/80 backdrop-blur-md">
             <span className="text-2xl sm:text-3xl font-black text-cyan-400">2,800+</span>
@@ -361,31 +361,44 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               <div className="w-12 h-12 rounded-2xl bg-teal-600/20 text-teal-400 border border-teal-500/30 flex items-center justify-center mb-5">
                 <PenTool className="w-6 h-6" />
               </div>
-              <h3 className="text-xl font-black text-white mb-2">2. للكتّاب: انشر مقالاتك وحقق أرباحاً حقيقية</h3>
+              <h3 className="text-xl font-black text-white mb-2">{WRITER_MONETIZATION_ENABLED ? '2. للكتّاب: انشر مقالاتك وحقق أرباحاً حقيقية' : '2. للكتّاب: انشر مقالاتك ووسّع جمهورك'}</h3>
               <p className="text-xs sm:text-sm text-slate-300 leading-relaxed mb-6">
-                حوّل إبداعك إلى عوائد مالية مجزية مع برنامج شركاء ليتيريوم الأعدل عربياً، وسحب أرباحك بسلاسة.
+                {WRITER_MONETIZATION_ENABLED
+                  ? 'حوّل إبداعك إلى عوائد مالية مجزية مع برنامج شركاء ليتيريوم الأعدل عربياً، وسحب أرباحك بسلاسة.'
+                  : 'انشر إبداعك لجمهور عربي واسع، وابنِ قاعدة متابعين حقيقية حول كتاباتك.'}
               </p>
               <ul className="space-y-3 text-xs text-slate-300">
+                {WRITER_MONETIZATION_ENABLED ? (
                 <li className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-teal-400 shrink-0" />
                   <span>
                     <strong>ربح يصل إلى {REVENUE_SHARES.LOCKED_ARTICLES.WRITER_PERCENT}%</strong> من مبيعات المقالات المقفولة، و{REVENUE_SHARES.IN_ARTICLE_ADS.WRITER_PERCENT}% من عوائد إعلانات مقالاتك
                   </span>
                 </li>
+                ) : (
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-teal-400 shrink-0" />
+                  <span>ملف كاتب شخصي مع متابعين وتعليقات وتقييمات حقيقية</span>
+                </li>
+                )}
                 <li className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-teal-400 shrink-0" />
                   <span>استوديو كتابة مدعوم بنموذج Gemini AI لتوليد الصور وصياغة الأفكار</span>
                 </li>
+                {WRITER_MONETIZATION_ENABLED && (
                 <li className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-teal-400 shrink-0" />
                   <span>
                     نظام تأهيل واضح ومتكامل: {CREATOR_ELIGIBILITY_THRESHOLDS.MIN_PUBLISHED_ARTICLES} مقالات منشورة، {CREATOR_ELIGIBILITY_THRESHOLDS.MIN_FOLLOWERS} متابع، {CREATOR_ELIGIBILITY_THRESHOLDS.MIN_VALID_VIEWS.toLocaleString('ar-EG')} مشاهدة موثوقة، عمر حساب {CREATOR_ELIGIBILITY_THRESHOLDS.MIN_ACCOUNT_AGE_DAYS} يوماً، وتحقق هوية (KYC) — لضمان جدية الأرباح ومطابقة معايير برامج الإعلانات
                   </span>
                 </li>
+                )}
+                {WRITER_MONETIZATION_ENABLED && (
                 <li className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-teal-400 shrink-0" />
                   <span>سحب أرباح موثوق (بايبال، تحويل بنكي، بطاقات) بحد أدنى 50$ فقط</span>
                 </li>
+                )}
               </ul>
               <button
                 onClick={() => onOpenRegister('writer')}
@@ -528,7 +541,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               </div>
               <h3 className="text-base font-bold text-white mb-2">شفافية وسحب مالي فوري</h3>
               <p className="text-xs text-slate-300 leading-relaxed">
-                محفظة إلكترونية تتبع أرباحك لحظة بلحظة، مع إمكانية سحب مستحقاتك بكل أمان عبر بايبال والحساب البنكي والبطاقات عند بلوغ 50$.
+                محفظة إلكترونية تتبع {WRITER_MONETIZATION_ENABLED ? 'أرباحك' : 'رصيدك ومكافآتك'} لحظة بلحظة، مع إمكانية سحب مستحقاتك بكل أمان عبر بايبال والحساب البنكي والبطاقات عند بلوغ 50$.
               </p>
             </div>
             <div className="mt-5 pt-3 border-t border-slate-800 flex items-center gap-1 text-[11px] font-bold text-teal-400">
@@ -757,7 +770,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                   انضم اليوم إلى أكبر مجتمع أدبي وثقافي عربي
                 </h2>
                 <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-                  سواء كنت قارئاً شغوفاً بالمعرفة، أو كاتباً تطمح لنشر أفكارك ومشاركة الأرباح، أو معلناً تبحث عن جمهور نوعي.
+                  سواء كنت قارئاً شغوفاً بالمعرفة، أو كاتباً تطمح لنشر أفكارك{WRITER_MONETIZATION_ENABLED ? ' ومشاركة الأرباح' : ''}، أو معلناً تبحث عن جمهور نوعي.
                 </p>
                 <div className="pt-4 flex flex-wrap items-center justify-center gap-3">
                   <button
@@ -779,7 +792,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         </div>
 
         <div className="max-w-7xl mx-auto mt-8 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-4">
-          <p>© 2026 LITERIUM. جميع الحقوق محفوظة لمنصة ليتيريوم للأدب والفكر ومشاركة الأرباح.</p>
+          <p>© 2026 LITERIUM. جميع الحقوق محفوظة لمنصة ليتيريوم للأدب والفكر{WRITER_MONETIZATION_ENABLED ? ' ومشاركة الأرباح' : ''}.</p>
           {/* روابط الصفحات القانونية — إلزامية وقابلة للنقر (شرط AdSense) */}
           <div className="flex flex-wrap items-center justify-center gap-4">
             <button onClick={() => onOpenLegal('privacy')} className="hover:text-brand-400 transition-colors font-bold">

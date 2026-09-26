@@ -2,6 +2,7 @@ import React from 'react';
 import { Sparkles, Calendar, Eye, Lock, ArrowLeft, Star, Bookmark } from 'lucide-react';
 import { Article } from '../types';
 import { formatDateTimeAr } from '../utils/dateFormat';
+import { WRITER_MONETIZATION_ENABLED } from '../constants/revenueShares';
 
 interface FeaturedArticlesSectionProps {
   articles?: Article[];
@@ -94,7 +95,7 @@ export const FeaturedArticlesSection: React.FC<FeaturedArticlesSectionProps> = (
                     <span>مختار للتحرير</span>
                   </span>
 
-                  {article.isLocked ? (
+                  {WRITER_MONETIZATION_ENABLED && article.isLocked ? (
                     <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500 text-slate-950 font-black text-xs shadow-md">
                       <Lock className="w-3 h-3 stroke-[2.5]" />
                       <span>{article.lockedPrice || 2.99}$</span>

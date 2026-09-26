@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Transaction, PaymentMethod, AdCampaign } from '../types';
-import { REVENUE_SHARES } from '../constants/revenueShares';
+import { REVENUE_SHARES, WRITER_MONETIZATION_ENABLED } from '../constants/revenueShares';
 import { AdTickerBar } from './AdTickerBar';
 import { MIN_DEPOSIT_USD, MIN_PAYOUT_USD } from '../constants/payoutRules';
 import {
@@ -301,7 +301,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                 محفظة ليتيريوم المالية
               </h3>
               <p className="text-xs text-slate-500">
-                إدارة الأرباح، الإيداعات، والسحب الفوري بأمان
+                {WRITER_MONETIZATION_ENABLED ? 'إدارة الأرباح، الإيداعات، والسحب الفوري بأمان' : 'إدارة الرصيد، الإيداعات، والسحب بأمان'}
               </p>
             </div>
           </div>
@@ -320,7 +320,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
           {[
             { id: 'overview' as const, label: 'نظرة عامة' },
             { id: 'deposit' as const, label: 'إيداع رصيد +' },
-            { id: 'withdraw' as const, label: 'سحب الأرباح ↑' },
+            { id: 'withdraw' as const, label: WRITER_MONETIZATION_ENABLED ? 'سحب الأرباح ↑' : 'سحب الرصيد ↑' },
             { id: 'history' as const, label: 'سجل العمليات' }
           ].map((tab) => (
             <button
@@ -387,11 +387,12 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                   className="p-4 rounded-2xl bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 text-white transition-all flex items-center justify-center gap-2 font-extrabold text-sm"
                 >
                   <ArrowUpRight className="w-5 h-5 text-emerald-400" />
-                  <span>طلب سحب الأرباح</span>
+                  <span>{WRITER_MONETIZATION_ENABLED ? 'طلب سحب الأرباح' : 'طلب سحب الرصيد'}</span>
                 </button>
               </div>
 
               {/* Revenue Sharing Legend */}
+              {WRITER_MONETIZATION_ENABLED && (
               <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300">
                 <h4 className="font-bold text-slate-900 dark:text-white mb-2 flex items-center gap-1.5">
                   <Zap className="w-4 h-4 text-teal-600 dark:text-teal-400" />
@@ -403,6 +404,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                   <li>• <strong>المقالات المقفولة الحصرية:</strong> {REVENUE_SHARES.LOCKED_ARTICLES.LABEL}.</li>
                 </ul>
               </div>
+              )}
             </div>
           )}
 

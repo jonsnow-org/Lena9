@@ -24,6 +24,7 @@ import { formatDateTimeAr } from '../utils/dateFormat';
 import { AdSlot } from './AdSlot';
 import { AdTickerBar } from './AdTickerBar';
 import { getCreatorEligibility, getMemberStatusLabel } from '../utils/creatorEligibility';
+import { WRITER_MONETIZATION_ENABLED } from '../constants/revenueShares';
 
 interface WriterProfileViewProps {
   writer: User;
@@ -140,7 +141,7 @@ export const WriterProfileView: React.FC<WriterProfileViewProps> = ({
                       شروط الأهلية الكاملة، بلا وسوم وسيطة متضاربة. */}
                   <span
                     className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 border border-amber-500/20"
-                    title={creatorEligibility.isEligible ? 'استوفى شروط الأهلية الكاملة لاحتساب الأرباح' : undefined}
+                    title={WRITER_MONETIZATION_ENABLED && creatorEligibility.isEligible ? 'استوفى شروط الأهلية الكاملة لاحتساب الأرباح' : undefined}
                   >
                     <Award className="w-3.5 h-3.5" />
                     <span>{getMemberStatusLabel(writer.role, creatorEligibility.isEligible)}</span>
@@ -332,7 +333,7 @@ export const WriterProfileView: React.FC<WriterProfileViewProps> = ({
                         ? 'التاريخ'
                         : 'فلسفة'}
                     </span>
-                    {art.isLocked && (
+                    {WRITER_MONETIZATION_ENABLED && art.isLocked && (
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950 text-amber-600 flex items-center gap-1">
                         <Lock className="w-2.5 h-2.5" />
                         <span>مقفول ({art.lockedPrice}$)</span>

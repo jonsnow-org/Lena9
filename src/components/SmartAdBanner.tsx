@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { ShieldCheck, AlertTriangle, ExternalLink, Sparkles, Info, Eye, MousePointerClick, CheckCircle2 } from 'lucide-react';
 import { AdCampaign, PricingModel, AdPlacementType, FraudFlag } from '../types';
 import { AntiFraudEngine } from '../utils/antiFraud';
-import { REVENUE_SHARES } from '../constants/revenueShares';
+import { REVENUE_SHARES, WRITER_MONETIZATION_ENABLED } from '../constants/revenueShares';
 import { claimAdSlotIndex, MAX_ADS_PER_PAGE } from './AdSlot';
 
 interface SmartAdBannerProps {
@@ -188,7 +188,7 @@ export const SmartAdBanner: React.FC<SmartAdBannerProps> = ({
             {badge.label}
           </span>
 
-          {placementType === 'writer' ? (
+          {WRITER_MONETIZATION_ENABLED && placementType === 'writer' ? (
             <span className="text-[10px] text-emerald-400/90 bg-emerald-950/40 border border-emerald-500/20 px-2 py-0.5 rounded-full flex items-center gap-1">
               <CheckCircle2 className="w-2.5 h-2.5" />
               مشاركة أرباح مع الكاتب ({REVENUE_SHARES.IN_ARTICLE_ADS.WRITER_PERCENT}%)
@@ -314,7 +314,7 @@ export const SmartAdBanner: React.FC<SmartAdBannerProps> = ({
             <div className="p-2 rounded bg-slate-900/80 border border-slate-800">
               <div className="text-slate-400 mb-0.5">توزيع الإيراد</div>
               <div className="font-bold text-emerald-400">
-                {placementType === 'writer' ? `${REVENUE_SHARES.IN_ARTICLE_ADS.WRITER_PERCENT}% كاتب / ${REVENUE_SHARES.IN_ARTICLE_ADS.PLATFORM_PERCENT}% منصة` : '100% مالك المنصة'}
+                {WRITER_MONETIZATION_ENABLED && placementType === 'writer' ? `${REVENUE_SHARES.IN_ARTICLE_ADS.WRITER_PERCENT}% كاتب / ${REVENUE_SHARES.IN_ARTICLE_ADS.PLATFORM_PERCENT}% منصة` : '100% مالك المنصة'}
               </div>
             </div>
           </div>

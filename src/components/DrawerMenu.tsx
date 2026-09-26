@@ -27,6 +27,7 @@ import { isEligibleForMonetization } from '../utils/creatorEligibility';
 import { useAppUpdate } from '../hooks/useAppUpdate';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { hasAppOnThisDevice, detectInstalledRelatedApp } from '../utils/installState';
+import { WRITER_MONETIZATION_ENABLED } from '../constants/revenueShares';
 
 interface DrawerMenuProps {
   isOpen: boolean;
@@ -127,7 +128,7 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
       case 'writer':
       case 'reader':
       default:
-        return isMonetizationEligible ? '✍️ كاتب شريك ومعتمد' : '📖 قارئ مسجل';
+        return isMonetizationEligible ? (WRITER_MONETIZATION_ENABLED ? '✍️ كاتب شريك ومعتمد' : '✍️ كاتب') : '📖 قارئ مسجل';
     }
   };
 
@@ -270,7 +271,7 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
                 >
                   <div className="flex items-center gap-3">
                     <Wallet className="w-4 h-4 text-emerald-400" />
-                    <span>المحفظة والأرباح</span>
+                    <span>{WRITER_MONETIZATION_ENABLED ? 'المحفظة والأرباح' : 'المحفظة'}</span>
                   </div>
                   <span className="text-[11px] text-emerald-400 font-mono font-bold">
                     ${(currentUser.walletBalance ?? 0).toFixed(2)}

@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
+import { WRITER_MONETIZATION_ENABLED } from '../constants/revenueShares';
 
 interface BetaTesting20ModalProps {
   isOpen: boolean;
@@ -87,7 +88,7 @@ export const BetaTesting20Modal: React.FC<BetaTesting20ModalProps> = ({
               />
             </div>
             <p className="text-[11px] text-brand-700 dark:text-brand-300 mt-2">
-              ✓ تم استيفاء معايير استقرار التطبيق وتجربة المستخدم RTL وتقاسم الأرباح.
+              ✓ تم استيفاء معايير استقرار التطبيق وتجربة المستخدم RTL{WRITER_MONETIZATION_ENABLED ? ' وتقاسم الأرباح' : ''}.
             </p>
           </div>
 
@@ -162,7 +163,7 @@ export const BetaTesting20Modal: React.FC<BetaTesting20ModalProps> = ({
                   required
                   value={feedback}
                   onChange={(e) => setFeedback(e.target.value)}
-                  placeholder="اكتب ملاحظاتك حول سرعة التصفح، وضوح الخطوط العربية، وسلاسة نموذج الأرباح..."
+                  placeholder={`اكتب ملاحظاتك حول سرعة التصفح، وضوح الخطوط العربية، ${WRITER_MONETIZATION_ENABLED ? 'وسلاسة نموذج الأرباح...' : 'وسلاسة التنقل...'}`}
                   className="w-full px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs outline-hidden focus:border-brand-500 resize-none"
                 />
               </div>

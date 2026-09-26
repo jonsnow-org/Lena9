@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Sparkles, CheckCircle2, ChevronDown, ChevronUp, Lightbulb, ShieldCheck, AlertCircle } from 'lucide-react';
-import { REVENUE_SHARES } from '../constants/revenueShares';
+import { REVENUE_SHARES, WRITER_MONETIZATION_ENABLED } from '../constants/revenueShares';
 
 interface SmartAiGuidanceCardProps {
   context: 'campaign_creation' | 'article_editor' | 'wallet_payout' | 'anti_fraud_soc';
@@ -39,9 +39,9 @@ export const SmartAiGuidanceCard: React.FC<SmartAiGuidanceCardProps> = ({
 
       case 'article_editor':
         return {
-          title: title || 'مساعد الكاتب الذكي: معايير القراءة وتحقيق الدخل',
+          title: title || (WRITER_MONETIZATION_ENABLED ? 'مساعد الكاتب الذكي: معايير القراءة وتحقيق الدخل' : 'مساعد الكاتب الذكي: معايير القراءة والانتشار'),
           badge: 'استوديو الكاتب',
-          tips: [
+          tips: WRITER_MONETIZATION_ENABLED ? [
             {
               heading: 'طول المقال المثالي ومشاركة الأرباح',
               desc: `المقالات التي تتجاوز 700 كلمة تحقق نسبة بقاء أعلى من القارئ، مما يضاعف مرات ظهور إعلانات AdSense الصالحة بنسبة ${REVENUE_SHARES.IN_ARTICLE_ADS.WRITER_PERCENT}%.`
@@ -49,6 +49,15 @@ export const SmartAiGuidanceCard: React.FC<SmartAiGuidanceCardProps> = ({
             {
               heading: 'تسعير المقال المقفول (الحصري)',
               desc: `الأسعار بين $1.50 و $3.50 تحقق أعلى معدل شراء وتكسب ${REVENUE_SHARES.LOCKED_ARTICLES.WRITER_PERCENT}% من صافي المبيعات.`
+            },
+            {
+              heading: 'العناوين والكلمات المفتاحية',
+              desc: 'استخدم عناوين فضولية رصينة لتتصدر قائمة الرواج (Trending) وتزيد عدد المتابعين.'
+            }
+          ] : [
+            {
+              heading: 'طول المقال المثالي',
+              desc: 'المقالات التي تتجاوز 700 كلمة تحقق نسبة بقاء أعلى من القارئ وتفاعلاً أكبر.'
             },
             {
               heading: 'العناوين والكلمات المفتاحية',

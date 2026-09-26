@@ -36,7 +36,7 @@ import {
 } from './server/nowPayments';
 import { sendPushToUser, type NotificationCategory } from './server/pushNotifications';
 import { isEligibleForMonetization } from './src/utils/creatorEligibility';
-import { REVENUE_SHARES } from './src/constants/revenueShares';
+import { REVENUE_SHARES, WRITER_MONETIZATION_ENABLED } from './src/constants/revenueShares';
 import type { User, Article } from './src/types';
 
 dotenv.config();
@@ -366,7 +366,7 @@ async function startServer() {
 
 === معلومات المنصة (استخدمها للإجابة عن أسئلة المنصة) ===
 
-نسب تقاسم الأرباح:
+${WRITER_MONETIZATION_ENABLED ? `نسب تقاسم الأرباح:
 - إعلانات داخل مقالات الكاتب: الكاتب 55% والمنصة 45%
 - إعلانات في صفحة الكاتب الشخصية: الكاتب 50% والمنصة 50%
 - المقالات الحصرية المدفوعة: الكاتب 85% والمنصة 15%
@@ -377,7 +377,9 @@ async function startServer() {
 - فترة تجميد 30 يوماً على كل ربح قبل أن يصبح قابلاً للسحب، للتحقق من صحته
 - الكاتب يرى رصيدين: "أرباح مجمّدة" و"أرباح متاحة للسحب"
 - تُحتسب النقرات والمشاهدات الصالحة فقط بعد تصفية الاحتيال
-
+` : `النشر والقراءة مجانيان بالكامل. لا يوجد حالياً أي برنامج أرباح للكتّاب مقابل الكتابة أو المشاهدات أو بيع المقالات — لا تذكر أي نسب أو أرباح للكتّاب ولا تَعِد بها إطلاقاً.
+المكافأة الوحيدة المتاحة للأعضاء المسجّلين: مبالغ صغيرة عند إتمام مهام الحملات الإعلانية الموثّقة (مثل الانضمام الحقيقي لقناة تيليجرام أو الاشتراك في قناة يوتيوب)، تمر بفترة تجميد 30 يوماً، والحد الأدنى للسحب 50 دولاراً.
+`}
 المعاملات المالية:
 - كل طلبات الإيداع والسحب تُراجع يدوياً من إدارة المنصة خلال 24 إلى 48 ساعة
 - المعلن يشحن محفظته أولاً، ثم ينشئ حملته
@@ -386,9 +388,9 @@ async function startServer() {
 الإعلانات:
 - نماذج التسعير: ثابت بمدة (24/48/72 ساعة أو أسبوع)، أو CPM لكل ألف ظهور، أو CPC لكل نقرة
 - يوجد نوع خاص: رعاية قسم كامل لجهة واحدة
-- الكاتب يستطيع ترويج مقاله من رصيد أرباحه
+- الكاتب يستطيع ترويج مقاله من رصيد ${WRITER_MONETIZATION_ENABLED ? 'أرباحه' : 'محفظته'}
 
-سلوك محظور يؤدي لإلغاء الأرباح وإغلاق الحساب:
+سلوك محظور يؤدي لإلغاء ${WRITER_MONETIZATION_ENABLED ? 'الأرباح' : 'المكافآت'} وإغلاق الحساب:
 - النقر على الإعلانات في صفحتك أو مقالاتك بنفسك
 - الطلب من الآخرين النقر
 - استخدام برامج آلية لزيادة الزيارات
@@ -427,14 +429,16 @@ async function startServer() {
         const p = (prompt || '').toLowerCase();
         let fallbackReply = 'المساعد الذكي غير مفعّل حالياً لأن مفتاح Gemini API غير مضبوط. يمكنني الإجابة عن أسئلة عامة حول المنصة فقط. تواصل مع إدارة المنصة لتفعيل المساعد بالكامل.';
 
-        if (p.includes('ربح') || p.includes('ارباح') || p.includes('سحب') || p.includes('فلوس') || p.includes('earning')) {
+        if (WRITER_MONETIZATION_ENABLED && (p.includes('ربح') || p.includes('ارباح') || p.includes('سحب') || p.includes('فلوس') || p.includes('earning'))) {
           fallbackReply = 'نظام الأرباح في ليتيريوم يمنح الكاتب 55% من عوائد الإعلانات داخل مقالاته، و50% من إعلانات صفحته الشخصية، و85% من مبيعات المقالات الحصرية. الحد الأدنى للسحب 50$، وتمر الأرباح بفترة تجميد 30 يوماً قبل أن تصبح قابلة للسحب. تُراجع طلبات السحب يدوياً خلال 24 إلى 48 ساعة.';
         } else if (p.includes('اعلان') || p.includes('معلن') || p.includes('حملة') || p.includes('ads')) {
           fallbackReply = 'كـ معلن في ليتيريوم، اشحن محفظتك أولاً، ثم أنشئ حملتك بأحد نماذج التسعير: ثابت بمدة (24، 48، 72 ساعة، أو أسبوع)، أو CPM لكل ألف ظهور، أو CPC لكل نقرة صالحة. تُحفظ الحملة كمسودة وتُفعّل بعد اعتماد الإدارة. النقرات المرفوضة كاحتيال لا تُخصم منك.';
         } else if (p.includes('توثيق') || p.includes('kyc') || p.includes('هوية')) {
           fallbackReply = 'التحقق من الهوية (KYC) مخصص للكتّاب والمعلنين لضمان أمان المعاملات المالية والمصداقية. يمكنك رفع صورة الهوية أو جواز السفر مع صورة شخصية من القائمة الجانبية -> التحقق من الهوية.';
         } else if (p.includes('مقال') || p.includes('نشر') || p.includes('كتابة')) {
-          fallbackReply = 'لكتابة مقال جديد، اضغط على زر "كتابة مقال" في القائمة السفلية أو العلوية. يمكنك الاستفادة من أدوات الذكاء الاصطناعي لاقتراح عناوين جذابة وتدقيق النص وتحديد المقال كمجاني أو مقفول.';
+          fallbackReply = WRITER_MONETIZATION_ENABLED
+            ? 'لكتابة مقال جديد، اضغط على زر "كتابة مقال" في القائمة السفلية أو العلوية. يمكنك الاستفادة من أدوات الذكاء الاصطناعي لاقتراح عناوين جذابة وتدقيق النص وتحديد المقال كمجاني أو مقفول.'
+            : 'لكتابة مقال جديد، اضغط على زر "كتابة مقال" في القائمة السفلية أو العلوية. يمكنك الاستفادة من أدوات الذكاء الاصطناعي لاقتراح عناوين جذابة وتدقيق النص.';
         }
 
         res.json({
@@ -724,7 +728,7 @@ async function startServer() {
           await batch.commit();
 
           const updatedUserSnap = await userDocRef.get();
-          finalUserBalance = updatedUserSnap.data()?.availableBalance ?? null;
+          finalUserBalance = updatedUserSnap.data()?.walletBalance ?? null;
         } catch (dbErr) {
           console.error('Failed to deduct image cost or credit owner in Firestore:', dbErr);
         }
@@ -780,7 +784,8 @@ async function startServer() {
       }
       const article = articleSnap.data() as Article;
 
-      if (!article.isLocked) {
+      // عند إيقاف أرباح الكتّاب تُعامل كل المقالات كمفتوحة: لا بيع ولا خصم.
+      if (!article.isLocked || !WRITER_MONETIZATION_ENABLED) {
         return res.json({ success: true, alreadyUnlocked: true, price: 0, newBalance: null });
       }
       const writerId = article.writerId;
@@ -867,7 +872,7 @@ async function startServer() {
       }
 
       const updatedBuyerSnap = await buyerRef.get();
-      const newBalance = updatedBuyerSnap.data()?.availableBalance ?? null;
+      const newBalance = updatedBuyerSnap.data()?.walletBalance ?? null;
 
       res.json({ success: true, alreadyUnlocked: false, price, newBalance });
     } catch (err: any) {

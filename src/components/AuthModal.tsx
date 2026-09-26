@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { UserRole } from '../types';
 import { registerWithEmail, loginWithEmail, resetPassword, getAuthErrorMessage } from '../firebase';
-import { REVENUE_SHARES } from '../constants/revenueShares';
+import { REVENUE_SHARES, WRITER_MONETIZATION_ENABLED } from '../constants/revenueShares';
 import { CREATOR_ELIGIBILITY_THRESHOLDS } from '../utils/creatorEligibility';
 import { getSavedAccounts, forgetAccount, SavedAccount } from '../utils/savedAccounts';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
@@ -71,7 +71,9 @@ const WRITER_AVATAR_PRESETS = [
 // الدور الموحد للتسجيل: كاتب ومؤلف (يتيح الكتابة، القراءة، والإعلان فور التسجيل)
 const UNIFIED_REGISTER_ROLE_INFO = {
   label: 'كاتب ومؤلف',
-  subLabel: `نشر مقالات وجني أرباح ${REVENUE_SHARES.IN_ARTICLE_ADS.WRITER_PERCENT}-${REVENUE_SHARES.LOCKED_ARTICLES.WRITER_PERCENT}% مع القراءة الحرة وإطلاق الإعلانات`,
+  subLabel: WRITER_MONETIZATION_ENABLED
+    ? `نشر مقالات وجني أرباح ${REVENUE_SHARES.IN_ARTICLE_ADS.WRITER_PERCENT}-${REVENUE_SHARES.LOCKED_ARTICLES.WRITER_PERCENT}% مع القراءة الحرة وإطلاق الإعلانات`
+    : 'نشر مقالات مع القراءة الحرة وإطلاق الإعلانات',
   icon: <PenTool className="w-5 h-5 text-teal-600 dark:text-teal-400" />
 };
 
@@ -411,6 +413,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 {/* شروط احتساب الأرباح — سطر موجز مطويّ افتراضياً بدل صندوق
                     كامل بخمسة شروط يُفرَض على كل مسجّل قبل وصوله لحقلي
                     البريد وكلمة المرور. */}
+                {WRITER_MONETIZATION_ENABLED && (
                 <button
                   type="button"
                   onClick={() => setShowEligibilityDetails((v) => !v)}
@@ -422,7 +425,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   </span>
                   <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform ${showEligibilityDetails ? 'rotate-180' : ''}`} />
                 </button>
-                {showEligibilityDetails && (
+                )}
+                {WRITER_MONETIZATION_ENABLED && showEligibilityDetails && (
                   <div className="p-3.5 rounded-xl bg-white/80 dark:bg-slate-900/50 border border-teal-200/60 dark:border-teal-900/40 space-y-2.5">
                     <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
                       الكتابة والقراءة والنشر متاحة فوراً لأي حساب مسجل دون قيد. لكن احتساب أرباح الإعلانات ومبيعات المقالات المقفلة يبدأ فقط بعد تحقيق كل الشروط التالية معاً:
