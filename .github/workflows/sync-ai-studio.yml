@@ -1,12 +1,16 @@
 name: Sync to AI Studio (literium-deploy)
 
+# ⚠️ موقوف مؤقتاً عن التشغيل التلقائي: المزامنة تنجح في الدفع إلى مستودع
+# literium-deploy لكن literium.ai.studio لا يتحدث منه فعلياً (تحقّقنا من
+# version.json على الموقع الحي). النشر على AI Studio يتم يدوياً (رفع zip ثم
+# Publish). لإعادة التفعيل: أعد كتلة push أدناه.
+#  push:
+#    branches: [main]
+#    paths-ignore:
+#      - 'android-native/**'
+#      - '.github/workflows/build-kotlin-apk.yml'
+#      - '.github/workflows/build-apk.yml'
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - 'android-native/**'
-      - '.github/workflows/build-kotlin-apk.yml'
-      - '.github/workflows/build-apk.yml'
   workflow_dispatch:
 
 permissions:
