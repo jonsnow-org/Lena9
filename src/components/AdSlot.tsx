@@ -406,11 +406,23 @@ export const AdSlot: React.FC<AdSlotProps> = ({
       externalAdHiddenKeyRef.current = snippet;
       if (externalAdHidden) setExternalAdHidden(false);
     }
-    if (externalAdHidden) return null;
     const heightPx = adsterraUnit ? adsterraUnit.heightPx : 250;
     const widthPx = adsterraUnit && adsterraUnit.widthPx > 0 ? adsterraUnit.widthPx : undefined;
+    // عند اختفاء الإعلان (فشل تحميل/محتوى فارغ) نُطوي الغلاف بأكمله (تسمية
+    // "إعلان" + المساحة المحجوزة) بانتقال ارتفاع سلس بدل إزالته فوراً من
+    // الشجرة — إزالة فورية كانت تُحدث قفزة تخطيط (layout shift) مفاجئة تدفع
+    // كل محتوى الصفحة تحته للأعلى دفعة واحدة، وهو ما يبدو للمستخدم كوميض
+    // وتحرّك اهتزازي لكامل الصفحة أثناء اللحظة نفسها.
     return (
-      <div ref={containerRef} className={inRead ? 'my-8' : 'my-5'}>
+      <div
+        ref={containerRef}
+        className={externalAdHidden ? 'overflow-hidden' : `overflow-hidden ${inRead ? 'my-8' : 'my-5'}`}
+        style={{
+          maxHeight: externalAdHidden ? 0 : heightPx + 40,
+          opacity: externalAdHidden ? 0 : 1,
+          transition: 'max-height 0.4s ease, opacity 0.3s ease, margin 0.4s ease'
+        }}
+      >
         <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 mb-1.5">إعلان</div>
         {/* 250px الافتراضي يطابق المقاس شبه العالمي "300x250" (Medium Rectangle)، المدعوم فعلياً في
             كل شبكة إعلانية خارجية تقريباً (PropellerAds/Taboola) لغياب مقاس حقيقي معروف لكودها —

@@ -73,6 +73,8 @@ export const AdTickerBar: React.FC<AdTickerBarProps> = ({
 
   const [index, setIndex] = useState(0);
   const [visible, setVisible] = useState(true);
+  const [externalAdHidden, setExternalAdHidden] = useState(false);
+  const externalAdHiddenKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (rotationCampaigns.length <= 1) return;
@@ -104,9 +106,27 @@ export const AdTickerBar: React.FC<AdTickerBarProps> = ({
     const adSnippet = adsterraUnit ? adsterraUnit.snippet : externalNetwork.snippet;
     const adHeight = adsterraUnit ? Math.min(adsterraUnit.heightPx, minHeightPx) : minHeightPx;
     if (!adSnippet.trim()) return null;
+    if (externalAdHiddenKeyRef.current !== adSnippet) {
+      externalAdHiddenKeyRef.current = adSnippet;
+      if (externalAdHidden) setExternalAdHidden(false);
+    }
+    // نفس درس AdSlot: طي سلس بدل إزالة فورية، لتفادي قفزة تخطيط تُحرّك
+    // الصفحة بكاملها لحظة اختفاء الإعلان.
     return (
-      <div className="w-full rounded-xl overflow-hidden border border-slate-200/70 dark:border-slate-700/50 bg-slate-50 dark:bg-slate-800/60">
-        <ExternalAdScript snippet={adSnippet} className="w-full" heightPx={adHeight} />
+      <div
+        className="w-full rounded-xl overflow-hidden border border-slate-200/70 dark:border-slate-700/50 bg-slate-50 dark:bg-slate-800/60"
+        style={{
+          maxHeight: externalAdHidden ? 0 : adHeight,
+          opacity: externalAdHidden ? 0 : 1,
+          transition: 'max-height 0.4s ease, opacity 0.3s ease'
+        }}
+      >
+        <ExternalAdScript
+          snippet={adSnippet}
+          className="w-full"
+          heightPx={adHeight}
+          onHide={() => setExternalAdHidden(true)}
+        />
       </div>
     );
   }
