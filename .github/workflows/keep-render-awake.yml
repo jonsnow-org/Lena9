@@ -1,35 +1,25 @@
 name: Keep Render Service Awake
 
-# لماذا سير عمل منفصل عن health-check.yml: ذاك مخصَّص لاكتشاف انقطاع
-# الموقع (فحوصات قصيرة + Issue بعلامة site-down)، وهذا مخصَّص حصراً لمنع
-# نوم خدمة Render المجانية أصلاً — همّان مختلفان تماماً لا يجب خلطهما في
-# نفس المهمة.
+# منفصل عن health-check.yml: ذاك لاكتشاف الانقطاع، وهذا لمنع نوم خدمة Render
+# المجانية فقط.
 #
-# ⚠️ السبب الجذري الفعلي وراء استمرار ظهور شاشة "إيقاظ الخدمة" رغم كل
-# محاولات ضبط health-check.yml على فاصل زمني أقصر (30 ثم 10 دقائق): جدولة
-# GitHub Actions (schedule) موثَّقة رسمياً بأنها "best effort" بلا أي ضمان
-# لالتزام دقيق بالفاصل الزمني المطلوب. تحقّقنا فعلياً من سجل التشغيل
-# ووجدنا فجوات حقيقية تصل حتى 5 ساعات بين تشغيل وآخر رغم أن الملف يطلب كل
-# 10-30 دقيقة — أي تعديل إضافي على رقم الفاصل الزمني في cron وحده لن يغيّر
-# شيئاً لأن المشكلة في موثوقية المُشغِّل نفسه لا في الرقم المكتوب.
+# ⚠️ الخطة المجانية في Render تمنح 750 ساعة تشغيل شهرياً لكل مساحة عمل؛ إبقاء
+# الخدمة مستيقظة 24 ساعة يومياً (~720 ساعة) يستنزفها بالكامل ويؤدي لتعليق
+# الخدمة قبل نهاية الشهر. لذلك يُبقيها هذا السير مستيقظة في ساعات النشاط فقط:
+# 03:00–21:00 UTC (06:00–24:00 بتوقيت مكة) = 18 ساعة يومياً ≈ 560 ساعة شهرياً.
+# خارج هذه النافذة تنام الخدمة بعد 15 دقيقة خمول وتستيقظ عند أول زيارة حقيقية،
+# والتطبيق ينتقل تلقائياً إلى AI Studio إن لم يستجب Render.
 #
-# الحل هنا: مهمة واحدة تعمل بشكل متواصل مدة ~5 ساعات و50 دقيقة (قريباً من
-# الحد الأقصى الافتراضي لمهام GitHub Actions البالغ 360 دقيقة)، تُرسل طلباً
-# لنقطة الصحة كل 4 دقائق طوال هذه المدة (أقل من مهلة نوم Render المجانية
-# ~15 دقيقة بهامش أمان كبير)، ثم تُعيد تشغيل نفسها تلقائياً عبر GitHub API
-# مباشرة قبل انتهائها — سلسلة ذاتية الاستمرار لا تعتمد على دقة جدولة
-# GitHub إطلاقاً. جدولة cron أدناه احتياط/بذرة إقلاع فقط (لو انقطعت السلسلة
-# لأي سبب — تعطيل تلقائي بعد 60 يوم خمول تام في المستودع مثلاً).
-#
-# التكلفة صفر: هذا مستودع عام (public) — دقائق GitHub Actions غير محدودة
-# ومجانية بالكامل على المستودعات العامة على مشغّلات GitHub نفسها، محقَّق
-# فعلياً (get_workflow_run_usage أعاد billable=0ms على تشغيل حقيقي).
-# لو أصبح المستودع خاصاً يوماً، يجب إعادة النظر في هذا التصميم فوراً.
+# جدولة GitHub (schedule) غير دقيقة، لذا يعمل كل تشغيل حتى ~6 ساعات مرسلاً
+# طلباً كل 4 دقائق، ثم يعيد تشغيل نفسه فقط إن بقي وقت داخل النافذة. جدولة cron
+# أدناه بذور احتياطية لبدء السلسلة يومياً.
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 */5 * * *'
+    - cron: '0 3 * * *'
+    - cron: '0 9 * * *'
+    - cron: '0 15 * * *'
 
 permissions:
   actions: write
@@ -44,18 +34,32 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 355
     steps:
-      - name: Ping /api/health every 4 minutes for ~5h50m
+      - name: Ping /api/health every 4 minutes until the active window ends
         run: |
-          END=$((SECONDS + 350 * 60))
-          while [ "$SECONDS" -lt "$END" ]; do
+          WINDOW_START_H=3
+          WINDOW_END_H=21
+          now_h=$(date -u +%-H)
+          if [ "$now_h" -lt "$WINDOW_START_H" ] || [ "$now_h" -ge "$WINDOW_END_H" ]; then
+            echo "خارج نافذة النشاط ($now_h UTC) — لا شيء للتنفيذ."
+            exit 0
+          fi
+          window_end=$(date -u -d "today ${WINDOW_END_H}:00" +%s)
+          job_end=$(( $(date -u +%s) + 350 * 60 ))
+          end=$(( window_end < job_end ? window_end : job_end ))
+          while [ "$(date -u +%s)" -lt "$end" ]; do
             status=$(curl -sS -m 20 -o /dev/null -w "%{http_code}" https://literium-wjct.onrender.com/api/health || echo "000")
             echo "$(date -u '+%Y-%m-%d %H:%M:%S') UTC — ping status: $status"
             sleep 240
           done
 
-      - name: Re-trigger this workflow to keep the chain going
+      - name: Re-trigger only if the active window is still open
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh workflow run keep-render-awake.yml --ref ${{ github.ref_name }} --repo ${{ github.repository }}
+          now_h=$(date -u +%-H)
+          if [ "$now_h" -ge 3 ] && [ "$now_h" -lt 21 ]; then
+            gh workflow run keep-render-awake.yml --ref ${{ github.ref_name }} --repo ${{ github.repository }}
+          else
+            echo "انتهت نافذة النشاط — لا إعادة تشغيل حتى بذرة الغد."
+          fi
