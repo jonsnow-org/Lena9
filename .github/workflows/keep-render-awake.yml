@@ -1,65 +1,43 @@
 name: Keep Render Service Awake
 
-# منفصل عن health-check.yml: ذاك لاكتشاف الانقطاع، وهذا لمنع نوم خدمة Render
-# المجانية فقط.
+# ⚠️ موقوف تلقائياً: ساعات Render المجانية (750 ساعة/شهر) مشتركة بين كل
+# خدمات الحساب، وإبقاء ليتيريوم مستيقظاً باستمرار كان يستنزفها ويؤدي لتعليق
+# الخدمات. الخدمة الآن تنام بعد 15 دقيقة خمول وتستيقظ عند أول زيارة حقيقية،
+# والسيرات الدورية الأخرى مجمّعة في نافذتين يومياً (07:00 و17:00 UTC).
 #
-# ⚠️ الخطة المجانية في Render تمنح 750 ساعة تشغيل شهرياً لكل مساحة عمل؛ إبقاء
-# الخدمة مستيقظة 24 ساعة يومياً (~720 ساعة) يستنزفها بالكامل ويؤدي لتعليق
-# الخدمة قبل نهاية الشهر. لذلك يُبقيها هذا السير مستيقظة في ساعات النشاط فقط:
-# 03:00–21:00 UTC (06:00–24:00 بتوقيت مكة) = 18 ساعة يومياً ≈ 560 ساعة شهرياً.
-# خارج هذه النافذة تنام الخدمة بعد 15 دقيقة خمول وتستيقظ عند أول زيارة حقيقية،
-# والتطبيق ينتقل تلقائياً إلى AI Studio إن لم يستجب Render.
-#
-# جدولة GitHub (schedule) غير دقيقة، لذا يعمل كل تشغيل حتى ~6 ساعات مرسلاً
-# طلباً كل 4 دقائق، ثم يعيد تشغيل نفسه فقط إن بقي وقت داخل النافذة. جدولة cron
-# أدناه بذور احتياطية لبدء السلسلة يومياً.
+# بقي هذا السير للتشغيل اليدوي فقط (Run workflow): يبقي الخدمة مستيقظة مدة
+# محددة بالدقائق ثم يتوقف، بلا أي إعادة تشغيل ذاتية.
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 3 * * *'
-    - cron: '0 9 * * *'
-    - cron: '0 15 * * *'
+    inputs:
+      minutes:
+        description: 'مدة الإبقاء مستيقظاً بالدقائق (حد أقصى 350)'
+        required: false
+        default: '60'
 
 permissions:
-  actions: write
   contents: read
 
 concurrency:
   group: keep-render-awake
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   keep-awake:
     runs-on: ubuntu-latest
     timeout-minutes: 355
     steps:
-      - name: Ping /api/health every 4 minutes until the active window ends
+      - name: Ping /api/health every 4 minutes for the requested duration
+        env:
+          MINUTES: ${{ github.event.inputs.minutes }}
         run: |
-          WINDOW_START_H=3
-          WINDOW_END_H=21
-          now_h=$(date -u +%-H)
-          if [ "$now_h" -lt "$WINDOW_START_H" ] || [ "$now_h" -ge "$WINDOW_END_H" ]; then
-            echo "خارج نافذة النشاط ($now_h UTC) — لا شيء للتنفيذ."
-            exit 0
-          fi
-          window_end=$(date -u -d "today ${WINDOW_END_H}:00" +%s)
-          job_end=$(( $(date -u +%s) + 350 * 60 ))
-          end=$(( window_end < job_end ? window_end : job_end ))
+          mins=${MINUTES:-60}
+          case "$mins" in ''|*[!0-9]*) mins=60 ;; esac
+          [ "$mins" -gt 350 ] && mins=350
+          end=$(( $(date -u +%s) + mins * 60 ))
           while [ "$(date -u +%s)" -lt "$end" ]; do
             status=$(curl -sS -m 20 -o /dev/null -w "%{http_code}" https://literium-wjct.onrender.com/api/health || echo "000")
             echo "$(date -u '+%Y-%m-%d %H:%M:%S') UTC — ping status: $status"
             sleep 240
           done
-
-      - name: Re-trigger only if the active window is still open
-        if: always()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          now_h=$(date -u +%-H)
-          if [ "$now_h" -ge 3 ] && [ "$now_h" -lt 21 ]; then
-            gh workflow run keep-render-awake.yml --ref ${{ github.ref_name }} --repo ${{ github.repository }}
-          else
-            echo "انتهت نافذة النشاط — لا إعادة تشغيل حتى بذرة الغد."
-          fi

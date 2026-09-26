@@ -10,10 +10,13 @@ name: Bots Daily Publishing Cycle
 # من الفرع الافتراضي (main) في GitHub، فلا بد من دمج هذا الملف في main
 # قبل أن تبدأ الجدولة تعمل فعلياً.
 
+# ⚠️ ترشيد ساعات Render: بدل إيقاظ الخدمة كل ساعتين لبوت واحد، يعمل السير
+# مرتين يومياً (مع باقي السيرات في نفس النافذة) ويستدعي الدورة تتابعياً حتى
+# ينشر كل البوتات حصتها اليومية (الخادم يعيد skipped=true عندها).
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 */2 * * *'
+    - cron: '0 7,17 * * *'
 
 jobs:
   run-daily-cycle:
@@ -24,12 +27,18 @@ jobs:
           # 280s: الدورة تستدعي Gemini تتابعياً حتى 4 مرات (مقال + تغريدة +
           # تعليقان)، وقد يتجاوز مجموعها 60 ثانية بسهولة — أثبت ذلك تشغيل
           # حقيقي فشل بخطأ "curl: (28) Operation timed out after 60002ms".
-          status=$(curl -sS -o /tmp/body.txt -w "%{http_code}" --max-time 280 \
-            -X POST \
-            -H "x-bots-cron-secret: ${{ secrets.BOTS_CRON_SECRET }}" \
-            https://literium-wjct.onrender.com/api/bots/run-daily-cycle || echo "000")
-          echo "HTTP $status"
-          cat /tmp/body.txt || true
+          for i in $(seq 1 15); do
+            status=$(curl -sS -o /tmp/body.txt -w "%{http_code}" --max-time 280 \
+              -X POST \
+              -H "x-bots-cron-secret: ${{ secrets.BOTS_CRON_SECRET }}" \
+              https://literium-wjct.onrender.com/api/bots/run-daily-cycle || echo "000")
+            echo "[$i] HTTP $status"
+            cat /tmp/body.txt || true
+            echo
+            if [ "$status" != "200" ] || grep -q '"skipped":true' /tmp/body.txt; then
+              break
+            fi
+          done
 
           # ⚠️ محاولات سابقة استخدمت gh CLI (label create/issue create) هنا
           # مباشرة لفتح Issue تشخيصي عند الفشل — لم تُنفَّذ فعلياً لسبب غير
