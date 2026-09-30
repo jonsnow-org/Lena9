@@ -136,11 +136,25 @@ export function defaultAdsterraUnitsEnabled(): Record<string, boolean> {
  * `slotIndex + rotationSeed` المستخدم في بقية `AdSlot`) — أو null إن أوقف
  * الأدمن كل الوحدات يدوياً.
  */
+/**
+ * 'strip' = شرائط منخفضة (ارتفاع ≤ 90) لأشرطة الإعلانات الرفيعة؛ 'card' =
+ * مواضع البطاقات (المربع 300×250، الإعلان الأصلي، والشرائط بعد تصغيرها).
+ * الوحدات الطولية بعرض 160 مخصّصة للأشرطة الجانبية على الحاسوب، فتُستبعد
+ * من الشكلين لأن الموقع يُعرض أساساً بعمود واحد على الجوال.
+ */
+export type AdsterraShape = 'strip' | 'card';
+
+function fitsShape(u: AdsterraUnit, shape: AdsterraShape): boolean {
+  if (shape === 'strip') return u.widthPx > 0 && u.heightPx <= 90;
+  return u.widthPx === 0 || u.widthPx >= 300;
+}
+
 export function pickAdsterraUnit(
   unitsEnabled: Record<string, boolean> | undefined,
-  seed: number
+  seed: number,
+  shape: AdsterraShape = 'card'
 ): AdsterraUnit | null {
-  const enabled = ADSTERRA_UNITS.filter((u) => (unitsEnabled ?? {})[u.id] !== false);
+  const enabled = ADSTERRA_UNITS.filter((u) => (unitsEnabled ?? {})[u.id] !== false && fitsShape(u, shape));
   if (enabled.length === 0) return null;
   const idx = ((seed % enabled.length) + enabled.length) % enabled.length;
   return enabled[idx];

@@ -9,7 +9,7 @@ import {
   ExternalAdNetworkConfig
 } from '../utils/externalAdsStore';
 import { ExternalAdScript } from './ExternalAdScript';
-import { claimAdSlotIndex, MAX_ADS_PER_PAGE } from './AdSlot';
+import { claimAdSlotIndex, MAX_ADS_PER_PAGE, currentAdRotationSeed, subscribeAdRotationTick } from './AdSlot';
 import { pickAdsterraUnit } from '../constants/adsterraUnits';
 
 interface AdTickerBarProps {
@@ -62,19 +62,40 @@ export const AdTickerBar: React.FC<AdTickerBarProps> = ({
     [campaigns, platformAdsEnabled]
   );
 
+  // نفس مؤقّت التناوب المشترك مع <AdSlot> (كل 30 ثانية): تتغيّر الشبكة
+  // الخارجية ووحدتها ودور العرض بين الداخلي والخارجي مع الوقت بدل تثبيتها
+  // على ترتيب الموضع في الصفحة.
+  const [rotationSeed, setRotationSeed] = useState(() => currentAdRotationSeed());
+  useEffect(() => subscribeAdRotationTick(setRotationSeed), []);
+  const turn = slotIndex + rotationSeed;
+
   const externalNetwork: ExternalAdNetworkConfig | null = useMemo(() => {
     if (!platformAdsEnabled) return null;
-    return pickActiveExternalNetwork(externalAdsConfig, slotIndex);
-  }, [platformAdsEnabled, externalAdsConfig, slotIndex]);
+    return pickActiveExternalNetwork(externalAdsConfig, turn);
+  }, [platformAdsEnabled, externalAdsConfig, turn]);
 
-  // بأولوية خارجية: تُستبعَد الحملات الداخلية كلياً من الدوران طالما توجد
-  // شبكة خارجية مؤهَّلة — لا مجرد احتياط كما في الوضع الافتراضي.
-  const rotationCampaigns = externalPriority && externalNetwork ? [] : active;
+  const isAdsterra = Boolean(externalNetwork) && externalNetwork === externalAdsConfig.adsterra;
+  const adsterraUnit = isAdsterra ? pickAdsterraUnit(externalAdsConfig.adsterraUnits, turn, 'strip') : null;
+  const adSnippet = externalNetwork && (!isAdsterra || adsterraUnit)
+    ? (adsterraUnit ? adsterraUnit.snippet : externalNetwork.snippet).trim()
+    : '';
 
   const [index, setIndex] = useState(0);
   const [visible, setVisible] = useState(true);
   const [externalAdHidden, setExternalAdHidden] = useState(false);
   const externalAdHiddenKeyRef = useRef<string | null>(null);
+  if (externalAdHiddenKeyRef.current !== adSnippet) {
+    externalAdHiddenKeyRef.current = adSnippet;
+    if (externalAdHidden) setExternalAdHidden(false);
+  }
+
+  // توزيع موزون بدل الإقصاء: الطرف صاحب الأولوية يأخذ دورتين من كل ثلاث
+  // والطرف الآخر دورة واحدة. إن فشل تحميل الإعلان الخارجي وتوجد حملة داخلية
+  // تُعرض الحملة مكانه بدل ترك الشريط فارغاً.
+  const externalTurn = externalPriority ? turn % 3 !== 0 : turn % 3 === 0;
+  const showExternal =
+    Boolean(adSnippet) && (active.length === 0 || (externalTurn && !externalAdHidden));
+  const rotationCampaigns = showExternal ? [] : active;
 
   useEffect(() => {
     if (rotationCampaigns.length <= 1) return;
@@ -99,24 +120,16 @@ export const AdTickerBar: React.FC<AdTickerBarProps> = ({
 
   if (slotIndex >= MAX_ADS_PER_PAGE) return null;
 
-  if (!campaign && externalNetwork) {
-    const isAdsterra = externalNetwork === externalAdsConfig.adsterra;
-    const adsterraUnit = isAdsterra ? pickAdsterraUnit(externalAdsConfig.adsterraUnits, slotIndex) : null;
-    if (isAdsterra && !adsterraUnit) return null;
-    const adSnippet = adsterraUnit ? adsterraUnit.snippet : externalNetwork.snippet;
-    const adHeight = adsterraUnit ? Math.min(adsterraUnit.heightPx, minHeightPx) : minHeightPx;
-    if (!adSnippet.trim()) return null;
-    if (externalAdHiddenKeyRef.current !== adSnippet) {
-      externalAdHiddenKeyRef.current = adSnippet;
-      if (externalAdHidden) setExternalAdHidden(false);
-    }
+  if (showExternal) {
+    const adHeight = adsterraUnit ? adsterraUnit.heightPx : minHeightPx;
+    const adWidth = adsterraUnit ? adsterraUnit.widthPx : undefined;
     // نفس درس AdSlot: طي سلس بدل إزالة فورية، لتفادي قفزة تخطيط تُحرّك
     // الصفحة بكاملها لحظة اختفاء الإعلان.
     return (
       <div
         className="w-full rounded-xl overflow-hidden border border-slate-200/70 dark:border-slate-700/50 bg-slate-50 dark:bg-slate-800/60"
         style={{
-          maxHeight: externalAdHidden ? 0 : adHeight,
+          maxHeight: externalAdHidden ? 0 : adHeight + 4,
           opacity: externalAdHidden ? 0 : 1,
           transition: 'max-height 0.4s ease, opacity 0.3s ease'
         }}
@@ -125,6 +138,7 @@ export const AdTickerBar: React.FC<AdTickerBarProps> = ({
           snippet={adSnippet}
           className="w-full"
           heightPx={adHeight}
+          widthPx={adWidth}
           onHide={() => setExternalAdHidden(true)}
         />
       </div>

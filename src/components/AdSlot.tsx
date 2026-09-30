@@ -118,7 +118,11 @@ const ROTATION_TICK_MS = 30_000;
 const rotationSubscribers = new Set<(seed: number) => void>();
 let rotationTickerHandle: ReturnType<typeof setInterval> | null = null;
 
-function subscribeAdRotationTick(cb: (seed: number) => void): () => void {
+export function currentAdRotationSeed(): number {
+  return adRotationSeed;
+}
+
+export function subscribeAdRotationTick(cb: (seed: number) => void): () => void {
   rotationSubscribers.add(cb);
   if (!rotationTickerHandle) {
     rotationTickerHandle = setInterval(() => {
@@ -194,6 +198,9 @@ export const AdSlot: React.FC<AdSlotProps> = ({
 
   const isSponsorSlot = Boolean(config.sponsorOnly);
   const isPlatformSlot = config.beneficiary === 'platform';
+  // أولوية الداخلي في مواضع الكاتب كانت لحماية حصته من الأرباح؛ ما دامت
+  // أرباح الكتّاب موقوفة تدخل هذه المواضع أيضاً في التناوب العادل.
+  const usesRotationPool = !isSponsorSlot && (isPlatformSlot || !WRITER_MONETIZATION_ENABLED);
 
   /**
    * مرشَّح المعلن الداخلي — يُستخدم مباشرة لموضع راعي القسم (حصري بطبيعته،
@@ -258,20 +265,20 @@ export const AdSlot: React.FC<AdSlotProps> = ({
    */
   const rotationPool = useMemo(() => {
     type PoolItem = { campaign?: AdCampaign; network?: ExternalAdNetworkConfig };
-    if (isSponsorSlot || !isPlatformSlot || !platformAdsEnabled) return [] as PoolItem[];
+    if (!usesRotationPool || !platformAdsEnabled) return [] as PoolItem[];
     const eligibleCampaigns = campaigns.filter(
       (c) => c.status === 'active' && (c as any).placementType !== 'category_sponsor'
     );
     const pool: PoolItem[] = eligibleCampaigns.map((c) => ({ campaign: c }));
     getAllEligibleExternalNetworks(externalAdsConfig).forEach((net) => pool.push({ network: net }));
     return pool;
-  }, [campaigns, isSponsorSlot, isPlatformSlot, platformAdsEnabled, externalAdsConfig]);
+  }, [campaigns, usesRotationPool, platformAdsEnabled, externalAdsConfig]);
 
   const selectedPoolItem = rotationPool.length > 0 ? rotationPool[(slotIndex + rotationSeed) % rotationPool.length] : null;
 
-  const selectedCampaign = isSponsorSlot
+  const rotatedCampaign = isSponsorSlot
     ? internalCandidate
-    : isPlatformSlot
+    : usesRotationPool
     ? selectedPoolItem?.campaign || null
     : config.internalPriority
     ? internalCandidate
@@ -279,9 +286,11 @@ export const AdSlot: React.FC<AdSlotProps> = ({
     ? null
     : internalCandidate;
 
-  const externalNetwork: ExternalAdNetworkConfig | null = isSponsorSlot
+  const externalNetwork: ExternalAdNetworkConfig | null = rotatedCampaign
     ? null
-    : isPlatformSlot
+    : isSponsorSlot
+    ? null
+    : usesRotationPool
     ? selectedPoolItem?.network || null
     : internalCandidate
     ? null
@@ -295,6 +304,19 @@ export const AdSlot: React.FC<AdSlotProps> = ({
   const adsterraUnit = isAdsterraNetwork
     ? pickAdsterraUnit(externalAdsConfig.adsterraUnits, slotIndex + rotationSeed)
     : null;
+
+  const externalSnippet =
+    externalNetwork && (!isAdsterraNetwork || adsterraUnit)
+      ? (adsterraUnit ? adsterraUnit.snippet : externalNetwork.snippet).trim()
+      : '';
+  if (externalAdHiddenKeyRef.current !== externalSnippet) {
+    externalAdHiddenKeyRef.current = externalSnippet;
+    if (externalAdHidden) setExternalAdHidden(false);
+  }
+  // إن فشل تحميل الإعلان الخارجي تُعرض حملة داخلية مكانه (إن وُجدت) بدل
+  // طيّ الموضع فارغاً، حتى تتبدّل الوحدة في دورة التناوب التالية.
+  const selectedCampaign =
+    rotatedCampaign || (externalAdHidden && externalSnippet ? internalCandidate : null);
 
   // هوية "ما يُعرض فعلياً الآن" — حملة داخلية بمعرّفها، أو شبكة خارجية
   // (ومعها وحدة Adsterra المحدَّدة تحديداً إن كانت هي الشبكة). تتغيّر مع كل
@@ -401,12 +423,8 @@ export const AdSlot: React.FC<AdSlotProps> = ({
   if (!selectedCampaign && externalNetwork) {
     // isAdsterraNetwork/adsterraUnit محسوبتان أعلاه بالفعل (لازمتان أيضاً
     // لهوية تتبّع الظهور) — إعادة استخدامهما هنا بدل حساب مكرَّر.
-    if (isAdsterraNetwork && !adsterraUnit) return null;
-    const snippet = adsterraUnit ? adsterraUnit.snippet : externalNetwork.snippet;
-    if (externalAdHiddenKeyRef.current !== snippet) {
-      externalAdHiddenKeyRef.current = snippet;
-      if (externalAdHidden) setExternalAdHidden(false);
-    }
+    if (!externalSnippet) return null;
+    const snippet = externalSnippet;
     const heightPx = adsterraUnit ? adsterraUnit.heightPx : 250;
     const widthPx = adsterraUnit && adsterraUnit.widthPx > 0 ? adsterraUnit.widthPx : undefined;
     // عند اختفاء الإعلان (فشل تحميل/محتوى فارغ) نُطوي الغلاف بأكمله (تسمية

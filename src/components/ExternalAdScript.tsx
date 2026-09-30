@@ -3,7 +3,9 @@ import React, { useEffect, useRef, useState } from 'react';
 interface ExternalAdScriptProps {
   snippet: string;
   className?: string;
+  /** الارتفاع الحقيقي للوحدة الإعلانية بالبكسل */
   heightPx?: number;
+  /** العرض الحقيقي للوحدة؛ إن زاد عن عرض الحاوية تُصغَّر الوحدة كاملة بنسبة ثابتة بدل قصّها */
   widthPx?: number;
   onHide?: () => void;
 }
@@ -15,13 +17,26 @@ export const ExternalAdScript: React.FC<ExternalAdScriptProps> = ({
   widthPx,
   onHide
 }) => {
+  const outerRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [adLoaded, setAdLoaded] = useState(false);
   const [hidden, setHidden] = useState(false);
+  const [availableWidth, setAvailableWidth] = useState<number | null>(null);
   const onHideRef = useRef(onHide);
   onHideRef.current = onHide;
   const adLoadedRef = useRef(adLoaded);
   adLoadedRef.current = adLoaded;
+
+  useEffect(() => {
+    const outer = outerRef.current;
+    if (!outer || !widthPx) return;
+    const measure = () => setAvailableWidth(outer.clientWidth);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(outer);
+    return () => ro.disconnect();
+  }, [widthPx]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -38,9 +53,12 @@ export const ExternalAdScript: React.FC<ExternalAdScriptProps> = ({
     iframe.style.display = 'block';
     iframe.setAttribute('scrolling', 'no');
     iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox');
+    // text-align:center يوسّط وحدة الإعلان داخل إطارها؛ بدونه تلتصق الوحدة
+    // بالحافة اليسرى للإطار فتبدو منزاحة داخل صفحة عربية.
     iframe.srcdoc =
-      '<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">' +
-      '<style>html,body{margin:0;padding:0;overflow:hidden;background:transparent}</style></head><body>' +
+      '<!DOCTYPE html><html dir="ltr"><head><meta name="viewport" content="width=device-width, initial-scale=1">' +
+      '<style>html,body{margin:0;padding:0;overflow:hidden;background:transparent;text-align:center}' +
+      'iframe,img{display:inline-block;vertical-align:top;max-width:none}</style></head><body>' +
       trimmed +
       '</body></html>';
 
@@ -89,17 +107,32 @@ export const ExternalAdScript: React.FC<ExternalAdScriptProps> = ({
   if (!snippet.trim()) return null;
   if (hidden) return null;
 
+  const scale = widthPx && availableWidth ? Math.min(1, availableWidth / widthPx) : 1;
+  const scaledHeight = Math.round(heightPx * scale);
+
   return (
     <div
-      ref={containerRef}
+      ref={outerRef}
       className={className}
       style={{
-        ...(widthPx
-          ? { height: heightPx, width: widthPx, maxWidth: '100%', margin: '0 auto', overflow: 'hidden' }
-          : { height: heightPx, overflow: 'hidden' }),
+        height: scaledHeight,
+        overflow: 'hidden',
+        display: 'flex',
+        justifyContent: 'center',
         opacity: adLoaded ? 1 : 0.3,
         transition: 'opacity 0.3s ease'
       }}
-    />
+    >
+      <div
+        ref={containerRef}
+        style={{
+          width: widthPx ? widthPx : '100%',
+          height: heightPx,
+          flex: 'none',
+          transform: scale < 1 ? `scale(${scale})` : undefined,
+          transformOrigin: 'top center'
+        }}
+      />
+    </div>
   );
 };
