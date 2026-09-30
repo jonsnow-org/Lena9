@@ -58,6 +58,12 @@ export interface ExternalAdsConfig {
    */
   monetag: { enabled: boolean };
   /**
+   * Start.io — شريط إعلاني أصلي (SDK أندرويد) يُعرض أسفل شاشة تطبيق APK فقط،
+   * خارج صفحة الموقع نفسها. الموقع يرسل هذا المفتاح إلى التطبيق عبر قناة
+   * LiteriumNative (انظر setNativeBannerAds)؛ لا أثر له في المتصفح.
+   */
+  startIo: { enabled: boolean };
+  /**
    * السعر التقديري بالدولار لكل 1000 مشاهدة حقيقية موثّقة لإعلان شبكة
    * خارجية في مواضع الكاتب (ذات حصة ربح ثابتة) — أساس حساب عائد الكاتب
    * من هذه الشبكات بقرار صريح من المالك، مستقلاً تماماً عن الرقم الحقيقي
@@ -78,6 +84,7 @@ const DEFAULT_CONFIG: ExternalAdsConfig = {
   adsterraUnits: defaultAdsterraUnitsEnabled(),
   taboola: { ...EMPTY_NETWORK },
   monetag: { enabled: false },
+  startIo: { enabled: true },
   estimatedCpmUsd: 2
 };
 
@@ -98,6 +105,7 @@ function ensureStarted() {
         adsterraUnits: { ...defaultAdsterraUnitsEnabled(), ...(data.adsterraUnits || {}) },
         taboola: { ...EMPTY_NETWORK, ...(data.taboola || {}) },
         monetag: { ...DEFAULT_CONFIG.monetag, ...(data.monetag || {}) },
+        startIo: { ...DEFAULT_CONFIG.startIo, ...(data.startIo || {}) },
         estimatedCpmUsd:
           typeof data.estimatedCpmUsd === 'number' && data.estimatedCpmUsd >= 0
             ? data.estimatedCpmUsd

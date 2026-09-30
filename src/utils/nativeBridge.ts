@@ -28,6 +28,11 @@ export function nativeShare(data: { title: string; text?: string; url: string })
   return send({ type: 'share', title: data.title, text: data.text || '', url: data.url });
 }
 
+/** يطلب من تطبيق APK إظهار/إخفاء شريط Start.io الأصلي أسفل الشاشة. */
+export function setNativeBannerAds(enabled: boolean): void {
+  send({ type: 'nativeAds', startIo: enabled });
+}
+
 export function setNativeSystemBars(color: string, light: boolean): void {
   send({ type: 'systemBars', color, light });
 }

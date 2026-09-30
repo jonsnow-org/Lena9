@@ -68,7 +68,7 @@ import { rememberAccount } from './utils/savedAccounts';
 import { isEligibleForMonetization, getMemberStatusLabel } from './utils/creatorEligibility';
 import { normalizeArabicSearch } from './utils/arabicSearch';
 import { rotateArticles, pickFeatured } from './utils/feedRotation';
-import { setNativeSystemBars } from './utils/nativeBridge';
+import { setNativeSystemBars, setNativeBannerAds } from './utils/nativeBridge';
 import { useIncrementalList } from './hooks/useIncrementalList';
 import { getTranslator } from './data/translations';
 import { applyThemePreset, applyBackgroundPreset, syncBackgroundOverlayMode } from './utils/themeEngine';
@@ -3452,6 +3452,13 @@ export function App() {
     if (!isNativeApp) return;
     setNativeSystemBars(theme === 'dark' ? '#020617' : '#ffffff', theme !== 'dark');
   }, [isNativeApp, theme]);
+
+  // شريط Start.io الأصلي أسفل شاشة التطبيق — يتبع المفتاح العام لإعلانات
+  // المنصة ومفتاح Start.io في لوحة الأدمن.
+  useEffect(() => {
+    if (!isNativeApp) return;
+    setNativeBannerAds(platformAdsEnabled && externalAdsConfig.startIo?.enabled !== false);
+  }, [isNativeApp, platformAdsEnabled, externalAdsConfig]);
 
   useEffect(() => {
     if (isNativeApp) return;

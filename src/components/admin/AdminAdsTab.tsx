@@ -88,6 +88,7 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
   // مربع لصق، ولا مفتاح "متوافقة مع APK" (مستبعدة عن نسخة APK دوماً وبشكل
   // بنيوي، وليس بخيار إداري — انظر شرح كامل في externalAdsStore.ts).
   const [monetagEnabled, setMonetagEnabled] = useState(externalAdsConfig?.monetag?.enabled ?? false);
+  const [startIoEnabled, setStartIoEnabled] = useState(externalAdsConfig?.startIo?.enabled ?? true);
   // appSafe: تأكيد صريح إن سياسة الشبكة تسمح بعرضها داخل تطبيق APK لا
   // الموقع فقط — افتراضياً معطّل، لا علاقة له بظهورها بالموقع (enabled
   // وحده يكفي هناك). انظر شرح كامل في externalAdsStore.ts.
@@ -114,6 +115,7 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
     taboolaSnippet,
     taboolaAppSafe,
     monetagEnabled,
+    startIoEnabled,
     estimatedCpmUsd
   });
 
@@ -132,6 +134,7 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
     taboolaSnippet.trim() !== savedExternalAdsSnapshot.taboolaSnippet.trim() ||
     taboolaAppSafe !== savedExternalAdsSnapshot.taboolaAppSafe ||
     monetagEnabled !== savedExternalAdsSnapshot.monetagEnabled ||
+    startIoEnabled !== savedExternalAdsSnapshot.startIoEnabled ||
     estimatedCpmUsd.trim() !== savedExternalAdsSnapshot.estimatedCpmUsd.trim();
 
   // إن وصلت قيمة externalAdsConfig من Firestore بعد أول تحميل لهذا
@@ -152,6 +155,7 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
       taboolaSnippet: externalAdsConfig?.taboola?.snippet ?? '',
       taboolaAppSafe: externalAdsConfig?.taboola?.appSafe ?? false,
       monetagEnabled: externalAdsConfig?.monetag?.enabled ?? false,
+      startIoEnabled: externalAdsConfig?.startIo?.enabled ?? true,
       estimatedCpmUsd: String(externalAdsConfig?.estimatedCpmUsd ?? 2)
     };
     setPropellerEnabled(nextSnapshot.propellerEnabled);
@@ -164,6 +168,7 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
     setTaboolaSnippet(nextSnapshot.taboolaSnippet);
     setTaboolaAppSafe(nextSnapshot.taboolaAppSafe);
     setMonetagEnabled(nextSnapshot.monetagEnabled);
+    setStartIoEnabled(nextSnapshot.startIoEnabled);
     setEstimatedCpmUsd(nextSnapshot.estimatedCpmUsd);
     setSavedExternalAdsSnapshot(nextSnapshot);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -183,6 +188,7 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
         adsterraUnits,
         taboola: { enabled: taboolaEnabled, snippet: trimmedTaboola, appSafe: taboolaAppSafe },
         monetag: { enabled: monetagEnabled },
+        startIo: { enabled: startIoEnabled },
         estimatedCpmUsd: cpmValue
       });
       setSavedExternalAdsSnapshot({
@@ -196,6 +202,7 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
         taboolaSnippet: trimmedTaboola,
         taboolaAppSafe,
         monetagEnabled,
+        startIoEnabled,
         estimatedCpmUsd: String(cpmValue)
       });
       setExternalAdsSavedMsg('تم الحفظ بنجاح ✓');
@@ -745,6 +752,25 @@ export const AdminAdsTab: React.FC<AdminAdsTabProps> = ({
                 <p className="text-[11px] text-slate-500 leading-relaxed">
                   مستبعدة عن نسخة APK دائماً وبلا أي خيار — هذا النوع يحقن سكربتاً في متصفح الويب مباشرة،
                   ولا يوجد محرك متصفح مماثل داخل تطبيق الجوال الأصلي إطلاقاً.
+                </p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="font-bold text-xs text-white">Start.io (تطبيق APK فقط)</div>
+                  <button
+                    type="button"
+                    onClick={() => setStartIoEnabled((v) => !v)}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${
+                      startIoEnabled ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400'
+                    }`}
+                  >
+                    {startIoEnabled ? 'مفعّلة ✓' : 'معطّلة'}
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  شريط إعلاني أصلي (App ID: 208464217) يظهر أسفل شاشة تطبيق الجوال فقط، ولا يظهر في الموقع.
+                  يُخفى تلقائياً عند إيقاف إعلانات المنصة من المفتاح العام.
                 </p>
               </div>
             </div>

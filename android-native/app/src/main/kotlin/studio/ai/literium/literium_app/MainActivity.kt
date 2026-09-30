@@ -50,6 +50,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
@@ -67,6 +68,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import studio.ai.literium.literium_app.ui.theme.LiteriumTheme
+import studio.ai.literium.literium_app.ui.ads.StartIoBannerView
 
 private val HOSTS = arrayOf(
     "literium-wjct.onrender.com",
@@ -103,6 +105,8 @@ class MainActivity : ComponentActivity() {
     private var pendingFileCallback: ValueCallback<Array<Uri>>? = null
     private var pageReadyState = mutableStateOf(false)
     private var loadFailedState = mutableStateOf(false)
+    // يضبطه الموقع عبر رسالة "nativeAds" (مفتاح Start.io في لوحة الأدمن + مفتاح إعلانات المنصة).
+    private var startIoBannerState = mutableStateOf(false)
     private var activeHostIndex = 0
     private var lastShareAt = 0L
     private val revealTimeoutHandler = Handler(Looper.getMainLooper())
@@ -187,6 +191,7 @@ class MainActivity : ComponentActivity() {
                 )
                 "systemBars" -> applySystemBars(json.optString("color"), json.optBoolean("light"))
                 "haptic" -> webView.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
+                "nativeAds" -> startIoBannerState.value = json.optBoolean("startIo", false)
             }
         }
     }
@@ -465,6 +470,7 @@ class MainActivity : ComponentActivity() {
                 val context = LocalContext.current
                 val pageReady by pageReadyState
                 val loadFailed by loadFailedState
+                val showStartIoBanner by startIoBannerState
                 Surface(
                     modifier = Modifier
                         .fillMaxSize()
@@ -472,7 +478,8 @@ class MainActivity : ComponentActivity() {
                         // ارتفاع شريط الحالة/شريط التنقل الحاليين، بدل ترك WebView يرسم تحتهما.
                         .windowInsetsPadding(WindowInsets.systemBars)
                 ) {
-                    Box(modifier = Modifier.fillMaxSize()) {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                    Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
                     AndroidView(
                         modifier = Modifier.fillMaxSize(),
                         factory = { buildWebView(context, startUrl) }
@@ -564,6 +571,12 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                         }
+                    }
+                    }
+                    // شريط Start.io الأصلي أسفل الصفحة، خارج WebView — يظهر فقط بعد
+                    // تحميل الموقع فعلياً وحين يسمح به الموقع نفسه.
+                    if (showStartIoBanner && pageReady && !loadFailed) {
+                        StartIoBannerView(modifier = Modifier.fillMaxWidth())
                     }
                     }
                 }
