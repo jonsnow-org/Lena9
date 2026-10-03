@@ -488,7 +488,7 @@ class MainActivity : ComponentActivity() {
                     // تُغطي WebView بالكامل حتى تتحقق شاشة العنوان الحقيقي أعلاه — يستمر
                     // WebView بالتحميل خلفها بلا انقطاع، فتظهر شاشتنا فوراً فقط دون أي وميض
                     // لصفحة "إيقاظ الخدمة" الخاصة بـRender مهما استغرقت.
-                    AnimatedVisibility(
+                    androidx.compose.animation.AnimatedVisibility(
                         visible = !pageReady,
                         exit = fadeOut(),
                         modifier = Modifier.fillMaxSize()
