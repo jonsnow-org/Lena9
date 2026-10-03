@@ -68,6 +68,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import studio.ai.literium.literium_app.ui.theme.LiteriumTheme
+import studio.ai.literium.literium_app.ui.ads.StartIoAds
 import studio.ai.literium.literium_app.ui.ads.StartIoBannerView
 
 private val HOSTS = arrayOf(
@@ -107,6 +108,7 @@ class MainActivity : ComponentActivity() {
     private var loadFailedState = mutableStateOf(false)
     // يضبطه الموقع عبر رسالة "nativeAds" (مفتاح Start.io في لوحة الأدمن + مفتاح إعلانات المنصة).
     private var startIoBannerState = mutableStateOf(false)
+    @Volatile private var startIoInterstitialEnabled = false
     private var activeHostIndex = 0
     private var lastShareAt = 0L
     private val revealTimeoutHandler = Handler(Looper.getMainLooper())
@@ -191,7 +193,15 @@ class MainActivity : ComponentActivity() {
                 )
                 "systemBars" -> applySystemBars(json.optString("color"), json.optBoolean("light"))
                 "haptic" -> webView.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
-                "nativeAds" -> startIoBannerState.value = json.optBoolean("startIo", false)
+                "nativeAds" -> {
+                    val enabled = json.optBoolean("startIo", false)
+                    startIoBannerState.value = enabled
+                    startIoInterstitialEnabled = enabled
+                    if (enabled) StartIoAds.preloadInterstitial(this@MainActivity)
+                }
+                "showInterstitial" -> if (startIoInterstitialEnabled) {
+                    runOnUiThread { StartIoAds.maybeShowInterstitial(this@MainActivity) }
+                }
             }
         }
     }

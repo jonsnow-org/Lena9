@@ -1,5 +1,6 @@
 package studio.ai.literium.literium_app.ui.ads
 
+import android.app.Activity
 import android.content.Context
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -8,7 +9,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
+import com.startapp.sdk.adsbase.Ad
+import com.startapp.sdk.adsbase.StartAppAd
 import com.startapp.sdk.adsbase.StartAppSDK
+import com.startapp.sdk.adsbase.adlisteners.AdDisplayListener
+import com.startapp.sdk.adsbase.adlisteners.AdEventListener
 import com.startapp.sdk.ads.banner.Banner
 
 /**
@@ -46,6 +51,61 @@ internal object StartIoAds {
         StartAppSDK.initParams(context.applicationContext, APP_ID)
             .setReturnAdsEnabled(false)
             .init()
+    }
+
+    // ── الإعلان البيني (ملء الشاشة/فيديو) ─────────────────────────────────────────────
+    // يُحمَّل مسبقاً، ويُعرض فقط عند فاصل طبيعي يطلبه الموقع (إغلاق مقال) مع حدود صارمة
+    // حتى لا يزعج القارئ: لا إعلان في أول دقيقتين من فتح التطبيق، وبين كل إعلانين 4 دقائق
+    // على الأقل، وبحد أقصى 6 في الجلسة الواحدة.
+    private const val INTERSTITIAL_MIN_GAP_MS = 4 * 60_000L
+    private const val INTERSTITIAL_WARMUP_MS = 2 * 60_000L
+    private const val INTERSTITIAL_MAX_PER_SESSION = 6
+
+    private val sessionStartMs = System.currentTimeMillis()
+    private var interstitial: StartAppAd? = null
+    private var interstitialReady = false
+    private var interstitialLoading = false
+    private var lastInterstitialShownMs = 0L
+    private var interstitialShownCount = 0
+
+    @Synchronized
+    fun preloadInterstitial(activity: Activity) {
+        if (interstitialReady || interstitialLoading) return
+        ensureInitialized(activity)
+        val ad = StartAppAd(activity.applicationContext)
+        interstitial = ad
+        interstitialLoading = true
+        ad.loadAd(StartAppAd.AdMode.AUTOMATIC, object : AdEventListener {
+            override fun onReceiveAd(p0: Ad) {
+                synchronized(this@StartIoAds) { interstitialReady = true; interstitialLoading = false }
+            }
+
+            override fun onFailedToReceiveAd(p0: Ad?) {
+                synchronized(this@StartIoAds) { interstitialReady = false; interstitialLoading = false }
+            }
+        })
+    }
+
+    /** يعرض الإعلان إن سمحت الحدود وكان جاهزاً، وإلا يتجاهل الطلب بصمت. */
+    @Synchronized
+    fun maybeShowInterstitial(activity: Activity) {
+        val now = System.currentTimeMillis()
+        val ad = interstitial
+        if (ad == null || !interstitialReady) { preloadInterstitial(activity); return }
+        if (now - sessionStartMs < INTERSTITIAL_WARMUP_MS) return
+        if (now - lastInterstitialShownMs < INTERSTITIAL_MIN_GAP_MS) return
+        if (interstitialShownCount >= INTERSTITIAL_MAX_PER_SESSION) return
+        interstitialReady = false
+        val shown = ad.showAd(object : AdDisplayListener {
+            override fun adHidden(p0: Ad?) { preloadInterstitial(activity) }
+            override fun adDisplayed(p0: Ad?) {}
+            override fun adClicked(p0: Ad?) {}
+            override fun adNotDisplayed(p0: Ad?) { preloadInterstitial(activity) }
+        })
+        if (shown) {
+            lastInterstitialShownMs = now
+            interstitialShownCount++
+        }
     }
 }
 

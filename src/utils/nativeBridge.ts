@@ -36,3 +36,9 @@ export function setNativeBannerAds(enabled: boolean): void {
 export function setNativeSystemBars(color: string, light: boolean): void {
   send({ type: 'systemBars', color, light });
 }
+
+/** يطلب من التطبيق الأصلي عرض إعلان Start.io البيني عند فاصل طبيعي (مثل إغلاق مقال).
+ *  القرار النهائي للتطبيق: يطبّق حدّ التكرار ويتجاهل الطلب إن لم يكن الإعلان جاهزاً. */
+export function requestNativeInterstitial() {
+  send({ type: 'showInterstitial' });
+}

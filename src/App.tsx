@@ -68,7 +68,7 @@ import { rememberAccount } from './utils/savedAccounts';
 import { isEligibleForMonetization, getMemberStatusLabel } from './utils/creatorEligibility';
 import { normalizeArabicSearch } from './utils/arabicSearch';
 import { rotateArticles, pickFeatured } from './utils/feedRotation';
-import { setNativeSystemBars, setNativeBannerAds } from './utils/nativeBridge';
+import { setNativeSystemBars, setNativeBannerAds, requestNativeInterstitial } from './utils/nativeBridge';
 import { useIncrementalList } from './hooks/useIncrementalList';
 import { getTranslator } from './data/translations';
 import { applyThemePreset, applyBackgroundPreset, syncBackgroundOverlayMode } from './utils/themeEngine';
@@ -4526,7 +4526,10 @@ export function App() {
         <ArticleReader
           article={readingArticle}
           campaigns={campaigns}
-          onClose={() => setReadingArticle(null)}
+          onClose={() => {
+            setReadingArticle(null);
+            if (isNativeApp) requestNativeInterstitial();
+          }}
           onLike={handleLikeArticle}
           isLiked={likedArticleIds.includes(readingArticle.id)}
           onBookmark={handleToggleBookmark}
