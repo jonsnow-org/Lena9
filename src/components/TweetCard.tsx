@@ -33,26 +33,50 @@ interface TweetCardProps {
   onSelectAuthor?: (userId: string) => void;
 }
 
-/** زر إجراء موحّد لصف الإعجاب/التعليق/المشاركة/المفضلة — حجم وحواف ولمسة
- *  ضغط (scale-90) موحّدة على الأربعة بدل تكرار نفس الأصناف يدوياً في كل زر. */
+type TweetActionTone = 'rose' | 'brand' | 'sky' | 'amber';
+
+// أصناف كاملة (لا تُبنى ديناميكياً) كي يلتقطها Tailwind. كل زر له لون ثابت ظاهر دائماً،
+// وعند التفعيل (إعجاب/مفضلة) يمتلئ بلون صلب مع نص أبيض.
+const TWEET_ACTION_TONES: Record<TweetActionTone, { idle: string; active: string }> = {
+  rose: {
+    idle: 'bg-gradient-to-b from-rose-50 to-rose-100/70 border-rose-200 text-rose-600 hover:from-rose-100 hover:to-rose-100 dark:from-rose-500/10 dark:to-rose-500/20 dark:border-rose-500/30 dark:text-rose-300',
+    active: 'bg-gradient-to-b from-rose-500 to-rose-600 border-rose-600 text-white shadow-rose-500/30'
+  },
+  brand: {
+    idle: 'bg-gradient-to-b from-brand-50 to-brand-100/70 border-brand-200 text-brand-700 hover:from-brand-100 hover:to-brand-100 dark:from-brand-500/10 dark:to-brand-500/20 dark:border-brand-500/30 dark:text-brand-300',
+    active: 'bg-gradient-to-b from-brand-500 to-brand-600 border-brand-600 text-white shadow-brand-500/30'
+  },
+  sky: {
+    idle: 'bg-gradient-to-b from-sky-50 to-sky-100/70 border-sky-200 text-sky-700 hover:from-sky-100 hover:to-sky-100 dark:from-sky-500/10 dark:to-sky-500/20 dark:border-sky-500/30 dark:text-sky-300',
+    active: 'bg-gradient-to-b from-sky-500 to-sky-600 border-sky-600 text-white shadow-sky-500/30'
+  },
+  amber: {
+    idle: 'bg-gradient-to-b from-amber-50 to-amber-100/70 border-amber-200 text-amber-700 hover:from-amber-100 hover:to-amber-100 dark:from-amber-500/10 dark:to-amber-500/20 dark:border-amber-500/30 dark:text-amber-300',
+    active: 'bg-gradient-to-b from-amber-400 to-amber-500 border-amber-500 text-white shadow-amber-500/30'
+  }
+};
+
+/** زر إجراء موحّد لصف الإعجاب/التعليق/المشاركة/المفضلة — لون مميّز لكل زر
+ *  وظل خفيف وحواف مستديرة، ويمتلئ باللون الصلب عند التفعيل. */
 const TweetActionButton: React.FC<{
   onClick: () => void;
   icon: React.ReactNode;
   label?: string;
-  hoverClass: string;
+  tone: TweetActionTone;
+  active?: boolean;
   title?: string;
-}> = ({ onClick, icon, label, hoverClass, title }) => (
-  // بطاقة بخلفية ثابتة (لا تعتمد على hover فقط) بنفس حجم زر موحّد للأربعة
-  // (إعجاب/تعليق/مشاركة/مفضلة) — نفس لغة تصميم بطاقتي "متابعون/يتابع" في
-  // الملف الشخصي، ليتضح أن هذه أزرار حقيقية قابلة للنقر لا مجرد نص وأيقونة.
+}> = ({ onClick, icon, label, tone, active = false, title }) => (
   <button
     type="button"
     onClick={onClick}
     title={title}
-    className={`flex items-center gap-1.5 px-3 py-2 rounded-xl min-w-[44px] justify-center bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 text-slate-500 dark:text-slate-400 transition-all active:scale-90 ${hoverClass}`}
+    aria-label={title}
+    className={`flex items-center gap-1.5 px-3.5 py-2 rounded-2xl min-w-[48px] justify-center border shadow-sm transition-all duration-150 active:scale-90 hover:shadow-md ${
+      active ? TWEET_ACTION_TONES[tone].active : TWEET_ACTION_TONES[tone].idle
+    } ${active ? 'shadow-md' : ''}`}
   >
     {icon}
-    {label !== undefined && <span className="text-xs font-bold">{label}</span>}
+    {label !== undefined && <span className="text-xs font-extrabold tabular-nums">{label}</span>}
   </button>
 );
 
@@ -403,27 +427,33 @@ export const TweetCard: React.FC<TweetCardProps> = ({
       <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 pt-1 border-t border-slate-100 dark:border-slate-800/60">
         <TweetActionButton
           onClick={() => onToggleLike(tweet.id)}
-          hoverClass="hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20"
+          tone="rose"
+          active={isLiked}
+          title="إعجاب"
           label={String(tweet.likesCount || 0)}
-          icon={<Heart className={`w-4 h-4 ${isLiked ? 'fill-rose-500 text-rose-500' : ''}`} />}
+          icon={<Heart className={`w-4 h-4 ${isLiked ? 'fill-white' : ''}`} />}
         />
         <TweetActionButton
           onClick={() => setShowComments((v) => !v)}
-          hoverClass="hover:text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-950/20"
+          tone="brand"
+          active={showComments}
+          title="التعليقات"
           label={String(tweet.commentsCount || 0)}
           icon={<MessageSquare className="w-4 h-4" />}
         />
         <TweetActionButton
           onClick={handleShareClick}
-          hoverClass="hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/20"
+          tone="sky"
+          title="مشاركة"
           label={String(tweet.sharesCount || 0)}
           icon={<Share2 className="w-4 h-4" />}
         />
         <TweetActionButton
           onClick={() => onToggleFavorite(tweet.id)}
-          hoverClass="hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-950/20"
+          tone="amber"
+          active={isFavorited}
           title="إضافة إلى المفضلة"
-          icon={<Star className={`w-4 h-4 ${isFavorited ? 'fill-amber-500 text-amber-500' : ''}`} />}
+          icon={<Star className={`w-4 h-4 ${isFavorited ? 'fill-white' : ''}`} />}
         />
       </div>
 

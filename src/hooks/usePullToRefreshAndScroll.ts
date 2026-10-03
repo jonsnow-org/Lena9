@@ -53,19 +53,51 @@ export function usePullToRefreshAndScroll(params: {
   // أعلى وتدور مع الإصبع. تُحرَّك مباشرة عبر ref في كل إطار — كانت حالة React
   // (pullDistance) تعيد رسم التطبيق كاملاً في كل إطار سحب، ومؤشر نصي يُدرَج داخل
   // الصفحة فيدفع المحتوى لأسفل، وهذان سبب ثقل السحب.
-  const PULL_THRESHOLD = 70;
+  const PULL_THRESHOLD = 64;
+  const REFRESH_OFFSET = 60;
+  const MIN_SPIN_MS = 900;
   const pullIndicatorRef = useRef<HTMLDivElement>(null);
+  const pullContentRef = useRef<HTMLDivElement>(null);
   const pullRafRef = useRef<number | null>(null);
   const pullDistanceRef = useRef(0);
   const isRefreshingRef = useRef(false);
+  const settleTimerRef = useRef<number | null>(null);
 
-  const renderPullIndicator = (distance: number, animate: boolean) => {
+  // المحتوى ينزل مع الإصبع (مقاومة تزداد كلما سحبت أكثر) والدائرة تنزل معه،
+  // وعند الإفلات يستقر عند REFRESH_OFFSET طوال التحديث ثم يعود بسلاسة. أُزيلت الـtransform
+  // كلياً بعد الاستقرار حتى لا تكسر العناصر الثابتة (position: fixed) داخل المحتوى.
+  const renderPull = (distance: number, animate: boolean, spinning = false) => {
+    const content = pullContentRef.current;
     const el = pullIndicatorRef.current;
-    if (!el) return;
-    el.style.transition = animate ? 'transform 220ms ease-out, opacity 220ms ease-out' : 'none';
-    el.style.transform = `translate3d(0, ${distance - 56}px, 0) rotate(${distance * 3}deg)`;
-    el.style.opacity = String(Math.min(1, distance / 40));
-    el.dataset.armed = distance >= PULL_THRESHOLD ? '1' : '0';
+    const transition = animate ? 'transform 300ms cubic-bezier(0.22, 1, 0.36, 1)' : 'none';
+    if (settleTimerRef.current !== null) {
+      clearTimeout(settleTimerRef.current);
+      settleTimerRef.current = null;
+    }
+    if (content) {
+      content.style.transition = transition;
+      content.style.transform = distance > 0 || animate ? `translate3d(0, ${distance}px, 0)` : '';
+      if (distance === 0 && animate) {
+        settleTimerRef.current = window.setTimeout(() => {
+          if (pullContentRef.current && pullDistanceRef.current === 0 && !isRefreshingRef.current) {
+            pullContentRef.current.style.transition = 'none';
+            pullContentRef.current.style.transform = '';
+          }
+        }, 340);
+      }
+    }
+    if (el) {
+      const progress = Math.min(1, distance / PULL_THRESHOLD);
+      el.style.transition = animate
+        ? 'transform 300ms cubic-bezier(0.22, 1, 0.36, 1), opacity 200ms ease-out'
+        : 'none';
+      el.style.transform = `translate3d(0, ${distance - 52}px, 0) scale(${0.6 + 0.4 * progress})`;
+      el.style.opacity = distance <= 0 ? '0' : String(Math.min(1, 0.25 + progress));
+      el.dataset.armed = distance >= PULL_THRESHOLD ? '1' : '0';
+      const icon = el.firstElementChild as HTMLElement | null;
+      if (icon && !spinning) icon.style.transform = `rotate(${distance * 4}deg)`;
+      else if (icon) icon.style.transform = '';
+    }
   };
 
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -81,15 +113,16 @@ export function usePullToRefreshAndScroll(params: {
     if (diff < -5) {
       touchStartPosRef.current = 0;
       pullDistanceRef.current = 0;
-      renderPullIndicator(0, true);
+      renderPull(0, true);
       return;
     }
     if (diff <= 0) return;
-    pullDistanceRef.current = Math.min(diff * 0.5, 110);
+    // مقاومة تدريجية: أول السحب سهل وآخره أثقل، بحد أقصى 120px
+    pullDistanceRef.current = Math.min(120, 120 * (1 - Math.exp(-diff / 160)));
     if (pullRafRef.current === null) {
       pullRafRef.current = requestAnimationFrame(() => {
         pullRafRef.current = null;
-        if (touchStartPosRef.current > 0) renderPullIndicator(pullDistanceRef.current, false);
+        if (touchStartPosRef.current > 0) renderPull(pullDistanceRef.current, false);
       });
     }
   };
@@ -103,10 +136,10 @@ export function usePullToRefreshAndScroll(params: {
     pullDistanceRef.current = 0;
     touchStartPosRef.current = 0;
     if (pulled >= PULL_THRESHOLD) {
-      renderPullIndicator(PULL_THRESHOLD, true);
+      renderPull(REFRESH_OFFSET, true, true);
       handleRefreshFeed();
     } else if (pulled > 0) {
-      renderPullIndicator(0, true);
+      renderPull(0, true);
     }
   };
 
@@ -120,6 +153,8 @@ export function usePullToRefreshAndScroll(params: {
     if (isRefreshingRef.current) return;
     isRefreshingRef.current = true;
     setIsRefreshing(true);
+    // حد أدنى لعرض الدائرة وهي تدور حتى لو كان الجلب فورياً (أو فشل فوراً)، وإلا يبدو التحديث وكأنه لم يحدث
+    const minSpin = new Promise((resolve) => setTimeout(resolve, MIN_SPIN_MS));
     try {
       const [freshArticles, freshTweets] = await Promise.all([
         fetchArticlesOnce(),
@@ -134,10 +169,11 @@ export function usePullToRefreshAndScroll(params: {
       console.error('تعذر تحديث الخلاصة:', err);
       alert('تعذر تحديث المحتوى الآن. تحقق من اتصالك بالإنترنت وحاول مجدداً.');
     } finally {
+      await minSpin;
       setFeedSeed(Date.now());
       isRefreshingRef.current = false;
       setIsRefreshing(false);
-      renderPullIndicator(0, true);
+      renderPull(0, true);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
@@ -174,6 +210,7 @@ export function usePullToRefreshAndScroll(params: {
   return {
     scrollToTop,
     pullIndicatorRef,
+    pullContentRef,
     handleTouchStart,
     handleTouchMove,
     handleTouchEnd,

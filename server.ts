@@ -1561,6 +1561,66 @@ ${WRITER_MONETIZATION_ENABLED ? `نسب تقاسم الأرباح:
       title: 'في الامتنان اليومي',
       content:
         'الامتنان لا يعني إنكار الصعوبات، بل القدرة على رؤية ما هو جيد إلى جانبها — وهي قدرة تُتعلَّم بالممارسة أكثر مما هي شعور عفوي يأتي من تلقاء نفسه.'
+    },
+    {
+      title: 'القراءة البطيئة',
+      content:
+        'القراءة البطيئة ليست ترفاً بل طريقة لاستعادة العلاقة مع النص؛ نتوقف عند الجملة التي أعجبتنا، ونعود إلى الفقرة التي لم نفهمها، فنخرج بفكرة تبقى بدلاً من معلومة تُنسى.'
+    },
+    {
+      title: 'كيف نكتب بصدق',
+      content:
+        'الكتابة الصادقة لا تعني البوح بكل شيء، بل اختيار ما نقوله بإخلاص وبلا زينة زائدة. القارئ يلتقط الصدق من نبرة النص قبل أن يلتقطه من معناه.'
+    },
+    {
+      title: 'الفضول محرّك المعرفة',
+      content:
+        'كل معرفة عظيمة بدأت بسؤال بسيط طرحه فضولي لم يقتنع بالجواب المتاح. وحين نحافظ على فضولنا حيّاً، تتحول أيامنا العادية إلى مادة لا تنتهي للتعلّم والاكتشاف.'
+    },
+    {
+      title: 'قوة العادات الصغيرة',
+      content:
+        'لا تُبنى التحولات الكبرى بقرارات عنيفة، بل بعادات صغيرة نكررها بهدوء: صفحة واحدة كل يوم، دقائق من الصمت، جملة نكتبها قبل النوم. الاستمرار أقوى من الحماس.'
+    },
+    {
+      title: 'فن الإصغاء',
+      content:
+        'الإصغاء الحقيقي يعني أن نؤجل ردّنا حتى نفهم ما يقوله الآخر فعلاً. وهو مهارة نادرة، لأن أغلبنا يستمع وهو يحضّر جوابه، لا ليدرك ما وراء الكلام.'
+    },
+    {
+      title: 'بين العزلة والوحدة',
+      content:
+        'العزلة اختيار نستعيد فيه أنفسنا، أما الوحدة فشعور بالانقطاع عن الآخرين. والفرق بينهما دقيق لكنه جوهري، فمن أتقن العزلة صار أقدر على صحبة الناس دون أن يذوب فيهم.'
+    },
+    {
+      title: 'قيمة الأخطاء',
+      content:
+        'الخطأ ليس نقيض النجاح بل أحد طرقه. من يخشى الخطأ يتوقف عن التجربة، ومن يتعامل معه كمعلّم يجمع من كل عثرة درساً يختصر عليه الطريق لاحقاً.'
+    },
+    {
+      title: 'اللغة والهوية',
+      content:
+        'اللغة ليست أداة للتواصل فحسب، بل وعاء الذاكرة الجماعية ومفاتيح الفهم. وحين نعتني بلغتنا نعتني بالطريقة التي نفكّر بها ونرى العالم من خلالها.'
+    },
+    {
+      title: 'الوقت والانتباه',
+      content:
+        'نشكو من قلة الوقت، والمشكلة غالباً في تشتّت الانتباه. ساعة واحدة من التركيز الكامل تساوي ساعات من الانشغال المتقطع، ومن يحمي انتباهه يحمي عمره.'
+    },
+    {
+      title: 'الصداقة عبر السنين',
+      content:
+        'الصداقة العميقة لا تحتاج إلى لقاءات يومية بقدر حاجتها إلى صدق متبادل وذاكرة طيبة. بعض الأصدقاء نلتقيهم بعد سنوات فنجد الحديث يبدأ من حيث انتهى.'
+    },
+    {
+      title: 'أن نبدأ من جديد',
+      content:
+        'البدايات الجديدة لا تعني محو ما سبق، بل البناء عليه بوعي أكبر. وكل بداية تحمل معها خوفاً مشروعاً، لكنها تحمل أيضاً فرصة لأن نكون أقرب إلى ما نريد.'
+    },
+    {
+      title: 'جمال الأشياء العادية',
+      content:
+        'نبحث عن الدهشة في الأماكن البعيدة بينما تختبئ في تفاصيل يومنا: ضوء الصباح على النافذة، رائحة الخبز، ضحكة عابرة. التأمل فيها يجعل العادي استثنائياً.'
     }
   ];
 
@@ -1576,7 +1636,35 @@ ${WRITER_MONETIZATION_ENABLED ? `نسب تقاسم الأرباح:
     'كل بداية تبدو صغيرة قبل أن تتحول لاحقاً إلى أثر لا يُنسى.',
     'أحياناً نحتاج فقط لمن يستمع، لا لمن يقدّم حلولاً جاهزة.',
     'البساطة ليست نقصاً، بل نضج نصل إليه بعد رحلة طويلة من التعقيد.',
-    'أصعب القرارات غالباً ما تكون أكثرها وضوحاً حين ننظر إليها بصدق.'
+    'أصعب القرارات غالباً ما تكون أكثرها وضوحاً حين ننظر إليها بصدق.',
+    'القراءة نافذة صغيرة نطلّ منها على حيوات لم نعشها، ونعود منها أوسع قليلاً مما كنّا.',
+    'ليست كل الأيام الهادئة فارغة؛ بعضها يرتّب فينا ما بعثرته الأيام الصاخبة.',
+    'حين تكتب لنفسك أولاً، تصل كلماتك إلى الآخرين أصدق مما لو كتبتَ لإرضائهم.',
+    'الفضول هو الشكل الأنيق للشجاعة: أن تسأل رغم أنك لا تملك الجواب.',
+    'كم من فكرة عظيمة ماتت لأن صاحبها انتظر لحظة الكمال قبل أن يبدأ.',
+    'الكتاب الجيد لا يعطيك أجوبة جاهزة، بل يترك فيك سؤالاً يرافقك طويلاً.',
+    'نتعلم من الهدوء ما لا تعلّمه الضوضاء، ومن الغياب ما لا يعلّمه الحضور.',
+    'نصف ساعة من المشي بلا هاتف كفيلة بأن تعيد إليك أفكاراً ضيّعتها وسط الزحام.',
+    'الكلمة الطيبة تكلّف القليل، وتبقى في الذاكرة أطول من هدايا كثيرة.',
+    'أن تتقن الإصغاء يعني أن تمنح الآخر أثمن ما تملك: انتباهك الكامل.',
+    'لا تقس تقدّمك بسرعة غيرك؛ لكل نبتة موسمها، ولكل إنسان ربيعه.',
+    'بعض الخسارات تعلّمنا ما لم تعلّمه الانتصارات كلها مجتمعة.',
+    'من يكتب سطراً كل يوم يملك بعد سنة كتاباً، ومن ينتظر الإلهام لا يملك سوى الأعذار.',
+    'في الليل تصبح الأفكار أكثر صدقاً، ولهذا نخافها ونحتاج إليها معاً.',
+    'اللغة العربية بيت واسع؛ كلما فتحتَ فيه باباً وجدتَ خلفه غرفاً لم تعرفها بعد.',
+    'ليس المهم أن تقول شيئاً مختلفاً، بل أن تقول ما تؤمن به بطريقتك أنت.',
+    'الوقت لا يشفي كل شيء، لكنه يعلّمنا كيف نعيش مع ما لم يُشفَ.',
+    'حين نغفر لا نغيّر الماضي، لكننا نحرّر المستقبل من ثقله.',
+    'التعب الجميل هو الذي يتركك آخر اليوم وقد فعلتَ شيئاً يستحق.',
+    'القهوة والكتاب والمطر: ثلاثة أشياء تجعل البطء فضيلة.',
+    'الأصدقاء الحقيقيون هم من يتذكرون تفاصيلك الصغيرة قبل إنجازاتك الكبيرة.',
+    'يحتاج الحلم إلى القليل من الشجاعة ليولد، وإلى الكثير منها ليكبر.',
+    'السؤال الذي تتجنّبه غالباً هو السؤال الذي تحتاج إلى طرحه أكثر من غيره.',
+    'ما أجمل أن تجد في صفحة قديمة جملة تشعر أنها كُتبت لك اليوم!',
+    'التواضع ليس أن تقلّل من قدرك، بل أن تدرك أن أمامك الكثير لتتعلمه.',
+    'المدن تتشابه في أبنيتها، وتختلف في الحكايات التي يحملها سكانها.',
+    'حاول أن تكون اليوم أفضل قليلاً من أمسك، لا أفضل من الجميع.',
+    'الانتباه إلى التفاصيل الصغيرة أقصر الطرق إلى الامتنان.'
   ];
 
   const COMMENT_FALLBACKS: string[] = [
@@ -1587,14 +1675,60 @@ ${WRITER_MONETIZATION_ENABLED ? `نسب تقاسم الأرباح:
     'كتابة راقية، استمر بهذا المستوى.',
     'نقطة مهمة فعلاً تستحق التوقف عندها.',
     'أسلوب جميل في الطرح، شكراً لهذه المشاركة.',
-    'هذا يلامس تجربة كثيرين منا بصراحة.'
+    'هذا يلامس تجربة كثيرين منا بصراحة.',
+    'عبارة أعادتني إلى التفكير في أمور كنت أمرّ بها سريعاً.',
+    'أعجبني هدوء الطرح وعمق الفكرة في آن واحد.',
+    'جميل أن نجد من يكتب بهذه البساطة الصادقة.',
+    'قرأتها مرتين، وفي كل مرة وجدت معنى جديداً.',
+    'شكراً على هذه الالتفاتة التي تستحق أن تُقال.',
+    'فكرة بسيطة لكنها تحمل أثراً كبيراً، دمتَ مبدعاً.',
+    'هذا النوع من الكتابة هو ما نحتاجه فعلاً.',
+    'وصلتني الفكرة بوضوح، وأسلوبك ممتع للقراءة.',
+    'ما أحوجنا إلى هذا التذكير في زحمة أيامنا.',
+    'طرح مختلف يستحق المتابعة، بانتظار المزيد.',
+    'كلمات خفيفة على اللسان وثقيلة في المعنى.',
+    'أحببت الزاوية التي نظرتَ منها إلى الموضوع.',
+    'تأمل راقٍ، أضاف لي شيئاً اليوم.',
+    'نصٌّ يستحق أن يُحفظ ويُرجع إليه لاحقاً.',
+    'أصبتَ في اختيار الكلمات، فجاء المعنى واضحاً.',
+    'مقاربة هادئة لموضوع يشغل الكثيرين، شكراً لك.'
   ];
 
-  function pickVariedFallback<T>(pool: T[], recentTexts: string[], getText: (item: T) => string): T {
+  // يُرجع null حين تُستنفد المجموعة كلها (كل عناصرها نُشرت مؤخراً): النشر المكرَّر
+  // حرفياً أسوأ من عدم النشر، فيتخطى المستدعي هذا العنصر في هذه الدورة بدل تكراره.
+  function pickVariedFallback<T>(pool: T[], recentTexts: string[], getText: (item: T) => string): T | null {
     const available = pool.filter((item) => !isNearDuplicateOfRecent(getText(item), recentTexts));
-    const source = available.length > 0 ? available : pool;
-    return source[Math.floor(Math.random() * source.length)];
+    if (available.length === 0) return null;
+    return available[Math.floor(Math.random() * available.length)];
   }
+
+  function pickRandom<T>(items: T[], fallback: T): T {
+    return items.length > 0 ? items[Math.floor(Math.random() * items.length)] : fallback;
+  }
+
+  // زوايا كتابة متنوعة تُضاف لتعليمة Gemini كي لا تتشابه نصوص البوتات حتى لو
+  // تشارك بوتان نفس الموضوع.
+  const TWEET_ANGLES = [
+    'خاطرة شخصية بصيغة المتكلم',
+    'سؤال تأملي مفتوح',
+    'حكمة قصيرة مكثّفة',
+    'مشهد يومي بسيط يحمل معنى',
+    'مفارقة لطيفة أو تناقض ظريف',
+    'تشبيه أدبي جديد',
+    'نصيحة هادئة للقرّاء',
+    'ذكرى أو حنين',
+    'ملاحظة عن القراءة والكتابة',
+    'تحدٍّ أو دعوة للتجربة'
+  ];
+  const ARTICLE_ANGLES = [
+    'تحليل هادئ مع أمثلة من الحياة',
+    'مقارنة بين فكرتين متقابلتين',
+    'حكاية قصيرة تتحول إلى فكرة',
+    'أسئلة وأجوبة متسلسلة',
+    'دليل عملي من خطوات واضحة',
+    'قراءة تاريخية موجزة وما نتعلمه منها',
+    'تأمل شخصي بأسلوب سردي'
+  ];
 
   function requireBotsCronSecret(req: express.Request, res: express.Response): boolean {
     const expected = process.env.BOTS_CRON_SECRET;
@@ -1760,7 +1894,8 @@ ${WRITER_MONETIZATION_ENABLED ? `نسب تقاسم الأرباح:
       const articleBot = bots[pickedIndex];
       const tweetBot = articleBot;
 
-      const articleTopic = (articleBot.topics && articleBot.topics[0]) || 'general';
+      const articleTopic = pickRandom<string>(articleBot.topics || [], 'general');
+      const articleAngle = pickRandom(ARTICLE_ANGLES, ARTICLE_ANGLES[0]);
       const nowIso = new Date().toISOString();
       const activityLog: Array<Record<string, any>> = [];
 
@@ -1769,10 +1904,10 @@ ${WRITER_MONETIZATION_ENABLED ? `نسب تقاسم الأرباح:
       // لتفادي نفس العناوين/الأفكار، واستبعاد أي عنصر من مجموعة الاحتياط
       // الثابتة يطابق شيئاً نُشر مؤخراً بالفعل.
       const [recentArticleTitles, recentTweetTexts, recentArticleComments, recentTweetComments] = await Promise.all([
-        fetchRecentBotTexts(db, 'articles', 'writerId', 'title', 'publishedAt', 40),
-        fetchRecentBotTexts(db, 'tweets', 'authorId', 'content', 'createdAt', 60),
-        fetchRecentBotTexts(db, 'comments', 'userId', 'content', 'createdAt', 30),
-        fetchRecentBotTexts(db, 'tweetComments', 'userId', 'content', 'createdAt', 30)
+        fetchRecentBotTexts(db, 'articles', 'writerId', 'title', 'publishedAt', 120),
+        fetchRecentBotTexts(db, 'tweets', 'authorId', 'content', 'createdAt', 200),
+        fetchRecentBotTexts(db, 'comments', 'userId', 'content', 'createdAt', 80),
+        fetchRecentBotTexts(db, 'tweetComments', 'userId', 'content', 'createdAt', 80)
       ]);
       const recentCommentTexts = [...recentArticleComments, ...recentTweetComments];
 
@@ -1792,7 +1927,7 @@ ${WRITER_MONETIZATION_ENABLED ? `نسب تقاسم الأرباح:
                 .map((t) => `- ${t}`)
                 .join('\n')}`
             : '';
-        const prompt = `أنت خبير SEO ومحتوى عربي. اكتب مقالاً غنياً وعميقاً بالفصحى في قسم (${articleTopic})، لا يقل عن 550 كلمة، بأسلوب راقٍ ومترابط، ومُحسَّن لمحركات البحث بحيث تتكرر كلماته المفتاحية داخل النص بشكل طبيعي وسلس دون أي حشو أو تكرار مصطنع.${avoidTitlesBlock}
+        const prompt = `أنت خبير SEO ومحتوى عربي. اكتب مقالاً غنياً وعميقاً بالفصحى في قسم (${articleTopic}) بأسلوب: ${articleAngle}، لا يقل عن 550 كلمة، بأسلوب راقٍ ومترابط، ومُحسَّن لمحركات البحث بحيث تتكرر كلماته المفتاحية داخل النص بشكل طبيعي وسلس دون أي حشو أو تكرار مصطنع.${avoidTitlesBlock}
 
 اتبع هذا الشكل بالضبط في بداية ردك (كل عنصر في سطر مستقل):
 الكلمات المفتاحية: <5 كلمات أو عبارات مفتاحية حقيقية يبحث عنها الناس فعلياً حول هذا الموضوع، مفصولة بفواصل>
@@ -1843,13 +1978,18 @@ ${WRITER_MONETIZATION_ENABLED ? `نسب تقاسم الأرباح:
       }
       if (!articleContent) {
         const fallback = pickVariedFallback(ARTICLE_FALLBACKS, recentArticleTitles, (f) => f.title);
-        articleTitle = articleTitle || fallback.title;
-        articleContent = fallback.content;
+        if (fallback) {
+          articleTitle = fallback.title;
+          articleContent = fallback.content;
+        }
       }
+      let articleId: string | null = null;
+      // لا مقال بلا محتوى جديد: إن فشل Gemini واستُنفدت المجموعة الاحتياطية نتخطى المقال بدل تكراره.
+      if (articleContent) {
       if (seoKeywords.length === 0) seoKeywords = [articleTopic];
       if (!seoDescription) seoDescription = articleContent.slice(0, 150);
 
-      const articleId = `bot_article_${Date.now()}`;
+      articleId = `bot_article_${Date.now()}`;
       const articleData = {
         id: articleId,
         writerId: articleBot.id,
@@ -1890,11 +2030,13 @@ ${WRITER_MONETIZATION_ENABLED ? `نسب تقاسم الأرباح:
         summary: articleTitle,
         createdAt: nowIso
       });
+      }
 
       // 2) توليد ونشر تغريدة يومية واحدة
       let tweetContent = '';
       if (client) {
-        const tweetTopic = (tweetBot.topics && tweetBot.topics[0]) || 'general';
+        const tweetTopic = pickRandom<string>(tweetBot.topics || [], 'general');
+        const tweetAngle = pickRandom(TWEET_ANGLES, TWEET_ANGLES[0]);
         const avoidTweetsBlock =
           recentTweetTexts.length > 0
             ? `\n\nتجنّب تماماً أي تشابه في الفكرة أو الصياغة مع هذه التغريدات المنشورة مؤخراً على نفس المنصة:\n${recentTweetTexts
@@ -1902,7 +2044,7 @@ ${WRITER_MONETIZATION_ENABLED ? `نسب تقاسم الأرباح:
                 .map((t) => `- ${t}`)
                 .join('\n')}`
             : '';
-        const prompt = `اكتب تغريدة قصيرة (أقل من 220 حرفاً) بالفصحى، فكرة أو خاطرة موجزة ومؤثرة حول موضوع (${tweetTopic})، بلا هاشتاغات وبلا علامات اقتباس.${avoidTweetsBlock}`;
+        const prompt = `اكتب تغريدة قصيرة (أقل من 220 حرفاً) بالفصحى، بصيغة: ${tweetAngle}، حول موضوع (${tweetTopic})، بلا هاشتاغات وبلا علامات اقتباس.${avoidTweetsBlock}`;
         try {
           const response = await client.models.generateContent({
             model: 'gemini-3.7-flash',
@@ -1919,10 +2061,12 @@ ${WRITER_MONETIZATION_ENABLED ? `نسب تقاسم الأرباح:
         }
       }
       if (!tweetContent) {
-        tweetContent = pickVariedFallback(TWEET_FALLBACKS, recentTweetTexts, (t) => t);
+        tweetContent = pickVariedFallback(TWEET_FALLBACKS, recentTweetTexts, (t) => t) || '';
       }
 
-      const tweetId = `bot_tweet_${Date.now()}`;
+      let tweetId: string | null = null;
+      if (tweetContent) {
+      tweetId = `bot_tweet_${Date.now()}`;
       const tweetData = {
         id: tweetId,
         authorId: tweetBot.id,
@@ -1946,6 +2090,7 @@ ${WRITER_MONETIZATION_ENABLED ? `نسب تقاسم الأرباح:
         summary: tweetContent.slice(0, 80),
         createdAt: nowIso
       });
+      }
 
       // 3) تفاعل تلقائي: بوتات أخرى (غير الناشر) تعجب وتعلّق على كل منشور
       async function interactWith(
@@ -2012,8 +2157,9 @@ ${WRITER_MONETIZATION_ENABLED ? `نسب تقاسم الأرباح:
           }
         }
         if (!commentText) {
-          commentText = pickVariedFallback(COMMENT_FALLBACKS, recentCommentTexts, (t) => t);
+          commentText = pickVariedFallback(COMMENT_FALLBACKS, recentCommentTexts, (t) => t) || '';
         }
+        if (!commentText) return;
 
         const commentsCollection = targetType === 'article' ? 'comments' : 'tweetComments';
         const commentTargetField = targetType === 'article' ? 'articleId' : 'tweetId';
@@ -2045,8 +2191,8 @@ ${WRITER_MONETIZATION_ENABLED ? `نسب تقاسم الأرباح:
         });
       }
 
-      await interactWith(articleId, 'article', articleBot.id, articleContent, articleTopic);
-      await interactWith(tweetId, 'tweet', tweetBot.id, tweetContent, (tweetBot.topics && tweetBot.topics[0]) || 'general');
+      if (articleId) await interactWith(articleId, 'article', articleBot.id, articleContent, articleTopic);
+      if (tweetId) await interactWith(tweetId, 'tweet', tweetBot.id, tweetContent, (tweetBot.topics && tweetBot.topics[0]) || 'general');
 
       // 4) تحديث حالة الدورة (تسجيل البوت كناشر اليوم + تدوير البداية التالية)
       await stateRef.set(
