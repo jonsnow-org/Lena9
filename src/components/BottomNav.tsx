@@ -54,6 +54,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({
     return (
       <nav
         id="bottom-nav-admin"
+        data-btn-theme="black"
+        data-bottom-nav
         className="fixed bottom-0 inset-x-0 z-40 bg-white/98 text-slate-900 border-t border-slate-200/90 shadow-xl dark:bg-slate-950/98 dark:text-white dark:border-brand-500/20 transition-colors pb-safe"
       >
         <div className="max-w-lg mx-auto px-2 h-16 flex items-center justify-around">
@@ -204,6 +206,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   // المخزَّن — الرئيسية · استكشاف · إشعارات · رسائل · ملفي.
   return (
     <nav
+      data-btn-theme="black"
+      data-bottom-nav
       id="bottom-nav-member"
       className="fixed bottom-0 inset-x-0 z-40 bg-white/98 text-slate-900 border-t border-slate-200/90 shadow-xl dark:bg-slate-950/98 dark:text-white dark:border-brand-500/20 transition-colors pb-safe"
     >

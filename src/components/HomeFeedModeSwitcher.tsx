@@ -20,10 +20,9 @@ export const HomeFeedModeSwitcher: React.FC<HomeFeedModeSwitcherProps> = ({ mode
       <button
         type="button"
         onClick={() => onChange('blog')}
+        data-btn-theme="green"
         className={`flex-1 flex items-center justify-center gap-2 rounded-xl font-extrabold text-sm transition-all duration-300 ease-in-out px-3 ${
-          mode === 'blog'
-            ? 'bg-orange-500 text-white shadow-md shadow-orange-500/30'
-            : 'bg-orange-50 dark:bg-orange-950/30 text-orange-500 dark:text-orange-400/80 hover:text-orange-600'
+          mode === 'blog' ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-500'
         }`}
         title="المدونة"
       >
@@ -34,10 +33,9 @@ export const HomeFeedModeSwitcher: React.FC<HomeFeedModeSwitcherProps> = ({ mode
       <button
         type="button"
         onClick={() => onChange('tweet')}
+        data-btn-theme="blue"
         className={`flex-1 flex items-center justify-center gap-2 rounded-xl font-extrabold text-sm transition-all duration-300 ease-in-out px-3 ${
-          mode === 'tweet'
-            ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
-            : 'bg-blue-50 dark:bg-blue-950/30 text-blue-500 dark:text-blue-400/80 hover:text-blue-600'
+          mode === 'tweet' ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-500'
         }`}
         title="تغريد"
       >

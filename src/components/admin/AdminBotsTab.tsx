@@ -30,6 +30,18 @@ const ACTIVITY_LABEL: Record<BotActivityLogEntry['type'], string> = {
   comment: 'علّق على'
 };
 
+// تطبيع النص العربي قبل مقارنة التكرار: يحذف التشكيل وعلامات الترقيم والمسافات
+// ويوحّد أشكال الألف والياء والتاء المربوطة — فتُعدّ "أحياناً..." و"احيانا..." نصاً واحداً.
+function normalizeForDuplicate(text: string): string {
+  return text
+    .replace(/[\u064B-\u065F\u0670\u0640]/g, '')
+    .replace(/[أإآ]/g, 'ا')
+    .replace(/ى/g, 'ي')
+    .replace(/ة/g, 'ه')
+    .replace(/[^\p{L}\p{N}]+/gu, '')
+    .toLowerCase();
+}
+
 export const AdminBotsTab: React.FC<AdminBotsTabProps> = ({
   users,
   publishingBotsEnabled,
@@ -118,6 +130,54 @@ export const AdminBotsTab: React.FC<AdminBotsTabProps> = ({
       setIsDeleting(false);
     }
   };
+
+  const botTweets = content.filter((it) => it.type === 'tweet');
+
+  // التغريدات المكررة: نفس النص (بعد التطبيع) أو نفس أول 40 حرفاً — نُبقي أقدم نسخة
+  // من كل مجموعة ونحذف الباقي.
+  const duplicateTweetIds = React.useMemo(() => {
+    const sorted = [...botTweets].sort(
+      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
+    const seen: string[] = [];
+    const dups: string[] = [];
+    for (const t of sorted) {
+      const n = normalizeForDuplicate(t.title);
+      if (!n) continue;
+      const isDup = seen.some((k) => k === n || (n.length > 24 && k.length > 24 && k.startsWith(n.slice(0, 40))));
+      if (isDup) dups.push(t.id);
+      else seen.push(n);
+    }
+    return dups;
+  }, [content]);
+
+  const deleteTweets = async (ids: string[], confirmText: string) => {
+    if (ids.length === 0) return;
+    if (!window.confirm(confirmText)) return;
+    setIsDeleting(true);
+    try {
+      await deleteBotPublishedContentBatch(ids.map((id) => ({ id, type: 'tweet' as const })));
+      setSelectedIds(new Set());
+      await loadContent(bots.map((b) => b.id));
+    } catch (err) {
+      console.error('Bot tweets delete failed:', err);
+      alert('تعذر حذف التغريدات. تحقق من اتصالك ثم حاول مجدداً.');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleDeleteAllBotTweets = () =>
+    deleteTweets(
+      botTweets.map((t) => t.id),
+      `سيتم حذف كل تغريدات البوتات (${botTweets.length} تغريدة) نهائياً. مقالات البوتات لن تتأثر. هذا الإجراء لا رجعة فيه. هل تريد المتابعة؟`
+    );
+
+  const handleDeleteDuplicateTweets = () =>
+    deleteTweets(
+      duplicateTweetIds,
+      `سيتم حذف ${duplicateTweetIds.length} تغريدة مكررة وإبقاء أقدم نسخة من كل نص. هل تريد المتابعة؟`
+    );
 
   const handleSeed = async () => {
     setIsSeeding(true);
@@ -220,6 +280,26 @@ export const AdminBotsTab: React.FC<AdminBotsTabProps> = ({
               <RefreshCw className={`w-3.5 h-3.5 ${isLoadingContent ? 'animate-spin' : ''}`} />
             </button>
           </div>
+        </div>
+
+        {/* حذف جماعي للتغريدات: كل تغريدات البوتات بزر واحد، أو المكررة فقط */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <button
+            onClick={handleDeleteAllBotTweets}
+            disabled={botTweets.length === 0 || isDeleting}
+            className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-slate-900 text-white text-xs font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <Trash2 className={`w-4 h-4 ${isDeleting ? 'animate-pulse' : ''}`} />
+            حذف كل تغريدات البوتات ({botTweets.length})
+          </button>
+          <button
+            onClick={handleDeleteDuplicateTweets}
+            disabled={duplicateTweetIds.length === 0 || isDeleting}
+            className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-slate-900 text-white text-xs font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <Trash2 className={`w-4 h-4 ${isDeleting ? 'animate-pulse' : ''}`} />
+            حذف التغريدات المكررة ({duplicateTweetIds.length})
+          </button>
         </div>
 
         {content.length === 0 ? (

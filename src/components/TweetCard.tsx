@@ -33,47 +33,23 @@ interface TweetCardProps {
   onSelectAuthor?: (userId: string) => void;
 }
 
-type TweetActionTone = 'rose' | 'brand' | 'sky' | 'amber';
-
-// أصناف كاملة (لا تُبنى ديناميكياً) كي يلتقطها Tailwind. كل زر له لون ثابت ظاهر دائماً،
-// وعند التفعيل (إعجاب/مفضلة) يمتلئ بلون صلب مع نص أبيض.
-const TWEET_ACTION_TONES: Record<TweetActionTone, { idle: string; active: string }> = {
-  rose: {
-    idle: 'bg-gradient-to-b from-rose-50 to-rose-100/70 border-rose-200 text-rose-600 hover:from-rose-100 hover:to-rose-100 dark:from-rose-500/10 dark:to-rose-500/20 dark:border-rose-500/30 dark:text-rose-300',
-    active: 'bg-gradient-to-b from-rose-500 to-rose-600 border-rose-600 text-white shadow-rose-500/30'
-  },
-  brand: {
-    idle: 'bg-gradient-to-b from-brand-50 to-brand-100/70 border-brand-200 text-brand-700 hover:from-brand-100 hover:to-brand-100 dark:from-brand-500/10 dark:to-brand-500/20 dark:border-brand-500/30 dark:text-brand-300',
-    active: 'bg-gradient-to-b from-brand-500 to-brand-600 border-brand-600 text-white shadow-brand-500/30'
-  },
-  sky: {
-    idle: 'bg-gradient-to-b from-sky-50 to-sky-100/70 border-sky-200 text-sky-700 hover:from-sky-100 hover:to-sky-100 dark:from-sky-500/10 dark:to-sky-500/20 dark:border-sky-500/30 dark:text-sky-300',
-    active: 'bg-gradient-to-b from-sky-500 to-sky-600 border-sky-600 text-white shadow-sky-500/30'
-  },
-  amber: {
-    idle: 'bg-gradient-to-b from-amber-50 to-amber-100/70 border-amber-200 text-amber-700 hover:from-amber-100 hover:to-amber-100 dark:from-amber-500/10 dark:to-amber-500/20 dark:border-amber-500/30 dark:text-amber-300',
-    active: 'bg-gradient-to-b from-amber-400 to-amber-500 border-amber-500 text-white shadow-amber-500/30'
-  }
-};
-
-/** زر إجراء موحّد لصف الإعجاب/التعليق/المشاركة/المفضلة — لون مميّز لكل زر
- *  وظل خفيف وحواف مستديرة، ويمتلئ باللون الصلب عند التفعيل. */
+/** زر إجراء موحّد لصف الإعجاب/التعليق/المشاركة/المفضلة — كلها بنفس لون قسم التغريد
+ *  (أزرق غامق، يُحدَّد من data-btn-theme في index.css)؛ الزر المفعَّل أفتح قليلاً. */
 const TweetActionButton: React.FC<{
   onClick: () => void;
   icon: React.ReactNode;
   label?: string;
-  tone: TweetActionTone;
   active?: boolean;
   title?: string;
-}> = ({ onClick, icon, label, tone, active = false, title }) => (
+}> = ({ onClick, icon, label, active = false, title }) => (
   <button
     type="button"
     onClick={onClick}
     title={title}
     aria-label={title}
-    className={`flex items-center gap-1.5 px-3.5 py-2 rounded-2xl min-w-[48px] justify-center border shadow-sm transition-all duration-150 active:scale-90 hover:shadow-md ${
-      active ? TWEET_ACTION_TONES[tone].active : TWEET_ACTION_TONES[tone].idle
-    } ${active ? 'shadow-md' : ''}`}
+    className={`flex items-center gap-1.5 px-3.5 py-2 rounded-2xl min-w-[48px] justify-center transition-all duration-150 active:scale-90 ${
+      active ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-600'
+    }`}
   >
     {icon}
     {label !== undefined && <span className="text-xs font-extrabold tabular-nums">{label}</span>}
@@ -253,7 +229,7 @@ export const TweetCard: React.FC<TweetCardProps> = ({
   };
 
   return (
-    <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xs space-y-3">
+    <div data-btn-theme="blue" className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xs space-y-3">
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
         <button
@@ -427,7 +403,6 @@ export const TweetCard: React.FC<TweetCardProps> = ({
       <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 pt-1 border-t border-slate-100 dark:border-slate-800/60">
         <TweetActionButton
           onClick={() => onToggleLike(tweet.id)}
-          tone="rose"
           active={isLiked}
           title="إعجاب"
           label={String(tweet.likesCount || 0)}
@@ -435,7 +410,6 @@ export const TweetCard: React.FC<TweetCardProps> = ({
         />
         <TweetActionButton
           onClick={() => setShowComments((v) => !v)}
-          tone="brand"
           active={showComments}
           title="التعليقات"
           label={String(tweet.commentsCount || 0)}
@@ -443,14 +417,12 @@ export const TweetCard: React.FC<TweetCardProps> = ({
         />
         <TweetActionButton
           onClick={handleShareClick}
-          tone="sky"
           title="مشاركة"
           label={String(tweet.sharesCount || 0)}
           icon={<Share2 className="w-4 h-4" />}
         />
         <TweetActionButton
           onClick={() => onToggleFavorite(tweet.id)}
-          tone="amber"
           active={isFavorited}
           title="إضافة إلى المفضلة"
           icon={<Star className={`w-4 h-4 ${isFavorited ? 'fill-white' : ''}`} />}

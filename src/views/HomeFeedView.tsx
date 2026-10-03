@@ -120,7 +120,7 @@ export function HomeFeedView(props: {
 
   return (
     /* Main Feed View: Available to all users/roles when on 'feed' */
-    <div className="space-y-6 animate-android-in">
+    <div className="space-y-6 animate-android-in" data-btn-theme={homeFeedMode === 'tweet' ? 'blue' : 'green'}>
         {/* مبدّل المدونة/التغريد — "الستارة": القسم النشط يتمدد والآخر ينطوي بجانبه */}
         <HomeFeedModeSwitcher mode={homeFeedMode} onChange={setHomeFeedMode} />
 

@@ -43,6 +43,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   return (
     <header
       id="top-app-bar"
+      data-btn-theme="black"
       className="sticky top-0 z-40 bg-white/98 text-slate-900 border-b border-slate-200/90 dark:bg-slate-950/98 dark:text-white dark:border-brand-500/20 transition-colors shadow-xs"
     >
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-14 flex items-center justify-between gap-2">

@@ -133,7 +133,7 @@ export const DrawerMenu: React.FC<DrawerMenuProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden">
+    <div className="fixed inset-0 z-50 overflow-hidden" data-btn-theme="black">
       {/* Backdrop */}
       <div
         onClick={onClose}
