@@ -137,22 +137,34 @@ export function initErrorLog(): void {
   // يلتقط كل طلبات fetch الفاشلة (شبكة معطوبة أو استجابة غير ناجحة) عبر كامل
   // التطبيق تلقائياً — بلا حاجة لتعديل كل ملف خدمة (services/*.ts) على حدة،
   // تماماً مثل OkHttp interceptor في نسخة APK.
-  const originalFetch = window.fetch.bind(window);
-  window.fetch = async (...args) => {
-    const url = typeof args[0] === 'string' ? args[0] : (args[0] as Request)?.url ?? String(args[0]);
-    try {
-      const response = await originalFetch(...args);
-      // response.type === 'opaque' يعني طلب no-cors لنطاق خارجي (كطلبات
-      // تتبّع reCAPTCHA في الخلفية) — المتصفح يمنع قراءة حالته الحقيقية
-      // عمداً ويُعيد status:0 دائماً بصرف النظر عن نجاح الطلب فعلياً، فتسجيله
-      // كخطأ كان إنذاراً كاذباً بحتاً، لا عطلاً حقيقياً في التطبيق.
-      if (!response.ok && response.type !== 'opaque') {
-        logError(`fetch (${url})`, `HTTP ${response.status}: ${response.statusText}`);
+  // بعض البيئات (معاينة AI Studio التطويرية مثلاً) تجعل window.fetch خاصية getter فقط، فيرمي
+  // الإسناد المباشر TypeError غير ملتقَط يوقف تحميل التطبيق كله قبل أول رسم. التغليف هنا
+  // اختياري: إن تعذّر نكتفي بلا التقاط تلقائي لطلبات fetch الفاشلة ولا نُسقط الصفحة أبداً.
+  try {
+    const originalFetch = window.fetch.bind(window);
+    const wrappedFetch: typeof window.fetch = async (...args) => {
+      const url = typeof args[0] === 'string' ? args[0] : (args[0] as Request)?.url ?? String(args[0]);
+      try {
+        const response = await originalFetch(...args);
+        // response.type === 'opaque' يعني طلب no-cors لنطاق خارجي (كطلبات
+        // تتبّع reCAPTCHA في الخلفية) — المتصفح يمنع قراءة حالته الحقيقية
+        // عمداً ويُعيد status:0 دائماً بصرف النظر عن نجاح الطلب فعلياً، فتسجيله
+        // كخطأ كان إنذاراً كاذباً بحتاً، لا عطلاً حقيقياً في التطبيق.
+        if (!response.ok && response.type !== 'opaque') {
+          logError(`fetch (${url})`, `HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response;
+      } catch (error) {
+        logError(`fetch (${url})`, error);
+        throw error;
       }
-      return response;
-    } catch (error) {
-      logError(`fetch (${url})`, error);
-      throw error;
+    };
+    try {
+      window.fetch = wrappedFetch;
+    } catch {
+      Object.defineProperty(window, 'fetch', { value: wrappedFetch, configurable: true, writable: true });
     }
-  };
+  } catch {
+    // لا التقاط تلقائي لـ fetch في هذه البيئة — بقية التسجيل (error/unhandledrejection) يعمل.
+  }
 }
