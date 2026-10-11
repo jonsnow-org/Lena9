@@ -11,6 +11,7 @@ import {
 import { ExternalAdScript } from './ExternalAdScript';
 import { claimAdSlotIndex, MAX_ADS_PER_PAGE, currentAdRotationSeed, subscribeAdRotationTick } from './AdSlot';
 import { pickAdsterraUnit } from '../constants/adsterraUnits';
+import { getLiveCampaigns, pickAdGroup } from '../utils/adCampaigns';
 
 interface AdTickerBarProps {
   campaigns?: AdCampaign[];
@@ -56,9 +57,7 @@ export const AdTickerBar: React.FC<AdTickerBarProps> = ({
 
   const active = useMemo(
     () =>
-      platformAdsEnabled
-        ? campaigns.filter((c: any) => c.status === 'active' && c.placementType !== 'category_sponsor')
-        : [],
+      platformAdsEnabled ? getLiveCampaigns(campaigns) : [],
     [campaigns, platformAdsEnabled]
   );
 
@@ -89,12 +88,11 @@ export const AdTickerBar: React.FC<AdTickerBarProps> = ({
     if (externalAdHidden) setExternalAdHidden(false);
   }
 
-  // توزيع موزون بدل الإقصاء: الطرف صاحب الأولوية يأخذ دورتين من كل ثلاث
-  // والطرف الآخر دورة واحدة. إن فشل تحميل الإعلان الخارجي وتوجد حملة داخلية
-  // تُعرض الحملة مكانه بدل ترك الشريط فارغاً.
-  const externalTurn = externalPriority ? turn % 3 !== 0 : turn % 3 === 0;
-  const showExternal =
-    Boolean(adSnippet) && (active.length === 0 || (externalTurn && !externalAdHidden));
+  // نفس دورة التوزيع الموحّدة المستخدمة في AdSlot (3 داخلي : 2 خارجي، وكل مجموعة تأخذ
+  // الأدوار كلها إن غابت الأخرى). إن فشل تحميل الإعلان الخارجي وتوجد حملة داخلية تُعرض
+  // الحملة مكانه بدل ترك الشريط فارغاً. (الخاصية externalPriority لم تعد تؤثر.)
+  const group = pickAdGroup(turn, active.length > 0, Boolean(adSnippet));
+  const showExternal = Boolean(adSnippet) && (active.length === 0 || (group === 'external' && !externalAdHidden));
   const rotationCampaigns = showExternal ? [] : active;
 
   useEffect(() => {

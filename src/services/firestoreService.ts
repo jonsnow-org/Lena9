@@ -16,7 +16,8 @@ import {
   arrayUnion,
   arrayRemove,
   increment,
-  writeBatch
+  writeBatch,
+  runTransaction
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { Article, AdCampaign, Transaction, FraudFlag, User, UserRole, Comment, CommentReply, AppNotification, ArticlePromotion, Tweet, TweetComment } from '../types';
@@ -291,12 +292,16 @@ export async function updateCampaignStatsInFirestore(
 export async function incrementCampaignSpendInFirestore(
   campaignId: string,
   spendDelta: number,
-  markCompleted: boolean
+  markCompleted: boolean,
+  counters?: { imp: number; clk: number; blocked: number }
 ) {
   try {
     const campRef = doc(db, 'campaigns', campaignId);
     await updateDoc(campRef, {
-      totalSpent: increment(spendDelta),
+      ...(spendDelta > 0 ? { totalSpent: increment(spendDelta) } : {}),
+      ...(counters?.imp ? { impressionsCount: increment(counters.imp), validImpressionsCount: increment(counters.imp) } : {}),
+      ...(counters?.clk ? { clicksCount: increment(counters.clk), validClicksCount: increment(counters.clk) } : {}),
+      ...(counters?.blocked ? { blockedFraudClicks: increment(counters.blocked) } : {}),
       ...(markCompleted ? { status: 'completed' } : {})
     });
   } catch (error) {
@@ -594,6 +599,42 @@ export async function setCampaignStatusInFirestore(campaignId: string, status: s
   } catch (e) {
     handleFirestoreError(e, OperationType.UPDATE, `campaigns/${campaignId}`);
     throw e;
+  }
+}
+
+/**
+ * المبلغ المسترد للمعلن من ميزانية حملة لم تُصرف كلها: لحملات CPC/CPM فقط (تُدفع الميزانية مقدماً
+ * ويُحتسب الإنفاق الفعلي لاحقاً). الحملة الثابتة "fixed" مدفوعة مقابل مدة كاملة فلا استرداد لها.
+ */
+export function computeCampaignRefund(c: Pick<AdCampaign, 'pricingModel' | 'totalBudget' | 'totalSpent' | 'status'>): number {
+  if (c.status !== 'active' && c.status !== 'paused') return 0;
+  if (c.pricingModel !== 'cpc' && c.pricingModel !== 'cpm') return 0;
+  return Math.max(0, Number(((c.totalBudget || 0) - (c.totalSpent || 0)).toFixed(2)));
+}
+
+/**
+ * ينهي حملة ويردّ غير المصروف من ميزانيتها لمحفظة المعلن في معاملة واحدة ذرّية
+ * (للأدمن حصراً: قواعد Firestore). mode 'delete' يحذف الوثيقة، و'complete' يعلّمها مكتملة.
+ * إن لم تعد الحملة active/paused (عولجت من جلسة أخرى) لا يُردّ شيء — يمنع الاسترداد المزدوج.
+ */
+export async function closeCampaignWithRefund(campaignId: string, mode: 'delete' | 'complete'): Promise<number> {
+  try {
+    const campRef = doc(db, 'campaigns', campaignId);
+    return await runTransaction(db, async (tx) => {
+      const snap = await tx.get(campRef);
+      if (!snap.exists()) return 0;
+      const camp = snap.data() as AdCampaign;
+      const refund = computeCampaignRefund(camp);
+      if (refund > 0 && camp.advertiserId) {
+        tx.update(doc(db, 'users', camp.advertiserId), { walletBalance: increment(refund) });
+      }
+      if (mode === 'delete') tx.delete(campRef);
+      else tx.update(campRef, { status: 'completed', ...(refund > 0 ? { refundedAmount: refund } : {}) });
+      return refund;
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `campaigns/${campaignId}`);
+    throw error;
   }
 }
 

@@ -1,4 +1,5 @@
 import React from 'react';
+import { getLiveCampaigns } from '../utils/adCampaigns';
 import {
   Article,
   User,
@@ -259,7 +260,7 @@ export function AppModalsLayer(props: {
           onRate={(stars) => handleRateArticle(readingArticle.id, stars)}
           myRating={myRatingsByArticleId[readingArticle.id] || 0}
           onReact={(type) => handleReactToArticle(readingArticle.id, type)}
-          sponsoredCampaign={campaigns.find((c) => c.status === 'active' && c.placementType === 'writer')}
+          sponsoredCampaign={getLiveCampaigns(campaigns).find((c) => c.placementType === 'writer')}
           currentUserId={currentUser.id}
           users={users}
           articles={articles}

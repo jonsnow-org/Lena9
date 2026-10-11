@@ -30,6 +30,8 @@ interface AdvertiserDashboardProps {
   onOpenNewCampaign: () => void;
   onToggleCampaignStatus: (campaignId: string) => void;
   onDeleteCampaign?: (campaignId: string) => void;
+  /** زر الإيقاف/التفعيل للأدمن فقط — قواعد الأمان تمنع المعلن من تغيير حالة حملته */
+  canToggleStatus?: boolean;
   advertiserBalance: number;
   onOpenDeposit: () => void;
   activeUsersCount?: number;
@@ -40,6 +42,7 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
   onOpenNewCampaign,
   onToggleCampaignStatus,
   onDeleteCampaign,
+  canToggleStatus = false,
   advertiserBalance,
   onOpenDeposit,
   activeUsersCount
@@ -215,12 +218,22 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
                           className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                             camp.status === 'active'
                               ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                              : camp.status === 'paused'
+                              : camp.status === 'paused' || camp.status === 'pending'
                               ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                              : camp.status === 'rejected'
+                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
                               : 'bg-slate-800 text-slate-400'
                           }`}
                         >
-                          {camp.status === 'active' ? 'نشطة 🟢' : camp.status === 'paused' ? 'متوقفة مؤقتاً ⏸️' : 'مكتملة'}
+                          {camp.status === 'active'
+                            ? 'نشطة 🟢'
+                            : camp.status === 'paused'
+                            ? 'متوقفة مؤقتاً ⏸️'
+                            : camp.status === 'pending'
+                            ? 'بانتظار مراجعة الإدارة ⏳'
+                            : camp.status === 'rejected'
+                            ? 'مرفوضة'
+                            : 'مكتملة'}
                         </span>
                         <span className="text-[10px] px-2 py-0.5 rounded-full bg-brand-500/20 text-brand-300 border border-brand-500/30 font-bold">
                           {camp.pricingModel === 'fixed' ? 'ثابت (مدة)' : camp.pricingModel === 'cpm' ? 'CPM (ظهور)' : 'CPC (نقرات)'}
@@ -235,7 +248,7 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
                       <div className="flex items-center gap-4 text-xs text-slate-400 mt-2 font-mono">
                         <span className="text-brand-300">الظهور: {camp.impressionsCount}</span>
                         <span className="text-cyan-300">النقرات: {camp.clicksCount}</span>
-                        <span className="text-emerald-400">الإنفاق: ${camp.totalSpent.toFixed(2)} / ${camp.totalBudget.toFixed(2)}</span>
+                        <span className="text-emerald-400">الإنفاق: ${(camp.totalSpent || 0).toFixed(2)} / ${((camp.totalBudget || 0) > 0 ? camp.totalBudget : camp.requestedBudget || 0).toFixed(2)}</span>
                         {camp.blockedFraudClicks !== undefined && camp.blockedFraudClicks > 0 && (
                           <span className="text-rose-400 font-bold">حظر {camp.blockedFraudClicks} نقرة مشبوهة 🛡️</span>
                         )}
@@ -244,6 +257,7 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
                   </div>
 
                   <div className="flex items-center gap-2 self-end lg:self-center">
+                    {canToggleStatus && (camp.status === 'active' || camp.status === 'paused') && (
                     <button
                       onClick={() => onToggleCampaignStatus(camp.id)}
                       className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
@@ -264,6 +278,7 @@ export const AdvertiserDashboard: React.FC<AdvertiserDashboardProps> = ({
                         </>
                       )}
                     </button>
+                    )}
 
                     <a
                       href={camp.destinationUrl}

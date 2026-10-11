@@ -969,6 +969,10 @@ ${WRITER_MONETIZATION_ENABLED ? `نسب تقاسم الأرباح:
         if (requestedBudget <= 0) {
           return res.status(400).json({ error: 'invalid_budget', message: 'ميزانية الحملة غير صالحة.' });
         }
+        // الرابط يُفتح عند نقر الزائر: يُرفض أي بروتوكول غير http/https (مثل javascript:)
+        if (!/^https?:\/\//i.test(String(campaign.destinationUrl || '').trim())) {
+          return res.status(400).json({ error: 'invalid_destination', message: 'رابط الحملة المستهدف غير صالح (يجب أن يبدأ بـ http/https). ارفضها أو اطلب من المعلن تصحيحه.' });
+        }
         const advertiserRef = db.collection('users').doc(advertiserId);
         try {
           await db.runTransaction(async (tx) => {

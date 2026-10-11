@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { fetchArticlesOnce, fetchTweetsOnce, updateCampaignStatsInFirestore } from '../services/firestoreService';
+import { fetchArticlesOnce, fetchTweetsOnce, updateCampaignStatsInFirestore, closeCampaignWithRefund } from '../services/firestoreService';
 import { Article, Tweet, AdCampaign, User } from '../types';
 
 export function usePullToRefreshAndScroll(params: {
@@ -192,13 +192,16 @@ export function usePullToRefreshAndScroll(params: {
       (c) =>
         c.status === 'active' &&
         c.endDate &&
-        new Date(c.endDate).getTime() < now &&
+        // endDate يوم كامل (YYYY-MM-DD): تنتهي في نهاية ذلك اليوم لا في بدايته
+        new Date(c.endDate).getTime() + 24 * 60 * 60 * 1000 < now &&
         !expiredCampaignsSweepRef.current.has(c.id)
     );
     if (expired.length === 0) return;
     expired.forEach((c) => {
       expiredCampaignsSweepRef.current.add(c.id);
-      updateCampaignStatsInFirestore(c.id, { status: 'completed' }).catch((err) =>
+      // يُنهي الحملة ويردّ غير المصروف من ميزانية CPC/CPM لمحفظة المعلن في معاملة واحدة ذرّية
+      // (الحملة الثابتة مدفوعة لمدة كاملة فلا استرداد). كان الإنهاء يترك الميزانية المتبقية ضائعة.
+      closeCampaignWithRefund(c.id, 'complete').catch((err) =>
         console.error(`تعذر إنهاء الحملة المنتهية ${c.id} تلقائياً:`, err)
       );
     });

@@ -16,6 +16,7 @@ import { ExternalAdScript } from './ExternalAdScript';
 import { SocialPromoCta } from './SocialPromoCta';
 import { pickAdsterraUnit } from '../constants/adsterraUnits';
 import { WRITER_MONETIZATION_ENABLED } from '../constants/revenueShares';
+import { getLiveCampaigns, isCampaignLive, matchesCategory, pickAdGroup, indexInGroup } from '../utils/adCampaigns';
 
 /**
  * رموز المواضع الإعلانية المعتمدة في المنصة.
@@ -126,7 +127,9 @@ export function subscribeAdRotationTick(cb: (seed: number) => void): () => void 
   rotationSubscribers.add(cb);
   if (!rotationTickerHandle) {
     rotationTickerHandle = setInterval(() => {
-      adRotationSeed = Math.floor(Math.random() * 997);
+      // تقدُّم ثابت بمقدار 1 (round-robin): كل تجديد ينقل كل موضع للعنصر التالي في دورته
+      // فتمرّ كل الحملات والشبكات على كل المواضع بالتساوي، بدل قفزة عشوائية قد تكرر نفس العنصر.
+      adRotationSeed = (adRotationSeed + 1) % 100000;
       rotationSubscribers.forEach((fn) => fn(adRotationSeed));
     }, ROTATION_TICK_MS);
   }
@@ -212,22 +215,21 @@ export const AdSlot: React.FC<AdSlotProps> = ({
    */
   const internalCandidate = useMemo(() => {
     if (isPlatformSlot && !platformAdsEnabled) return null;
-    const active = campaigns.filter((c) => c.status === 'active');
-    if (active.length === 0) return null;
 
     if (isSponsorSlot) {
-      // راعي القسم: حملة من نوع رعاية تطابق التصنيف الحالي
+      // راعي القسم: حملة رعاية حيّة تطابق التصنيف الحالي
       return (
-        active.find(
+        campaigns.find(
           (c: any) =>
             c.placementType === 'category_sponsor' &&
+            isCampaignLive(c) &&
             (!category || (c.targetCategories || []).includes(category))
         ) || null
       );
     }
 
-    // استبعاد حملات رعاية الأقسام من المواضع العادية
-    const eligible = active.filter((c: any) => c.placementType !== 'category_sponsor');
+    // المواضع العادية: الحملات الحيّة فقط (غير منتهية ولا مستنفدة الميزانية) المطابقة للتصنيف
+    const eligible = getLiveCampaigns(campaigns, category);
     if (eligible.length === 0) return null;
     return eligible[(slotIndex + rotationSeed) % eligible.length] || null;
   }, [campaigns, isSponsorSlot, isPlatformSlot, platformAdsEnabled, category, slotIndex, rotationSeed]);
@@ -263,18 +265,26 @@ export const AdSlot: React.FC<AdSlotProps> = ({
    * لتلك المساحة تحديداً؛ إعطاؤهم الأولوية هناك حماية لعائد الكاتب
    * المتوقَّع، وليس "تضارباً" يحتاج حلاً كمواضع المنصة العامة.
    */
-  const rotationPool = useMemo(() => {
-    type PoolItem = { campaign?: AdCampaign; network?: ExternalAdNetworkConfig };
-    if (!usesRotationPool || !platformAdsEnabled) return [] as PoolItem[];
-    const eligibleCampaigns = campaigns.filter(
-      (c) => c.status === 'active' && (c as any).placementType !== 'category_sponsor'
-    );
-    const pool: PoolItem[] = eligibleCampaigns.map((c) => ({ campaign: c }));
-    getAllEligibleExternalNetworks(externalAdsConfig).forEach((net) => pool.push({ network: net }));
-    return pool;
-  }, [campaigns, usesRotationPool, platformAdsEnabled, externalAdsConfig]);
+  // تجمّع التوزيع الموحّد: مجموعتان — حملات داخلية حيّة وشبكات خارجية مؤهَّلة — وتوزيعهما بدورة
+  // ثابتة (3 داخلي : 2 خارجي) مشتركة مع AdTickerBar وبانر الصفحة الرئيسية (انظر utils/adCampaigns.ts).
+  const poolInternal = useMemo(
+    () => (usesRotationPool && platformAdsEnabled ? getLiveCampaigns(campaigns, category) : []),
+    [campaigns, category, usesRotationPool, platformAdsEnabled]
+  );
+  const poolExternal = useMemo(
+    () => (usesRotationPool && platformAdsEnabled ? getAllEligibleExternalNetworks(externalAdsConfig) : []),
+    [usesRotationPool, platformAdsEnabled, externalAdsConfig]
+  );
 
-  const selectedPoolItem = rotationPool.length > 0 ? rotationPool[(slotIndex + rotationSeed) % rotationPool.length] : null;
+  const poolTurn = slotIndex + rotationSeed;
+  const poolGroup = pickAdGroup(poolTurn, poolInternal.length > 0, poolExternal.length > 0);
+  const bothGroups = poolInternal.length > 0 && poolExternal.length > 0;
+  const selectedPoolItem: { campaign?: AdCampaign; network?: ExternalAdNetworkConfig } | null =
+    poolGroup === 'internal'
+      ? { campaign: poolInternal[indexInGroup(poolTurn, 'internal', poolInternal.length, bothGroups)] }
+      : poolGroup === 'external'
+      ? { network: poolExternal[indexInGroup(poolTurn, 'external', poolExternal.length, bothGroups)] }
+      : null;
 
   const rotatedCampaign = isSponsorSlot
     ? internalCandidate
@@ -408,7 +418,7 @@ export const AdSlot: React.FC<AdSlotProps> = ({
     }).catch(() => {});
 
     const url = (selectedCampaign as any).destinationUrl;
-    if (url) window.open(url, '_blank', 'noopener,noreferrer');
+    if (url && /^https?:\/\//i.test(String(url).trim())) window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   // المشترك في باقة بلا إعلانات لا يرى أي موضع
@@ -511,6 +521,7 @@ export const AdSlot: React.FC<AdSlotProps> = ({
           </div>
         ) : (
           <button
+            data-plain
             onClick={handleClick}
             className="w-full text-start rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-700/50 p-4 hover:border-slate-300 dark:hover:border-slate-600 transition-colors"
           >
@@ -549,6 +560,7 @@ export const AdSlot: React.FC<AdSlotProps> = ({
         </div>
       ) : (
       <button
+        data-plain
         onClick={handleClick}
         className="w-full text-start rounded-2xl overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-brand-300 dark:hover:border-brand-700 transition-colors"
       >

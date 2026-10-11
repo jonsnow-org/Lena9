@@ -93,15 +93,37 @@ export function useAdminAndUserActions(params: {
       // تلقائياً عند استنفاد ميزانيتها.
       const campaignSpend: Record<string, number> = {};
 
+      // عدّادات الحملة الحقيقية (الظهور/النقرات الصالحة والمحظورة) — لم تكن تُكتب لمستند الحملة أبداً
+      // (كانت تُحدَّث محلياً في متصفح الزائر فقط)، فيبقى الظهور والنقرات في لوحة المعلن صفراً دائماً.
+      const campaignCounters: Record<string, { imp: number; clk: number; blocked: number }> = {};
+      const bump = (campId: string | undefined, key: 'imp' | 'clk' | 'blocked') => {
+        if (!campId) return;
+        const c = (campaignCounters[campId] ||= { imp: 0, clk: 0, blocked: 0 });
+        c[key] += 1;
+      };
+      valid.forEach((ev: any) => bump(ev.campaignId, ev.eventType === 'click' ? 'clk' : 'imp'));
+      suspicious.forEach((ev: any) => {
+        if (ev.eventType === 'click') bump(ev.campaignId, 'blocked');
+      });
+
+      // الميزانية المتبقية لكل حملة: لا يُحتسب أكثر منها (الميزانية مدفوعة مسبقاً عند الموافقة).
+      const remainingBudget: Record<string, number> = {};
+      campaigns.forEach((c: any) => {
+        if (c.id && c.totalBudget > 0) remainingBudget[c.id] = Math.max(0, c.totalBudget - (c.totalSpent || 0));
+      });
+
       valid.forEach((ev: any) => {
         const camp: any = campaigns.find((c: any) => c.id === ev.campaignId);
         if (!camp) return;
-        const cost = calculateEventCost(ev, camp);
+        let cost = calculateEventCost(ev, camp);
         if (cost <= 0) return;
-
-        if (camp.advertiserId) {
-          advertiserSpend[camp.advertiserId] = (advertiserSpend[camp.advertiserId] || 0) + cost;
+        // سقف الإنفاق: لا تتجاوز التكلفة المتراكمة ما تبقّى من الميزانية المدفوعة
+        if (camp.id in remainingBudget) {
+          const left = remainingBudget[camp.id] - (campaignSpend[camp.id] || 0);
+          if (left <= 0) return;
+          cost = Math.min(cost, left);
         }
+
         campaignSpend[camp.id] = (campaignSpend[camp.id] || 0) + cost;
         // ⚠️ لا تُحتسب حصة الكاتب إلا إذا استوفى شروط منشئ المحتوى (متابعون
         // + مشاهدات صالحة + عمر حساب + عدد مقالات) وتحقق هويته (KYC) معاً.
@@ -119,32 +141,36 @@ export function useAdminAndUserActions(params: {
         }
       });
 
-      // 2) خصم التكلفة من محافظ المعلنين
-      for (const [advId, spend] of Object.entries(advertiserSpend)) {
-        const adv: any = users.find((u) => u.id === advId);
-        if (!adv) continue;
-        const current = adv.walletBalance ?? 0;
-        await adminAdjustUserBalance(advId, {
-          walletBalance: Number(Math.max(0, current - spend).toFixed(2))
-        });
-      }
+      // 2) (أُلغي خصم محفظة المعلن هنا) — ميزانية الحملة تُخصم مرة واحدة كاملة من محفظة المعلن
+      // عند موافقة الأدمن (/api/campaigns/:id/review)، فخصمها ثانيةً مع كل حدث كان يُحمّل المعلن
+      // التكلفة مرتين. الاحتساب الآن يستهلك totalSpent من الميزانية المدفوعة مسبقاً فقط.
 
-      // 2.5) تحديث الإنفاق الفعلي على مستند كل حملة + إيقافها تلقائياً
-      // ("مكتملة") فور استنفاد ميزانيتها بالكامل — بدون هذه الخطوة كان
-      // totalSpent يبقى صفراً في قاعدة البيانات مهما بلغ الإنفاق الحقيقي،
-      // ولا يوجد أي آلية توقف الحملة عند نفاد رصيدها.
-      for (const [campId, spend] of Object.entries(campaignSpend)) {
+      // 2.5) تحديث الإنفاق والعدّادات على مستند كل حملة + إيقافها تلقائياً ("مكتملة") فور
+      // استنفاد ميزانيتها بالكامل.
+      const touchedCampaignIds = new Set([...Object.keys(campaignSpend), ...Object.keys(campaignCounters)]);
+      for (const campId of touchedCampaignIds) {
         const camp: any = campaigns.find((c: any) => c.id === campId);
         if (!camp) continue;
-        const roundedSpend = Number(spend.toFixed(4));
+        const roundedSpend = Number((campaignSpend[campId] || 0).toFixed(4));
+        const counters = campaignCounters[campId] || { imp: 0, clk: 0, blocked: 0 };
         const estimatedNewTotal = (camp.totalSpent || 0) + roundedSpend;
-        const budgetExhausted = camp.totalBudget > 0 && estimatedNewTotal >= camp.totalBudget;
+        const budgetExhausted =
+          (camp.pricingModel === 'cpc' || camp.pricingModel === 'cpm') &&
+          camp.totalBudget > 0 &&
+          estimatedNewTotal >= camp.totalBudget;
         try {
-          await incrementCampaignSpendInFirestore(campId, roundedSpend, budgetExhausted);
+          await incrementCampaignSpendInFirestore(campId, roundedSpend, budgetExhausted, counters);
           setCampaigns((prev) =>
             prev.map((c) =>
               c.id === campId
-                ? { ...c, totalSpent: (c.totalSpent || 0) + roundedSpend, status: budgetExhausted ? 'completed' : c.status }
+                ? {
+                    ...c,
+                    totalSpent: (c.totalSpent || 0) + roundedSpend,
+                    impressionsCount: (c.impressionsCount || 0) + counters.imp,
+                    clicksCount: (c.clicksCount || 0) + counters.clk,
+                    blockedFraudClicks: (c.blockedFraudClicks || 0) + counters.blocked,
+                    status: budgetExhausted ? 'completed' : c.status
+                  }
                 : c
             )
           );

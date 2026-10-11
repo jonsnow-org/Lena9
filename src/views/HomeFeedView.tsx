@@ -8,7 +8,8 @@ import { TrendingArticlesSection } from '../components/TrendingArticlesSection';
 import { SmartAdBanner } from '../components/SmartAdBanner';
 import { ArticleCardSkeleton } from '../components/ArticleCardSkeleton';
 import { ArticleCard } from '../components/ArticleCard';
-import { AdSlot } from '../components/AdSlot';
+import { AdSlot, currentAdRotationSeed, subscribeAdRotationTick } from '../components/AdSlot';
+import { getLiveCampaigns } from '../utils/adCampaigns';
 import { logAdEvent } from '../services/firestoreService';
 
 export function HomeFeedView(props: {
@@ -117,6 +118,15 @@ export function HomeFeedView(props: {
     hasMoreArticles,
     articlesSentinelRef
   } = props;
+
+  // بانر الصفحة الرئيسية: يتناوب بين حملات "المنصة" الحيّة (غير المنتهية ولا المستنفدة) كل 30 ثانية
+  // بنفس مؤقّت AdSlot، بدل عرض أول حملة في القائمة دائماً.
+  const [bannerSeed, setBannerSeed] = React.useState(() => currentAdRotationSeed());
+  React.useEffect(() => subscribeAdRotationTick(setBannerSeed), []);
+  const bannerCampaign = React.useMemo(() => {
+    const live = getLiveCampaigns(campaigns).filter((c) => c.placementType === 'platform');
+    return live.length > 0 ? live[bannerSeed % live.length] : null;
+  }, [campaigns, bannerSeed]);
 
   return (
     /* Main Feed View: Available to all users/roles when on 'feed' */
@@ -355,30 +365,17 @@ export function HomeFeedView(props: {
             advertiser actually configured as platform-wide placements
             (e.g. a flat-fee homepage package); in-article placements
             are shown inside ArticleReader instead. */}
-        {platformAdsEnabled && campaigns.find((c) => c.status === 'active' && c.placementType === 'platform') && (
+        {platformAdsEnabled && bannerCampaign && (
           <SmartAdBanner
-            campaign={campaigns.find((c) => c.status === 'active' && c.placementType === 'platform')!}
+            key={bannerCampaign.id}
+            campaign={bannerCampaign}
             placementType="platform"
             currentUserId={currentUser.id}
             variant="banner"
             onAdClick={(camp, isValid) => {
+              // الاحتساب المالي وعدّادات الحملة تتم لاحقاً من الأدمن بعد فلترة الاحتيال (adEvents)؛
+              // لا تعديل محلي لـtotalSpent/clicksCount لأنه كان يُظهر أرقاماً وهمية لا تُحفَظ.
               if (isValid) {
-                setCampaigns((prev) =>
-                  prev.map((c) =>
-                    c.id === camp.id
-                      ? {
-                          ...c,
-                          clicksCount: c.clicksCount + 1,
-                          totalSpent: c.totalSpent + (c.cpcRate || 0.08)
-                        }
-                      : c
-                  )
-                );
-                // ⚠️ كان هذا التحديث محلياً فقط (يُفقد عند إعادة التحميل)
-                // بلا أي تسجيل فعلي في adEvents — على عكس إعلانات صفحة
-                // الكاتب المجاورة التي تستدعي logAdEvent بشكل صحيح. هذا
-                // يعني أن أداء حملات "المنصة" (الصفحة الرئيسية) لم يكن
-                // يُحتسب أو يُحتسب له عائد إطلاقاً.
                 logAdEvent({
                   campaignId: camp.id,
                   slotId: 'platform_banner',
@@ -389,17 +386,6 @@ export function HomeFeedView(props: {
             }}
             onAdImpression={(camp, isValid) => {
               if (isValid) {
-                setCampaigns((prev) =>
-                  prev.map((c) =>
-                    c.id === camp.id
-                      ? {
-                          ...c,
-                          impressionsCount: c.impressionsCount + 1,
-                          totalSpent: c.pricingModel === 'cpm' ? c.totalSpent + ((c.cpmRate || 1.0) / 1000) : c.totalSpent
-                        }
-                      : c
-                  )
-                );
                 logAdEvent({
                   campaignId: camp.id,
                   slotId: 'platform_banner',

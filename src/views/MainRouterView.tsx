@@ -522,6 +522,7 @@ export function MainRouterView(props: {
         onOpenNewCampaign={() => setIsNewCampaignOpen(true)}
         onToggleCampaignStatus={handleToggleCampaignStatus}
         onDeleteCampaign={handleDeleteCampaign}
+        canToggleStatus={currentUser.role === 'admin'}
         advertiserBalance={currentUser.walletBalance || 0}
         onOpenDeposit={() => setIsWalletOpen(true)}
         activeUsersCount={Math.max(users.length, 1)}

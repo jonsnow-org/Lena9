@@ -156,6 +156,42 @@ export const NewCampaignModal: React.FC<NewCampaignModalProps> = ({
       return;
     }
 
+    // الروابط يجب أن تكون http/https فقط (يُمنع javascript: وغيره لأن الرابط يُفتح عند النقر)
+    const isHttpUrl = (u: string) => {
+      try {
+        const parsed = new URL(u.trim());
+        return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+      } catch {
+        return false;
+      }
+    };
+    if (!isHttpUrl(destinationUrl)) {
+      setErrorMsg('الرابط المستهدف غير صالح. يجب أن يبدأ بـ https:// أو http://');
+      return;
+    }
+    if (customImageInput.trim() && !isHttpUrl(customImageInput)) {
+      setErrorMsg('رابط الصورة غير صالح. يجب أن يبدأ بـ https://');
+      return;
+    }
+    if (videoUrl.trim() && !isHttpUrl(videoUrl)) {
+      setErrorMsg('رابط الفيديو غير صالح. يجب أن يبدأ بـ https://');
+      return;
+    }
+    if (pricingModel !== 'fixed') {
+      if (!Number.isFinite(totalBudget) || totalBudget < 5) {
+        setErrorMsg('أقل ميزانية للحملة 5 دولارات.');
+        return;
+      }
+      if (pricingModel === 'cpc' && !(Number.isFinite(cpcRate) && cpcRate >= 0.01)) {
+        setErrorMsg('سعر النقرة يجب ألا يقل عن 0.01 دولار.');
+        return;
+      }
+      if (pricingModel === 'cpm' && !(Number.isFinite(cpmRate) && cpmRate >= 0.1)) {
+        setErrorMsg('سعر الألف ظهور يجب ألا يقل عن 0.10 دولار.');
+        return;
+      }
+    }
+
     if (userBalance < estimatedCost) {
       setErrorMsg(`رصيد محفظتك ($${userBalance.toFixed(2)}) غير كافٍ لتغطية ميزانية الحملة ($${estimatedCost.toFixed(2)}). يرجى شحن الرصيد أولاً.`);
       return;

@@ -210,7 +210,12 @@ service cloud.firestore {
         )
         || isAdmin();
 
-      allow delete: if isSignedIn() && (resource.data.advertiserId == request.auth.uid || isAdmin());
+      // المعلن يحذف حملاته غير الجارية فقط (بانتظار المراجعة/مرفوضة/مكتملة): الحملة النشطة أو
+      // المتوقفة ميزانيتها مدفوعة مسبقاً، وردّ المتبقي منها لمحفظة المعلن يتم من الأدمن حصراً.
+      allow delete: if isSignedIn() && (
+        (resource.data.advertiserId == request.auth.uid && resource.data.status in ['pending', 'rejected', 'completed'])
+        || isAdmin()
+      );
     }
 
     match /earnings/{earningId} {

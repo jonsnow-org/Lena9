@@ -57,6 +57,8 @@ import {
   saveCampaignToFirestore,
   setCampaignStatusInFirestore,
   deleteCampaignInFirestore,
+  closeCampaignWithRefund,
+  computeCampaignRefund,
   setUserKycRejectedInFirestore,
   markKycDocumentReviewed,
   ensureConversation,
@@ -1266,12 +1268,26 @@ export function useContentAndSocialActions(params: {
       alert('يمكن حذف الحملة من صاحبها أو إدارة المنصة فقط.');
       return;
     }
-    if (!window.confirm(`هل تريد حذف حملة "${target.campaignName}" نهائياً؟ لا يمكن التراجع عن هذا الإجراء.`)) {
+    const isAdmin = currentUser.role === 'admin';
+    const refund = computeCampaignRefund(target);
+    // المعلن لا يحذف حملة جارية (نشطة/متوقفة): ميزانيتها مدفوعة مسبقاً ولا يستطيع هو ردّ المتبقي
+    // لمحفظته (قواعد الأمان)، فكان الحذف يُضيع المبلغ. الاسترداد عند الحذف أو الانتهاء يتم من الأدمن.
+    if (!isAdmin && (target.status === 'active' || target.status === 'paused')) {
+      alert('لا يمكن حذف حملة جارية من حسابك لأن ميزانيتها مدفوعة مسبقاً. اطلب إيقافها وردّ المتبقي من إدارة المنصة، أو انتظر انتهاءها.');
+      return;
+    }
+    const refundNote =
+      isAdmin && refund > 0 ? `\nسيُردّ $${refund.toFixed(2)} (غير المصروف من الميزانية) إلى محفظة المعلن.` : '';
+    if (!window.confirm(`هل تريد حذف حملة "${target.campaignName}" نهائياً؟ لا يمكن التراجع عن هذا الإجراء.${refundNote}`)) {
       return;
     }
     setCampaigns((prev) => prev.filter((c) => c.id !== campaignId));
     try {
-      await deleteCampaignInFirestore(campaignId);
+      if (isAdmin && refund > 0) {
+        await closeCampaignWithRefund(campaignId, 'delete');
+      } else {
+        await deleteCampaignInFirestore(campaignId);
+      }
     } catch (err) {
       console.error('تعذر حذف الحملة:', err);
       alert('تعذر حذف الحملة. حاول مجدداً.');
