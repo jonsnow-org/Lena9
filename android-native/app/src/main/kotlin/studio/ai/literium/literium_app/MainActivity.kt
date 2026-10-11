@@ -609,11 +609,68 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         FcmService.foregroundTokenListener = { token -> bridgeFcmTokenToWebView(token) }
+        registerNetworkWatcher()
     }
 
     override fun onPause() {
         FcmService.foregroundTokenListener = null
+        unregisterNetworkWatcher()
         super.onPause()
+    }
+
+    // ── وعي الاتصال: بلا إنترنت يُعرض آخر ما خُزِّن مؤقتاً بدل صفحة خطأ، وعند عودة الشبكة
+    // يُعاد تحميل الموقع تلقائياً إن كانت شاشة "تعذّر الاتصال" ظاهرة (دون انتظار ضغط المستخدم).
+    private var networkCallback: android.net.ConnectivityManager.NetworkCallback? = null
+
+    private fun isOnline(): Boolean {
+        val cm = getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+            ?: return true
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
+        return caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
+    private fun applyCacheMode() {
+        webViewRef?.settings?.cacheMode =
+            if (isOnline()) android.webkit.WebSettings.LOAD_DEFAULT
+            else android.webkit.WebSettings.LOAD_CACHE_ELSE_NETWORK
+    }
+
+    private fun registerNetworkWatcher() {
+        applyCacheMode()
+        if (networkCallback != null) return
+        val cm = getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager ?: return
+        val callback = object : android.net.ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: android.net.Network) {
+                runOnUiThread {
+                    applyCacheMode()
+                    if (loadFailedState.value) {
+                        loadFailedState.value = false
+                        activeHostIndex = 0
+                        webViewRef?.loadUrl(resolveStartUrl(intent?.data, HOSTS[activeHostIndex]))
+                    }
+                }
+            }
+
+            override fun onLost(network: android.net.Network) {
+                runOnUiThread { applyCacheMode() }
+            }
+        }
+        try {
+            cm.registerDefaultNetworkCallback(callback)
+            networkCallback = callback
+        } catch (e: Exception) {
+            AppErrorLog.record(this, "تسجيل مراقب الشبكة", e)
+        }
+    }
+
+    private fun unregisterNetworkWatcher() {
+        val cb = networkCallback ?: return
+        networkCallback = null
+        try {
+            (getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager)
+                ?.unregisterNetworkCallback(cb)
+        } catch (_: Exception) {
+        }
     }
 
     override fun onDestroy() {
