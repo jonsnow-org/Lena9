@@ -3,6 +3,15 @@ package studio.ai.literium.literium_app.ui.ads
 import android.app.Activity
 import android.content.Context
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.unit.dp
+import android.view.View
+import com.startapp.sdk.ads.banner.BannerListener
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.runtime.Composable
@@ -48,6 +57,13 @@ internal object StartIoAds {
     fun ensureInitialized(context: Context) {
         if (initialized) return
         initialized = true
+        // شاشة موافقة Start.io الإنجليزية الكاملة كانت تظهر عند أول فتح وتُفسد التجربة. نسجّل مرة واحدة
+        // عدم الموافقة على جمع البيانات المتقدمة (الإعلانات تعمل بلا تخصيص موسّع) فلا تظهر الشاشة.
+        val prefs = context.applicationContext.getSharedPreferences("startio", Context.MODE_PRIVATE)
+        if (!prefs.getBoolean("consent_set", false)) {
+            StartAppSDK.setUserConsent(context.applicationContext, "pas", System.currentTimeMillis(), false)
+            prefs.edit().putBoolean("consent_set", true).apply()
+        }
         StartAppSDK.initParams(context.applicationContext, APP_ID)
             .setReturnAdsEnabled(false)
             .init()
@@ -116,13 +132,24 @@ internal object StartIoAds {
  */
 @Composable
 internal fun StartIoBannerView(modifier: Modifier = Modifier) {
+    // المساحة تُحجز فقط حين يصل إعلان فعلاً: قبل ذلك (أو عند غياب الإعلان) كانت تبقى شريطاً أبيض
+    // فارغاً بارتفاع ~50dp أسفل القائمة السفلية للموقع.
+    var loaded by remember { mutableStateOf(false) }
     Box(
-        modifier = modifier.fillMaxWidth().wrapContentHeight(),
+        modifier = modifier
+            .fillMaxWidth()
+            .then(if (loaded) Modifier.wrapContentHeight() else Modifier.height(1.dp))
+            .clipToBounds(),
         contentAlignment = Alignment.Center
     ) {
         AndroidView(factory = { ctx ->
             StartIoAds.ensureInitialized(ctx)
-            Banner(ctx)
+            Banner(ctx, object : BannerListener {
+                override fun onReceiveAd(p0: View?) { loaded = true }
+                override fun onFailedToReceiveAd(p0: View?) { loaded = false }
+                override fun onImpression(p0: View?) {}
+                override fun onClick(p0: View?) {}
+            })
         })
     }
 }

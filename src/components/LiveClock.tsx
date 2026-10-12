@@ -23,20 +23,19 @@ export const LiveClock: React.FC = () => {
     hour: 'numeric',
     minute: '2-digit',
     second: '2-digit',
-    hour12: true
+    hour12: false
   });
   const syriaTime = now.toLocaleTimeString('ar', {
     timeZone: 'Asia/Damascus',
     hour: 'numeric',
     minute: '2-digit',
     second: '2-digit',
-    hour12: true
+    hour12: false
   });
   const dateLabel = now.toLocaleDateString('ar-SY', {
     timeZone: 'Europe/Istanbul',
     day: 'numeric',
-    month: 'short',
-    year: 'numeric'
+    month: 'numeric'
   });
 
   const sameTime = turkeyTime === syriaTime;
@@ -44,7 +43,7 @@ export const LiveClock: React.FC = () => {
   return (
     <div
       id="header-live-clock"
-      className="flex flex-col items-end leading-tight px-2 sm:px-3 py-1 rounded-xl bg-slate-100/95 dark:bg-slate-900/90 border border-slate-300/80 dark:border-brand-500/30 shadow-xs backdrop-blur-xs select-none transition-colors"
+      className="flex flex-col items-center whitespace-nowrap shrink-0 leading-none px-2 sm:px-3 py-1 rounded-xl bg-slate-100/95 dark:bg-slate-900/90 border border-slate-300/80 dark:border-brand-500/30 shadow-xs backdrop-blur-xs select-none transition-colors"
     >
       <div className="flex items-center gap-1 sm:gap-1.5 font-mono text-[11px] sm:text-xs font-black text-slate-900 dark:text-emerald-300 tracking-tight" dir="ltr">
         {sameTime ? (

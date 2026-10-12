@@ -652,7 +652,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                 </h2>
               </div>
 
-              <p className="text-xs text-slate-400 font-mono">
+              <p dir="ltr" className="text-xs text-slate-400 font-mono text-center break-all px-2">
                 @{currentUser.username} {currentUser.email && `• ${currentUser.email}`}
               </p>
 
