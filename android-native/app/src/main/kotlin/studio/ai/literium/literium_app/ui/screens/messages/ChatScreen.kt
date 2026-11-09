@@ -1,5 +1,17 @@
 package studio.ai.literium.literium_app.ui.screens.messages
 
+import androidx.compose.foundation.border
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.SolidColor
+import studio.ai.literium.literium_app.ui.theme.Lu
+import studio.ai.literium.literium_app.ui.theme.LuIcon
+import studio.ai.literium.literium_app.ui.theme.Tw
+import studio.ai.literium.literium_app.ui.theme.isDark
+import studio.ai.literium.literium_app.ui.theme.twClickable
+import studio.ai.literium.literium_app.ui.theme.twText
 import android.content.Context
 import android.content.Intent
 import android.media.MediaMetadataRetriever
@@ -195,231 +207,101 @@ fun ChatScreen(
         if (state.messages.isNotEmpty()) listState.animateScrollToItem(state.messages.size - 1)
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "رجوع")
-                    }
-                },
-                title = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.clickable { navController.navigate(Screen.WriterProfile.of(state.partnerId)) }
-                    ) {
+    val dark = isDark
+    val line = if (dark) Tw.slate800 else Tw.slate200
+    val txt = if (dark) Tw.white else Tw.slate900
+    val shell = RoundedCornerShape(24.dp)
+
+    Box(Modifier.fillMaxSize().padding(8.dp)) {
+        Column(Modifier.fillMaxSize().shadow(16.dp, shell, clip = false).clip(shell).background(if (dark) Tw.slate900 else Tw.white).border(1.dp, line, shell)) {
+            // الرأس
+            Row(
+                Modifier.fillMaxWidth().background(if (dark) Tw.slate900.copy(alpha = 0.80f) else Tw.slate50.copy(alpha = 0.80f)).padding(horizontal = 16.dp, vertical = 14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(Modifier.twClickable { navController.popBackStack() }.padding(4.dp)) { LuIcon(Lu.ArrowRight, 16.dp, Tw.slate500) }
+                    Row(Modifier.weight(1f).twClickable { navController.navigate(Screen.WriterProfile.of(state.partnerId)) }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Box {
-                            AsyncImage(
-                                model = state.partnerAvatar.ifBlank { PlatformConstants.DEFAULT_AVATAR_URL },
-                                contentDescription = state.partnerName,
-                                modifier = Modifier.size(36.dp).clip(CircleShape)
-                            )
-                            Box(
-                                modifier = Modifier
-                                    .size(11.dp)
-                                    .align(Alignment.BottomEnd)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.surface)
-                                    .padding(2.dp)
-                                    .clip(CircleShape)
-                                    .background(if (state.isPartnerOnline) OnlineGreen else OfflineGray)
-                            )
+                            AsyncImage(state.partnerAvatar.ifBlank { PlatformConstants.DEFAULT_AVATAR_URL }, state.partnerName, Modifier.size(36.dp).clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.Crop)
+                            Box(Modifier.align(Alignment.BottomEnd).size(10.dp).clip(CircleShape).background(if (dark) Tw.slate900 else Tw.white).padding(2.dp).clip(CircleShape).background(if (state.isPartnerOnline) OnlineGreen else OfflineGray))
                         }
-                        Spacer(Modifier.width(8.dp))
-                        Column {
-                            Text(
-                                state.partnerName,
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = when {
-                                    state.isPartnerTyping -> "يكتب الآن..."
-                                    state.isPartnerOnline -> "متصل الآن"
-                                    else -> state.lastSeenLabel
-                                },
-                                style = MaterialTheme.typography.labelSmall,
-                                color = if (state.isPartnerTyping) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                },
-                actions = {
-                    if (state.isAdmin) {
-                        IconButton(onClick = { showDeleteConversationConfirm = true }) {
-                            Icon(Icons.Filled.DeleteForever, contentDescription = "حذف نهائي (صلاحية أدمن)")
-                        }
-                    }
-                    Box {
-                        IconButton(onClick = { showMenu = true }) {
-                            Icon(Icons.Filled.MoreVert, contentDescription = "خيارات المحادثة")
-                        }
-                        DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                            DropdownMenuItem(
-                                text = { Text("عرض الملف الشخصي") },
-                                leadingIcon = { Icon(Icons.Filled.Person, contentDescription = null) },
-                                onClick = {
-                                    showMenu = false
-                                    navController.navigate(Screen.WriterProfile.of(state.partnerId))
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text(if (state.isMutedByMe) "إلغاء الكتم" else "كتم الإشعارات") },
-                                leadingIcon = {
-                                    Icon(if (state.isMutedByMe) Icons.Filled.Notifications else Icons.Filled.NotificationsOff, contentDescription = null)
-                                },
-                                onClick = {
-                                    showMenu = false
-                                    viewModel.toggleMute(!state.isMutedByMe)
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("إبلاغ عن إساءة") },
-                                leadingIcon = { Icon(Icons.Filled.Flag, contentDescription = null) },
-                                onClick = { showMenu = false; showReport = true }
-                            )
-                            DropdownMenuItem(
-                                text = { Text(if (state.isBlockedByMe) "إلغاء الحظر" else "حظر المستخدم") },
-                                leadingIcon = { Icon(Icons.Filled.Block, contentDescription = null) },
-                                onClick = {
-                                    showMenu = false
-                                    if (state.isBlockedByMe) viewModel.toggleBlock(false) else showBlockConfirm = true
-                                }
-                            )
-                            HorizontalDivider()
-                            DropdownMenuItem(
-                                text = { Text("حذف المحادثة") },
-                                leadingIcon = { Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null) },
-                                onClick = { showMenu = false; showHideConfirm = true }
-                            )
+                        Column(Modifier.weight(1f)) {
+                            Text(state.partnerName, style = twText(14, FontWeight.ExtraBold, 20), color = txt, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            val statusText = when { state.isPartnerTyping -> "يكتب الآن..."; state.isPartnerOnline -> "متصل الآن"; else -> state.lastSeenLabel }
+                            Text(statusText, style = twText(10, if (state.isPartnerTyping) FontWeight.Bold else FontWeight.Normal, 15), color = if (state.isPartnerTyping) (if (dark) Tw.teal300 else Tw.teal600) else Tw.slate400, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
                 }
-            )
-        }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-        ) {
+                Box {
+                    Box(Modifier.clip(RoundedCornerShape(12.dp)).twClickable { showMenu = true }.padding(6.dp)) { LuIcon(Lu.MoreVertical, 18.dp, Tw.slate400) }
+                    DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }, containerColor = if (dark) Tw.slate800 else Tw.white, modifier = Modifier.width(208.dp)) {
+                        ChatMenuItem(Lu.UserCircle2, "عرض الملف الشخصي", if (dark) Tw.slate200 else Tw.slate700) { showMenu = false; navController.navigate(Screen.WriterProfile.of(state.partnerId)) }
+                        ChatMenuItem(if (state.isMutedByMe) Lu.Bell else Lu.BellOff, if (state.isMutedByMe) "إلغاء الكتم" else "كتم الإشعارات", if (dark) Tw.slate200 else Tw.slate700) { showMenu = false; viewModel.toggleMute(!state.isMutedByMe) }
+                        ChatMenuItem(Lu.Flag, "إبلاغ عن إساءة", Tw.amber600) { showMenu = false; showReport = true }
+                        ChatMenuItem(Lu.Ban, if (state.isBlockedByMe) "إلغاء الحظر" else "حظر المستخدم", Tw.rose600) { showMenu = false; if (state.isBlockedByMe) viewModel.toggleBlock(false) else showBlockConfirm = true }
+                        Box(Modifier.fillMaxWidth().height(1.dp).background(if (dark) Tw.slate700 else Tw.slate100))
+                        ChatMenuItem(Lu.LogOut, "إخفاء المحادثة", Tw.slate500) { showMenu = false; showHideConfirm = true }
+                        if (state.isAdmin) ChatMenuItem(Lu.Trash2, "حذف نهائي (صلاحية أدمن)", Tw.rose600) { showMenu = false; showDeleteConversationConfirm = true }
+                    }
+                }
+            }
+            Box(Modifier.fillMaxWidth().height(1.dp).background(line))
+
             if (state.isLoading) {
-                Box(Modifier.fillMaxSize()) { CircularProgressIndicator(Modifier.align(Alignment.Center)) }
+                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Tw.teal600) }
             } else {
-                BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().background(if (dark) Tw.slate900.copy(alpha = 0.50f) else Tw.slate50.copy(alpha = 0.50f))) {
                     val maxBubbleWidth = maxWidth * 0.75f
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
+                    LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         items(items = state.messages, key = { it.id }) { msg ->
                             val isMe = msg.senderId == state.currentUserId
-                            val canDelete = isMe || state.isAdmin
                             MessageBubbleRow(
-                                msg = msg,
-                                isMe = isMe,
-                                canDelete = canDelete,
-                                maxBubbleWidth = maxBubbleWidth,
+                                msg = msg, isMe = isMe, canDelete = isMe || state.isAdmin, maxBubbleWidth = maxBubbleWidth, dark = dark,
                                 onDelete = { pendingDeleteMessageId = msg.id },
                                 onImageClick = { url -> fullscreenImage = url },
-                                onVideoClick = { url ->
-                                    runCatching {
-                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                                    }
-                                }
+                                onVideoClick = { url -> runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } }
                             )
                         }
-                        if (state.isPartnerTyping) {
-                            item(key = "typing") { TypingIndicatorBubble() }
-                        }
+                        if (state.isPartnerTyping) item(key = "typing") { TypingIndicatorBubble(dark) }
                     }
                 }
 
+                Box(Modifier.fillMaxWidth().height(1.dp).background(line))
                 if (!state.canChat) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            text = if (state.isBlockedByMe) "لقد حظرت هذا المستخدم — لا يمكنكما التراسل." else "لا يمكنك مراسلة هذا المستخدم حالياً.",
-                            color = MaterialTheme.colorScheme.error,
-                            fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center
-                        )
-                        if (state.isBlockedByMe) {
-                            Spacer(Modifier.height(8.dp))
-                            OutlinedButton(onClick = { viewModel.toggleBlock(false) }) { Text("إلغاء الحظر") }
+                    Column(Modifier.fillMaxWidth().background(if (dark) Tw.slate900 else Tw.white).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(if (state.isBlockedByMe) "لقد حظرت هذا المستخدم — لا يمكنكما التراسل." else "لا يمكنك مراسلة هذا المستخدم حالياً.", Modifier.padding(bottom = 8.dp), style = twText(12, FontWeight.Bold, 16).copy(textAlign = TextAlign.Center), color = Tw.rose500)
+                        if (state.isBlockedByMe) Box(Modifier.clip(RoundedCornerShape(12.dp)).background(if (dark) Tw.slate800 else Tw.slate100).twClickable { viewModel.toggleBlock(false) }.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                            Text("إلغاء الحظر", style = twText(12, FontWeight.Bold, 16), color = if (dark) Tw.slate200 else Tw.slate700)
                         }
                     }
                 } else {
-                    val displayedError = clientPickError ?: uploadState.error
-                    if (displayedError != null) {
-                        Text(
-                            text = displayedError,
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.labelSmall,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
-                        )
-                    }
-
-                    if (showEmojiPanel) {
-                        EmojiStickerPanel(
-                            tab = emojiTab,
-                            onTabChange = { emojiTab = it },
-                            onEmoji = { draftText += it },
-                            onSticker = { id -> viewModel.sendSticker(id); showEmojiPanel = false }
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(onClick = { showEmojiPanel = !showEmojiPanel }) {
-                            Icon(Icons.Filled.SentimentSatisfiedAlt, contentDescription = "سمايلات وملصقات")
+                    Column(Modifier.fillMaxWidth().background(if (dark) Tw.slate900 else Tw.white)) {
+                        val displayedError = clientPickError ?: uploadState.error
+                        if (displayedError != null) Row(Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            LuIcon(Lu.AlertCircle, 14.dp, Tw.rose500)
+                            Text(displayedError, style = twText(11, FontWeight.Medium, 16), color = Tw.rose500)
                         }
-                        IconButton(onClick = { imagePicker.launch("image/*") }, enabled = uploadState.uploading == null) {
-                            if (uploadState.uploading == MessageMediaType.IMAGE) {
-                                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                            } else {
-                                Icon(Icons.Filled.Image, contentDescription = "إرسال صورة")
+                        if (showEmojiPanel) EmojiStickerPanel(tab = emojiTab, dark = dark, onTabChange = { emojiTab = it }, onEmoji = { draftText += it }, onSticker = { id -> viewModel.sendSticker(id); showEmojiPanel = false })
+                        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Box(Modifier.clip(RoundedCornerShape(12.dp)).then(if (showEmojiPanel) Modifier.background(if (dark) Color(0xFF042F2E) else Color(0xFFF0FDFA)) else Modifier).twClickable { showEmojiPanel = !showEmojiPanel }.padding(8.dp)) {
+                                LuIcon(Lu.Smile, 18.dp, if (showEmojiPanel) Tw.teal600 else Tw.slate400)
                             }
-                        }
-                        IconButton(onClick = { videoPicker.launch("video/*") }, enabled = uploadState.uploading == null) {
-                            if (uploadState.uploading == MessageMediaType.VIDEO) {
-                                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                            } else {
-                                Icon(Icons.Filled.Videocam, contentDescription = "إرسال فيديو قصير (حتى 5 دقائق)")
+                            Box(Modifier.clip(RoundedCornerShape(12.dp)).twClickable(enabled = uploadState.uploading == null) { imagePicker.launch("image/*") }.padding(8.dp).then(if (uploadState.uploading != null) Modifier.alpha(0.5f) else Modifier)) {
+                                if (uploadState.uploading == MessageMediaType.IMAGE) CircularProgressIndicator(Modifier.size(18.dp), color = Tw.slate400, strokeWidth = 2.dp) else LuIcon(Lu.Image, 18.dp, Tw.slate400)
                             }
-                        }
-                        TextField(
-                            value = draftText,
-                            onValueChange = { draftText = it; viewModel.onTyping() },
-                            placeholder = { Text("اكتب رسالتك...") },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(16.dp),
-                            colors = TextFieldDefaults.colors(
-                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                                unfocusedIndicatorColor = Color.Transparent,
-                                focusedIndicatorColor = Color.Transparent
-                            ),
-                            keyboardOptions = KeyboardOptions.Default
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        IconButton(
-                            onClick = { viewModel.sendText(draftText); draftText = "" },
-                            enabled = draftText.isNotBlank()
-                        ) {
-                            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "إرسال")
+                            Box(Modifier.clip(RoundedCornerShape(12.dp)).twClickable(enabled = uploadState.uploading == null) { videoPicker.launch("video/*") }.padding(8.dp).then(if (uploadState.uploading != null) Modifier.alpha(0.5f) else Modifier)) {
+                                if (uploadState.uploading == MessageMediaType.VIDEO) CircularProgressIndicator(Modifier.size(18.dp), color = Tw.slate400, strokeWidth = 2.dp) else LuIcon(Lu.Video, 18.dp, Tw.slate400)
+                            }
+                            val fs = RoundedCornerShape(12.dp)
+                            Box(Modifier.weight(1f).clip(fs).background(if (dark) Tw.slate800 else Tw.slate50).border(1.dp, if (dark) Tw.slate700 else Tw.slate200, fs).padding(horizontal = 16.dp, vertical = 8.dp)) {
+                                if (draftText.isEmpty()) Text("اكتب رسالتك...", style = twText(12, FontWeight.Normal, 20), color = Tw.slate400)
+                                BasicTextField(draftText, { draftText = it; viewModel.onTyping() }, singleLine = true, textStyle = twText(12, FontWeight.Normal, 20).copy(color = txt), cursorBrush = SolidColor(Tw.teal600), modifier = Modifier.fillMaxWidth())
+                            }
+                            val canSend = draftText.isNotBlank()
+                            Box(Modifier.shadow(1.dp, RoundedCornerShape(12.dp), clip = false).clip(RoundedCornerShape(12.dp)).background(Tw.teal600).then(if (!canSend) Modifier.alpha(0.5f) else Modifier).twClickable(enabled = canSend) { viewModel.sendText(draftText); draftText = "" }.padding(horizontal = 16.dp, vertical = 8.dp), contentAlignment = Alignment.Center) {
+                                LuIcon(Lu.Send, 14.dp, Tw.white, Modifier.rotate(180f))
+                            }
                         }
                     }
                 }
@@ -510,215 +392,111 @@ fun ChatScreen(
 }
 
 @Composable
+private fun ChatMenuItem(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, color: Color, onClick: () -> Unit) {
+    DropdownMenuItem(
+        text = { Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) { LuIcon(icon, 14.dp, color); Text(label, style = twText(12, FontWeight.Bold, 16), color = color) } },
+        onClick = onClick
+    )
+}
+
+@Composable
 private fun MessageBubbleRow(
     msg: DirectMessage,
     isMe: Boolean,
     canDelete: Boolean,
     maxBubbleWidth: Dp,
+    dark: Boolean,
     onDelete: () -> Unit,
     onImageClick: (String) -> Unit,
     onVideoClick: (String) -> Unit
 ) {
     val sticker = if (msg.mediaType == MessageMediaType.STICKER) ChatStickers.find(msg.content) else null
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = if (isMe) Arrangement.Start else Arrangement.End,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        if (isMe && canDelete) {
-            IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
-                Icon(
-                    Icons.Filled.DeleteForever,
-                    contentDescription = "حذف الرسالة",
-                    modifier = Modifier.size(14.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = if (isMe) Arrangement.Start else Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+        if (isMe && canDelete) Box(Modifier.clip(RoundedCornerShape(8.dp)).twClickable(onClick = onDelete).padding(4.dp)) { LuIcon(Lu.Trash2, 14.dp, Tw.slate400) }
+        if (isMe && canDelete) Spacer(Modifier.width(6.dp))
 
         if (sticker != null) {
-            Column(
-                modifier = Modifier.widthIn(max = 96.dp),
-                horizontalAlignment = if (isMe) Alignment.Start else Alignment.End
-            ) {
-                ChatStickerFace(sticker, modifier = Modifier.size(80.dp))
-                Text(
-                    DateFormatAr.timeAgoAr(msg.createdAt),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            Column(Modifier.widthIn(max = maxBubbleWidth * 0.6f), horizontalAlignment = if (isMe) Alignment.Start else Alignment.End) {
+                ChatStickerFace(sticker, Modifier.size(80.dp))
+                Text(DateFormatAr.timeAgoAr(msg.createdAt), Modifier.padding(top = 2.dp), style = twText(9, FontWeight.Normal, 13), color = Tw.slate400)
             }
         } else {
+            val shape = RoundedCornerShape(topStart = if (isMe) 16.dp else 0.dp, topEnd = if (isMe) 0.dp else 16.dp, bottomStart = 16.dp, bottomEnd = 16.dp)
             Column(
-                modifier = Modifier
-                    .widthIn(max = maxBubbleWidth)
-                    .clip(
-                        RoundedCornerShape(
-                            topStart = if (isMe) 16.dp else 0.dp,
-                            topEnd = if (isMe) 0.dp else 16.dp,
-                            bottomStart = 16.dp,
-                            bottomEnd = 16.dp
-                        )
-                    )
-                    .background(if (isMe) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
-                    .padding(horizontal = 14.dp, vertical = 10.dp)
+                Modifier.widthIn(max = maxBubbleWidth)
+                    .then(if (!isMe) Modifier.shadow(1.dp, shape, clip = false) else Modifier)
+                    .clip(shape).background(if (isMe) Tw.teal600 else (if (dark) Tw.slate800 else Tw.white))
+                    .then(if (!isMe) Modifier.border(1.dp, if (dark) Tw.slate700 else Tw.slate200, shape) else Modifier)
+                    .padding(horizontal = 16.dp, vertical = 10.dp)
             ) {
                 if (msg.mediaType == MessageMediaType.IMAGE && !msg.mediaUrl.isNullOrBlank()) {
-                    AsyncImage(
-                        model = msg.mediaUrl,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 220.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable { msg.mediaUrl?.let(onImageClick) }
-                    )
+                    AsyncImage(msg.mediaUrl, null, Modifier.fillMaxWidth().heightIn(max = 256.dp).clip(RoundedCornerShape(12.dp)).twClickable { msg.mediaUrl?.let(onImageClick) }, contentScale = ContentScale.Crop)
                     Spacer(Modifier.height(6.dp))
                 }
                 if (msg.mediaType == MessageMediaType.VIDEO && !msg.mediaUrl.isNullOrBlank()) {
-                    VideoMessageCard(isMe = isMe, onClick = { msg.mediaUrl?.let(onVideoClick) })
+                    VideoMessageCard(isMe = isMe, dark = dark, onClick = { msg.mediaUrl?.let(onVideoClick) })
                     Spacer(Modifier.height(6.dp))
                 }
-                if (msg.content.isNotBlank()) {
-                    Text(
-                        text = msg.content,
-                        color = if (isMe) Color.White else MaterialTheme.colorScheme.onSurface,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
-                Text(
-                    text = DateFormatAr.timeAgoAr(msg.createdAt),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (isMe) Color.White.copy(alpha = 0.75f) else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .align(Alignment.End)
-                        .padding(top = 2.dp)
-                )
+                if (msg.content.isNotBlank()) Text(msg.content, style = twText(12, FontWeight.Normal, 20), color = if (isMe) Tw.white else (if (dark) Tw.white else Tw.slate900))
+                Text(DateFormatAr.timeAgoAr(msg.createdAt), Modifier.align(Alignment.End).padding(top = 4.dp), style = twText(9, FontWeight.Normal, 13), color = if (isMe) Color(0xFF99F6E4) else Tw.slate400)
             }
         }
 
-        if (!isMe && canDelete) {
-            IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
-                Icon(
-                    Icons.Filled.DeleteForever,
-                    contentDescription = "حذف الرسالة (صلاحية أدمن)",
-                    modifier = Modifier.size(14.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
+        if (!isMe && canDelete) Spacer(Modifier.width(6.dp))
+        if (!isMe && canDelete) Box(Modifier.clip(RoundedCornerShape(8.dp)).twClickable(onClick = onDelete).padding(4.dp)) { LuIcon(Lu.Trash2, 14.dp, Tw.slate400) }
     }
 }
 
 @Composable
-private fun VideoMessageCard(isMe: Boolean, onClick: () -> Unit) {
+private fun VideoMessageCard(isMe: Boolean, dark: Boolean, onClick: () -> Unit) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 52.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background((if (isMe) Color.White else MaterialTheme.colorScheme.primary).copy(alpha = 0.16f))
-            .clickable(onClick = onClick)
-            .padding(10.dp),
-        verticalAlignment = Alignment.CenterVertically
+        Modifier.fillMaxWidth().heightIn(min = 52.dp).clip(RoundedCornerShape(12.dp)).background((if (isMe) Color.White else Tw.teal600).copy(alpha = 0.16f)).twClickable(onClick = onClick).padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Icon(
-            Icons.Filled.PlayCircle,
-            contentDescription = null,
-            tint = if (isMe) Color.White else MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(26.dp)
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(
-            "رسالة فيديو — اضغط للتشغيل",
-            style = MaterialTheme.typography.labelMedium,
-            color = if (isMe) Color.White else MaterialTheme.colorScheme.onSurface
-        )
+        LuIcon(Lu.Video, 24.dp, if (isMe) Tw.white else Tw.teal600)
+        Text("رسالة فيديو — اضغط للتشغيل", style = twText(11, FontWeight.Medium, 16), color = if (isMe) Tw.white else (if (dark) Tw.white else Tw.slate900))
     }
 }
 
 @Composable
-private fun TypingIndicatorBubble() {
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-        Row(
-            modifier = Modifier
-                .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 0.dp, bottomStart = 16.dp, bottomEnd = 16.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
+private fun TypingIndicatorBubble(dark: Boolean) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        val shape = RoundedCornerShape(topStart = 0.dp, topEnd = 16.dp, bottomStart = 16.dp, bottomEnd = 16.dp)
+        Row(Modifier.clip(shape).background(if (dark) Tw.slate800 else Tw.white).border(1.dp, if (dark) Tw.slate700 else Tw.slate200, shape).padding(horizontal = 16.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             repeat(3) { index ->
                 val transition = rememberInfiniteTransition(label = "typing")
-                val offsetY by transition.animateFloat(
-                    initialValue = 0f,
-                    targetValue = -4f,
-                    animationSpec = infiniteRepeatable(
-                        animation = tween(durationMillis = 400, delayMillis = index * 150, easing = LinearEasing),
-                        repeatMode = RepeatMode.Reverse
-                    ),
-                    label = "dot$index"
-                )
-                Box(
-                    modifier = Modifier
-                        .size(6.dp)
-                        .offset(y = offsetY.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.onSurfaceVariant)
-                )
+                val offsetY by transition.animateFloat(0f, -4f, infiniteRepeatable(tween(durationMillis = 400, delayMillis = index * 150, easing = LinearEasing), RepeatMode.Reverse), label = "dot$index")
+                Box(Modifier.size(6.dp).offset(y = offsetY.dp).clip(CircleShape).background(Tw.slate400))
             }
         }
     }
 }
 
 @Composable
-private fun EmojiStickerPanel(
-    tab: String,
-    onTabChange: (String) -> Unit,
-    onEmoji: (String) -> Unit,
-    onSticker: (String) -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(max = 220.dp)
-            .padding(horizontal = 8.dp)
-    ) {
-        Row(modifier = Modifier.fillMaxWidth()) {
-            TextButton(onClick = { onTabChange("standard") }, modifier = Modifier.weight(1f)) {
-                Text("الشائعة", fontWeight = if (tab == "standard") FontWeight.Bold else FontWeight.Normal)
-            }
-            TextButton(onClick = { onTabChange("stickers") }, modifier = Modifier.weight(1f)) {
-                Text("ملصقات ليتيريوم", fontWeight = if (tab == "stickers") FontWeight.Bold else FontWeight.Normal)
+private fun EmojiStickerPanel(tab: String, dark: Boolean, onTabChange: (String) -> Unit, onEmoji: (String) -> Unit, onSticker: (String) -> Unit) {
+    val shape = RoundedCornerShape(16.dp)
+    Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp).padding(bottom = 4.dp).shadow(8.dp, shape, clip = false).clip(shape).background(if (dark) Tw.slate800 else Tw.white).border(1.dp, if (dark) Tw.slate700 else Tw.slate200, shape)) {
+        Row(Modifier.fillMaxWidth()) {
+            listOf("standard" to "الشائعة", "stickers" to "ملصقات ليتيريوم").forEach { (id, label) ->
+                Column(Modifier.weight(1f).twClickable { onTabChange(id) }, horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(label, Modifier.padding(vertical = 8.dp), style = twText(11, FontWeight.Bold, 16), color = if (tab == id) Tw.teal600 else Tw.slate400)
+                    Box(Modifier.fillMaxWidth().height(2.dp).background(if (tab == id) Tw.teal600 else Color.Transparent))
+                }
             }
         }
-        HorizontalDivider()
+        Box(Modifier.fillMaxWidth().height(1.dp).background(if (dark) Tw.slate700 else Tw.slate100))
         if (tab == "standard") {
-            LazyVerticalGrid(columns = GridCells.Fixed(8), modifier = Modifier.fillMaxWidth().heightIn(max = 180.dp)) {
+            LazyVerticalGrid(columns = GridCells.Fixed(8), modifier = Modifier.fillMaxWidth().heightIn(max = 208.dp).padding(10.dp)) {
                 gridItems(items = STANDARD_EMOJIS) { emoji ->
-                    Box(
-                        modifier = Modifier
-                            .padding(2.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable { onEmoji(emoji) }
-                            .padding(6.dp),
-                        contentAlignment = Alignment.Center
-                    ) { Text(emoji, style = MaterialTheme.typography.titleMedium) }
+                    Box(Modifier.padding(3.dp).clip(RoundedCornerShape(8.dp)).twClickable { onEmoji(emoji) }.padding(6.dp), contentAlignment = Alignment.Center) { Text(emoji, style = twText(18, FontWeight.Normal, 24)) }
                 }
             }
         } else {
-            LazyVerticalGrid(columns = GridCells.Fixed(4), modifier = Modifier.fillMaxWidth().heightIn(max = 180.dp)) {
+            LazyVerticalGrid(columns = GridCells.Fixed(4), modifier = Modifier.fillMaxWidth().heightIn(max = 208.dp).padding(10.dp)) {
                 gridItems(items = ChatStickers.ALL, key = { it.id }) { sticker ->
-                    Column(
-                        modifier = Modifier
-                            .padding(4.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable { onSticker(sticker.id) }
-                            .padding(4.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        ChatStickerFace(sticker, modifier = Modifier.size(44.dp))
-                        Text(sticker.label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Column(Modifier.padding(4.dp).clip(RoundedCornerShape(12.dp)).twClickable { onSticker(sticker.id) }.padding(6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        ChatStickerFace(sticker, Modifier.size(44.dp))
+                        Text(sticker.label, style = twText(9, FontWeight.Normal, 13), color = Tw.slate400)
                     }
                 }
             }
