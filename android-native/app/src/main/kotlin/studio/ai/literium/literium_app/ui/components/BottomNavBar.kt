@@ -1,44 +1,54 @@
 package studio.ai.literium.literium_app.ui.components
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AttachMoney
-import androidx.compose.material.icons.filled.Campaign
-import androidx.compose.material.icons.filled.Explore
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Mail
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import studio.ai.literium.literium_app.data.model.User
 import studio.ai.literium.literium_app.navigation.Screen
-import studio.ai.literium.literium_app.ui.theme.BrandAmber
-import studio.ai.literium.literium_app.ui.theme.BrandTeal
+import studio.ai.literium.literium_app.ui.theme.CairoFamily
+import studio.ai.literium.literium_app.ui.theme.Lu
+import studio.ai.literium.literium_app.ui.theme.LuIcon
+import studio.ai.literium.literium_app.ui.theme.Tw
+import studio.ai.literium.literium_app.ui.theme.brand
+import studio.ai.literium.literium_app.ui.theme.isDark
+import studio.ai.literium.literium_app.ui.theme.twClickable
 
 /**
- * Sticky bottom navigation — exact tab-set port of `BottomNav.tsx` (spec §2.1/§2.2), including its
- * hard split between the admin 5-tab bar (finance/campaigns shortcuts instead of explore) and the
- * unified member 5-tab bar shared by every non-admin account regardless of stored `role` (source's
- * own comment on why there is only ONE non-admin bar, not three role-specific ones, is preserved
- * verbatim in [BottomNavBar]'s member branch below).
- *
- * `AdminOverviewTab`/`AdminFinanceTab`/etc. are all sub-tabs of one embedded admin dashboard in the
- * web source (spec §1.3a/§4.20+); this Kotlin app instead models [Screen.Admin] as its own
- * top-level destination (see `navigation/Screen.kt`, out of this scope's reach), so the admin bar's
- * finance/campaigns buttons both navigate to that one screen — a structural adaptation to the real
- * nav graph, not a missing feature; which internal admin tab opens is that screen's own concern.
+ * الشريط السفلي — نسخة طبق الأصل من BottomNav.tsx: ارتفاع h-16 (64dp)، max-w-lg، px-3، خمس أزرار
+ * flex-1 (أيقونة 20dp داخل p-1.5 rounded-xl، والمفعّل بخلفية brand-50 وإطار brand-200 وتكبير 1.05،
+ * ونص 10px bold ⇒ extrabold للمفعّل). شريط الأدمن: رئيسية/مالية/إعلانات/رسائل/ملفي. الأعضاء:
+ * رئيسية/استكشاف/إشعارات/رسائل/ملفي (رسائل معطّلة للزائر).
  */
 @Composable
 fun BottomNavBar(
@@ -52,147 +62,142 @@ fun BottomNavBar(
     onOpenMessages: () -> Unit,
     onOpenProfile: () -> Unit
 ) {
-    // اللون هنا مثبَّت صراحةً على نفس `colorScheme.surface` المستخدم في السطح الجذري بـ
-    // `MainActivity` (`Surface(...)` بلا لون صريح = افتراضي `colorScheme.surface`)، بدل الاعتماد
-    // على لون `NavigationBar` الافتراضي (`surfaceContainer` — درجة تدرّج مختلفة تماماً في نظام
-    // الألوان الطبقي لـ Material 3). التفاوت الطفيف بين الدرجتين كان يُرسَم كخط أبيض رفيع فوق
-    // الشريط السفلي مباشرة (بلاغ مستخدم حقيقي متكرر) لأن أي فراغ بين آخر بطاقة في المحتوى وحافة
-    // الشريط يكشف لون السطح الجذري، وهو يختلف بصرياً عن لون الشريط نفسه.
-    val navBarColor = MaterialTheme.colorScheme.surface
-
-    if (isAdmin) {
-        NavigationBar(containerColor = navBarColor) {
-            NavigationBarItem(
-                selected = currentRoute == Screen.Feed.route,
-                onClick = { onNavigate(Screen.Feed.route) },
-                icon = { Icon(Icons.Filled.Home, contentDescription = null) },
-                label = { Text("الرئيسية") },
-                colors = tealNavColors()
-            )
-            NavigationBarItem(
-                selected = currentRoute == Screen.Admin.route,
-                onClick = { onNavigate(Screen.Admin.route) },
-                icon = { Icon(Icons.Filled.AttachMoney, contentDescription = null) },
-                label = { Text("المالية") },
-                colors = amberNavColors()
-            )
-            NavigationBarItem(
-                selected = currentRoute == Screen.Admin.route,
-                onClick = { onNavigate(Screen.Admin.route) },
-                icon = { Icon(Icons.Filled.Campaign, contentDescription = null) },
-                label = { Text("الإعلانات") },
-                colors = cyanNavColors()
-            )
-            NavigationBarItem(
-                selected = currentRoute == Screen.Messages.route,
-                onClick = onOpenMessages,
-                icon = {
-                    BadgedNavIcon(Icons.Filled.Mail, unreadMessages)
-                },
-                label = { Text("رسائل") },
-                colors = tealNavColors()
-            )
-            NavigationBarItem(
-                selected = currentRoute == Screen.Profile.route,
-                onClick = onOpenProfile,
-                icon = { ProfileNavIcon(currentUser) },
-                label = { Text("ملفي") },
-                colors = tealNavColors()
-            )
-        }
-        return
-    }
-
-    // شريط الأعضاء الموحّد: زائر أو أي عضو مسجَّل، بغضّ النظر عن دوره المخزَّن —
-    // الرئيسية · استكشاف · إشعارات · رسائل · ملفي. لا فرع حسب role هنا إطلاقاً
-    // (نفس ملاحظة BottomNav.tsx الأصلية: التفرّع القديم كان يعرض تنقّلاً أقل
-    // محتوى لبعض الأدوار رغم تساوي صلاحياتها الفعلية بالكامل في النموذج الموحّد).
-    NavigationBar(containerColor = navBarColor) {
-        NavigationBarItem(
-            selected = currentRoute == Screen.Feed.route,
-            onClick = { onNavigate(Screen.Feed.route) },
-            icon = { Icon(Icons.Filled.Home, contentDescription = null) },
-            label = { Text("الرئيسية") },
-            colors = tealNavColors()
+    val dark = isDark
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(if (dark) Tw.slate950.copy(alpha = 0.98f) else Tw.white.copy(alpha = 0.98f))
+    ) {
+        Box(
+            Modifier.fillMaxWidth().height(1.dp)
+                .background(if (dark) brand.s500.copy(alpha = 0.20f) else Tw.slate200.copy(alpha = 0.90f))
         )
-        NavigationBarItem(
-            selected = currentRoute == Screen.Explore.route,
-            onClick = { onNavigate(Screen.Explore.route) },
-            icon = { Icon(Icons.Filled.Explore, contentDescription = null) },
-            label = { Text("استكشاف") },
-            colors = tealNavColors()
-        )
-        NavigationBarItem(
-            selected = currentRoute == Screen.Notifications.route,
-            onClick = { onNavigate(Screen.Notifications.route) },
-            icon = { BadgedNavIcon(Icons.Filled.Notifications, unreadNotifications) },
-            label = { Text("إشعارات") },
-            colors = tealNavColors()
-        )
-        NavigationBarItem(
-            selected = currentRoute == Screen.Messages.route,
-            onClick = { if (!isGuest) onOpenMessages() },
-            enabled = !isGuest,
-            icon = { BadgedNavIcon(Icons.Filled.Mail, unreadMessages) },
-            label = { Text(if (isGuest) "يلزم التسجيل" else "رسائل") },
-            colors = tealNavColors()
-        )
-        NavigationBarItem(
-            selected = currentRoute == Screen.Profile.route,
-            onClick = onOpenProfile,
-            icon = { ProfileNavIcon(currentUser) },
-            label = { Text("ملفي") },
-            colors = tealNavColors()
-        )
-    }
-}
-
-@Composable
-private fun BadgedNavIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, unreadCount: Int) {
-    if (unreadCount > 0) {
-        BadgedBox(badge = {
-            Badge(containerColor = Color(0xFFF43F5E)) {
-                Text(if (unreadCount > 9) "9+" else unreadCount.toString())
+        Box(Modifier.fillMaxWidth().navigationBarsPadding(), contentAlignment = Alignment.TopCenter) {
+            Row(
+                modifier = Modifier.widthIn(max = 512.dp).fillMaxWidth().height(64.dp).padding(horizontal = if (isAdmin) 8.dp else 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceAround
+            ) {
+                if (isAdmin) {
+                    NavItem("الرئيسية", Lu.Home, currentRoute == Screen.Feed.route, NavTone.Brand) { onNavigate(Screen.Feed.route) }
+                    NavItem("المالية", Lu.DollarSign, currentRoute == Screen.Admin.route, NavTone.Amber) { onNavigate(Screen.Admin.route) }
+                    NavItem("الإعلانات", Lu.Megaphone, false, NavTone.Cyan) { onNavigate(Screen.Admin.route) }
+                    NavItem("رسائل", Lu.MessageSquare, currentRoute == Screen.Messages.route, NavTone.Brand,
+                        badge = unreadMessages, badgeColor = Tw.rose500, badgeCapNine = true, onClick = onOpenMessages)
+                    NavItem("ملفي", Lu.User, currentRoute == Screen.Profile.route, NavTone.Brand,
+                        avatarUrl = currentUser?.avatarUrl, onClick = onOpenProfile)
+                } else {
+                    NavItem("الرئيسية", Lu.Home, currentRoute == Screen.Feed.route, NavTone.Brand) { onNavigate(Screen.Feed.route) }
+                    NavItem("استكشاف", Lu.Compass, currentRoute == Screen.Explore.route, NavTone.Brand) { onNavigate(Screen.Explore.route) }
+                    NavItem("إشعارات", Lu.Bell, currentRoute == Screen.Notifications.route, NavTone.Brand,
+                        badge = unreadNotifications, badgeColor = brand.s500, badgeCapNine = true) { onNavigate(Screen.Notifications.route) }
+                    NavItem(if (isGuest) "يلزم التسجيل" else "رسائل", Lu.MessageSquare, currentRoute == Screen.Messages.route, NavTone.Brand,
+                        badge = if (isGuest) 0 else unreadMessages, badgeColor = Tw.teal600, enabled = !isGuest, onClick = onOpenMessages)
+                    NavItem("ملفي", Lu.User, currentRoute == Screen.Profile.route, NavTone.Brand,
+                        avatarUrl = currentUser?.avatarUrl, onClick = onOpenProfile)
+                }
             }
-        }) {
-            Icon(icon, contentDescription = null)
         }
-    } else {
-        Icon(icon, contentDescription = null)
     }
 }
 
+private enum class NavTone { Brand, Amber, Cyan }
+
 @Composable
-private fun ProfileNavIcon(currentUser: User?) {
-    val avatarUrl = currentUser?.avatarUrl
-    if (!avatarUrl.isNullOrBlank()) {
-        AsyncImage(
-            model = avatarUrl,
-            contentDescription = null,
-            modifier = Modifier.size(22.dp)
+private fun RowScope.NavItem(
+    label: String,
+    icon: ImageVector,
+    active: Boolean,
+    tone: NavTone,
+    badge: Int = 0,
+    badgeColor: Color = Tw.rose500,
+    badgeCapNine: Boolean = false,
+    enabled: Boolean = true,
+    avatarUrl: String? = null,
+    onClick: () -> Unit
+) {
+    val dark = isDark
+    // ألوان الحالة المفعّلة: bg / text / border (فاتح ثم داكن) حسب النغمة
+    val activeBg: Color; val activeFg: Color; val activeBorder: Color
+    when (tone) {
+        NavTone.Brand -> {
+            activeBg = if (dark) brand.s600.copy(alpha = 0.30f) else brand.s50
+            activeFg = if (dark) brand.s300 else brand.s700
+            activeBorder = if (dark) brand.s500.copy(alpha = 0.40f) else brand.s200
+        }
+        NavTone.Amber -> {
+            activeBg = if (dark) Tw.amber600.copy(alpha = 0.30f) else Tw.amber50
+            activeFg = if (dark) Tw.amber300 else Tw.amber700
+            activeBorder = if (dark) Tw.amber500.copy(alpha = 0.40f) else Tw.amber300
+        }
+        NavTone.Cyan -> {
+            activeBg = if (dark) Tw.cyan600.copy(alpha = 0.30f) else Tw.cyan50
+            activeFg = if (dark) Tw.cyan300 else Tw.cyan700
+            activeBorder = if (dark) Tw.cyan600.copy(alpha = 0.40f) else Tw.cyan300
+        }
+    }
+    val idleFg = if (dark) Tw.slate400 else Tw.slate500
+    val scale by animateFloatAsState(if (active) 1.05f else 1f, tween(150), label = "navScale")
+    val shape = RoundedCornerShape(12.dp)
+
+    Column(
+        modifier = Modifier
+            .weight(1f)
+            .alpha(if (enabled) 1f else 0.5f)
+            .twClickable(enabled = enabled, onClick = onClick)
+            .padding(vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Box {
+            Box(
+                modifier = Modifier
+                    .graphicsLayer { scaleX = scale; scaleY = scale }
+                    .clip(shape)
+                    .then(if (active) Modifier.background(activeBg).border(1.dp, activeBorder, shape) else Modifier)
+                    // p-1.5 = 6dp (+1dp الإطار للمفعّل كما يضيفه border-box في الويب)
+                    .padding(if (active) 6.dp else 7.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                if (!avatarUrl.isNullOrBlank()) {
+                    AsyncImage(
+                        model = avatarUrl, contentDescription = null, contentScale = ContentScale.Crop,
+                        modifier = Modifier.size(20.dp).clip(CircleShape)
+                    )
+                } else {
+                    LuIcon(icon, 20.dp, if (active) activeFg else idleFg)
+                }
+            }
+            if (badge > 0) {
+                val text = if (badgeCapNine && badge > 9) "9+" else badge.toString()
+                // ring-2 ring-white: حلقة خارجية بلون خلفية الشريط
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .offset(x = 4.dp, y = (-4).dp)
+                        .background(if (dark) Tw.slate950 else Tw.white, CircleShape)
+                        .padding(2.dp)
+                        .height(16.dp)
+                        .widthIn(min = 16.dp)
+                        .background(badgeColor, CircleShape)
+                        .padding(horizontal = if (text.length > 1) 3.dp else 0.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text, color = Tw.white,
+                        style = TextStyle(fontFamily = CairoFamily, fontSize = 9.sp, lineHeight = 9.sp, fontWeight = FontWeight.Bold)
+                    )
+                }
+            }
+        }
+        Text(
+            label,
+            modifier = Modifier.padding(top = 2.dp),
+            color = if (active) activeFg else idleFg,
+            style = TextStyle(
+                fontFamily = CairoFamily, fontSize = 10.sp, lineHeight = 15.sp,
+                fontWeight = if (active) FontWeight.ExtraBold else FontWeight.Bold
+            )
         )
-    } else {
-        Icon(Icons.Filled.Person, contentDescription = null)
     }
 }
-
-@Composable
-private fun tealNavColors() = NavigationBarItemDefaults.colors(
-    selectedIconColor = BrandTeal,
-    selectedTextColor = BrandTeal,
-    indicatorColor = BrandTeal.copy(alpha = 0.12f)
-)
-
-@Composable
-private fun amberNavColors() = NavigationBarItemDefaults.colors(
-    selectedIconColor = BrandAmber,
-    selectedTextColor = BrandAmber,
-    indicatorColor = BrandAmber.copy(alpha = 0.15f)
-)
-
-@Composable
-private fun cyanNavColors() = NavigationBarItemDefaults.colors(
-    selectedIconColor = Color(0xFF0891B2),
-    selectedTextColor = Color(0xFF0891B2),
-    indicatorColor = Color(0xFF0891B2).copy(alpha = 0.12f)
-)

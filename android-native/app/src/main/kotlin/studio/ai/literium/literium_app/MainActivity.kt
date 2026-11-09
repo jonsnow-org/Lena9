@@ -479,8 +479,25 @@ class MainActivity : ComponentActivity() {
             if (BuildConfig.NATIVE_UI) {
                 // وضع التطبيق الأصلي الكامل (Compose) — يُفعَّل ببناء -PnativeUi=true فقط.
                 LiteriumTheme {
-                    Surface(modifier = Modifier.fillMaxSize()) {
-                        studio.ai.literium.literium_app.navigation.LiteriumNavHost()
+                    // الموقع عربي RTL (html dir=rtl) — نفس اتجاه التخطيط في الأصلي
+                    androidx.compose.runtime.CompositionLocalProvider(
+                        androidx.compose.ui.platform.LocalLayoutDirection provides androidx.compose.ui.unit.LayoutDirection.Rtl
+                    ) {
+                        val dark = studio.ai.literium.literium_app.ui.theme.isDark
+                        val view = androidx.compose.ui.platform.LocalView.current
+                        androidx.compose.runtime.SideEffect {
+                            val w = (view.context as android.app.Activity).window
+                            androidx.core.view.WindowCompat.setDecorFitsSystemWindows(w, false)
+                            w.statusBarColor = android.graphics.Color.TRANSPARENT
+                            w.navigationBarColor = android.graphics.Color.TRANSPARENT
+                            androidx.core.view.WindowCompat.getInsetsController(w, view).apply {
+                                isAppearanceLightStatusBars = !dark
+                                isAppearanceLightNavigationBars = !dark
+                            }
+                        }
+                        Surface(modifier = Modifier.fillMaxSize(), color = androidx.compose.material3.MaterialTheme.colorScheme.background) {
+                            studio.ai.literium.literium_app.navigation.LiteriumNavHost()
+                        }
                     }
                 }
                 return@setContent

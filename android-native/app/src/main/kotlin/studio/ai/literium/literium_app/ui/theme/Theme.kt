@@ -56,7 +56,11 @@ fun LiteriumTheme(
     val backgroundKey = themeSettings.backgroundPreset?.takeIf { isValidBackgroundPreset(it) } ?: DEFAULT_BACKGROUND_PRESET
     val background = BACKGROUND_PRESETS.getValue(backgroundKey)
 
-    CompositionLocalProvider(LocalBackgroundPreset provides background, LocalIsDarkTheme provides darkTheme) {
+    CompositionLocalProvider(
+        LocalBackgroundPreset provides background,
+        LocalIsDarkTheme provides darkTheme,
+        LocalBrand provides preset.shades.toBrand()
+    ) {
         MaterialTheme(
             colorScheme = buildColorScheme(preset, darkTheme),
             typography = LiteriumTypography,
@@ -96,7 +100,13 @@ private fun buildColorScheme(preset: ThemePresetDefinition, darkTheme: Boolean):
 }
 
 val LiteriumTypography = androidx.compose.material3.Typography(
-    bodyLarge = androidx.compose.ui.text.TextStyle(fontSize = 15.sp, lineHeight = 22.sp),
-    bodyMedium = androidx.compose.ui.text.TextStyle(fontSize = 13.sp, lineHeight = 19.sp),
-    titleLarge = androidx.compose.ui.text.TextStyle(fontSize = 20.sp, lineHeight = 26.sp)
+    bodyLarge = androidx.compose.ui.text.TextStyle(fontFamily = CairoFamily, fontSize = 16.sp, lineHeight = 24.sp),
+    bodyMedium = androidx.compose.ui.text.TextStyle(fontFamily = CairoFamily, fontSize = 14.sp, lineHeight = 20.sp),
+    bodySmall = androidx.compose.ui.text.TextStyle(fontFamily = CairoFamily, fontSize = 12.sp, lineHeight = 16.sp),
+    labelLarge = androidx.compose.ui.text.TextStyle(fontFamily = CairoFamily, fontSize = 14.sp, lineHeight = 20.sp),
+    labelMedium = androidx.compose.ui.text.TextStyle(fontFamily = CairoFamily, fontSize = 12.sp, lineHeight = 16.sp),
+    labelSmall = androidx.compose.ui.text.TextStyle(fontFamily = CairoFamily, fontSize = 11.sp, lineHeight = 16.sp),
+    titleLarge = androidx.compose.ui.text.TextStyle(fontFamily = CairoFamily, fontSize = 20.sp, lineHeight = 28.sp),
+    titleMedium = androidx.compose.ui.text.TextStyle(fontFamily = CairoFamily, fontSize = 16.sp, lineHeight = 24.sp),
+    titleSmall = androidx.compose.ui.text.TextStyle(fontFamily = CairoFamily, fontSize = 14.sp, lineHeight = 20.sp)
 )
