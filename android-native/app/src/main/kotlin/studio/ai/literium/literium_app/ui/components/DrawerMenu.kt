@@ -91,6 +91,8 @@ fun DrawerOverlay(
     onLogin: () -> Unit,
     onLogout: () -> Unit
 ) {
+    val rtl = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
+    val dir = if (rtl) -1 else 1
     Box(Modifier.fillMaxSize()) {
         AnimatedVisibility(visible = open, enter = fadeIn(tween(200)), exit = fadeOut(tween(200))) {
             Box(
@@ -101,8 +103,8 @@ fun DrawerOverlay(
             visible = open,
             modifier = Modifier.align(Alignment.CenterEnd),
             // animate-slide-in-right: تنزلق من خارج الحافة (end) إلى مكانها
-            enter = slideInHorizontally(tween(300)) { full -> full * (if (androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl) -1 else 1) },
-            exit = slideOutHorizontally(tween(250)) { full -> full * (if (androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl) -1 else 1) }
+            enter = slideInHorizontally(tween(300)) { full -> full * dir },
+            exit = slideOutHorizontally(tween(250)) { full -> full * dir }
         ) {
             DrawerPanel(currentUser, isGuestOrSignedOut, isAdmin, onClose, onNavigate, onOpenProfile, onLogin, onLogout)
         }

@@ -112,7 +112,11 @@ jobs:
         working-directory: android-native
         env:
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-        run: gradle :app:assembleRelease :app:bundleRelease -PversionCode=${{ github.run_number }} -PnativeUi=${{ inputs.native_ui == true }} --stacktrace
+        run: |
+          set -o pipefail
+          # يُحذف ضجيج stack-trace الخاص بـGradle (أسطر "at ...") ليبقى سجل الفشل مقروءاً (أخطاء Kotlin "e: ...")
+          gradle :app:assembleRelease :app:bundleRelease -PversionCode=${{ github.run_number }} -PnativeUi=${{ inputs.native_ui == true }} --stacktrace 2>&1 | grep -v -E '^[0-9TZ:.-]*\s+at |^\s+at |^\s*\.\.\. [0-9]+ more'
+
 
       - name: Verify built APK's actual versionCode
         run: |

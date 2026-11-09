@@ -35,6 +35,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
@@ -198,11 +199,7 @@ internal fun SearchRefreshRow(
 private val IntrinsicSizeMin = androidx.compose.foundation.layout.IntrinsicSize.Min
 
 private fun Modifier.drawEndBorder(color: Color): Modifier = this.then(
-    Modifier.drawWithContentEnd(color)
-)
-
-private fun Modifier.drawWithContentEnd(color: Color): Modifier = this.then(
-    androidx.compose.ui.draw.drawBehind {
+    Modifier.drawBehind {
         val w = 1.dp.toPx()
         val rtl = layoutDirection == androidx.compose.ui.unit.LayoutDirection.Rtl
         // border-e: على جهة النهاية (يسار في RTL)
