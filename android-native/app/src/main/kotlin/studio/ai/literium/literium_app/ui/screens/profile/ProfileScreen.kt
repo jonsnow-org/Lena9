@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -74,419 +76,217 @@ import studio.ai.literium.literium_app.ui.ads.AdSlot
 import studio.ai.literium.literium_app.navigation.Screen
 import studio.ai.literium.literium_app.ui.theme.BrandTeal
 import studio.ai.literium.literium_app.util.CreatorEligibility
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.blur
+import studio.ai.literium.literium_app.ui.ads.AdTickerBar
+import studio.ai.literium.literium_app.ui.theme.Lu
+import studio.ai.literium.literium_app.ui.theme.LuIcon
+import studio.ai.literium.literium_app.ui.theme.Tw
+import studio.ai.literium.literium_app.ui.theme.arNum
+import studio.ai.literium.literium_app.ui.theme.isDark
+import studio.ai.literium.literium_app.ui.theme.twClickable
+import studio.ai.literium.literium_app.ui.theme.twText
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-@OptIn(ExperimentalMaterial3Api::class)
 fun ProfileScreen(navController: NavController, viewModel: ProfileViewModel = viewModel()) {
     val state by viewModel.state.collectAsState()
+    val dark = isDark
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("ملفي") },
-                actions = {
-                    IconButton(onClick = { navController.navigate(Screen.Wallet.route) }) {
-                        Icon(Icons.Filled.AccountBalanceWallet, contentDescription = "المحفظة")
-                    }
-                    IconButton(onClick = { navController.navigate(Screen.EditProfile.route) }) {
-                        Icon(Icons.Filled.Edit, contentDescription = "تعديل الملف الشخصي")
-                    }
-                }
-            )
+    when {
+        state.isLoading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Tw.teal600) }
+        state.notSignedIn || state.currentUser == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("يجب تسجيل الدخول لعرض ملفك الشخصي.", style = twText(14, FontWeight.Medium, 20), color = Tw.slate500)
         }
-    ) { padding ->
-        when {
-            state.isLoading -> Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
+        else -> {
+            val user = state.currentUser!!
+            LaunchedEffect(state.activeTab, state.blogSubTab) {
+                if (state.activeTab == ProfileTab.BLOG && state.blogSubTab == BlogSubTab.BOOKMARKS) viewModel.refreshBookmarks()
             }
-            state.notSignedIn || state.currentUser == null -> Box(
-                Modifier.fillMaxSize().padding(padding),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("يجب تسجيل الدخول لعرض ملفك الشخصي.")
-            }
-            else -> {
-                val user = state.currentUser!!
-                // إعادة قراءة إشارات مرجعية محلية (SharedPreferences، لا Firestore — نفس سلوك
-                // الويب) عند دخول تبويب "المدونة › المحفوظات" تحديداً، لأن تفعيلها من شاشة
-                // أخرى (الخلاصة، القارئ) لا يُخطر هذا ViewModel تلقائياً بخلاف بقية البيانات.
-                LaunchedEffect(state.activeTab, state.blogSubTab) {
-                    if (state.activeTab == ProfileTab.BLOG && state.blogSubTab == BlogSubTab.BOOKMARKS) {
-                        viewModel.refreshBookmarks()
-                    }
-                }
-                LazyColumn(modifier = Modifier.fillMaxSize().padding(padding)) {
-                    item {
-                        ProfileHeader(
-                            avatarUrl = user.avatarUrl,
-                            coverUrl = user.coverUrl,
-                            fullName = user.penName ?: user.fullName,
-                            username = user.username,
-                            isVerified = user.isVerified == true,
-                            bio = user.bio,
-                            memberStatusLabel = state.memberStatusLabel,
-                            followersCount = state.followersCount,
-                            followingCount = state.followingCount,
-                            joinedDate = user.joinedDate,
-                            onFollowers = { navController.navigate(Screen.FollowList.of(user.id, followers = true)) },
-                            onFollowing = { navController.navigate(Screen.FollowList.of(user.id, followers = false)) }
-                        )
-                    }
-
-                    item {
-                        RoleSwitcher(
-                            currentRole = user.role,
-                            onSwitch = viewModel::switchRole
-                        )
-                    }
-
-                    if (user.role != UserRole.ADMIN) {
-                        item {
-                            state.eligibility?.let { eligibility ->
-                                CreatorEligibilityCard(
-                                    eligibility = eligibility,
-                                    onOpenKyc = { navController.navigate(Screen.Kyc.route) }
-                                )
-                            }
-                        }
-                    }
-
-                    if (user.role == UserRole.ADMIN) {
-                        item {
-                            Card(
-                                modifier = Modifier.fillMaxWidth().padding(16.dp).clickable {
-                                    navController.navigate(Screen.Admin.route)
-                                },
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(16.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Icon(Icons.Filled.AdminPanelSettings, contentDescription = null)
-                                    Text("لوحة إدارة المنصة", fontWeight = FontWeight.Bold)
+            val isAdmin = user.role == UserRole.ADMIN
+            LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 12.dp, end = 12.dp, top = 16.dp, bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
+                // بطاقة الهوية
+                item {
+                    val cs = RoundedCornerShape(24.dp)
+                    val glow = if (user.role == UserRole.WRITER) Color(0xFF14B8A6) else if (user.role == UserRole.ADVERTISER) Color(0xFF06B6D4) else Tw.teal600
+                    Box(Modifier.fillMaxWidth().shadow(2.dp, cs, clip = false).clip(cs).background(if (dark) Tw.slate900 else Tw.white).border(1.dp, if (dark) Tw.slate800 else Tw.slate200.copy(alpha = 0.80f), cs)) {
+                        Box(Modifier.align(Alignment.TopEnd).size(320.dp).offset(x = 160.dp, y = (-160).dp).clip(CircleShape).blur(48.dp).background(glow.copy(alpha = 0.20f)))
+                        Column(Modifier.fillMaxWidth().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                                Box {
+                                    AsyncImage(user.avatarUrl, user.fullName, Modifier.size(80.dp).shadow(3.dp, RoundedCornerShape(24.dp), clip = false).clip(RoundedCornerShape(24.dp)).border(4.dp, glow.copy(alpha = 0.20f), RoundedCornerShape(24.dp)), contentScale = ContentScale.Crop)
+                                    if (user.isVerified == true) Box(Modifier.align(Alignment.BottomEnd).clip(CircleShape).background(if (dark) Tw.slate900 else Tw.white).padding(2.dp).clip(CircleShape).background(Tw.teal600).padding(4.dp)) { LuIcon(Lu.CheckCircle2, 16.dp, Tw.white) }
                                 }
-                            }
-                        }
-                    }
-
-                    // ثلاثة تبويبات فقط أسفل المحفظة/بطاقة الأهلية — مطابق حرفياً لـ
-                    // UserProfileView.tsx (مدونة/تغريد/لوحة التحكم)، لا شريط تبويبات مسطّح
-                    // بأربعة أزرار كما كان سابقاً: "مدونة" و"تغريد" هما المحتوى المنشور،
-                    // و"لوحة التحكم" تجمع كل ما هو إدارة/مال/إعدادات خلف مدخل واحد.
-                    if (user.role != UserRole.ADMIN) {
-                        item {
-                            ProfileTopTabs(activeTab = state.activeTab, onSelect = viewModel::selectTab)
-                        }
-
-                        when (state.activeTab) {
-                            ProfileTab.BLOG -> {
-                                item {
-                                    BlogSubTabRow(
-                                        activeSubTab = state.blogSubTab,
-                                        articlesCount = state.ownArticles.size,
-                                        bookmarksCount = state.bookmarkedArticles.size,
-                                        onSelect = viewModel::selectBlogSubTab
-                                    )
-                                }
-                                when (state.blogSubTab) {
-                                    BlogSubTab.ARTICLES -> articleRows(
-                                        state.ownArticles,
-                                        // reader_profile — كل 6 مقالات داخل "مقالاتي" نفسها، ومستبعد
-                                        // تماماً من ملف الأدمن (نفس شرط UserProfileView.tsx بالضبط).
-                                        insertAdEvery6 = true
-                                    ) { navController.navigate(Screen.ArticleReader.of(it.id)) }
-                                    BlogSubTab.BOOKMARKS -> articleRows(state.bookmarkedArticles) {
-                                        navController.navigate(Screen.ArticleReader.of(it.id))
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(4.dp), itemVerticalAlignment = Alignment.CenterVertically) {
+                                        Text(user.penName ?: user.companyName ?: user.fullName, style = twText(20, FontWeight.Black, 28), color = if (dark) Tw.white else Tw.slate900)
+                                        Row(Modifier.clip(CircleShape).background(if (dark) Color(0xFF042F2E).copy(alpha = 0.60f) else Color(0xFFF0FDFA)).border(1.dp, Color(0xFF14B8A6).copy(alpha = 0.30f), CircleShape).padding(horizontal = 8.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            LuIcon(if (state.eligibility?.isEligible == true) Lu.Award else Lu.PenTool, 12.dp, if (dark) Tw.teal300 else Tw.teal700)
+                                            Text(state.memberStatusLabel, style = twText(11, FontWeight.Bold, 16), color = if (dark) Tw.teal300 else Tw.teal700)
+                                        }
+                                        Box(Modifier.clip(RoundedCornerShape(8.dp)).twClickable { navController.navigate(Screen.EditProfile.route) }.padding(6.dp)) { LuIcon(Lu.Edit3, 14.dp, Tw.slate400) }
+                                    }
+                                    Text("@${user.username}" + if (user.email.isNotBlank()) " • ${user.email}" else "", Modifier.padding(horizontal = 8.dp), style = twText(12, FontWeight.Normal, 16).copy(textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace), color = Tw.slate400)
+                                    Text(user.bio?.takeIf { it.isNotBlank() } ?: "مرحباً بك في ليتيريوم! استمتع بأفضل تجربة أدبية وثقافية متكاملة.", style = twText(12, FontWeight.Normal, 20).copy(textAlign = androidx.compose.ui.text.style.TextAlign.Center), color = if (dark) Tw.slate300 else Tw.slate600)
+                                    if (user.role == UserRole.WRITER && !user.specialties.isNullOrEmpty()) FlowRow(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        user.specialties!!.forEach { spec ->
+                                            val ss = RoundedCornerShape(8.dp)
+                                            Box(Modifier.clip(ss).background(if (dark) Tw.slate800 else Tw.slate100).border(1.dp, if (dark) Tw.slate700 else Tw.slate200, ss).padding(horizontal = 10.dp, vertical = 2.dp)) { Text(spec, style = twText(11, FontWeight.Medium, 16), color = if (dark) Tw.slate400 else Tw.slate600) }
+                                        }
+                                    }
+                                    Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        ProfileStatBtn(arNum(state.followersCount.toLong()), "متابعون", dark) { navController.navigate(Screen.FollowList.of(user.id, followers = true)) }
+                                        ProfileStatBtn(arNum(state.followingCount.toLong()), "يتابع", dark) { navController.navigate(Screen.FollowList.of(user.id, followers = false)) }
+                                    }
+                                    if (user.isKycVerified == true || !user.specialties.isNullOrEmpty()) FlowRow(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(6.dp), itemVerticalAlignment = Alignment.CenterVertically) {
+                                        Text("معلومات عن الكاتب:", style = twText(10, FontWeight.Bold, 15), color = Tw.slate400)
+                                        if (user.isKycVerified == true) Row(Modifier.clip(CircleShape).background(if (dark) Color(0xFF022C22).copy(alpha = 0.60f) else Tw.emerald50).border(1.dp, Tw.emerald500.copy(alpha = 0.20f), CircleShape).padding(horizontal = 8.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            LuIcon(Lu.ShieldCheck, 12.dp, if (dark) Tw.emerald400 else Tw.emerald600)
+                                            Text("هوية موثقة", style = twText(10, FontWeight.Bold, 15), color = if (dark) Tw.emerald400 else Tw.emerald600)
+                                        }
+                                        user.specialties.orEmpty().forEach { spec ->
+                                            val ss = RoundedCornerShape(8.dp)
+                                            Box(Modifier.clip(ss).background(if (dark) Tw.slate800 else Tw.slate100).border(1.dp, if (dark) Tw.slate700 else Tw.slate200, ss).padding(horizontal = 8.dp, vertical = 2.dp)) { Text(spec, style = twText(10, FontWeight.Medium, 15), color = if (dark) Tw.slate400 else Tw.slate600) }
+                                        }
                                     }
                                 }
                             }
-                            ProfileTab.TWEET -> {
-                                item {
-                                    TweetSubTabRow(
-                                        activeSubTab = state.tweetSubTab,
-                                        mineCount = state.ownTweets.size,
-                                        favoritesCount = state.favoritedTweets.size,
-                                        onSelect = viewModel::selectTweetSubTab
-                                    )
+                            if (!isAdmin) FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                val bs = RoundedCornerShape(12.dp)
+                                Row(Modifier.shadow(4.dp, bs, ambientColor = Color(0xFF06B6D4).copy(alpha = 0.2f), spotColor = Color(0xFF06B6D4).copy(alpha = 0.2f)).clip(bs).background(Color(0xFF0891B2)).twClickable(pressScale = 0.95f) { navController.navigate(Screen.NewCampaign.route) }.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    LuIcon(Lu.Plus, 14.dp, Tw.white); Text("إنشاء إعلان جديد", style = twText(12, FontWeight.ExtraBold, 16), color = Tw.white)
                                 }
-                                when (state.tweetSubTab) {
-                                    TweetSubTab.MINE -> tweetRows(state.ownTweets) { navController.navigate(Screen.TweetDetail.of(it.id)) }
-                                    TweetSubTab.FAVORITES -> tweetRows(state.favoritedTweets) { navController.navigate(Screen.TweetDetail.of(it.id)) }
+                                Row(Modifier.clip(bs).background(if (dark) Tw.slate800 else Tw.slate100).border(1.dp, if (dark) Tw.slate700 else Tw.slate200, bs).twClickable(pressScale = 0.95f) { navController.navigate(Screen.Wallet.route) }.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    LuIcon(Lu.Wallet, 14.dp, Tw.teal600); Text("المحفظة ($${"%.2f".format(user.walletBalance ?: 0.0)})", style = twText(12, FontWeight.Bold, 16), color = if (dark) Tw.slate200 else Tw.slate800)
                                 }
                             }
-                            ProfileTab.CONTROL_PANEL -> {
-                                item {
-                                    ControlPanelSection(
-                                        totalViews = state.totalOwnViews,
-                                        articlesCount = state.ownArticles.size,
-                                        followersCount = state.followersCount,
-                                        onOpenAds = { navController.navigate(Screen.AdvertiserDashboard.route) },
-                                        onOpenEarnings = { navController.navigate(Screen.Wallet.route) },
-                                        onOpenLiterarySettings = { navController.navigate(Screen.EditProfile.route) }
-                                    )
+                        }
+                    }
+                }
+
+                if (!isAdmin) item { AdTickerBar(slotId = "profile_top", externalPriority = true, minHeightDp = 56.dp, modifier = Modifier.fillMaxWidth()) }
+
+                if (isAdmin) item {
+                    val s = RoundedCornerShape(24.dp)
+                    Row(Modifier.fillMaxWidth().clip(s).background(if (dark) Color(0xFF022C22).copy(alpha = 0.30f) else Tw.emerald50).border(1.dp, Tw.emerald500.copy(alpha = 0.30f), s).twClickable { navController.navigate(Screen.Admin.route) }.padding(20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        LuIcon(Lu.ShieldCheck, 20.dp, Tw.emerald600)
+                        Text("لوحة إدارة المنصة", style = twText(14, FontWeight.Black, 20), color = if (dark) Tw.emerald400 else Tw.emerald600)
+                    }
+                }
+
+                if (!isAdmin) {
+                    // مدونة / تغريد / لوحة التحكم
+                    item {
+                        val ts = RoundedCornerShape(16.dp)
+                        Row(Modifier.fillMaxWidth().clip(ts).background(if (dark) Tw.slate900 else Tw.slate100).border(1.dp, if (dark) Tw.slate800 else Tw.slate200, ts).padding(4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(Triple(ProfileTab.BLOG, "مدونة", Lu.FileText), Triple(ProfileTab.TWEET, "تغريد", Lu.MessageSquare), Triple(ProfileTab.CONTROL_PANEL, "لوحة التحكم", Lu.Sliders)).forEach { (tab, label, icon) ->
+                                val active = state.activeTab == tab
+                                val xs = RoundedCornerShape(12.dp)
+                                Row(
+                                    Modifier.weight(1f).then(if (active) Modifier.shadow(2.dp, xs, clip = false) else Modifier).clip(xs).background(if (active) (if (dark) Tw.slate800 else Tw.white) else Color.Transparent)
+                                        .twClickable { viewModel.selectTab(tab) }.padding(horizontal = 12.dp, vertical = 10.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    LuIcon(icon, 16.dp, if (active) (if (dark) Tw.teal300 else Tw.teal600) else Tw.slate500)
+                                    Text(label, style = twText(12, FontWeight.ExtraBold, 16), color = if (active) (if (dark) Tw.teal300 else Tw.teal600) else Tw.slate500, maxLines = 1)
                                 }
                             }
                         }
                     }
 
-                    item { Spacer(Modifier.height(24.dp)) }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ProfileHeader(
-    avatarUrl: String,
-    coverUrl: String?,
-    fullName: String,
-    username: String,
-    isVerified: Boolean,
-    bio: String?,
-    memberStatusLabel: String,
-    followersCount: Int,
-    followingCount: Int,
-    joinedDate: String?,
-    onFollowers: () -> Unit,
-    onFollowing: () -> Unit
-) {
-    Column(Modifier.fillMaxWidth()) {
-        AsyncImage(
-            model = coverUrl,
-            contentDescription = null,
-            modifier = Modifier.fillMaxWidth().height(140.dp).background(MaterialTheme.colorScheme.surfaceVariant)
-        )
-        Column(Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                AsyncImage(
-                    model = avatarUrl,
-                    contentDescription = fullName,
-                    modifier = Modifier.size(84.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant)
-                )
-                Spacer(Modifier.width(12.dp))
-                Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(fullName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
-                        if (isVerified) {
-                            Spacer(Modifier.width(4.dp))
-                            Icon(Icons.Filled.Verified, contentDescription = "موثق", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                    when (state.activeTab) {
+                        ProfileTab.BLOG -> {
+                            item {
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    SubPill("مقالاتي", Lu.FileText, state.blogSubTab == BlogSubTab.ARTICLES, dark) { viewModel.selectBlogSubTab(BlogSubTab.ARTICLES) }
+                                    SubPill("المقالات المحفوظة (${arNum(state.bookmarkedArticles.size.toLong())})", Lu.Bookmark, state.blogSubTab == BlogSubTab.BOOKMARKS, dark) { viewModel.selectBlogSubTab(BlogSubTab.BOOKMARKS) }
+                                }
+                            }
+                            when (state.blogSubTab) {
+                                BlogSubTab.ARTICLES -> articleRows(state.ownArticles, dark, insertAdEvery6 = true) { navController.navigate(Screen.ArticleReader.of(it.id)) }
+                                BlogSubTab.BOOKMARKS -> articleRows(state.bookmarkedArticles, dark) { navController.navigate(Screen.ArticleReader.of(it.id)) }
+                            }
+                        }
+                        ProfileTab.TWEET -> {
+                            item {
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    SubPill("تغريداتي (${arNum(state.ownTweets.size.toLong())})", Lu.MessageSquare, state.tweetSubTab == TweetSubTab.MINE, dark) { viewModel.selectTweetSubTab(TweetSubTab.MINE) }
+                                    SubPill("المفضلة (${arNum(state.favoritedTweets.size.toLong())})", Lu.Star, state.tweetSubTab == TweetSubTab.FAVORITES, dark) { viewModel.selectTweetSubTab(TweetSubTab.FAVORITES) }
+                                }
+                            }
+                            when (state.tweetSubTab) {
+                                TweetSubTab.MINE -> tweetRows(state.ownTweets, dark) { navController.navigate(Screen.TweetDetail.of(it.id)) }
+                                TweetSubTab.FAVORITES -> tweetRows(state.favoritedTweets, dark) { navController.navigate(Screen.TweetDetail.of(it.id)) }
+                            }
+                        }
+                        ProfileTab.CONTROL_PANEL -> {
+                            item {
+                                val rated = state.ownArticles.filter { it.ratingsCount > 0 }
+                                val rc = rated.sumOf { it.ratingsCount }
+                                val avg = if (rc > 0) rated.sumOf { it.rating * it.ratingsCount } / rc else null
+                                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                        KpiCard("إجمالي المشاهدات", Lu.Eye, Color(0xFF14B8A6), arNum(state.totalOwnViews), if (state.ownArticles.isNotEmpty()) "بمعدل ${arNum(state.totalOwnViews / state.ownArticles.size)} قراءة لكل مقال" else "مشاهدات موثقة من القرّاء", Tw.teal600, dark, Modifier.weight(1f))
+                                        KpiCard("إجمالي المكافآت", Lu.DollarSign, Tw.amber500, "$${"%.2f".format(user.lifetimeEarnings ?: 0.0)}", "من مهام الحملات الإعلانية", Tw.amber600, dark, Modifier.weight(1f))
+                                    }
+                                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                        KpiCard("متوسط التقييم", Lu.Award, Tw.rose500, if (avg != null) "${"%.1f".format(avg)} ★" else "—", if (rc > 0) "من ${arNum(rc.toLong())} تقييم موثق" else "لا تقييمات حقيقية بعد", Tw.slate400, dark, Modifier.weight(1f))
+                                        KpiCard("المقالات المنشورة", Lu.FileText, Tw.amber500, arNum(state.ownArticles.size.toLong()), "جاهزة للجمهور", Tw.amber600, dark, Modifier.weight(1f))
+                                    }
+                                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        SubPill("إعلاناتي وترويجي", Lu.Megaphone, false, dark) { navController.navigate(Screen.AdvertiserDashboard.route) }
+                                        SubPill("الرصيد والسحب", Lu.DollarSign, false, dark) { navController.navigate(Screen.Wallet.route) }
+                                        SubPill("إعدادات الملف الأدبي والتوثيق", Lu.PenTool, false, dark) { navController.navigate(Screen.EditProfile.route) }
+                                    }
+                                }
+                            }
                         }
                     }
-                    Text("@$username", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-                    Surface(
-                        shape = RoundedCornerShape(50),
-                        color = MaterialTheme.colorScheme.secondaryContainer,
-                        modifier = Modifier.padding(top = 4.dp)
-                    ) {
-                        Text(memberStatusLabel, modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp), style = MaterialTheme.typography.labelSmall)
-                    }
-                }
-            }
-            if (!bio.isNullOrBlank()) {
-                Spacer(Modifier.height(8.dp))
-                Text(bio, style = MaterialTheme.typography.bodyMedium)
-            }
-            Spacer(Modifier.height(10.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                StatCounter("$followersCount", "متابع", onFollowers)
-                StatCounter("$followingCount", "متابَع", onFollowing)
-                if (!joinedDate.isNullOrBlank()) {
-                    Column {
-                        Text(joinedDate, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
-                        Text("تاريخ الانضمام", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
-        }
-    }
-    HorizontalDivider()
-}
-
-@Composable
-private fun StatCounter(value: String, label: String, onClick: () -> Unit) {
-    Column(modifier = Modifier.clickable(onClick = onClick)) {
-        Text(value, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
-        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-@Composable
-private fun RoleSwitcher(currentRole: String, onSwitch: (String) -> Unit) {
-    if (currentRole == UserRole.ADMIN) return
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        val labels = mapOf(
-            UserRole.READER to "قارئ",
-            UserRole.WRITER to "كاتب",
-            UserRole.ADVERTISER to "معلن"
-        )
-        UserRole.SELF_ASSIGNABLE.forEach { role ->
-            FilterChip(
-                selected = currentRole == role,
-                onClick = { onSwitch(role) },
-                label = { Text(labels[role] ?: role) }
-            )
-        }
-    }
-}
-
-/** "مدونة / تغريد / لوحة التحكم" — exact port of `UserProfileView.tsx`'s three-button segmented
- *  row (spec §4.19): a single flat container with three equal-width buttons, the active one raised
- *  on a surface chip — not a Material [TabRow]/[Tab] pair, which renders as an underlined strip and
- *  reads as a completely different navigation idiom than the web's pill-segmented control. */
-@Composable
-private fun ProfileTopTabs(activeTab: ProfileTab, onSelect: (ProfileTab) -> Unit) {
-    val tabs = listOf(
-        Triple(ProfileTab.BLOG, "مدونة", Icons.Filled.Article),
-        Triple(ProfileTab.TWEET, "تغريد", Icons.Filled.Chat),
-        Triple(ProfileTab.CONTROL_PANEL, "لوحة التحكم", Icons.Filled.Tune)
-    )
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-        shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
-    ) {
-        Row(modifier = Modifier.padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            tabs.forEach { (tab, label, icon) ->
-                val active = activeTab == tab
-                Surface(
-                    color = if (active) MaterialTheme.colorScheme.surface else Color.Transparent,
-                    contentColor = if (active) BrandTeal else MaterialTheme.colorScheme.onSurfaceVariant,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.weight(1f).clickable { onSelect(tab) }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(vertical = 10.dp, horizontal = 6.dp),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text(label, fontSize = 12.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
                 }
             }
         }
     }
 }
 
-/** "مقالاتي / المقالات المحفوظة" pill row under the مدونة tab — matches web's `blogSubView`. */
 @Composable
-private fun BlogSubTabRow(activeSubTab: BlogSubTab, articlesCount: Int, bookmarksCount: Int, onSelect: (BlogSubTab) -> Unit) {
+private fun ProfileStatBtn(value: String, label: String, dark: Boolean, onClick: () -> Unit) {
+    val s = RoundedCornerShape(12.dp)
+    Column(Modifier.widthIn(min = 68.dp).clip(s).background(if (dark) Tw.slate800 else Tw.slate100).border(1.dp, if (dark) Tw.slate700 else Tw.slate200, s).twClickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(value, style = twText(14, FontWeight.Black, 20), color = if (dark) Tw.white else Tw.slate900)
+        Text(label, style = twText(10, FontWeight.Bold, 15), color = if (dark) Tw.slate400 else Tw.slate500)
+    }
+}
+
+@Composable
+private fun SubPill(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, active: Boolean, dark: Boolean, onClick: () -> Unit) {
+    val s = RoundedCornerShape(12.dp)
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        Modifier.clip(s).background(if (active) Tw.teal600 else (if (dark) Tw.slate800 else Tw.slate100)).twClickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        SubTabPill(label = "مقالاتي ($articlesCount)", icon = Icons.Filled.Article, active = activeSubTab == BlogSubTab.ARTICLES) {
-            onSelect(BlogSubTab.ARTICLES)
-        }
-        SubTabPill(label = "المحفوظة ($bookmarksCount)", icon = Icons.Filled.Bookmark, active = activeSubTab == BlogSubTab.BOOKMARKS) {
-            onSelect(BlogSubTab.BOOKMARKS)
-        }
-    }
-}
-
-/** "تغريداتي / المفضلة" pill row under the تغريد tab — matches web's `tweetSubView`. */
-@Composable
-private fun TweetSubTabRow(activeSubTab: TweetSubTab, mineCount: Int, favoritesCount: Int, onSelect: (TweetSubTab) -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        SubTabPill(label = "تغريداتي ($mineCount)", icon = Icons.Filled.Chat, active = activeSubTab == TweetSubTab.MINE) {
-            onSelect(TweetSubTab.MINE)
-        }
-        SubTabPill(label = "المفضلة ($favoritesCount)", icon = Icons.Filled.Star, active = activeSubTab == TweetSubTab.FAVORITES) {
-            onSelect(TweetSubTab.FAVORITES)
-        }
+        LuIcon(icon, 14.dp, if (active) Tw.white else Tw.slate500)
+        Text(label, style = twText(11, FontWeight.Bold, 16), color = if (active) Tw.white else Tw.slate500, maxLines = 1)
     }
 }
 
 @Composable
-private fun SubTabPill(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, active: Boolean, onClick: () -> Unit) {
-    Surface(
-        color = if (active) BrandTeal else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-        contentColor = if (active) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-        shape = RoundedCornerShape(50),
-        modifier = Modifier.clickable(onClick = onClick)
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(14.dp))
-            Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+private fun KpiCard(title: String, icon: androidx.compose.ui.graphics.vector.ImageVector, iconTint: Color, value: String, sub: String, subTint: Color, dark: Boolean, modifier: Modifier) {
+    val s = RoundedCornerShape(24.dp)
+    Column(modifier.shadow(1.dp, s, clip = false).clip(s).background(if (dark) Tw.slate900 else Tw.white).border(1.dp, if (dark) Tw.slate800 else Tw.slate200, s).padding(16.dp)) {
+        Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text(title, Modifier.weight(1f), style = twText(12, FontWeight.Bold, 16), color = Tw.slate400, maxLines = 1)
+            LuIcon(icon, 16.dp, iconTint)
         }
-    }
-}
-
-/** "لوحة التحكم": overview stat grid + three navigation entries (إعلاناتي/الأرباح/الإعدادات
- *  الأدبية) — matches web's `writerTab === 'control_panel'` section (spec §4.19). The web embeds
- *  each sub-section's full form directly inline; this app instead routes to the equivalent existing
- *  standalone screen ([Screen.AdvertiserDashboard]/[Screen.Wallet]/[Screen.EditProfile]) rather than
- *  duplicating that already-built UI a second time inside this card. */
-@Composable
-private fun ControlPanelSection(
-    totalViews: Long,
-    articlesCount: Int,
-    followersCount: Int,
-    onOpenAds: () -> Unit,
-    onOpenEarnings: () -> Unit,
-    onOpenLiterarySettings: () -> Unit
-) {
-    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            ControlPanelStat(label = "إجمالي المشاهدات", value = "$totalViews", modifier = Modifier.weight(1f))
-            ControlPanelStat(label = "المقالات", value = "$articlesCount", modifier = Modifier.weight(1f))
-            ControlPanelStat(label = "المتابعون", value = "$followersCount", modifier = Modifier.weight(1f))
-        }
-        Spacer(Modifier.height(12.dp))
-        ControlPanelNavCard(label = "الإعلانات والترويج", icon = Icons.Filled.Campaign, onClick = onOpenAds)
-        Spacer(Modifier.height(8.dp))
-        ControlPanelNavCard(label = "الأرباح والمحفظة", icon = Icons.Filled.AccountBalanceWallet, onClick = onOpenEarnings)
-        Spacer(Modifier.height(8.dp))
-        ControlPanelNavCard(label = "الإعدادات الأدبية", icon = Icons.Filled.Edit, onClick = onOpenLiterarySettings)
-    }
-}
-
-@Composable
-private fun ControlPanelStat(label: String, value: String, modifier: Modifier = Modifier) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-        shape = RoundedCornerShape(16.dp),
-        modifier = modifier
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(value, fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleMedium)
-            Text(label, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
-
-@Composable
-private fun ControlPanelNavCard(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
-    Surface(
-        color = MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)
-    ) {
-        Row(
-            modifier = Modifier.padding(16.dp).fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Icon(icon, contentDescription = null, tint = BrandTeal)
-                Text(label, fontWeight = FontWeight.Bold)
-            }
-            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
-        }
+        Text(value, style = twText(24, FontWeight.Black, 32), color = if (dark) Tw.white else Tw.slate900)
+        Text(sub, Modifier.padding(top = 4.dp), style = twText(11, FontWeight.Bold, 16), color = subTint)
     }
 }
 
@@ -575,52 +375,53 @@ private fun RequirementRow(met: Boolean, label: String, value: String) {
 
 private fun androidx.compose.foundation.lazy.LazyListScope.articleRows(
     articles: List<Article>,
+    dark: Boolean,
     insertAdEvery6: Boolean = false,
     onClick: (Article) -> Unit
 ) {
     if (articles.isEmpty()) {
-        item { EmptyRow("لا يوجد شيء هنا بعد") }
+        item { EmptyRow("لا يوجد شيء هنا بعد", dark) }
     } else {
-        itemsIndexed(articles, key = { _, it -> it.id }) { index, article ->
-            if (insertAdEvery6 && index > 0 && index % 6 == 0) {
-                AdSlot(slotId = AdSlotId.READER_PROFILE)
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth().clickable { onClick(article) }.padding(horizontal = 16.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                AsyncImage(
-                    model = article.featuredImage,
-                    contentDescription = null,
-                    modifier = Modifier.size(64.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceVariant)
-                )
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(article.title, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Text(
-                        "${article.viewsCount} مشاهدة  •  ${article.likesCount} إعجاب",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                articles.forEachIndexed { index, article ->
+                    if (insertAdEvery6 && index > 0 && index % 6 == 0) AdSlot(slotId = AdSlotId.READER_PROFILE)
+                    val rs = RoundedCornerShape(16.dp)
+                    Row(
+                        Modifier.fillMaxWidth().shadow(1.dp, rs, clip = false).clip(rs).background(if (dark) Tw.slate900 else Tw.white).border(1.dp, if (dark) Tw.slate800 else Tw.slate200.copy(alpha = 0.80f), rs)
+                            .twClickable(pressScale = 0.99f) { onClick(article) }.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        AsyncImage(article.featuredImage, null, Modifier.size(80.dp).clip(RoundedCornerShape(12.dp)).border(1.dp, if (dark) Tw.slate700 else Tw.slate200, RoundedCornerShape(12.dp)).background(if (dark) Tw.slate800 else Tw.slate100), contentScale = ContentScale.Crop)
+                        Column(Modifier.weight(1f)) {
+                            Text(article.title, Modifier.padding(bottom = 4.dp), style = twText(14, FontWeight.Bold, 20), color = if (dark) Tw.white else Tw.slate900, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) { LuIcon(Lu.Eye, 12.dp, Color(0xFF14B8A6)); Text(arNum(article.viewsCount), style = twText(11, FontWeight.Normal, 16), color = Tw.slate400) }
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) { LuIcon(Lu.Heart, 12.dp, Tw.rose500); Text("${article.likesCount}", style = twText(11, FontWeight.Normal, 16), color = Tw.slate400) }
+                            }
+                        }
+                    }
                 }
             }
         }
     }
 }
 
-private fun androidx.compose.foundation.lazy.LazyListScope.tweetRows(tweets: List<Tweet>, onClick: (Tweet) -> Unit) {
+private fun androidx.compose.foundation.lazy.LazyListScope.tweetRows(tweets: List<Tweet>, dark: Boolean, onClick: (Tweet) -> Unit) {
     if (tweets.isEmpty()) {
-        item { EmptyRow("لا يوجد شيء هنا بعد") }
+        item { EmptyRow("لا يوجد شيء هنا بعد", dark) }
     } else {
-        items(tweets, key = { it.id }) { tweet ->
-            Column(
-                modifier = Modifier.fillMaxWidth().clickable { onClick(tweet) }.padding(horizontal = 16.dp, vertical = 10.dp)
-            ) {
-                Text(tweet.content, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                Spacer(Modifier.height(4.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Favorite, contentDescription = null, modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("${tweet.likesCount}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                tweets.forEach { tweet ->
+                    val rs = RoundedCornerShape(16.dp)
+                    Column(Modifier.fillMaxWidth().shadow(1.dp, rs, clip = false).clip(rs).background(if (dark) Tw.slate900 else Tw.white).border(1.dp, if (dark) Tw.slate800 else Tw.slate200.copy(alpha = 0.80f), rs).twClickable(pressScale = 0.99f) { onClick(tweet) }.padding(16.dp)) {
+                        Text(tweet.content, style = twText(14, FontWeight.Normal, 22), color = if (dark) Tw.slate200 else Tw.slate800, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                        Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            LuIcon(Lu.Heart, 12.dp, Tw.rose500)
+                            Text("${tweet.likesCount}", style = twText(11, FontWeight.Normal, 16), color = Tw.slate400)
+                        }
+                    }
                 }
             }
         }
@@ -628,8 +429,9 @@ private fun androidx.compose.foundation.lazy.LazyListScope.tweetRows(tweets: Lis
 }
 
 @Composable
-private fun EmptyRow(text: String) {
-    Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-        Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant)
+private fun EmptyRow(text: String, dark: Boolean) {
+    val s = RoundedCornerShape(24.dp)
+    Box(Modifier.fillMaxWidth().clip(s).background(if (dark) Tw.slate900 else Tw.white).border(1.dp, if (dark) Tw.slate800 else Tw.slate200, s).padding(32.dp), contentAlignment = Alignment.Center) {
+        Text(text, style = twText(12, FontWeight.Normal, 16), color = Tw.slate400)
     }
 }
