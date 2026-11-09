@@ -108,7 +108,7 @@ export const TweetFeed: React.FC<TweetFeedProps> = ({
   );
 
   return (
-    <div className="space-y-4" data-btn-theme="blue">
+    <div className="space-y-4">
       {!isGuest && (
         <TweetComposer currentUser={currentUser} onSubmit={onPostTweet} focusTrigger={focusComposeTrigger} />
       )}
