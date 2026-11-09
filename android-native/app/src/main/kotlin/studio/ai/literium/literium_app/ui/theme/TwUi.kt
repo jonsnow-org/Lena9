@@ -121,3 +121,10 @@ fun trBrush(from: Color, to: Color): androidx.compose.ui.graphics.Brush = androi
     start = androidx.compose.ui.geometry.Offset(0f, Float.POSITIVE_INFINITY),
     end = androidx.compose.ui.geometry.Offset(Float.POSITIVE_INFINITY, 0f)
 )
+
+/** نمط نص Cairo بحجم/وزن/ارتفاع سطر صريحة (sp). */
+fun twText(size: Int, weight: androidx.compose.ui.text.font.FontWeight, lh: Int = 0) = androidx.compose.ui.text.TextStyle(
+    fontFamily = CairoFamily, fontSize = androidx.compose.ui.unit.TextUnit(size.toFloat(), androidx.compose.ui.unit.TextUnitType.Sp),
+    fontWeight = weight,
+    lineHeight = if (lh > 0) androidx.compose.ui.unit.TextUnit(lh.toFloat(), androidx.compose.ui.unit.TextUnitType.Sp) else androidx.compose.ui.unit.TextUnit.Unspecified
+)

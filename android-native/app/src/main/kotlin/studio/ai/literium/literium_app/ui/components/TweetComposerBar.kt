@@ -3,29 +3,21 @@ package studio.ai.literium.literium_app.ui.components
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Image
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,25 +26,32 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.launch
-import studio.ai.literium.literium_app.ui.theme.BrandTeal
+import studio.ai.literium.literium_app.ui.theme.Lu
+import studio.ai.literium.literium_app.ui.theme.LuIcon
+import studio.ai.literium.literium_app.ui.theme.Tw
+import studio.ai.literium.literium_app.ui.theme.brand
+import studio.ai.literium.literium_app.ui.theme.isDark
+import studio.ai.literium.literium_app.ui.theme.twClickable
+import studio.ai.literium.literium_app.ui.theme.twText
 import studio.ai.literium.literium_app.util.uploadTweetImage
 
 private const val MAX_TWEET_LENGTH = 280
 
 /**
- * The tweet composer bar — full-fidelity port of `src/components/TweetComposer.tsx`. Used both
- * inline atop the tweet-mode feed ([studio.ai.literium.literium_app.ui.screens.feed.FeedScreen])
- * and standalone as a full-page composer
- * ([studio.ai.literium.literium_app.ui.screens.tweet.TweetComposerScreen]).
+ * مُنشئ التغريدة — TweetComposer.tsx: p-4 rounded-2xl، صورة دائرية 40dp، حقل نص بلا إطار (سطران)،
+ * مرفقات، وصف سفلي: مشبك + عدّاد mono، وزر «تغريد» دائري px-4 py-1.5 بلون brand-600.
  */
 @Composable
 fun TweetComposerBar(
@@ -64,105 +63,91 @@ fun TweetComposerBar(
 ) {
     var content by remember { mutableStateOf("") }
     var imageUrl by remember { mutableStateOf<String?>(null) }
-    var isUploadingImage by remember { mutableStateOf(false) }
+    var uploading by remember { mutableStateOf(false) }
     var imageError by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
-    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+    val scope = rememberCoroutineScope()
+    val dark = isDark
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
         imageError = null
-        isUploadingImage = true
-        coroutineScope.launch {
+        uploading = true
+        scope.launch {
             uploadTweetImage(context, uri).fold(
-                onSuccess = { url -> isUploadingImage = false; imageUrl = url },
-                onFailure = { e -> isUploadingImage = false; imageError = e.message ?: "تعذّر رفع الصورة." }
+                onSuccess = { url -> uploading = false; imageUrl = url },
+                onFailure = { e -> uploading = false; imageError = e.message ?: "تعذّر رفع الصورة." }
             )
         }
     }
     val remaining = MAX_TWEET_LENGTH - content.length
-    val isOverLimit = remaining < 0
-    val canSubmit = content.isNotBlank() && !isOverLimit && !isUploadingImage
+    val over = remaining < 0
+    val canSubmit = (content.isNotBlank() || imageUrl != null) && !over && !uploading
 
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    val shape = RoundedCornerShape(16.dp)
+    Row(
+        modifier.fillMaxWidth().shadow(1.dp, shape, clip = false).clip(shape).background(if (dark) Tw.slate900 else Tw.white)
+            .border(1.dp, if (dark) Tw.slate800 else Tw.slate200, shape).padding(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top
     ) {
-        Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.Top) {
-            AsyncImage(
-                model = avatarUrl,
-                contentDescription = null,
-                modifier = Modifier.size(38.dp).clip(CircleShape),
-                contentScale = ContentScale.Crop
-            )
-            Column(modifier = Modifier.padding(start = 10.dp).fillMaxWidth()) {
-                OutlinedTextField(
-                    value = content,
-                    onValueChange = { content = it },
-                    placeholder = { Text(placeholder, fontSize = 13.sp) },
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 2,
-                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp)
+        AsyncImage(avatarUrl, null, Modifier.size(40.dp).clip(CircleShape), contentScale = ContentScale.Crop)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(Modifier.fillMaxWidth().heightIn(min = 44.dp)) {
+                if (content.isEmpty()) Text(placeholder, style = twText(14, FontWeight.Normal, 20), color = Tw.slate400)
+                BasicTextField(
+                    value = content, onValueChange = { content = it }, minLines = 2,
+                    textStyle = twText(14, FontWeight.Normal, 20).copy(color = if (dark) Tw.white else Tw.slate900),
+                    cursorBrush = SolidColor(brand.s500), modifier = Modifier.fillMaxWidth()
                 )
-
-                if (isUploadingImage) {
-                    Row(modifier = Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = BrandTeal)
-                        Text("جاري رفع الصورة...", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 6.dp))
-                    }
-                }
-                imageError?.let { err -> Text(err, fontSize = 10.sp, color = Color(0xFFE11D48), modifier = Modifier.padding(top = 4.dp)) }
-                imageUrl?.let { url ->
-                    Box(modifier = Modifier.padding(top = 6.dp), contentAlignment = Alignment.TopEnd) {
-                        AsyncImage(
-                            model = url,
-                            contentDescription = null,
-                            modifier = Modifier.size(110.dp).clip(RoundedCornerShape(10.dp)),
-                            contentScale = ContentScale.Crop
-                        )
-                        Surface(color = Color.Black.copy(alpha = 0.55f), shape = RoundedCornerShape(8.dp), modifier = Modifier.padding(4.dp)) {
-                            IconButton(onClick = { imageUrl = null }, modifier = Modifier.size(22.dp)) {
-                                Icon(Icons.Filled.Close, contentDescription = "إزالة الصورة", tint = Color.White, modifier = Modifier.size(14.dp))
-                            }
-                        }
-                    }
-                }
-
+            }
+            if (uploading) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(if (dark) Tw.slate800.copy(alpha = 0.60f) else Tw.slate50).padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = { imagePicker.launch("image/*") }, enabled = !isUploadingImage, modifier = Modifier.size(28.dp)) {
-                            Icon(Icons.Filled.Image, contentDescription = "إرفاق صورة", tint = BrandTeal, modifier = Modifier.size(16.dp))
-                        }
-                        Text(
-                            "$remaining",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = when {
-                                isOverLimit -> Color(0xFFE11D48)
-                                remaining <= 20 -> Color(0xFFF59E0B)
-                                else -> MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                            modifier = Modifier.padding(start = 4.dp)
-                        )
+                    CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = Tw.slate500)
+                    Text("جاري رفع الملف...", style = twText(12, FontWeight.Normal, 16), color = Tw.slate500)
+                }
+            }
+            if (imageError != null && !uploading) {
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(if (dark) Tw.rose50.copy(alpha = 0.10f) else Tw.rose50)
+                        .border(1.dp, if (dark) Tw.rose200.copy(alpha = 0.25f) else Tw.rose200, RoundedCornerShape(8.dp)).padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(imageError ?: "", Modifier.weight(1f), style = twText(11, FontWeight.Normal, 16), color = if (dark) Tw.rose400 else Tw.rose600)
+                    Box(Modifier.twClickable { imageError = null }.padding(2.dp)) { LuIcon(Lu.X, 12.dp, Tw.rose600) }
+                }
+            }
+            imageUrl?.let { url ->
+                if (!uploading) Box {
+                    AsyncImage(url, null, Modifier.heightIn(max = 160.dp).clip(RoundedCornerShape(12.dp)).border(1.dp, if (dark) Tw.slate700 else Tw.slate200, RoundedCornerShape(12.dp)), contentScale = ContentScale.Crop)
+                    Box(
+                        Modifier.align(Alignment.TopEnd).padding(6.dp).clip(RoundedCornerShape(8.dp)).background(Tw.slate950.copy(alpha = 0.70f))
+                            .twClickable(pressScale = 0.90f) { imageUrl = null }.padding(4.dp)
+                    ) { LuIcon(Lu.X, 14.dp, Tw.white) }
+                }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box(Modifier.alpha(if (uploading) 0.4f else 1f).clip(RoundedCornerShape(8.dp)).twClickable(enabled = !uploading, pressScale = 0.90f) { picker.launch("image/*") }.padding(8.dp)) {
+                        LuIcon(Lu.Paperclip, 16.dp, Tw.slate400)
                     }
-                    TextButton(
-                        onClick = {
+                    Text(
+                        "$remaining",
+                        style = twText(11, FontWeight.Bold, 16).copy(fontFamily = FontFamily.Monospace),
+                        color = when { over -> Tw.rose500; remaining <= 20 -> Tw.amber500; else -> Tw.slate400 }
+                    )
+                }
+                Row(
+                    Modifier.alpha(if (canSubmit) 1f else 0.4f).clip(CircleShape).background(brand.s600)
+                        .twClickable(enabled = canSubmit, pressScale = 0.90f) {
                             onSubmit(content.trim(), imageUrl)
-                            if (clearOnSubmit) {
-                                content = ""
-                                imageUrl = null
-                                imageError = null
-                            }
-                        },
-                        enabled = canSubmit
-                    ) {
-                        Text("تغريد", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = BrandTeal)
-                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, tint = BrandTeal, modifier = Modifier.size(14.dp))
-                    }
+                            if (clearOnSubmit) { content = ""; imageUrl = null; imageError = null }
+                        }.padding(horizontal = 16.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text("تغريد", style = twText(12, FontWeight.Bold, 16), color = Tw.white)
+                    LuIcon(Lu.Send, 14.dp, Tw.white, Modifier.rotate(180f))
                 }
             }
         }
