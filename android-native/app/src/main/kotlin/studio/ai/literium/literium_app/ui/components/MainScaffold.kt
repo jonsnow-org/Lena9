@@ -1,6 +1,7 @@
 package studio.ai.literium.literium_app.ui.components
 
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.DrawerValue
@@ -66,34 +67,23 @@ fun MainScaffold(
         }
     }
 
-    LiveBackgroundLayer { ModalNavigationDrawer(
-        drawerState = drawerState,
-        drawerContent = {
-            ModalDrawerSheet {
-                DrawerMenuContent(
-                    currentUser = uiState.currentUser,
-                    isGuestOrSignedOut = uiState.isGuestOrSignedOut,
-                    isAdmin = isAdmin,
-                    onClose = { coroutineScope.launch { drawerState.close() } },
-                    onNavigate = { route -> navController.navigate(route) },
-                    onOpenProfile = { navigateToTab(Screen.Profile.route) },
-                    onLogin = { navController.navigate(Screen.Login.route) },
-                    onLogout = { viewModel.logOut() }
-                )
-            }
-        }
-    ) {
+    var drawerOpen by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    androidx.activity.compose.BackHandler(enabled = drawerOpen) { drawerOpen = false }
+
+    LiveBackgroundLayer { androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize()) {
         Scaffold(
             // شفاف عمداً — [LiveBackgroundLayer] (خلفية القالب الجمالي الحيّة المختارة إدارياً) يُرسم
             // خلفه هنا؛ يبقى مرئياً فقط في هوامش/فراغات كل تبويب (مثل الموقع تماماً، حيث تبقى البطاقات
             // نفسها بخلفية معتمة bg-white/dark:bg-slate-900).
             containerColor = Color.Transparent,
+            // الرأس والشريط السفلي يعالجان حشوة شريطي النظام بأنفسهما (statusBarsPadding/navigationBarsPadding)
+            contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
             topBar = {
                 TopHeaderBar(
                     isAdmin = isAdmin,
                     isGuestOrSignedOut = uiState.isGuestOrSignedOut,
                     unreadNotifications = uiState.unreadNotifications,
-                    onOpenDrawer = { coroutineScope.launch { drawerState.open() } },
+                    onOpenDrawer = { drawerOpen = true },
                     onOpenNotifications = { navigateToTab(Screen.Notifications.route) },
                     onOpenLogin = { navController.navigate(Screen.Login.route) },
                     onBrandClick = { navigateToTab(Screen.Feed.route) }
@@ -141,5 +131,17 @@ fun MainScaffold(
                 }
             }
         ) { padding -> content(padding) }
+
+        DrawerOverlay(
+            open = drawerOpen,
+            currentUser = uiState.currentUser,
+            isGuestOrSignedOut = uiState.isGuestOrSignedOut,
+            isAdmin = isAdmin,
+            onClose = { drawerOpen = false },
+            onNavigate = { route -> navController.navigate(route) },
+            onOpenProfile = { navigateToTab(Screen.Profile.route) },
+            onLogin = { navController.navigate(Screen.Login.route) },
+            onLogout = { viewModel.logOut() }
+        )
     } }
 }

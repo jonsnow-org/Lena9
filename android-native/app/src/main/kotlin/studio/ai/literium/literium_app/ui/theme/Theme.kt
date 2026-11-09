@@ -44,10 +44,16 @@ val LocalIsDarkTheme = compositionLocalOf { false }
  */
 @Composable
 fun LiteriumTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    /** null ⇒ تفضيل الجهاز المحفوظ (زر المظهر في القائمة الجانبية)؛ الافتراضي فاتح كالويب
+     *  (`localStorage.literium_theme || 'light'`) — لا يتبع وضع النظام. */
+    darkThemeOverride: Boolean? = null,
     adminRepository: AdminRepository = remember { AdminRepository() },
     content: @Composable () -> Unit
 ) {
+    val appContext = androidx.compose.ui.platform.LocalContext.current
+    val savedDark by remember { studio.ai.literium.literium_app.data.local.UserPreferencesRepository(appContext).darkModeOverride }
+        .collectAsState(initial = null)
+    val darkTheme = darkThemeOverride ?: (savedDark ?: false)
     val themeSettings by adminRepository.observeThemeSettings()
         .collectAsState(initial = ThemeSettingsData())
 
