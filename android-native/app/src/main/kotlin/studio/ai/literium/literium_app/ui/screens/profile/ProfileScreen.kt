@@ -126,7 +126,7 @@ fun ProfileScreen(navController: NavController, viewModel: ProfileViewModel = vi
                                     if (user.isVerified == true) Box(Modifier.align(Alignment.BottomEnd).clip(CircleShape).background(if (dark) Tw.slate900 else Tw.white).padding(2.dp).clip(CircleShape).background(Tw.teal600).padding(4.dp)) { LuIcon(Lu.CheckCircle2, 16.dp, Tw.white) }
                                 }
                                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(4.dp), itemVerticalAlignment = Alignment.CenterVertically) {
+                                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                         Text(user.penName ?: user.companyName ?: user.fullName, style = twText(20, FontWeight.Black, 28), color = if (dark) Tw.white else Tw.slate900)
                                         Row(Modifier.clip(CircleShape).background(if (dark) Color(0xFF042F2E).copy(alpha = 0.60f) else Color(0xFFF0FDFA)).border(1.dp, Color(0xFF14B8A6).copy(alpha = 0.30f), CircleShape).padding(horizontal = 8.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                             LuIcon(if (state.eligibility?.isEligible == true) Lu.Award else Lu.PenTool, 12.dp, if (dark) Tw.teal300 else Tw.teal700)
@@ -146,7 +146,7 @@ fun ProfileScreen(navController: NavController, viewModel: ProfileViewModel = vi
                                         ProfileStatBtn(arNum(state.followersCount.toLong()), "متابعون", dark) { navController.navigate(Screen.FollowList.of(user.id, followers = true)) }
                                         ProfileStatBtn(arNum(state.followingCount.toLong()), "يتابع", dark) { navController.navigate(Screen.FollowList.of(user.id, followers = false)) }
                                     }
-                                    if (user.isKycVerified == true || !user.specialties.isNullOrEmpty()) FlowRow(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(6.dp), itemVerticalAlignment = Alignment.CenterVertically) {
+                                    if (user.isKycVerified == true || !user.specialties.isNullOrEmpty()) FlowRow(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                         Text("معلومات عن الكاتب:", style = twText(10, FontWeight.Bold, 15), color = Tw.slate400)
                                         if (user.isKycVerified == true) Row(Modifier.clip(CircleShape).background(if (dark) Color(0xFF022C22).copy(alpha = 0.60f) else Tw.emerald50).border(1.dp, Tw.emerald500.copy(alpha = 0.20f), CircleShape).padding(horizontal = 8.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                             LuIcon(Lu.ShieldCheck, 12.dp, if (dark) Tw.emerald400 else Tw.emerald600)

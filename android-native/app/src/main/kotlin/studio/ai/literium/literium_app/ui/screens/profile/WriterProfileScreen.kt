@@ -142,7 +142,7 @@ fun WriterProfileScreen(navController: NavController, userId: String) {
                             if (writer.isVerified == true) Box(Modifier.align(Alignment.BottomEnd).clip(CircleShape).background(Tw.teal600).padding(4.dp)) { LuIcon(Lu.CheckCircle2, 16.dp, Tw.white) }
                         }
                         Column(Modifier.weight(1f)) {
-                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp), itemVerticalAlignment = Alignment.CenterVertically) {
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(writer.fullName, style = twText(20, FontWeight.Black, 28), color = txt)
                                 if (writer.isKycVerified == true) Pill(Lu.ShieldCheck, "KYC موثق", if (dark) Color(0xFF022C22).copy(alpha = 0.60f) else Tw.emerald50, if (dark) Tw.emerald400 else Tw.emerald600, Tw.emerald500.copy(alpha = 0.20f))
                                 Pill(Lu.Award, state.memberStatusLabel, if (dark) Color(0xFF451A03).copy(alpha = 0.60f) else Tw.amber50, if (dark) Tw.amber400 else Tw.amber600, Tw.amber500.copy(alpha = 0.20f))
@@ -175,7 +175,7 @@ fun WriterProfileScreen(navController: NavController, userId: String) {
                     // شريط الإحصاءات
                     val lineC = if (dark) Tw.slate800 else Tw.slate100
                     Box(Modifier.fillMaxWidth().height(1.dp).background(lineC))
-                    FlowRow(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp), itemVerticalAlignment = Alignment.CenterVertically) {
+                    FlowRow(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         StatBtn(arNum(state.followersCount.toLong()), "متابِع", dark) { navController.navigate(Screen.FollowList.of(userId, followers = true)) }
                         StatBtn(arNum(state.followingCount.toLong()), "يتابع", dark) { navController.navigate(Screen.FollowList.of(userId, followers = false)) }
                         StatText(arNum((writer.articlesCount ?: state.articles.size.toLong())), "مقال منشور", dark)
@@ -233,7 +233,7 @@ fun WriterProfileScreen(navController: NavController, userId: String) {
                                 }
                                 Text(art.title, Modifier.padding(bottom = 4.dp), style = twText(14, FontWeight.Bold, 20), color = if (dark) Tw.white else Tw.slate900, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text(art.description, Modifier.padding(bottom = 8.dp), style = twText(12, FontWeight.Normal, 16), color = Tw.slate500, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp), itemVerticalAlignment = Alignment.CenterVertically) {
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                     Meta(Lu.Eye, Color(0xFF14B8A6), arNum(art.viewsCount))
                                     Meta(Lu.Heart, Tw.rose500, "${art.likesCount}")
                                     Meta(Lu.MessageSquare, Color(0xFF06B6D4), "${art.commentsCount}")
