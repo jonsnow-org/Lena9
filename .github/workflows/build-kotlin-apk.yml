@@ -19,6 +19,11 @@ name: Build Kotlin Native Android APK
 
 on:
   workflow_dispatch:
+    inputs:
+      native_ui:
+        description: 'بناء تجريبي بواجهات Compose الأصلية بدل WebView (يُنشر باسم Literium-native.apk)'
+        type: boolean
+        default: false
   push:
     branches: [main, claude/project-error-analysis-zhu2ux]
     paths:
@@ -107,7 +112,7 @@ jobs:
         working-directory: android-native
         env:
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-        run: gradle :app:assembleRelease :app:bundleRelease -PversionCode=${{ github.run_number }} --stacktrace
+        run: gradle :app:assembleRelease :app:bundleRelease -PversionCode=${{ github.run_number }} -PnativeUi=${{ inputs.native_ui == true }} --stacktrace
 
       - name: Verify built APK's actual versionCode
         run: |
@@ -142,10 +147,15 @@ jobs:
       # الفرع، لا عبر main مباشرة.
       - name: Sync in-app download button with this build
         run: |
-          cp android-native/app/build/outputs/apk/release/app-release.apk public/downloads/Literium.apk
+          if [ "${{ inputs.native_ui }}" = "true" ]; then
+            TARGET=public/downloads/Literium-native.apk
+          else
+            TARGET=public/downloads/Literium.apk
+          fi
+          cp android-native/app/build/outputs/apk/release/app-release.apk "$TARGET"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add public/downloads/Literium.apk
+          git add "$TARGET"
           if git diff --cached --quiet; then
             echo "No change in the built APK — skipping commit."
             exit 0
@@ -166,11 +176,11 @@ jobs:
       # قناة توزيع رسمية بلا أي حساب متجر: صفحة إصدارات GitHub للمستودع نفسه —
       # رابط ثابت لكل نسخة، وتطبيق Obtainium يتابعها ويحدّث التطبيق تلقائياً.
       - name: Prepare release asset
-        if: github.ref_name == 'main'
+        if: github.ref_name == 'main' && inputs.native_ui != true
         run: cp android-native/app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/Literium.apk"
 
       - name: Publish GitHub Release
-        if: github.ref_name == 'main'
+        if: github.ref_name == 'main' && inputs.native_ui != true
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}

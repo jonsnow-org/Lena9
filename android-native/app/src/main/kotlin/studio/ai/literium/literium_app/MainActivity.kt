@@ -476,6 +476,15 @@ class MainActivity : ComponentActivity() {
         })
 
         setContent {
+            if (BuildConfig.NATIVE_UI) {
+                // وضع التطبيق الأصلي الكامل (Compose) — يُفعَّل ببناء -PnativeUi=true فقط.
+                LiteriumTheme {
+                    Surface(modifier = Modifier.fillMaxSize()) {
+                        studio.ai.literium.literium_app.navigation.LiteriumNavHost()
+                    }
+                }
+                return@setContent
+            }
             LiteriumTheme {
                 val context = LocalContext.current
                 val pageReady by pageReadyState
