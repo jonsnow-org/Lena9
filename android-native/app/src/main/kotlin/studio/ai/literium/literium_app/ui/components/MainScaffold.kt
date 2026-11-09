@@ -102,34 +102,6 @@ fun MainScaffold(
                     onOpenProfile = { navigateToTab(Screen.Profile.route) }
                 )
             },
-            floatingActionButton = {
-                // "بدء الكتابة" FAB (spec §2.1) — hidden for guests, matching source's write-gated-
-                // behind-auth behavior (spec §2.2). The web's second FAB ("scroll to top") is
-                // intentionally not ported here: it needs the scroll state of whatever LazyColumn/
-                // ScrollState lives inside `content`, which this shell does not own — each screen
-                // that scrolls is the right place for its own scroll-to-top affordance.
-                if (!uiState.isGuestOrSignedOut) {
-                    // صفر ارتفاع تماماً (بلا أي ظل) — تجربة سابقة خفّضت الارتفاع فقط (2dp) بدل
-                    // إلغائه، وبقي البلاغ الحقيقي على الجهاز قائماً: ظل RenderNode الدائري لهذا
-                    // الزر يُرسَّم أحياناً كمستطيل أبيض حاد الحواف بدل التدرّج الدائري الناعم
-                    // المقصود، فوق محتوى معقّد/متحرّك أسفله (خلل معروف في Compose/Android). صفر
-                    // ارتفاع يمنع هذا الرسم من الأساس بدل محاولة تصغيره فقط. مطابق أيضاً لشكل الويب
-                    // (`shadow-teal-600/30` — ظل ملوّن ناعم، وليس ظل Material الافتراضي الثقيل).
-                    FloatingActionButton(
-                        onClick = fabAction ?: { navController.navigate(Screen.ArticleEditor.new()) },
-                        containerColor = BrandTeal,
-                        contentColor = Color.White,
-                        elevation = FloatingActionButtonDefaults.elevation(
-                            defaultElevation = 0.dp,
-                            pressedElevation = 0.dp,
-                            focusedElevation = 0.dp,
-                            hoveredElevation = 0.dp
-                        )
-                    ) {
-                        Icon(Icons.Filled.Edit, contentDescription = "بدء الكتابة")
-                    }
-                }
-            }
         ) { padding -> content(padding) }
 
         DrawerOverlay(
