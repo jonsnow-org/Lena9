@@ -45,29 +45,13 @@ import studio.ai.literium.literium_app.ui.theme.BrandAmber
 import studio.ai.literium.literium_app.ui.theme.BrandTeal
 import studio.ai.literium.literium_app.ui.theme.BrandTealLight
 
-/** Minimum time the branded splash stays on screen, even if auth resolves instantly — a much
- *  shorter, native-appropriate stand-in for the web's ~3.2s canvas/Web-Audio splash (spec §2.1);
- *  see this scope's final report for why the visual itself is simplified, not a literal port. */
-private const val MIN_SPLASH_MILLIS = 1100L
+/** الحد الأدنى لعرض شاشة البداية. */
+private const val MIN_SPLASH_MILLIS = 900L
 
 /**
- * One-time branded splash shown on cold app load (spec §2.1's `SplashScreen`) — purely cosmetic,
- * never a gate. Resolves [AuthRepository.authState] once and routes accordingly:
- *
- * - A real (non-anonymous) signed-in Firebase user → [onNavigateToFeed] directly, matching
- *   `App.tsx`'s `onAuthStateChanged` handler which always lands a returning session on the feed
- *   tab (spec §3.3), never re-prompting for login.
- * - No real session (fully signed out, or only an anonymous guest identity already on file) →
- *   silently establishes/confirms a guest identity via [AuthRepository.ensureGuestIdentity] and
- *   still routes to [onNavigateToFeed] — per spec §2.2/§3.3, guests browse Home/Explore freely
- *   with no login wall at startup; the web app's header merely offers a "تسجيل الدخول" button for
- *   when a guest later chooses to authenticate, it never forces the login screen up front.
- * - [onNavigateToLogin] is reserved for the one case guest browsing itself can't recover from: the
- *   anonymous-identity bootstrap failing outright (e.g. Anonymous Auth unreachable/misconfigured),
- *   so the visitor isn't left stranded on a splash that can never resolve.
- *
- * Tapping the splash early (per spec §2.1, "dismissible early by tapping") skips the minimum
- * display time and resolves immediately.
+ * شاشة البداية — مطابقة لشاشة التحميل الحالية للتطبيق (خلفية #0D2968 + شعار 140dp + مؤشر أبيض).
+ * التوجيه كما في التطبيق المثبَّت على الويب: جلسة حقيقية ⇒ الرئيسية، وبدونها ⇒ شاشة الدخول الإلزامية
+ * (لا تصفّح كزائر في التطبيق، App.tsx `showLandingPage && isNativeApp`).
  */
 @Composable
 fun SplashScreen(
@@ -79,100 +63,25 @@ fun SplashScreen(
 
     LaunchedEffect(Unit) {
         coroutineScope {
-            val authDeferred = async {
-                runCatching { authRepository.authState().firstOrNull() }.getOrNull()
-            }
+            val authDeferred = async { runCatching { authRepository.authState().firstOrNull() }.getOrNull() }
             var waited = 0L
-            while (waited < MIN_SPLASH_MILLIS && !skipRequested) {
-                delay(50)
-                waited += 50
-            }
+            while (waited < MIN_SPLASH_MILLIS && !skipRequested) { delay(50); waited += 50 }
             val fbUser = authDeferred.await()
-            if (fbUser != null && !fbUser.isAnonymous) {
-                onNavigateToFeed()
-            } else {
-                val guestResult = authRepository.ensureGuestIdentity()
-                if (guestResult.isSuccess) onNavigateToFeed() else onNavigateToLogin()
-            }
+            if (fbUser != null && !fbUser.isAnonymous) onNavigateToFeed() else onNavigateToLogin()
         }
     }
 
-    val infiniteTransition = rememberInfiniteTransition(label = "splash")
-    val ringRotation by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(3600, easing = LinearEasing)),
-        label = "ringRotation"
-    )
-    val pulse by infiniteTransition.animateFloat(
-        initialValue = 0.85f,
-        targetValue = 1.1f,
-        animationSpec = infiniteRepeatable(tween(1400, easing = LinearEasing), repeatMode = RepeatMode.Reverse),
-        label = "pulse"
-    )
-
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(Color(0xFF0F172A), BrandTeal.copy(alpha = 0.55f), Color(0xFF0F172A))))
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null
-            ) { skipRequested = true },
+        modifier = Modifier.fillMaxSize().background(Color(0xFF0D2968))
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { skipRequested = true },
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(contentAlignment = Alignment.Center) {
-                // Orbiting ring — a simplified stand-in for the web splash's moon/stars/orbiting-rings
-                // canvas animation (spec §2.1); see this scope's final report.
-                Box(
-                    modifier = Modifier
-                        .size(128.dp)
-                        .rotate(ringRotation)
-                        .background(Color.Transparent)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(10.dp)
-                            .align(Alignment.TopCenter)
-                            .background(BrandAmber, CircleShape)
-                    )
-                }
-                Box(
-                    modifier = Modifier
-                        .size(88.dp * pulse)
-                        .background(BrandTealLight.copy(alpha = 0.25f), CircleShape)
-                )
-                Box(
-                    modifier = Modifier
-                        .size(76.dp)
-                        .background(Color.White, CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.MenuBook,
-                        contentDescription = null,
-                        tint = BrandTeal,
-                        modifier = Modifier.size(38.dp)
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.height(24.dp))
-            Text(
-                text = "LITERIUM",
-                color = Color.White,
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Black,
-                letterSpacing = 2.sp
+            androidx.compose.foundation.Image(
+                painter = androidx.compose.ui.res.painterResource(id = studio.ai.literium.literium_app.R.drawable.ic_launcher_foreground),
+                contentDescription = null, modifier = Modifier.size(140.dp)
             )
-            Text(
-                text = "ليتيريوم — فضاء الأدب والفكر",
-                color = Color.White.copy(alpha = 0.75f),
-                fontSize = 13.sp,
-                modifier = Modifier.padding(top = 6.dp)
-            )
-            Spacer(modifier = Modifier.height(28.dp))
-            CircularProgressIndicator(color = BrandAmber, modifier = Modifier.size(22.dp))
+            CircularProgressIndicator(color = Color.White, modifier = Modifier.padding(top = 24.dp).size(32.dp))
         }
     }
 }
