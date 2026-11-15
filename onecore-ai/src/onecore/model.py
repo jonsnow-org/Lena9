@@ -177,6 +177,11 @@ class VectorQuantizer:
         straight_through = features + (quantized - features).detach()
         return ids, straight_through, commitment + 0.25 * codebook_loss
 
+    def __call__(self, features: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        # Deliberately not an nn.Module: it references the owner's shared embedding
+        # table, so registering the owner as a child would create a module cycle.
+        return self.forward(features)
+
 
 class OneCore(nn.Module):
     """One randomly initialized, shared-weight, recurrent multimodal model.
