@@ -158,12 +158,25 @@ def validate_manifest(records: list[dict[str, Any]], assets_root: str | Path,
     }
 
 
-def iter_training_records(records: list[dict[str, Any]],
-                          tasks: set[str] | None = None) -> list[dict[str, Any]]:
+TRAINABLE_DATA_CLASSES = {
+    "bootstrap", "synthetic_unverified", "synthetic_verified",
+    "external_reviewed", "owner_curated",
+}
+
+
+def iter_training_records(
+    records: list[dict[str, Any]],
+    tasks: set[str] | None = None,
+    allowed_data_classes: set[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Select optimizer inputs, never silently training on staged/unreviewed sources."""
+    allowed_classes = allowed_data_classes or TRAINABLE_DATA_CLASSES
     selected: list[dict[str, Any]] = []
     for item in records:
         if item.get("split") != "train":
             raise DatasetError("non-training split reached training iterator")
+        if classify_record_data(item) not in allowed_classes:
+            continue
         if tasks is None or item.get("task") in tasks:
             selected.append(item)
     return selected

@@ -57,3 +57,23 @@ def test_bootstrap_generates_independent_test_split_without_rewriting_train_or_v
 def test_training_iterator_rejects_held_out_splits(split):
     with pytest.raises(DatasetError, match="non-training split"):
         iter_training_records([{"id": "held-out", "split": split}])
+
+
+
+def test_training_iterator_excludes_unreviewed_external_records():
+    records = [
+        {"id": "bootstrap", "task": "text", "split": "train",
+         "license": "local-owner-synthetic", "source_url": "local://onecore-bootstrap",
+         "attribution": "OneCore bootstrap", "review_status": "generated", "text": "bootstrap"},
+        {"id": "pending-external", "task": "text", "split": "train",
+         "license": "cc-by-4.0", "source_url": "https://example.org/dataset",
+         "attribution": "dataset authors", "review_status": "pending",
+         "data_class": "external_staged", "text": "not reviewed"},
+        {"id": "verified-synthetic", "task": "text", "split": "train",
+         "license": "local-owner-synthetic", "source_url": "local://onecore-verified-curriculum",
+         "attribution": "OneCore verified curriculum", "review_status": "verified",
+         "data_class": "synthetic_verified", "verification": {"method": "reference_solver_v1", "reference": "math.integer_arithmetic.v1"},
+         "text": "verified"},
+    ]
+    selected = iter_training_records(records)
+    assert [item["id"] for item in selected] == ["bootstrap", "verified-synthetic"]

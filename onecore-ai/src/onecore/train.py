@@ -15,7 +15,7 @@ from tokenizers import Tokenizer
 
 from .checkpoint import load_checkpoint, save_checkpoint, sha256_file, write_json_atomic
 from .config import ModelConfig, load_config
-from .data import iter_training_records, read_manifest, validate_training_data
+from .data import TRAINABLE_DATA_CLASSES, classify_record_data, iter_training_records, read_manifest, validate_training_data
 from .model import (
     AUDIO_END, AUDIO_START, BOS, EOS, IMAGE_END, IMAGE_START, TEXT_START,
     TOOL_END, TOOL_START, VIDEO_END, VIDEO_FRAME, VIDEO_START, MOTION_START,
@@ -413,18 +413,34 @@ def run_training(
         ).encode("utf-8")).hexdigest()
         data_class_counts: dict[str, int] = {}
         for record in all_manifest_records:
-            data_class = str(record.get("data_class") or "unclassified")
+            data_class = classify_record_data(record)
             data_class_counts[data_class] = data_class_counts.get(data_class, 0) + 1
         external_data_counts = {
             data_class: count for data_class, count in data_class_counts.items()
             if data_class in {"external_staged", "external_reviewed", "owner_curated"}
         }
-        contains_synthetic = any(
-            record["license"] == "local-owner-synthetic" or record["review_status"] != "approved"
-            for record in all_manifest_records
-        )
-        data_kind = "contains_synthetic_or_unapproved_data" if contains_synthetic else "reviewed_training_data"
-        real_data = not contains_synthetic
+        optimizer_data_class_counts: dict[str, int] = {}
+        for record in records:
+            data_class = classify_record_data(record)
+            optimizer_data_class_counts[data_class] = optimizer_data_class_counts.get(data_class, 0) + 1
+        excluded_data_class_counts = {
+            data_class: count for data_class, count in data_class_counts.items()
+            if data_class not in TRAINABLE_DATA_CLASSES
+        }
+        optimizer_classes = set(optimizer_data_class_counts)
+        if optimizer_classes == {"bootstrap"}:
+            data_kind = "synthetic_bootstrap"
+        elif optimizer_classes == {"synthetic_verified"}:
+            data_kind = "synthetic_verified"
+        elif optimizer_classes == {"synthetic_unverified"}:
+            data_kind = "contains_unverified_synthetic"
+        elif optimizer_classes and optimizer_classes <= {"external_reviewed", "owner_curated"}:
+            data_kind = "reviewed_training_data"
+        elif optimizer_classes and optimizer_classes <= {"synthetic_verified", "external_reviewed", "owner_curated"}:
+            data_kind = "mixed_verified_corpus"
+        else:
+            data_kind = "mixed_training_data"
+        real_data = bool(optimizer_classes) and optimizer_classes <= {"external_reviewed", "owner_curated"}
         if resume:
             saved_manifest_sha = saved_metadata.get("manifest_sha256")
             saved_asset_sha = saved_metadata.get("asset_manifest_sha256")
@@ -558,6 +574,8 @@ def run_training(
         "asset_lineage_status": asset_lineage_status,
         "data_extension": data_extension,
         "external_data_counts": external_data_counts,
+        "optimizer_data_class_counts": optimizer_data_class_counts,
+        "excluded_data_class_counts": excluded_data_class_counts,
         "lineage_id": lineage_id,
         "parent_checkpoint_sha256": parent_checkpoint_sha256,
         "parent_optimizer_step": parent_optimizer_step,
@@ -593,6 +611,8 @@ def run_training(
         "asset_lineage_status": asset_lineage_status,
         "data_extension": data_extension,
         "external_data_counts": external_data_counts,
+        "optimizer_data_class_counts": optimizer_data_class_counts,
+        "excluded_data_class_counts": excluded_data_class_counts,
         "lineage_id": lineage_id,
         "parent_checkpoint_sha256": parent_checkpoint_sha256,
         "parent_optimizer_step": parent_optimizer_step,
@@ -601,6 +621,8 @@ def run_training(
         "checkpoint": checkpoint_report,
         "task_counts": task_counts,
         "external_data_counts": external_data_counts,
+        "optimizer_data_class_counts": optimizer_data_class_counts,
+        "excluded_data_class_counts": excluded_data_class_counts,
         "data_extension": data_extension,
         "promotion_eligible": False,
         "promotion_note": "training completion is not an evaluation or promotion decision",
