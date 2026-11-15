@@ -12,13 +12,14 @@ from .checkpoint import load_checkpoint, sha256_file
 from .config import load_config
 from .data import classify_record_data, read_manifest, validate_manifest
 from .model import OneCore
-from .train import _record_sequence
+from .train import _load_image, _load_mel, _record_sequence
 from .tokenizer import load_tokenizer
 
 REQUIRED_METRICS = (
     "text_loss", "tool_use", "image_reconstruction",
     "audio_reconstruction", "video_sequence",
 )
+REQUIRED_CODEBOOKS = ("vision", "audio", "motion")
 
 
 def _asset_manifest_sha256(root: Path, records: list[dict[str, Any]]) -> str:
@@ -40,6 +41,73 @@ def _asset_manifest_sha256(root: Path, records: list[dict[str, Any]]) -> str:
         entries.append({"path": relative, "sha256": sha256_file(target)})
     encoded = json.dumps(entries, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+
+def codebook_assignment_report(local_ids: torch.Tensor, codebook_size: int) -> dict[str, int | float]:
+    ids = local_ids.detach().reshape(-1).long()
+    if codebook_size < 2:
+        raise ValueError("codebook_size must be at least two")
+    if ids.numel() == 0:
+        return {"used_codes": 0, "total_codes": codebook_size, "usage_fraction": 0.0,
+                "assignment_count": 0, "perplexity": 0.0, "normalized_entropy": 0.0,
+                "max_code_fraction": 0.0, "dead_codes": codebook_size}
+    if int(ids.min()) < 0 or int(ids.max()) >= codebook_size:
+        raise ValueError("local codebook assignment ID is outside its codebook range")
+    counts = torch.bincount(ids.cpu(), minlength=codebook_size).to(torch.float64)
+    total = int(counts.sum().item())
+    nonzero = counts[counts > 0]
+    probabilities = nonzero / total
+    entropy = float(-(probabilities * probabilities.log()).sum().item())
+    used = int(nonzero.numel())
+    return {
+        "used_codes": used,
+        "total_codes": codebook_size,
+        "usage_fraction": used / codebook_size,
+        "assignment_count": total,
+        "perplexity": math.exp(entropy),
+        "normalized_entropy": entropy / math.log(codebook_size),
+        "max_code_fraction": float(counts.max().item() / total),
+        "dead_codes": codebook_size - used,
+    }
+
+
+def _collect_codebook_usage(root: Path, records: list[dict[str, Any]], model: OneCore) -> dict[str, Any]:
+    cfg = model.cfg
+    assets = root / "data" / "assets"
+    assignments: dict[str, list[torch.Tensor]] = {name: [] for name in REQUIRED_CODEBOOKS}
+    for record in records:
+        task = record["task"]
+        if task == "image_caption":
+            image = _load_image(assets / record["image"], cfg.image_size)
+            ids, _, _ = model.encode_image(image)
+            assignments["vision"].append(ids.reshape(-1) - cfg.vision_start)
+        elif task == "audio_text":
+            mel = _load_mel(assets / record["audio_features"], cfg.audio_bins)
+            ids, _, _ = model.encode_audio(mel)
+            assignments["audio"].append(ids.reshape(-1) - cfg.audio_start)
+        elif task == "video_caption":
+            frame_tensors = [_load_image(assets / relative, cfg.image_size) for relative in record["frames"]]
+            for frame in frame_tensors:
+                ids, _, _ = model.encode_image(frame)
+                assignments["vision"].append(ids.reshape(-1) - cfg.vision_start)
+            for current, following in zip(frame_tensors, frame_tensors[1:]):
+                difference = following - current
+                ids, _, _ = model.encode_motion(difference)
+                assignments["motion"].append(ids.reshape(-1) - cfg.motion_start)
+    sizes = {
+        "vision": cfg.vision_codebook_size,
+        "audio": cfg.audio_codebook_size,
+        "motion": cfg.motion_codebook_size,
+    }
+    return {
+        name: codebook_assignment_report(
+            torch.cat(assignments[name]) if assignments[name] else torch.empty(0, dtype=torch.long),
+            sizes[name],
+        )
+        for name in REQUIRED_CODEBOOKS
+    }
+
 
 @torch.no_grad()
 def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
@@ -155,6 +223,7 @@ def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
         "split_manifest_sha256": split_manifest_sha256,
         "split_manifest_records": data_report["records"],
         "asset_manifest_sha256": _asset_manifest_sha256(root, records),
+        "codebook_usage": _collect_codebook_usage(root, records, model),
         "validation_manifest_sha256": split_manifest_sha256 if split == "validation" else None,
         "test_manifest_sha256": split_manifest_sha256 if split == "test" else None,
         "validation_manifest_records": data_report["records"] if split == "validation" else None,
@@ -165,6 +234,35 @@ def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
     return metrics
+
+
+
+def _check_codebook_thresholds(prefix: str, usage: dict[str, Any],
+                               thresholds: dict[str, Any], failures: list[str],
+                               test_split: bool = False) -> None:
+    if not isinstance(usage, dict):
+        failures.append(f"{prefix} codebook-usage reports are missing")
+        return
+    for modality in REQUIRED_CODEBOOKS:
+        report = usage.get(modality)
+        if not isinstance(report, dict) or int(report.get("assignment_count", 0)) <= 0:
+            failures.append(f"{prefix} {modality} codebook assignments are missing")
+            continue
+        usage_fraction = report.get("usage_fraction")
+        max_code_fraction = report.get("max_code_fraction")
+        min_usage_key = f"test_min_{modality}_usage_fraction" if test_split else f"min_{modality}_usage_fraction"
+        max_code_key = f"test_max_{modality}_max_code_fraction" if test_split else f"max_{modality}_max_code_fraction"
+        min_usage = thresholds.get(min_usage_key)
+        max_code_limit = thresholds.get(max_code_key)
+        if not isinstance(min_usage, (int, float)) or not math.isfinite(min_usage) or not 0 < min_usage <= 1:
+            failures.append(f"approved codebook-usage minimum {min_usage_key} is missing or invalid")
+        elif isinstance(usage_fraction, (int, float)) and math.isfinite(usage_fraction) and usage_fraction < min_usage:
+            failures.append(f"{prefix} {modality} codebook usage {usage_fraction:.4g} is below {min_usage:.4g}")
+        if not isinstance(max_code_limit, (int, float)) or not math.isfinite(max_code_limit) or not 0 < max_code_limit <= 1:
+            failures.append(f"approved max-code concentration limit {max_code_key} is missing or invalid")
+        elif isinstance(max_code_fraction, (int, float)) and math.isfinite(max_code_fraction) and max_code_fraction > max_code_limit:
+            failures.append(f"{prefix} {modality} max-code fraction {max_code_fraction:.4g} exceeds {max_code_limit:.4g}")
+
 
 
 def promotion_gate(metrics: dict[str, Any], baseline: dict[str, Any] | None = None,
@@ -199,6 +297,7 @@ def promotion_gate(metrics: dict[str, Any], baseline: dict[str, Any] | None = No
             failures.append(f"approved positive validation threshold for {key} is missing")
         elif isinstance(value, (int, float)) and math.isfinite(value) and value > limit:
             failures.append(f"validation {key}={value:.6g} exceeds approved threshold {limit:.6g}")
+    _check_codebook_thresholds("validation", metrics.get("codebook_usage"), thresholds, failures)
 
     test_metrics = metrics.get("test_metrics")
     if not isinstance(test_metrics, dict):
@@ -229,6 +328,7 @@ def promotion_gate(metrics: dict[str, Any], baseline: dict[str, Any] | None = No
                 failures.append(f"approved positive test threshold for {key} is missing")
             elif isinstance(value, (int, float)) and math.isfinite(value) and value > limit:
                 failures.append(f"test {key}={value:.6g} exceeds approved threshold {limit:.6g}")
+        _check_codebook_thresholds("test", test_metrics.get("codebook_usage"), thresholds, failures, test_split=True)
 
     if baseline:
         old = baseline.get("text_loss")
