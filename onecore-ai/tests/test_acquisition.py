@@ -117,7 +117,7 @@ def test_audio_and_video_payloads_are_prepared_as_shared_modalities(tmp_path: Pa
     )
     assert audio_record is not None
     assert audio_record["task"] == "audio_reconstruction"
-    feature_file = tmp_path / "data" / "assets" / audio_record["audio_features"]
+    feature_file = tmp_path / audio_record["audio_features"]
     features = np.load(feature_file, allow_pickle=False)
     assert features.ndim == 2 and features.shape[1] == 80
 
