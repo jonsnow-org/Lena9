@@ -25,8 +25,9 @@ def test_external_evaluation_excludes_bootstrap_but_bootstrap_remains_selectable
     records = [
         {"id": "bootstrap-text", "task": "text", "data_class": "bootstrap"},
         {"id": "external-text", "task": "text", "data_class": "external_staged"},
+        {"id": "owner-local", "task": "text", "data_class": "owner_curated"},
     ]
-    external = select_evaluation_records(records, {"external_staged", "external_reviewed", "owner_curated"})
+    external = select_evaluation_records(records, {"external_staged", "external_reviewed"})
     bootstrap = select_evaluation_records(records, {"bootstrap"})
     assert [item["id"] for item in external] == ["external-text"]
     assert [item["id"] for item in bootstrap] == ["bootstrap-text"]

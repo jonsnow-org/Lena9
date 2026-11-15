@@ -44,12 +44,10 @@ Audio features are normalized to mono 16 kHz and 80-bin log-mel arrays. Video in
 
 The waveform decoder remains approximate (mel pseudoinverse plus Griffin–Lim), not a trained production vocoder.
 
-## Deterministic verified synthetic curriculum — v2
+## Bootstrap and synthetic diagnostics
 
-The GitHub Actions training workflow generates a reproducible pilot corpus from scratch using deterministic reference solvers; it does not use teacher-model outputs or third-party weights. The current domains cover integer arithmetic (including exact division), abstract logic, fixed science facts, programming outputs, BFS shortest paths, Arabic↔English vocabulary, dependency planning, and spatial relations.
+The deterministic Bootstrap corpus is retained as a local engineering fixture for checking preprocessing, asset integrity, checkpoint save/restore, and modality code paths. It is not external training data and never enters tokenizer fitting, optimizer updates, validation/test generalization scores, or promotion.
 
-Each generated scene is linked across one text problem, one tool call, image caption/reconstruction, audio cue/transcript/reconstruction, and video caption/reconstruction. The reference answer, solver identifier, canonical answer hash, and generated asset SHA-256 hashes are recorded. The workflow verifies all generated answers, assets, record IDs, asset paths/content, domain-problem fingerprints, and scene fingerprints across train/validation/test.
+Any verified or unverified synthetic curriculum is treated the same way: diagnostic-only. Locally owner-created data is also excluded from the external-import training pipeline. There is no synthetic-data percentage, synthetic fallback, or synthetic route into the training sampler.
 
-The pilot audio uses a deterministic four-formant synthetic scene cue. It is **not natural speech, phoneme-level Arabic/English speech, or a trained text-to-speech system**. Speech coverage remains a research gap.
-
-The generated Bootstrap and verified synthetic curricula are engineering fixtures only. They may be used to test preprocessing, asset integrity, checkpoint save/resume, and modality code paths, but **they are not optimizer inputs**. `TRAINABLE_DATA_CLASSES` admits only imported external records (`external_staged`, `external_reviewed`) and owner-curated real records. The training sampler receives records only after this class filter; there is no synthetic-data percentage or fallback in real text or multimodal training. Validation/test reports are split into imported external-corpus metrics and a separately labelled Bootstrap diagnostic report. An external staged record can be used to train and measure generalization, while promotion remains separately gated until the data class is approved.
+Only records imported from the registered external datasets are eligible for training. Imported records are initially classified as `external_staged`; promotion is stricter and requires the validation and test evaluation subsets to contain reviewed external records only. Bootstrap diagnostic reports are kept separate from external generalization metrics.

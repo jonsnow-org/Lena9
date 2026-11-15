@@ -21,10 +21,10 @@ ALLOWED_DATA_CLASSES = {
 
 
 def classify_record_data(record: dict[str, Any]) -> str:
-    """Classify provenance without treating all synthetic data as permanently ineligible.
+    """Classify provenance; local synthetic and owner-created records are not imports.
 
-    Legacy bootstrap records are identified by their explicit local source URL.
-    Promotion eligibility is separately tied to verified data class and evidence.
+    Only records imported from external datasets are eligible for optimizer and
+    tokenizer input. Promotion is stricter and requires reviewed external data.
     """
     explicit = str(record.get("data_class", "")).strip().lower()
     if explicit:
@@ -159,7 +159,7 @@ def validate_manifest(records: list[dict[str, Any]], assets_root: str | Path,
 
 
 TRAINABLE_DATA_CLASSES = {
-    "external_staged", "external_reviewed", "owner_curated",
+    "external_staged", "external_reviewed",
 }
 
 

@@ -20,7 +20,7 @@ The manual `OneCore — staged training` workflow remains available for operator
 
 ## Initial pipeline baseline
 
-The first from-scratch run was a short engineering pipeline proof: 5 text/tool optimizer steps followed by 5 joint multimodal steps, totaling 10. It is not broad-knowledge pretraining and is not promotion eligible. The later 100-step text continuation is real optimizer training, but still uses the small synthetic bootstrap curriculum.
+The earlier 10-step and 100-step runs used only synthetic engineering curricula. They are retained as historical pipeline diagnostics, not accepted external-data pretraining, not model-readiness evidence, and not promotion candidates. Real pretraining begins only after the imported external corpus passes the modality coverage gate.
 
 ## Architecture and expansion
 
@@ -34,7 +34,7 @@ The deterministic engineering bootstrap currently yields 360 training records, 8
 
 Only `train.jsonl` is read by the training iterator. Validation and test manifests are separate, have disjoint record IDs and asset paths, and are checked for identical asset-content hashes across splits. The bootstrap generator adds a missing test manifest without rewriting existing train/validation manifests. Training checkpoint lineage includes both the training-manifest SHA-256 and a fingerprint of the referenced training assets.
 
-Data classes distinguish `bootstrap`, `synthetic_unverified`, `synthetic_verified`, `external_reviewed`, and `owner_curated`. Verified synthetic records require `review_status=verified` plus `verification.method` and `verification.reference`. A large, independently verified synthetic curriculum may qualify for promotion; the small bootstrap and unverified synthetic data may not. External data still requires exact license, attribution, source, and review.
+Data classes distinguish `bootstrap`, `synthetic_unverified`, `synthetic_verified`, `external_staged`, `external_reviewed`, and `owner_curated`. All Bootstrap, synthetic, and local owner-created records are excluded from tokenizer fitting and optimizer input. Only imported external records may train; promotion additionally requires reviewed external records only in both validation and test.
 
 ## Checkpoint integrity and retention
 
@@ -44,7 +44,7 @@ Artifacts are retained for 90 days and remain the immediate resume source. Durab
 
 ## Promotion
 
-Training completion or a lower loss is not readiness. Promotion requires an independently hashed validation and test bundle from the same checkpoint, full modality coverage, verified data (reviewed real/owner-curated or independently verified synthetic), approved numeric thresholds for both splits, and no unacceptable regression. Evaluation now reports per-codebook used/dead codes, usage fraction, perplexity, normalized entropy, and max-code concentration for vision/audio/motion on both held-out splits. The collapse thresholds are still uncalibrated; the bootstrap remains blocked and no model registry promotion is recorded.
+Training completion or a lower loss is not readiness. Promotion requires an independently hashed validation and test bundle from the same checkpoint, full modality coverage, reviewed external records only in both splits, approved numeric thresholds for both splits, and no unacceptable regression. Evaluation reports per-codebook usage, perplexity, normalized entropy, dead codes, and max-code concentration for vision/audio/motion on both held-out splits. Collapse thresholds remain uncalibrated.
 
 ## Safety and licensing
 

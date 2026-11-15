@@ -25,7 +25,7 @@ Before training, the workflow verifies the parent checkpoint SHA-256, optimizer 
 
 The current bootstrap is 360 train / 87 validation / 87 test synthetic records. It is an engineering curriculum, not broad knowledge. Validation and test are never read by the training iterator; cross-split record IDs, asset paths, and identical asset-content hashes are checked. A missing test manifest is added without rewriting train/validation data.
 
-Verified synthetic cognitive data is not permanently excluded: it must be tagged `data_class=synthetic_verified`, `review_status=verified`, and carry a nonempty `verification.method` and `verification.reference`. Bootstrap and unverified synthetic data remain promotion-ineligible. Promotion also requires independent validation/test hashes, modality coverage, and approved thresholds for both splits.
+Only imported external records enter tokenizer fitting and optimizer updates. External staged records can train the model but cannot qualify it for promotion until they are independently reviewed. Promotion requires reviewed external records only, independent validation/test hashes, full modality coverage, and approved thresholds for both splits. Bootstrap and all synthetic/locally created records remain diagnostic fixtures only.
 
 ## Implemented versus not yet verified
 

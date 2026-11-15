@@ -44,7 +44,7 @@ Configuration: width 1024, four unique recurrent blocks, three recurrent cycles 
 
 The current deterministic bootstrap contains 360 training, 87 validation, and 87 test records. It exercises the pipeline only and is not broad world knowledge. The training iterator reads only `train.jsonl`; validation/test are separately hashed and checked for record-ID, asset-path, and exact asset-content leakage.
 
-Data classes separate `bootstrap`, `synthetic_unverified`, `synthetic_verified`, `external_reviewed`, and `owner_curated`. A verified synthetic corpus may qualify for promotion when records carry `review_status=verified` and a `verification.method` plus `verification.reference`, and when independent validation/test metrics and approved thresholds pass. Bootstrap/unverified data cannot qualify. External data still requires the actual license, source, attribution, and review.
+Data classes separate `bootstrap`, `synthetic_unverified`, `synthetic_verified`, `external_reviewed`, `external_staged`, and `owner_curated`. Only imported external records (`external_staged` and `external_reviewed`) may enter tokenizer fitting and optimizer updates. Bootstrap, all synthetic records, and locally owner-created records are diagnostic-only and never a training fallback. Promotion is stricter: both validation and test subsets must contain reviewed external records only, with independent hashes, full modality coverage, and approved thresholds.
 
 Do not commit private or personally identifying data, secrets, private source code, or unlicensed assets to this public repository.
 
@@ -56,6 +56,6 @@ Artifacts are retained for 90 days. Durable GitHub Release upload currently rece
 
 ## Current research status
 
-The original 10-step run was an engineering bootstrap. The subsequent 100-step text/tool continuation reached optimizer step 110 and showed lower synthetic training and validation losses, but it remains a research checkpoint, not a final model. The current small bootstrap does not establish general language, science, coding, or multimodal capability. Evaluation now measures held-out codebook usage, entropy, perplexity, dead codes, and max-code concentration, but those thresholds are not calibrated. The threshold manifest now enumerates separate validation/test limits for loss, minimum usage, maximum concentration, and normalized entropy; no numeric values have been approved yet. Promotion remains blocked until a large verified curriculum, independent test coverage, and approved loss/codebook thresholds are in place.
+The earlier 10-step engineering run and 100-step synthetic-curriculum experiment are historical pipeline diagnostics only; they are not accepted as real-data pretraining and do not establish general language, science, coding, or multimodal capability. The current external-data run must start from fresh random initialization and record imported external data in its lineage. Evaluation measures held-out codebook usage, entropy, perplexity, dead codes, and max-code concentration, but thresholds remain uncalibrated. Promotion remains blocked until reviewed external validation/test coverage and approved numeric thresholds are in place.
 
 See `docs/training-operations.md`, `data/README.md`, and `notebooks/README.md` for operational details.

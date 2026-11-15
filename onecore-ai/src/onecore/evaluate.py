@@ -196,30 +196,26 @@ def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
     thresholds_file = Path(thresholds_path)
     threshold_doc = json.loads(thresholds_file.read_text(encoding="utf-8")) if thresholds_file.is_file() else {}
     data_classes = sorted({classify_record_data(record) for record in records})
-    verified_classes = {"synthetic_verified", "external_reviewed", "owner_curated"}
     if data_classes == ["bootstrap"]:
-        data_kind = "synthetic_bootstrap"
+        data_kind = "synthetic_bootstrap_diagnostic"
     elif data_classes == ["synthetic_verified"]:
-        data_kind = "synthetic_verified"
-    elif set(data_classes).issubset({"external_reviewed", "owner_curated"}):
-        data_kind = "reviewed_external_or_owner"
-    elif set(data_classes).issubset(verified_classes):
-        data_kind = "mixed_verified_corpus"
-    elif "bootstrap" in data_classes:
-        data_kind = "contains_bootstrap_data"
-    elif "synthetic_unverified" in data_classes:
-        data_kind = "contains_unverified_synthetic"
-    elif "external_staged" in data_classes:
+        data_kind = "synthetic_verified_diagnostic"
+    elif data_classes == ["external_reviewed"]:
+        data_kind = "reviewed_external"
+    elif data_classes == ["external_staged"]:
         data_kind = "external_staged_corpus"
+    elif set(data_classes).issubset({"external_staged", "external_reviewed"}):
+        data_kind = "external_mixed_review_status"
+    elif "bootstrap" in data_classes:
+        data_kind = "contains_synthetic_diagnostic_data"
+    elif "synthetic_unverified" in data_classes:
+        data_kind = "contains_unverified_synthetic_diagnostic"
     else:
         data_kind = "unapproved_or_mixed_data"
-    data_verified_for_promotion = bool(records) and all(
-        data_class in verified_classes for data_class in data_classes
-    )
-    real_data = bool(records) and all(
-        data_class in {"external_staged", "external_reviewed", "owner_curated"}
-        for data_class in data_classes
-    )
+    # Promotion is stricter than training: only independently reviewed external
+    # records qualify. Synthetic and owner-local fixtures never qualify.
+    data_verified_for_promotion = bool(records) and set(data_classes) == {"external_reviewed"}
+    real_data = bool(records) and set(data_classes).issubset({"external_staged", "external_reviewed"})
     selected_manifest_payload = json.dumps(
         [{"id": record.get("id"), "task": record.get("task"),
           "source_url": record.get("source_url"), "data_class": classify_record_data(record)}
@@ -318,8 +314,12 @@ def promotion_gate(metrics: dict[str, Any], baseline: dict[str, Any] | None = No
     failures: list[str] = []
     if metrics.get("split") != "validation":
         failures.append("top-level candidate metrics must come from the validation split")
-    if metrics.get("data_verified_for_promotion") is not True and require_verified_data:
-        failures.append("validation corpus is bootstrap or unverified; only independently verified synthetic or reviewed data can qualify")
+    validation_classes = set(metrics.get("data_classes", []))
+    if require_verified_data and (
+        metrics.get("data_verified_for_promotion") is not True
+        or validation_classes != {"external_reviewed"}
+    ):
+        failures.append("validation corpus must contain reviewed external data only; synthetic, staged, and local records cannot qualify")
     if not isinstance(metrics.get("parameter_count"), int) or metrics["parameter_count"] <= 0:
         failures.append("parameter_count is missing or invalid")
     if not isinstance(metrics.get("checkpoint_sha256"), str) or len(metrics["checkpoint_sha256"]) != 64:
@@ -361,8 +361,12 @@ def promotion_gate(metrics: dict[str, Any], baseline: dict[str, Any] | None = No
         test_hash = test_metrics.get("split_manifest_sha256") or test_metrics.get("test_manifest_sha256")
         if not isinstance(validation_hash, str) or not isinstance(test_hash, str) or validation_hash == test_hash:
             failures.append("validation and test manifest fingerprints are missing or not independent")
-        if test_metrics.get("data_verified_for_promotion") is not True and require_verified_data:
-            failures.append("test corpus is bootstrap or unverified; only independently verified synthetic or reviewed data can qualify")
+        test_classes = set(test_metrics.get("data_classes", []))
+        if require_verified_data and (
+            test_metrics.get("data_verified_for_promotion") is not True
+            or test_classes != {"external_reviewed"}
+        ):
+            failures.append("test corpus must contain reviewed external data only; synthetic, staged, and local records cannot qualify")
         test_observed = set(test_metrics.get("modalities_tested", []))
         test_missing = required_modalities - test_observed
         if test_missing:

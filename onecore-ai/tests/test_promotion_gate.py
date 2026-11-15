@@ -13,7 +13,7 @@ def _codebook_report():
     }
 
 
-def _metrics(data_verified=True, data_kind="synthetic_verified"):
+def _metrics(data_verified=True, data_kind="reviewed_external"):
     checkpoint_sha = "a" * 64
     validation_hash = "b" * 64
     test_hash = "c" * 64
@@ -31,29 +31,41 @@ def _metrics(data_verified=True, data_kind="synthetic_verified"):
         thresholds[f"test_min_{modality}_normalized_entropy"] = 0.6
     codebook_usage = _codebook_report()
     test_metrics = {**values, "split": "test", "checkpoint_sha256": checkpoint_sha,
-        "parameter_count": 57_579_201, "real_data": False, "data_kind": data_kind,
-        "data_classes": [data_kind], "data_verified_for_promotion": data_verified,
+        "parameter_count": 57_579_201, "real_data": data_kind in {"reviewed_external", "external_staged_corpus"},
+        "data_kind": data_kind,
+        "data_classes": ["external_reviewed"] if data_kind == "reviewed_external" else [data_kind],
+        "data_verified_for_promotion": data_verified,
         "modalities_tested": list(REQUIRED_METRICS), "split_manifest_sha256": test_hash,
         "codebook_usage": codebook_usage}
     return {**values, "split": "validation", "checkpoint_sha256": checkpoint_sha,
-        "parameter_count": 57_579_201, "real_data": False, "data_kind": data_kind,
-        "data_classes": [data_kind], "data_verified_for_promotion": data_verified,
+        "parameter_count": 57_579_201, "real_data": data_kind in {"reviewed_external", "external_staged_corpus"},
+        "data_kind": data_kind,
+        "data_classes": ["external_reviewed"] if data_kind == "reviewed_external" else [data_kind],
+        "data_verified_for_promotion": data_verified,
         "modalities_tested": list(REQUIRED_METRICS), "quality_thresholds": thresholds,
         "split_manifest_sha256": validation_hash, "test_manifest_sha256": test_hash,
         "codebook_usage": codebook_usage, "test_metrics": test_metrics}
 
 
-def test_verified_synthetic_corpus_can_pass_gate_when_all_evidence_and_thresholds_pass():
+def test_reviewed_external_corpus_can_pass_gate_when_all_evidence_and_thresholds_pass():
     passed, failures = promotion_gate(_metrics(data_verified=True))
     assert passed
     assert failures == []
 
 
 def test_bootstrap_or_unverified_synthetic_corpus_is_blocked():
-    passed, failures = promotion_gate(_metrics(data_verified=False, data_kind="synthetic_bootstrap"))
+    passed, failures = promotion_gate(_metrics(data_verified=False, data_kind="synthetic_bootstrap_diagnostic"))
     assert not passed
-    assert any("validation corpus is bootstrap or unverified" in failure for failure in failures)
-    assert any("test corpus is bootstrap or unverified" in failure for failure in failures)
+    assert any("validation corpus must contain reviewed external data only" in failure for failure in failures)
+    assert any("test corpus must contain reviewed external data only" in failure for failure in failures)
+
+
+def test_synthetic_verified_flag_cannot_bypass_external_only_promotion_gate():
+    metrics = _metrics(data_verified=True, data_kind="synthetic_verified_diagnostic")
+    passed, failures = promotion_gate(metrics)
+    assert not passed
+    assert any("validation corpus must contain reviewed external data only" in failure for failure in failures)
+    assert any("test corpus must contain reviewed external data only" in failure for failure in failures)
 
 
 def test_gate_rejects_codebook_collapse_even_when_losses_are_below_limits():
