@@ -250,18 +250,31 @@ def _check_codebook_thresholds(prefix: str, usage: dict[str, Any],
             continue
         usage_fraction = report.get("usage_fraction")
         max_code_fraction = report.get("max_code_fraction")
+        normalized_entropy = report.get("normalized_entropy")
         min_usage_key = f"test_min_{modality}_usage_fraction" if test_split else f"min_{modality}_usage_fraction"
         max_code_key = f"test_max_{modality}_max_code_fraction" if test_split else f"max_{modality}_max_code_fraction"
+        min_entropy_key = f"test_min_{modality}_normalized_entropy" if test_split else f"min_{modality}_normalized_entropy"
         min_usage = thresholds.get(min_usage_key)
         max_code_limit = thresholds.get(max_code_key)
+        min_entropy = thresholds.get(min_entropy_key)
         if not isinstance(min_usage, (int, float)) or not math.isfinite(min_usage) or not 0 < min_usage <= 1:
             failures.append(f"approved codebook-usage minimum {min_usage_key} is missing or invalid")
-        elif isinstance(usage_fraction, (int, float)) and math.isfinite(usage_fraction) and usage_fraction < min_usage:
+        elif not isinstance(usage_fraction, (int, float)) or not math.isfinite(usage_fraction):
+            failures.append(f"{prefix} {modality} codebook usage fraction is missing or non-finite")
+        elif usage_fraction < min_usage:
             failures.append(f"{prefix} {modality} codebook usage {usage_fraction:.4g} is below {min_usage:.4g}")
         if not isinstance(max_code_limit, (int, float)) or not math.isfinite(max_code_limit) or not 0 < max_code_limit <= 1:
             failures.append(f"approved max-code concentration limit {max_code_key} is missing or invalid")
-        elif isinstance(max_code_fraction, (int, float)) and math.isfinite(max_code_fraction) and max_code_fraction > max_code_limit:
+        elif not isinstance(max_code_fraction, (int, float)) or not math.isfinite(max_code_fraction):
+            failures.append(f"{prefix} {modality} max-code fraction is missing or non-finite")
+        elif max_code_fraction > max_code_limit:
             failures.append(f"{prefix} {modality} max-code fraction {max_code_fraction:.4g} exceeds {max_code_limit:.4g}")
+        if not isinstance(min_entropy, (int, float)) or not math.isfinite(min_entropy) or not 0 < min_entropy <= 1:
+            failures.append(f"approved normalized-entropy minimum {min_entropy_key} is missing or invalid")
+        elif not isinstance(normalized_entropy, (int, float)) or not math.isfinite(normalized_entropy):
+            failures.append(f"{prefix} {modality} normalized entropy is missing or non-finite")
+        elif normalized_entropy < min_entropy:
+            failures.append(f"{prefix} {modality} normalized entropy {normalized_entropy:.4g} is below {min_entropy:.4g}")
 
 
 
