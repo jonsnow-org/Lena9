@@ -422,7 +422,7 @@ def run_training(
             data_class_counts[data_class] = data_class_counts.get(data_class, 0) + 1
         external_data_counts = {
             data_class: count for data_class, count in data_class_counts.items()
-            if data_class in {"external_staged", "external_reviewed", "owner_curated"}
+            if data_class in {"external_staged", "external_reviewed"}
         }
         optimizer_data_class_counts: dict[str, int] = {}
         for record in records:
@@ -433,11 +433,11 @@ def run_training(
             if data_class not in TRAINABLE_DATA_CLASSES
         }
         optimizer_classes = set(optimizer_data_class_counts)
-        if optimizer_classes and optimizer_classes <= {"external_staged", "external_reviewed", "owner_curated"}:
+        if optimizer_classes and optimizer_classes <= {"external_staged", "external_reviewed"}:
             data_kind = "external_training_data"
         else:
             data_kind = "blocked_non_external_training_data"
-        real_data = bool(optimizer_classes) and optimizer_classes <= {"external_staged", "external_reviewed", "owner_curated"}
+        real_data = bool(optimizer_classes) and optimizer_classes <= {"external_staged", "external_reviewed"}
         if resume:
             saved_manifest_sha = saved_metadata.get("manifest_sha256")
             saved_asset_sha = saved_metadata.get("asset_manifest_sha256")

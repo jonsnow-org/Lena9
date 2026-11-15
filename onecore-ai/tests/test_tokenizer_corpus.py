@@ -30,6 +30,12 @@ def test_tokenizer_corpus_excludes_bootstrap_and_all_synthetic_records(tmp_path:
             "prompt": "external tool prompt",
             "response": "external tool response",
         },
+        {
+            "id": "owner-curated-1",
+            "split": "train",
+            "data_class": "owner_curated",
+            "text": "locally authored owner data sentinel",
+        },
     ]
 
     output = tmp_path / "tokenizer-corpus.txt"
@@ -41,3 +47,4 @@ def test_tokenizer_corpus_excludes_bootstrap_and_all_synthetic_records(tmp_path:
     assert "external tool response" in corpus
     assert "synthetic bootstrap sentinel" not in corpus
     assert "verified synthetic sentinel" not in corpus
+    assert "locally authored owner data sentinel" not in corpus
