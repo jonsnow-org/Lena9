@@ -51,6 +51,25 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _record_asset_content_group_ids(record: dict[str, Any], assets_root: Path) -> list[str]:
+    """Fingerprint every real media payload so duplicate assets cannot cross dataset splits."""
+    root = Path(assets_root).resolve()
+    values: list[str] = []
+    for field in ("image", "audio_features"):
+        value = record.get(field)
+        if isinstance(value, str) and value.strip():
+            values.append(value)
+    frames = record.get("frames")
+    if isinstance(frames, list):
+        values.extend(value for value in frames if isinstance(value, str) and value.strip())
+    group_ids: set[str] = set()
+    for relative in values:
+        target = (root / relative).resolve()
+        if root not in target.parents or not target.is_file():
+            raise ValueError(f"cannot fingerprint missing or escaping media asset: {relative}")
+        group_ids.add(f"asset-sha256:{_sha256_file(target)}")
+    return sorted(group_ids)
+
 def _training_manifest_base(root: Path) -> dict[str, Any]:
     manifest = root / "data" / "train.jsonl"
     if not manifest.is_file():
@@ -621,8 +640,14 @@ def _record_from_row(
     elif adapter == "video_manifest":
         # Metadata remains registered for later media resolution; no video pixels are fabricated.
         return None
+    elif adapter == "metadata_only":
+        # Keep catalog rows in the acquisition report, but never materialize them as optimizer examples.
+        return None
     else:
         raise ValueError(f"unknown acquisition adapter: {adapter}")
+    asset_group_ids = _record_asset_content_group_ids(record, assets_root)
+    if asset_group_ids:
+        record["asset_content_group_ids"] = asset_group_ids
     return record
 
 
@@ -651,16 +676,30 @@ def _grouped_split(
 
 
 def _append_manifests(project_root: Path, rows_by_split: dict[str, list[dict[str, Any]]]) -> dict[str, int]:
-    """Append idempotently and keep repeated records/media groups in one split.
+    """Append idempotently and assign connected record/media-content groups to one split.
 
-    When an identical record or grouped media appears in multiple incoming
-    partitions, the stricter partition wins (test > validation > train).
-    Conflicts with already-persisted partitions are rejected.
+    Incoming records connected by a source group, record identity, or any identical
+    asset hash are placed in the strictest split represented by that component
+    (test > validation > train). Persisted cross-split conflicts are rejected.
     """
     priority = {"train": 0, "validation": 1, "test": 2}
+    assets_root = (project_root / "data" / "assets").resolve()
     existing_by_split: dict[str, list[dict[str, Any]]] = {}
     existing_ids: dict[str, str] = {}
     existing_groups: dict[str, str] = {}
+
+    def groups_for_record(item: dict[str, Any], *, prefer_declared: bool) -> list[str]:
+        groups: list[str] = []
+        source_group = str(item.get("source_group_id", "")).strip()
+        if source_group:
+            groups.append(source_group)
+        declared = item.get("asset_content_group_ids")
+        if prefer_declared and isinstance(declared, list) and declared:
+            groups.extend(str(value).strip() for value in declared if str(value).strip())
+        else:
+            groups.extend(_record_asset_content_group_ids(item, assets_root))
+        return sorted(set(groups))
+
     for split in SPLITS:
         path = project_root / "data" / f"{split}.jsonl"
         existing: list[dict[str, Any]] = []
@@ -675,48 +714,78 @@ def _append_manifests(project_root: Path, rows_by_split: dict[str, list[dict[str
                 if record_id in existing_ids and existing_ids[record_id] != split:
                     raise ValueError(f"existing record ID occurs in multiple splits: {record_id}")
                 existing_ids[record_id] = split
-                group_id = str(item.get("source_group_id", "")).strip()
-                if group_id:
-                    if group_id in existing_groups and existing_groups[group_id] != split:
-                        raise ValueError(f"existing source group occurs in multiple splits: {group_id}")
+                for group_id in groups_for_record(item, prefer_declared=True):
+                    old_split = existing_groups.get(group_id)
+                    if old_split is not None and old_split != split:
+                        raise ValueError(
+                            f"existing source/media content group occurs in multiple splits: {group_id}"
+                        )
                     existing_groups[group_id] = split
         existing_by_split[split] = existing
 
-    incoming = [(split, dict(item)) for split in SPLITS for item in rows_by_split.get(split, [])]
-    record_targets: dict[str, str] = {}
-    group_targets: dict[str, str] = {}
-    for source_split, item in incoming:
-        record_id = str(item.get("id", "")).strip()
-        if not record_id:
-            raise ValueError(f"new {source_split} manifest record has an empty ID")
-        if record_id in existing_ids:
-            continue
-        old_target = record_targets.get(record_id)
-        if old_target is None or priority[source_split] > priority[old_target]:
-            record_targets[record_id] = source_split
-        group_id = str(item.get("source_group_id", "")).strip()
-        if not group_id:
-            continue
-        existing_target = existing_groups.get(group_id)
-        if existing_target is not None and existing_target != source_split:
-            raise ValueError(
-                f"new source group {group_id} conflicts with existing {existing_target} split"
-            )
-        old_group_target = group_targets.get(group_id)
-        if old_group_target is None or priority[source_split] > priority[old_group_target]:
-            group_targets[group_id] = source_split
+    incoming: list[tuple[str, dict[str, Any], list[str]]] = []
+    for source_split in SPLITS:
+        for original in rows_by_split.get(source_split, []):
+            item = dict(original)
+            record_id = str(item.get("id", "")).strip()
+            if not record_id:
+                raise ValueError(f"new {source_split} manifest record has an empty ID")
+            if record_id in existing_ids:
+                continue
+            groups = groups_for_record(item, prefer_declared=True)
+            asset_groups = [group for group in groups if group.startswith("asset-sha256:")]
+            if asset_groups:
+                item["asset_content_group_ids"] = asset_groups
+            else:
+                item.pop("asset_content_group_ids", None)
+            incoming.append((source_split, item, groups))
+
+    parent: dict[str, str] = {}
+
+    def find(node: str) -> str:
+        parent.setdefault(node, node)
+        if parent[node] != node:
+            parent[node] = find(parent[node])
+        return parent[node]
+
+    def union(left: str, right: str) -> None:
+        root_left, root_right = find(left), find(right)
+        if root_left != root_right:
+            parent[root_right] = root_left
+
+    nodes_by_record: list[list[str]] = []
+    for _source_split, item, groups in incoming:
+        record_node = f"record-id:{str(item['id']).strip()}"
+        nodes = [record_node, *groups]
+        nodes_by_record.append(nodes)
+        for node in nodes[1:]:
+            union(nodes[0], node)
+
+    components: dict[str, list[int]] = {}
+    for index, nodes in enumerate(nodes_by_record):
+        root = find(nodes[0])
+        components.setdefault(root, []).append(index)
 
     additions: dict[str, list[dict[str, Any]]] = {split: [] for split in SPLITS}
-    for source_split, item in incoming:
-        record_id = str(item.get("id", "")).strip()
-        if record_id in existing_ids:
-            continue
-        group_id = str(item.get("source_group_id", "")).strip()
-        target = record_targets[record_id]
-        if group_id and group_id in group_targets and priority[group_targets[group_id]] > priority[target]:
-            target = group_targets[group_id]
-        item["split"] = target
-        additions[target].append(item)
+    for indices in components.values():
+        target = max((incoming[index][0] for index in indices), key=lambda split: priority[split])
+        component_groups = {group for index in indices for group in incoming[index][2]}
+        for group_id in component_groups:
+            persisted_split = existing_groups.get(group_id)
+            if persisted_split is not None and persisted_split != target:
+                raise ValueError(
+                    f"new media/source group {group_id} assigned to {target} conflicts with "
+                    f"persisted {persisted_split} split; rebuild the affected corpus with one deterministic split"
+                )
+        seen_component_ids: set[str] = set()
+        for index in indices:
+            item = incoming[index][1]
+            record_id = str(item["id"]).strip()
+            if record_id in seen_component_ids:
+                continue
+            seen_component_ids.add(record_id)
+            item["split"] = target
+            additions[target].append(item)
 
     counts: dict[str, int] = {}
     for split in SPLITS:
@@ -739,7 +808,6 @@ def _append_manifests(project_root: Path, rows_by_split: dict[str, list[dict[str
         os.replace(temp, path)
         counts[split] = len(added)
     return counts
-
 
 def external_task_coverage(project_root: str | Path) -> dict[str, dict[str, int]]:
     """Count licensed, pinned external examples with decoded payloads; exclude metadata-only rows."""

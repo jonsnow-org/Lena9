@@ -295,9 +295,12 @@ def validate_split_disjointness(project_root: str | Path) -> dict[str, Any]:
     id_sets = {name: {str(item.get("id", "")).strip() for item in records} for name, records in splits.items()}
     path_sets: dict[str, set[str]] = {name: set() for name in splits}
     content_hash_sets: dict[str, set[str]] = {name: set() for name in splits}
+    content_details: dict[str, dict[str, list[str]]] = {name: {} for name in splits}
     group_sets: dict[str, set[str]] = {name: set() for name in splits}
+    errors: list[str] = []
     for split, records in splits.items():
         for item in records:
+            record_id = str(item.get("id", "")).strip()
             group_id = str(item.get("source_group_id", "")).strip()
             if group_id:
                 group_sets[split].add(group_id)
@@ -309,6 +312,7 @@ def validate_split_disjointness(project_root: str | Path) -> dict[str, Any]:
             frames = item.get("frames")
             if isinstance(frames, list):
                 values.extend(value for value in frames if isinstance(value, str) and value.strip())
+            actual_asset_groups: set[str] = set()
             for relative in values:
                 target = (assets_root / relative).resolve()
                 if assets_root not in target.parents:
@@ -320,9 +324,20 @@ def validate_split_disjointness(project_root: str | Path) -> dict[str, Any]:
                 with target.open("rb") as stream:
                     for chunk in iter(lambda: stream.read(1024 * 1024), b""):
                         digest.update(chunk)
-                content_hash_sets[split].add(digest.hexdigest())
+                sha = digest.hexdigest()
+                content_hash_sets[split].add(sha)
+                actual_asset_groups.add(f"asset-sha256:{sha}")
+                content_details[split].setdefault(sha, []).append(f"{record_id}:{relative}")
+            group_sets[split].update(actual_asset_groups)
+            declared_groups = item.get("asset_content_group_ids")
+            if isinstance(declared_groups, list):
+                declared = {str(value).strip() for value in declared_groups if str(value).strip()}
+                if declared != actual_asset_groups:
+                    errors.append(
+                        f"asset content group fingerprint mismatch for {record_id} in {split}: "
+                        f"declared={sorted(declared)[:10]}, actual={sorted(actual_asset_groups)[:10]}"
+                    )
     overlaps: dict[str, dict[str, int]] = {}
-    errors: list[str] = []
     pairs = (("train", "validation"), ("train", "test"), ("validation", "test"))
     for left, right in pairs:
         shared_ids = id_sets[left] & id_sets[right]
@@ -340,9 +355,20 @@ def validate_split_disjointness(project_root: str | Path) -> dict[str, Any]:
         if shared_paths:
             errors.append(f"asset path leakage between {left} and {right}: {sorted(shared_paths)[:10]}")
         if shared_asset_content:
-            errors.append(f"identical asset content leakage between {left} and {right}: {len(shared_asset_content)} hash(es)")
+            samples = [
+                {
+                    "sha256_prefix": digest[:16],
+                    f"{left}_records": content_details[left].get(digest, [])[:3],
+                    f"{right}_records": content_details[right].get(digest, [])[:3],
+                }
+                for digest in sorted(shared_asset_content)[:5]
+            ]
+            errors.append(
+                f"identical asset content leakage between {left} and {right}: "
+                f"{len(shared_asset_content)} hash(es); samples={samples}"
+            )
         if shared_groups:
-            errors.append(f"source media group leakage between {left} and {right}: {sorted(shared_groups)[:10]}")
+            errors.append(f"source/media content group leakage between {left} and {right}: {sorted(shared_groups)[:10]}")
     if errors:
         raise DatasetError("split disjointness gate failed:\n- " + "\n- ".join(errors))
     return {

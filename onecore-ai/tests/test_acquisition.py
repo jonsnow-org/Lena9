@@ -126,6 +126,10 @@ def test_open_image_without_caption_trains_shared_visual_reconstruction(tmp_path
     assert record is not None
     assert record["task"] == "image_reconstruction"
     assert "caption" not in record
+    image_file = tmp_path / record["image"]
+    assert record["asset_content_group_ids"] == [
+        f"asset-sha256:{hashlib.sha256(image_file.read_bytes()).hexdigest()}"
+    ]
     report = validate_manifest([record], tmp_path, expected_split="train")
     assert report["valid"], report["errors"]
 
@@ -215,6 +219,42 @@ def test_manifest_merge_is_idempotent_and_split_local(tmp_path: Path) -> None:
     assert [item["id"] for item in train] == ["x"]
     assert [item["id"] for item in validation] == ["y"]
 
+
+def test_manifest_merge_joins_duplicate_asset_content_across_sources_transitively(tmp_path: Path) -> None:
+    from onecore.data import validate_split_disjointness
+
+    data_root = tmp_path / "data"
+    assets = data_root / "assets" / "acquired"
+    assets.mkdir(parents=True)
+    frame_one = "acquired/frame-one.png"
+    frame_two = "acquired/frame-two.png"
+    Image.new("RGB", (16, 16), (20, 40, 60)).save(assets / Path(frame_one).name, format="PNG")
+    Image.new("RGB", (16, 16), (80, 100, 120)).save(assets / Path(frame_two).name, format="PNG")
+    rows = {
+        "train": [{
+            "id": "video-record", "task": "video_reconstruction", "split": "train",
+            "frames": [frame_one, frame_two],
+        }],
+        "validation": [{
+            "id": "image-record-one", "task": "image_reconstruction", "split": "validation",
+            "image": frame_one,
+        }],
+        "test": [{
+            "id": "image-record-two", "task": "image_reconstruction", "split": "test",
+            "image": frame_two,
+        }],
+    }
+    added = _append_manifests(tmp_path, rows)
+    assert added == {"train": 0, "validation": 0, "test": 3}
+    test_records = [
+        json.loads(line) for line in (data_root / "test.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert {item["id"] for item in test_records} == {
+        "video-record", "image-record-one", "image-record-two",
+    }
+    assert all(item["split"] == "test" for item in test_records)
+    assert all(item.get("asset_content_group_ids") for item in test_records)
+    assert validate_split_disjointness(tmp_path)["valid"]
 
 def test_row_identity_disambiguates_reused_dataset_ids_using_full_payload() -> None:
     from onecore.acquire import _row_identity
@@ -689,6 +729,21 @@ def test_source_limits_apply_initial_and_expanded_profile_overrides() -> None:
     assert _source_limits(source, "initial") == {"train": 10, "validation": 2, "test": 2}
     assert _source_limits(source, "expanded") == {"train": 100, "validation": 20, "test": 2}
 
+
+def test_metadata_only_adapter_never_materializes_a_training_record(tmp_path: Path) -> None:
+    source = {
+        "id": "metadata-only-test",
+        "repo": "fixture/catalog",
+        "adapter": "metadata_only",
+        "license": "cc-by-4.0",
+        "attribution": "fixture catalog authors",
+        "_resolved_revision": "a" * 40,
+    }
+    record = _record_from_row(
+        {"id": "catalog-item-1", "caption": "Catalog description without media pixels"},
+        source, "catalog-row-1", "train", tmp_path,
+    )
+    assert record is None
 
 def test_external_asset_report_counts_only_real_licensed_media_files(tmp_path: Path) -> None:
     from onecore.acquire import _external_asset_report
