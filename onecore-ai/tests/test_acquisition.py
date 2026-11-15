@@ -210,6 +210,29 @@ def test_manifest_merge_deduplicates_rows_and_keeps_source_group_in_stricter_spl
     assert all(item["split"] == "test" for item in test)
 
 
+def test_records_share_stable_media_group_identity_across_captions(tmp_path: Path) -> None:
+    source = {
+        "id": "media-group-test",
+        "repo": "fixture/media-groups",
+        "adapter": "text",
+        "text_fields": ["caption"],
+        "split_group_field": "video_id",
+        "license": "fixture",
+        "attribution": "fixture",
+    }
+    first = _record_from_row(
+        {"id": "caption-1", "video_id": "video-77", "caption": "A long enough first caption for the record."},
+        source, "row-1", "train", tmp_path,
+    )
+    second = _record_from_row(
+        {"id": "caption-2", "video_id": "video-77", "caption": "A different second caption for the same video."},
+        source, "row-2", "train", tmp_path,
+    )
+    assert first is not None and second is not None
+    assert first["id"] != second["id"]
+    assert first["source_group_id"] == second["source_group_id"]
+
+
 def test_sharegpt4v_conversation_is_paired_with_its_image(tmp_path: Path, monkeypatch) -> None:
     import onecore.acquire as acquire_module
 

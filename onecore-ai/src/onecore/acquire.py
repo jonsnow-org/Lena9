@@ -360,7 +360,10 @@ def _record_from_row(
     group_field = source.get("split_group_field")
     group_value = _nested(row, str(group_field)) if group_field else None
     if group_value is not None and str(group_value).strip():
-        record["source_group_id"] = f"{source_id}:{str(group_value).strip()}"
+        group_payload = json.dumps(
+            _identity_value(group_value), ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        )
+        record["source_group_id"] = f"{source_id}:{_stable_hash(group_payload)}"
     text = _first_text(row, list(source.get("text_fields") or []))
     conversation_field = source.get("conversation_field")
     if conversation_field:
