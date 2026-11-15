@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -20,19 +21,41 @@ REQUIRED_METRICS = (
 )
 
 
+def _asset_manifest_sha256(root: Path, records: list[dict[str, Any]]) -> str:
+    assets_root = (root / "data" / "assets").resolve()
+    paths: set[str] = set()
+    for record in records:
+        for field in ("image", "audio_features"):
+            value = record.get(field)
+            if isinstance(value, str) and value.strip():
+                paths.add(value)
+        frames = record.get("frames")
+        if isinstance(frames, list):
+            paths.update(value for value in frames if isinstance(value, str) and value.strip())
+    entries: list[dict[str, str]] = []
+    for relative in sorted(paths):
+        target = (assets_root / relative).resolve()
+        if assets_root not in target.parents or not target.is_file():
+            raise ValueError(f"evaluation asset is missing or escapes data/assets: {relative}")
+        entries.append({"path": relative, "sha256": sha256_file(target)})
+    encoded = json.dumps(entries, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
 @torch.no_grad()
 def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
                         checkpoint_path: str | Path, tokenizer_path: str | Path,
-                        thresholds_path: str | Path, output_path: str | Path) -> dict[str, Any]:
+                        thresholds_path: str | Path, output_path: str | Path,
     root = Path(project_root).resolve()
     cfg, _, _ = load_config(config_path)
-    validation_manifest = root / "data" / "validation.jsonl"
-    records = read_manifest(validation_manifest)
+    if split not in {"validation", "test"}:
+        raise ValueError("evaluation split must be validation or test")
+    split_manifest = root / "data" / f"{split}.jsonl"
+    records = read_manifest(split_manifest)
     data_report = validate_manifest(
-        records, root / "data" / "assets", expected_split="validation"
+        records, root / "data" / "assets", expected_split=split
     )
     if not data_report["valid"]:
-        raise ValueError("validation data gate failed: " + "; ".join(data_report["errors"][:20]))
+        raise ValueError(f"{split} data gate failed: " + "; ".join(data_report["errors"][:20]))
 
     checkpoint_file = Path(checkpoint_path)
     model = OneCore(cfg).cpu().eval()
@@ -85,8 +108,10 @@ def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
         for record in records
     )
     data_kind = "contains_synthetic_or_unapproved_data" if contains_synthetic else "reviewed_validation_data"
+    split_manifest_sha256 = sha256_file(split_manifest)
     metrics = {
-        "evaluation_id": f"step-{step}-{sha256_file(checkpoint_file)[:12]}",
+        "evaluation_id": f"{split}-step-{step}-{sha256_file(checkpoint_file)[:12]}",
+        "split": split,
         "checkpoint_sha256": sha256_file(checkpoint_file),
         "checkpoint_step": step,
         "tokenizer_sha256": tokenizer_sha,
@@ -107,8 +132,13 @@ def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
         "per_task_target_tokens": token_counts,
         "modalities_tested": modalities_tested,
         "quality_thresholds": threshold_doc.get("thresholds", {}),
-        "validation_manifest_sha256": sha256_file(validation_manifest),
-        "validation_manifest_records": data_report["records"],
+        "split_manifest_sha256": split_manifest_sha256,
+        "split_manifest_records": data_report["records"],
+        "asset_manifest_sha256": _asset_manifest_sha256(root, records),
+        "validation_manifest_sha256": split_manifest_sha256 if split == "validation" else None,
+        "test_manifest_sha256": split_manifest_sha256 if split == "test" else None,
+        "validation_manifest_records": data_report["records"] if split == "validation" else None,
+        "test_manifest_records": data_report["records"] if split == "test" else None,
         "promotion_status": "not_evaluated",
     }
     out = Path(output_path)
@@ -120,8 +150,10 @@ def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
 def promotion_gate(metrics: dict[str, Any], baseline: dict[str, Any] | None = None,
                    require_real_data: bool = True) -> tuple[bool, list[str]]:
     failures: list[str] = []
+    if metrics.get("split") != "validation":
+        failures.append("top-level candidate metrics must come from the validation split")
     if metrics.get("real_data") is not True and require_real_data:
-        failures.append("candidate was evaluated only on synthetic bootstrap data, not reviewed real-world data")
+        failures.append("validation candidate was evaluated only on synthetic/unapproved data")
     if not isinstance(metrics.get("parameter_count"), int) or metrics["parameter_count"] <= 0:
         failures.append("parameter_count is missing or invalid")
     if not isinstance(metrics.get("checkpoint_sha256"), str) or len(metrics["checkpoint_sha256"]) != 64:
@@ -133,8 +165,7 @@ def promotion_gate(metrics: dict[str, Any], baseline: dict[str, Any] | None = No
     observed = set(metrics.get("modalities_tested", []))
     missing = required_modalities - observed
     if missing:
-        failures.append(f"missing held-out evaluation coverage: {sorted(missing)}")
-
+        failures.append(f"missing validation coverage: {sorted(missing)}")
     thresholds = metrics.get("quality_thresholds")
     if not isinstance(thresholds, dict) or not thresholds:
         failures.append("promotion thresholds have not been benchmarked and approved in configs/promotion-thresholds.json")
@@ -143,18 +174,53 @@ def promotion_gate(metrics: dict[str, Any], baseline: dict[str, Any] | None = No
         value = metrics.get(key)
         limit = thresholds.get(key)
         if not isinstance(value, (int, float)) or not math.isfinite(value):
-            failures.append(f"metric {key} is missing or non-finite")
+            failures.append(f"validation metric {key} is missing or non-finite")
         if not isinstance(limit, (int, float)) or not math.isfinite(limit) or limit <= 0:
-            failures.append(f"approved positive threshold for {key} is missing")
+            failures.append(f"approved positive validation threshold for {key} is missing")
         elif isinstance(value, (int, float)) and math.isfinite(value) and value > limit:
-            failures.append(f"{key}={value:.6g} exceeds approved threshold {limit:.6g}")
+            failures.append(f"validation {key}={value:.6g} exceeds approved threshold {limit:.6g}")
+
+    test_metrics = metrics.get("test_metrics")
+    if not isinstance(test_metrics, dict):
+        failures.append("independent held-out test metrics are missing")
+    else:
+        if test_metrics.get("split") != "test":
+            failures.append("nested test metrics must be evaluated on the test split")
+        if test_metrics.get("checkpoint_sha256") != metrics.get("checkpoint_sha256"):
+            failures.append("validation and test metrics refer to different checkpoint hashes")
+        if test_metrics.get("parameter_count") != metrics.get("parameter_count"):
+            failures.append("validation and test metrics report different parameter counts")
+        validation_hash = metrics.get("split_manifest_sha256") or metrics.get("validation_manifest_sha256")
+        test_hash = test_metrics.get("split_manifest_sha256") or test_metrics.get("test_manifest_sha256")
+        if not isinstance(validation_hash, str) or not isinstance(test_hash, str) or validation_hash == test_hash:
+            failures.append("validation and test manifest fingerprints are missing or not independent")
+        if test_metrics.get("real_data") is not True and require_real_data:
+            failures.append("test split contains only synthetic/unapproved data")
+        test_observed = set(test_metrics.get("modalities_tested", []))
+        test_missing = required_modalities - test_observed
+        if test_missing:
+            failures.append(f"missing held-out test coverage: {sorted(test_missing)}")
+        for key in REQUIRED_METRICS:
+            value = test_metrics.get(key)
+            limit = thresholds.get(f"test_{key}")
+            if not isinstance(value, (int, float)) or not math.isfinite(value):
+                failures.append(f"test metric {key} is missing or non-finite")
+            if not isinstance(limit, (int, float)) or not math.isfinite(limit) or limit <= 0:
+                failures.append(f"approved positive test threshold for {key} is missing")
+            elif isinstance(value, (int, float)) and math.isfinite(value) and value > limit:
+                failures.append(f"test {key}={value:.6g} exceeds approved threshold {limit:.6g}")
 
     if baseline:
         old = baseline.get("text_loss")
         current = metrics.get("text_loss")
         if isinstance(old, (int, float)) and isinstance(current, (int, float)) and current > old * 1.02:
-            failures.append("text loss regressed by more than 2% against the accepted baseline")
+            failures.append("validation text loss regressed by more than 2% against the supplied baseline")
+        old_test = baseline.get("test_metrics", {}).get("text_loss") if isinstance(baseline.get("test_metrics"), dict) else None
+        current_test = test_metrics.get("text_loss") if isinstance(test_metrics, dict) else None
+        if isinstance(old_test, (int, float)) and isinstance(current_test, (int, float)) and current_test > old_test * 1.02:
+            failures.append("test text loss regressed by more than 2% against the supplied baseline")
     return not failures, failures
+
 
 
 def main() -> None:
@@ -166,11 +232,12 @@ def main() -> None:
     parser.add_argument("--tokenizer", default="run-state/tokenizer.json")
     parser.add_argument("--thresholds", default="configs/promotion-thresholds.json")
     parser.add_argument("--output", default="run-state/evaluation.json")
+    parser.add_argument("--split", choices=["validation", "test"], default="validation")
     args = parser.parse_args()
     root = Path(args.root)
     metrics = evaluate_checkpoint(
         root, root / args.config, root / args.checkpoint,
-        root / args.tokenizer, root / args.thresholds, root / args.output,
+        root / args.tokenizer, root / args.thresholds, root / args.output, split=args.split,
     )
     passed, failures = promotion_gate(metrics)
     print(json.dumps({
