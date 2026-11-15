@@ -1,28 +1,35 @@
 # Notebook order and GitHub-only training
 
-Run the notebooks through the GitHub Actions workflow **OneCore — staged training**. Do not run long training jobs on a laptop, Colab, Kaggle, ModelScope, or another host.
+All six notebooks are executed on GitHub Actions only. The staged request workflow runs the contract, architecture, and data gates before each segment, then the selected training notebook, and finally the evaluation notebook for non-smoke segments.
 
-| Order | Notebook | Purpose | Promotion status |
-|---|---|---|---|
-| 00 | project contract | Scope, isolation, reproducibility rules | No training |
-| 01 | architecture budget | Instantiate exact model and count all parameters | Architecture validation only |
-| 02 | data gate | Check licensing, provenance, paths, and split isolation | Blocks invalid data |
-| 03 | text pretraining | Random-init smoke test or text/tool pretraining | Never promotes automatically |
-| 04 | multimodal curriculum | Joint image/audio/video/tool training in one checkpoint | Never promotes automatically |
-| 05 | evaluation and promotion | Review metrics and run the promotion gate | Promotion only on full pass |
+| Order | Notebook | Purpose |
+|---|---|---|
+| 00 | `00_project_contract.ipynb` | Scope, isolation, reproducibility, no external model weights |
+| 01 | `01_architecture_budget.ipynb` | Instantiate the full unified model and count all trainable parameters |
+| 02 | `02_data_gate.ipynb` | Validate train/validation/test provenance, licenses, assets, and cross-split leakage |
+| 03 | `03_text_pretraining.ipynb` | Text/tool foundation inside the same general model and checkpoint |
+| 04 | `04_multimodal_curriculum.ipynb` | Joint image/audio/video/tool curriculum inside the same model/checkpoint |
+| 05 | `05_evaluation_and_promotion.ipynb` | Separate validation/test reports, quality thresholds, promotion gate |
 
-## Checkpoint continuation
+## Exact first-stage architecture
 
-A successful training run uploads an artifact named `onecore-state-<RUN_ID>`. Copy the numeric run ID from its GitHub Actions run page. On the next `workflow_dispatch`, enter that number as `resume_run_id`. The workflow restores both the model and optimizer state from that artifact. The tokenizer is included in the same artifact.
+The current instantiated configuration has **57,579,201 trainable parameters**. CI checks this exact count, not only a broad size range. The approximate agreed figure of 57,587,393 differs by 8,192 parameters; the model remains in the 50–70M first-experiment range.
 
-Do not start a second training workflow while another is running. The workflow uses a non-cancelling concurrency lock.
+## Request and continuation
 
-## The first run
+Change `onecore-ai/training-request.json` on `research/onecore-foundation` to trigger the staged workflow. Use `stage=text` or `stage=multimodal`, `steps` from 1 to 250, and `resume_run_id` equal to the parent checkpoint's numeric Actions run ID. The workflow pins its checkout to the triggering commit and uses a non-cancelling training lock.
 
-Run stage `smoke` with 1–2 steps. This uses generated toy samples strictly to test the pipeline; it is not useful model training and can never pass promotion.
+Before training, the workflow verifies the parent checkpoint SHA-256, optimizer state and step, scheduler state, parameter count, and lineage metadata, then runs compile/tests/notebook-integrity CI. It restores from the Actions artifact; a release asset is a fallback only when durable release write permissions are available.
 
-Real `text` training requires reviewed `data/train.jsonl` text/tool records. `multimodal` training requires reviewed paired assets for images, audio features, and video frames. No training run downloads model weights.
+## Dataset and promotion
 
-## Checkpoint size and continuity
+The current bootstrap is 360 train / 87 validation / 87 test synthetic records. It is an engineering curriculum, not broad knowledge. Validation and test are never read by the training iterator; cross-split record IDs, asset paths, and identical asset-content hashes are checked. A missing test manifest is added without rewriting train/validation data.
 
-Checkpoints remain GitHub Actions artifacts, not Git objects. Public Actions artifacts have limited retention/storage; preserve successful run IDs. If an artifact expires or is deleted, the model/optimizer state cannot be reconstructed from logs. Keep an exported copy only through an approved GitHub-native storage path if long-term archival becomes necessary.
+Verified synthetic cognitive data is not permanently excluded: it must be tagged `data_class=synthetic_verified`, `review_status=verified`, and carry a nonempty `verification.method` and `verification.reference`. Bootstrap and unverified synthetic data remain promotion-ineligible. Promotion also requires independent validation/test hashes, modality coverage, and approved thresholds for both splits.
+
+## Implemented versus not yet verified
+
+- Image, audio log-mel, video-frame, and tool-use training share the same model and checkpoint.
+- Audio waveform reconstruction is an approximate Griffin–Lim decoder over log-mel features, not a production neural vocoder.
+- The initial codebook-usage report is a snapshot from initialization; it is not yet a post-training validation/test codebook-collapse study.
+- The current small synthetic bootstrap has not established general-language, scientific, coding, cross-modal, or real-world capability.

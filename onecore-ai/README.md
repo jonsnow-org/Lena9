@@ -1,81 +1,61 @@
 # OneCore AI — from-scratch compact general intelligence
 
-**A research project for one unified, multimodal model.** The model is initialized from random weights and trained from scratch. No pretrained model weights, adapters, teacher-model outputs, or model downloads are used.
+**One unified, multimodal research model initialized randomly from scratch.** No pretrained model weights, adapters, teacher-model outputs, or model downloads are used.
 
-OneCore is isolated under `onecore-ai/` in the Lena9 repository and developed on the dedicated branch `research/onecore-foundation`. Its GitHub Actions workflows are path-filtered and do not run for Lena9 application changes.
+OneCore is isolated under `onecore-ai/` in `jonsnow-org/Lena9` and developed only on `research/onecore-foundation`. Workflows are path-filtered, pinned to their triggering commit, and serialized with the non-cancelling `onecore-training` lock.
 
 ## Research hypothesis
 
-A compact model can spend parameters more efficiently by combining:
-- a **single shared recurrent Transformer core** reused over multiple reasoning cycles;
-- one shared token embedding/output space for text, image, audio, motion, and tool/action symbols;
-- small trainable modality front-ends and decoders whose parameters are counted as part of the same model;
-- adaptive compute at inference and strict evaluation gates;
-- a low-bit quantization research track reserved for a later measured phase; current training remains full precision.
-
-This is a testable hypothesis, not a claim that a tiny model already matches frontier systems.
+A compact model may spend parameters more efficiently by combining a shared recurrent Transformer core, a shared token embedding/output space, small trainable modality encoders/decoders, and adaptive compute. This is a hypothesis to test, not a claim of frontier-level capability.
 
 ## Non-negotiable rules
 
 1. All trainable weights start randomly initialized.
-2. No external model checkpoints, pretrained encoders, LoRA adapters, or teacher distillation.
-3. A single checkpoint contains the shared core and every trainable modality module.
-4. Dataset records must carry source, license, review status, split, and attribution metadata.
-5. Validation/test records never enter the training iterator.
-6. Training runs only on GitHub Actions hosted runners. No Colab, Kaggle, ModelScope, Render, Vercel, or other training host.
-7. A candidate is promoted only after the evaluation gate passes; training success alone is not model quality.
+2. No external checkpoints, pretrained encoders, LoRA adapters, teacher distillation, or Sham model data.
+3. One checkpoint contains the shared core and all trainable modality modules.
+4. Train, validation, and test manifests remain isolated; held-out data never enters the training iterator.
+5. Training, data generation, checkpointing, and evaluation run only on GitHub Actions.
+6. Training success or lower loss does not imply model readiness.
+7. Preserve lineage and do not resize/rebase checkpoints silently.
 
 ## Project layout
 
-- `src/onecore/model.py`: shared recurrent multimodal architecture and all trainable components.
-- `src/onecore/data.py`: manifest contract, license/source validation, dataset loading.
-- `src/onecore/train.py`: bounded, resumable CPU trainer.
-- `src/onecore/checkpoint.py`: atomic checkpoints, integrity hashes, lineage metadata.
-- `src/onecore/evaluate.py`: independent evaluation and promotion metrics.
-- `src/onecore/inference.py`: shared-core text, image, audio, video, and allowlisted tool-call inference.
-- `src/onecore/bootstrap.py`: deterministic synthetic multimodal curriculum for first-run pipeline validation.
+- `src/onecore/model.py`: shared recurrent multimodal architecture and trainable components.
+- `src/onecore/data.py`: manifest contract, provenance classes, split validation and leakage checks.
+- `src/onecore/train.py`: bounded resumable CPU trainer with manifest/asset fingerprints and parent checkpoint lineage.
+- `src/onecore/checkpoint.py`: atomic checkpoints and integrity hashes.
+- `src/onecore/evaluate.py`: separate validation/test evaluation and verified-data promotion gate.
+- `src/onecore/inference.py`: shared-core text/image/audio/video and allowlisted tool-call inference.
+- `src/onecore/bootstrap.py`: deterministic synthetic engineering curriculum; not a broad knowledge corpus.
 - `src/onecore/tool_runtime.py`: safe allowlisted tool dispatcher; generated text is never executed as code.
-- `src/onecore/audio.py`: log-mel preparation and approximate Griffin-Lim waveform decoding (not a production neural vocoder).
-- `src/onecore/inference.py`: unified text/image/audio/video and safe tool-call inference through the same model checkpoint.
-- `src/onecore/bootstrap.py`: deterministic synthetic bootstrap data for pipeline validation; explicitly not a broad knowledge corpus.
-- `notebooks/`: ordered research and training notebooks, executed by GitHub Actions.
-- `.github/workflows/onecore-*.yml`: isolated CI and training workflows.
+- `src/onecore/audio.py`: log-mel preparation and approximate Griffin–Lim waveform decoder (not a production neural vocoder).
+- `notebooks/`: six ordered research notebooks executed on GitHub Actions.
+- `.github/workflows/onecore-*.yml`: isolated CI and serialized training workflows.
 
-## GitHub-only training constraints
+## First architecture budget and future expansion
 
-The selected repository is public. GitHub documents standard public Linux runners as free and unlimited, with 4 vCPU, 16 GB RAM, and 14 GB SSD for `ubuntu-24.04`. GitHub-hosted jobs have a maximum duration of 6 hours. The workflow therefore runs **bounded training segments**, saves a resumable checkpoint artifact, and resumes from a prior run ID. It does not pretend a single job can complete foundation-model pretraining.
+The first experiment must contain 50–70M trainable parameters. The instantiated `phone-research.yaml` model is **57,579,201 parameters**, including all trainable image/audio/motion modules and counting the tied token embedding/output weight once. This is 8,192 below the earlier approximate target of 57,587,393 and is protected by an exact CI regression test.
 
-Every successful training segment is retained as a GitHub Actions artifact and as a versioned GitHub Release asset. Use the run ID to resume from the artifact, or the matching `onecore-run-<RUN_ID>` release asset if the artifact has expired. Checkpoints are never committed into Git history.
+Configuration: width 1024, four unique recurrent blocks, three recurrent cycles (12 block applications), eight attention heads, 4,096 text-token slots plus learned modality code ranges/special tokens, 8×8 RGB image patches, and 80-bin log-mel frames grouped by four.
 
-## First model budget
+100–150M is a later research phase, not a final ceiling. Expansion above 150M is possible only when independent quality, data coverage, compute, and lineage evidence justify it. Full precision remains the baseline; quantization follows a measured full-precision baseline.
 
-The agreed first architecture experiment is 50–70M parameters; the principal research target after validation is 100–150M, with 200M considered only if evidence justifies it:
-- width: 1024
-- unique recurrent blocks: 4
-- recurrent cycles: 3
-- 8 attention heads
-- 4,096 text-token slots plus learned visual/audio/motion code ranges and special tokens
-- 8×8 RGB image patches; 64×64 training images
-- 80-bin log-mel audio frames grouped in fours
-- approximately 57.6M parameters before runtime counting (all modalities included)
+## Dataset stages
 
-The exact count is computed from the instantiated model and saved into every checkpoint. CI asserts that the first experiment remains between 50M and 70M. The previous 9.8M run was only an undersized pipeline test and is not an approved model-size checkpoint.
+The current deterministic bootstrap contains 360 training, 87 validation, and 87 test records. It exercises the pipeline only and is not broad world knowledge. The training iterator reads only `train.jsonl`; validation/test are separately hashed and checked for record-ID, asset-path, and exact asset-content leakage.
 
-## Dataset contract
+Data classes separate `bootstrap`, `synthetic_unverified`, `synthetic_verified`, `external_reviewed`, and `owner_curated`. A verified synthetic corpus may qualify for promotion when records carry `review_status=verified` and a `verification.method` plus `verification.reference`, and when independent validation/test metrics and approved thresholds pass. Bootstrap/unverified data cannot qualify. External data still requires the actual license, source, attribution, and review.
 
-The first GitHub run generates a deterministic synthetic bootstrap corpus locally on the runner. It exercises all modalities and the tool format but is **not broad world knowledge** and can never pass promotion. To train on reviewed real-world data, add matching `data/train.jsonl` and `data/validation.jsonl` manifests plus assets under `data/assets/`. Every record must include:
-`id`, `task`, `license`, `source_url`, `attribution`, `review_status`, and its exact `split`.
-Allowed tasks: `text`, `image_caption`, `audio_text`, `video_caption`, `tool_use`.
+Do not commit private or personally identifying data, secrets, private source code, or unlicensed assets to this public repository.
 
-Do not put private, personally identifying, copyrighted, or unlicensed data in this public repository. For public datasets, record the actual dataset license and required attribution before use. External/owner-curated records must use `review_status="approved"`; synthetic records must use `review_status="generated"`. Any synthetic or unapproved data blocks promotion. The initial bootstrap is an engineering curriculum, not a substitute for a large licensed knowledge corpus.
+## GitHub-only training and checkpoint retention
 
-## Ordered runbook
+Training runs in bounded segments of up to 250 optimizer steps per job. The request-file workflow is triggered by a commit changing `onecore-ai/training-request.json`; it pins the exact commit, runs CI, restores model/optimizer/scheduler/RNG/tokenizer state, and executes the selected notebook stage followed by validation/test evaluation. Checkpoints are Actions artifacts, not Git objects.
 
-1. Open `notebooks/00_project_contract.ipynb`.
-2. Run the `OneCore — CI and notebook integrity` workflow after pushing changes.
-3. The initial push starts a short bootstrap run: create tokenizer, train text/tools, continue the same checkpoint on images/audio/video, then evaluate a held-out synthetic split.
-4. Replace or expand the bootstrap curriculum with reviewed, licensed real-world datasets in train and validation manifests.
-5. Resume `text` or `multimodal` segments using a previous GitHub run ID; checkpoints include model, optimizer, scheduler, tokenizer hash, manifest hash, and random states.
-6. Run `evaluate`; synthetic data, missing modality coverage, or unapproved quality thresholds block promotion.
+Artifacts are retained for 90 days. Durable GitHub Release upload currently receives `403 Resource not accessible by integration` from the repository `GITHUB_TOKEN`; a release is skipped unless `ONECORE_RELEASE_TOKEN` is configured with `contents:write` access or repository/org Actions settings permit release writes. Training itself remains GitHub Actions-only and does not use paid/external hosts.
 
-See `notebooks/README.md` for notebook order and the checkpoint-resume procedure.
+## Current research status
+
+The original 10-step run was an engineering bootstrap. The subsequent 100-step text/tool continuation reached optimizer step 110 and showed lower synthetic training and validation losses, but it remains a research checkpoint, not a final model. The current small bootstrap does not establish general language, science, coding, or multimodal capability. Promotion remains blocked until a large verified curriculum, independent test coverage, and approved quality thresholds are in place.
+
+See `docs/training-operations.md`, `data/README.md`, and `notebooks/README.md` for operational details.

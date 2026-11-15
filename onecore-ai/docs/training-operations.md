@@ -1,48 +1,51 @@
-# OneCore GitHub training operations
+# OneCore GitHub-only training operations
 
-## Single source of truth
+## Single source of truth and isolation
 
-The source of truth is the `research/onecore-foundation` branch in this repository. Workflows run only on GitHub Actions. OneCore training workflows share the non-cancelling concurrency group `onecore-training`; do not start simultaneous training runs.
+The only working branch is `research/onecore-foundation` in `jonsnow-org/Lena9`. All training, data generation, checkpointing, evaluation, and model-registry work runs on GitHub Actions CPU runners. Do not touch `main`, the Lena9 application, Ttbik, or any Sham model. Both training workflows share the non-cancelling `onecore-training` concurrency group.
 
-## Initial automatic run
+## Staged request-file workflow
 
-The first push of the isolated OneCore branch triggers `OneCore — initial GitHub training`:
-1. Generate deterministic synthetic train/validation samples in the runner.
-2. Run compile checks and architecture/data tests.
-3. Execute contract, model-budget, and dataset-gate notebooks.
-4. Train a fresh tokenizer and the random-init core on text/tool examples.
-5. Continue the *same* model, optimizer, scheduler and tokenizer on image/audio/video samples.
-6. Evaluate on a separate synthetic validation split.
-7. Upload the checkpoint and retain a versioned GitHub Release asset.
+The scheduled supervisor changes `onecore-ai/training-request.json` on the research branch. That file alone triggers `OneCore — staged GitHub training`; the workflow checks out the exact triggering commit SHA, validates the request, restores the referenced checkpoint, verifies its hash and optimizer/scheduler state, and runs the full CI suite before training.
 
-The initial run is a pipeline proof, not broad-knowledge pretraining and never eligible for promotion.
+Request fields:
+- `stage`: `text`, `multimodal`, or `evaluate`.
+- `steps`: 1–250 optimizer steps per bounded segment.
+- `resume_run_id`: numeric GitHub Actions run ID whose artifact is the parent checkpoint.
+- `parent_run_id`: provenance run ID, normally the same as `resume_run_id`.
 
-## Continuing training
+Each segment runs notebooks 00, 01, and 02 as gates. A text segment executes notebook 03; a multimodal segment executes notebook 04; notebook 05 evaluates validation and independent test splits after non-smoke training. The same shared model, optimizer, scheduler, tokenizer, RNG states, and checkpoint lineage continue across stages.
 
-Open Actions → OneCore — staged training → Run workflow. Choose `text` or `multimodal`, enter the number of optimizer steps (1–250), and set `resume_run_id` to the previous successful run's numeric ID.
+The manual `OneCore — staged training` workflow remains available for operator use. It is serialized with the same lock and runs CI and checkpoint verification before executing notebooks.
 
-The workflow first downloads the matching Actions artifact. If it has expired, it restores the checkpoint from the GitHub Release tag `onecore-run-<RUN_ID>`.
+## Initial pipeline baseline
 
-The checkpoint restores:
-- shared model weights;
-- optimizer state;
-- scheduler state and current step;
-- Python, NumPy and PyTorch RNG states;
-- model configuration;
-- tokenizer SHA-256;
-- training manifest SHA-256;
-- codebook initialization state and codebook usage report.
+The first from-scratch run was a short engineering pipeline proof: 5 text/tool optimizer steps followed by 5 joint multimodal steps, totaling 10. It is not broad-knowledge pretraining and is not promotion eligible. The later 100-step text continuation is real optimizer training, but still uses the small synthetic bootstrap curriculum.
 
-The workflow refuses to mix a changed tokenizer or changed training manifest into an existing lineage. Start a deliberate new lineage when the corpus changes substantially; do not overwrite an old run silently.
+## Architecture and expansion
 
-## GitHub limits and retention
+The first architecture experiment must remain within 50–70M trainable parameters. The instantiated `phone-research.yaml` model is **57,579,201 parameters**, including all trainable image/audio/motion encoders and decoders and counting the tied token embedding/output weight once. This is 8,192 below the earlier approximate 57,587,393 target and remains within the agreed range; CI asserts the exact current count.
 
-The workflow uses CPU-only PyTorch on a public GitHub-hosted Linux runner, with a per-job time budget below the platform's six-hour ceiling. It performs bounded segments and resumes via GitHub-owned artifacts/releases. Do not commit checkpoints to Git history.
+100–150M is a later research phase, not a final ceiling. Expansion above 150M remains possible only after quality, data coverage, compute, and checkpoint-lineage evidence justify it. Do not resize or migrate weights silently.
 
-## Data safety and licensing
+## Dataset stages and isolation
 
-This repository is public. Never commit private conversations, personal information, secrets, private source code, or materials without redistribution rights. Keep a record of exact dataset source, license and attribution. Synthetic rows must use `review_status=generated`; owner-reviewed and licensed data must use `review_status=approved`. Validation records are stored separately and are never passed to the training iterator.
+The deterministic engineering bootstrap currently yields 360 training records, 87 validation records, and 87 test records. All are tagged as `bootstrap` synthetic data. This corpus exercises the pipeline; it is not a large verified knowledge curriculum and cannot qualify for promotion.
+
+Only `train.jsonl` is read by the training iterator. Validation and test manifests are separate, have disjoint record IDs and asset paths, and are checked for identical asset-content hashes across splits. The bootstrap generator adds a missing test manifest without rewriting existing train/validation manifests. Training checkpoint lineage includes both the training-manifest SHA-256 and a fingerprint of the referenced training assets.
+
+Data classes distinguish `bootstrap`, `synthetic_unverified`, `synthetic_verified`, `external_reviewed`, and `owner_curated`. Verified synthetic records require `review_status=verified` plus `verification.method` and `verification.reference`. A large, independently verified synthetic curriculum may qualify for promotion; the small bootstrap and unverified synthetic data may not. External data still requires exact license, attribution, source, and review.
+
+## Checkpoint integrity and retention
+
+Checkpoint verification checks the internal SHA-256 against `train_result.json`, optimizer step and state, scheduler state, exact parameter count, tokenizer hash, manifest hash, asset hash, and parent checkpoint/run metadata. The initial legacy checkpoint did not record an asset fingerprint; the first continuation established one while preserving the old manifest hash.
+
+Artifacts are retained for 90 days and remain the immediate resume source. Durable GitHub Release upload currently returns `403 Resource not accessible by integration` when using the repository `GITHUB_TOKEN`. The release step is therefore skipped unless the secret `ONECORE_RELEASE_TOKEN` is configured with repository `contents:write` access (or repository/org Actions settings permit release writes). No paid or external training host is involved.
 
 ## Promotion
 
-Training is not release. Evaluation must include text, tool-use, image reconstruction, audio reconstruction, and video-sequence metrics. Quality thresholds are intentionally unset until a measured baseline is produced and reviewed. A candidate cannot be promoted while it contains synthetic/unapproved data, missing modality coverage, or unapproved thresholds.
+Training completion or a lower loss is not readiness. Promotion requires an independently hashed validation and test bundle from the same checkpoint, full modality coverage, verified data (reviewed real/owner-curated or independently verified synthetic), approved numeric thresholds for both splits, and no unacceptable regression. The current bootstrap evaluation remains blocked; no model registry promotion is recorded.
+
+## Safety and licensing
+
+This repository is public. Never commit private conversations, personal data, credentials, private source code, or unlicensed assets. Preserve source, license, attribution, review status, split, and any verification reference for every record. No pretrained weights, adapters, teacher outputs, or Sham model data may enter OneCore.
