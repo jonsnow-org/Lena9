@@ -43,57 +43,6 @@ def unpatchify(patches: torch.Tensor, height: int, width: int, patch_size: int) 
     ).reshape(b, channels, height, width)
 
 
-    @torch.no_grad()
-    def initialize_codebook(self, features: torch.Tensor, offset: int, count: int,
-                            iterations: int = 8, seed: int = 0) -> None:
-        """Initialize a modality codebook from this model's own random-init encoder features.
-
-        This is activation-based codebook seeding, not imported/pretrained weights.
-        It prevents the scale mismatch between random embedding rows and encoder
-        activations from collapsing every patch onto a tiny subset of codes.
-        """
-        if iterations < 1:
-            raise ValueError("iterations must be positive")
-        vectors = features.detach().reshape(-1, self.cfg.width).float()
-        if vectors.shape[0] == 0:
-            raise ValueError("cannot initialize a codebook from zero feature vectors")
-        generator = torch.Generator(device=vectors.device).manual_seed(seed)
-        if vectors.shape[0] >= count:
-            indices = torch.randperm(vectors.shape[0], generator=generator, device=vectors.device)[:count]
-            centers = vectors[indices].clone()
-        else:
-            indices = torch.randint(vectors.shape[0], (count,), generator=generator, device=vectors.device)
-            centers = vectors[indices].clone()
-            centers = centers + torch.randn(centers.shape, generator=generator, device=vectors.device) * (
-                vectors.std().clamp_min(1e-4) * 0.01
-            )
-        for _ in range(iterations):
-            distances = (
-                vectors.square().sum(dim=1, keepdim=True)
-                - 2.0 * vectors @ centers.t()
-                + centers.square().sum(dim=1).unsqueeze(0)
-            )
-            assignments = distances.argmin(dim=1)
-            sums = torch.zeros_like(centers)
-            sums.index_add_(0, assignments, vectors)
-            cluster_counts = torch.bincount(assignments, minlength=count).to(vectors.device)
-            nonempty = cluster_counts > 0
-            centers[nonempty] = sums[nonempty] / cluster_counts[nonempty].unsqueeze(1)
-            if (~nonempty).any():
-                replacement = torch.randint(
-                    vectors.shape[0], ((~nonempty).sum().item(),),
-                    generator=generator, device=vectors.device,
-                )
-                centers[~nonempty] = vectors[replacement]
-        self.token_embedding.weight[offset:offset + count].copy_(
-            centers.to(self.token_embedding.weight.dtype)
-        )
-
-    @torch.no_grad()
-    def codebook_usage(self, features: torch.Tensor, offset: int, count: int) -> dict[str, int | float]:
-        ids, _, _ = VectorQuantizer(self, offset, count).forward(features)
-        used = int(torch.unique(ids).numel())
-        return {"used_codes": used, "total_codes": count, "usage_fraction": used / count}
 
 class RMSNorm(nn.Module):
     def __init__(self, width: int, eps: float = 1e-6) -> None:
@@ -224,6 +173,58 @@ class OneCore(nn.Module):
 
     def count_parameters(self) -> int:
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
+
+    @torch.no_grad()
+    def initialize_codebook(self, features: torch.Tensor, offset: int, count: int,
+                            iterations: int = 8, seed: int = 0) -> None:
+        """Initialize a modality codebook from this model's own random-init encoder features.
+
+        This is activation-based codebook seeding, not imported/pretrained weights.
+        It prevents the scale mismatch between random embedding rows and encoder
+        activations from collapsing every patch onto a tiny subset of codes.
+        """
+        if iterations < 1:
+            raise ValueError("iterations must be positive")
+        vectors = features.detach().reshape(-1, self.cfg.width).float()
+        if vectors.shape[0] == 0:
+            raise ValueError("cannot initialize a codebook from zero feature vectors")
+        generator = torch.Generator(device=vectors.device).manual_seed(seed)
+        if vectors.shape[0] >= count:
+            indices = torch.randperm(vectors.shape[0], generator=generator, device=vectors.device)[:count]
+            centers = vectors[indices].clone()
+        else:
+            indices = torch.randint(vectors.shape[0], (count,), generator=generator, device=vectors.device)
+            centers = vectors[indices].clone()
+            centers = centers + torch.randn(centers.shape, generator=generator, device=vectors.device) * (
+                vectors.std().clamp_min(1e-4) * 0.01
+            )
+        for _ in range(iterations):
+            distances = (
+                vectors.square().sum(dim=1, keepdim=True)
+                - 2.0 * vectors @ centers.t()
+                + centers.square().sum(dim=1).unsqueeze(0)
+            )
+            assignments = distances.argmin(dim=1)
+            sums = torch.zeros_like(centers)
+            sums.index_add_(0, assignments, vectors)
+            cluster_counts = torch.bincount(assignments, minlength=count).to(vectors.device)
+            nonempty = cluster_counts > 0
+            centers[nonempty] = sums[nonempty] / cluster_counts[nonempty].unsqueeze(1)
+            if (~nonempty).any():
+                replacement = torch.randint(
+                    vectors.shape[0], ((~nonempty).sum().item(),),
+                    generator=generator, device=vectors.device,
+                )
+                centers[~nonempty] = vectors[replacement]
+        self.token_embedding.weight[offset:offset + count].copy_(
+            centers.to(self.token_embedding.weight.dtype)
+        )
+
+    @torch.no_grad()
+    def codebook_usage(self, features: torch.Tensor, offset: int, count: int) -> dict[str, int | float]:
+        ids, _, _ = VectorQuantizer(self, offset, count).forward(features)
+        used = int(torch.unique(ids).numel())
+        return {"used_codes": used, "total_codes": count, "usage_fraction": used / count}
 
     def _modality_ids(self, ids: torch.Tensor) -> torch.Tensor:
         result = torch.zeros_like(ids)
