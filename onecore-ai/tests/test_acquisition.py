@@ -775,34 +775,3 @@ def test_external_coverage_gate_counts_only_licensed_pinned_records(tmp_path: Pa
     coverage = assert_external_task_coverage(tmp_path, set(groups), minimum_train=1, minimum_holdout=1)
     for split in ("train", "validation", "test"):
         assert coverage[split] == {group: 1 for group in groups}
-
-
-    from onecore.acquire import assert_external_task_coverage
-    groups = {"text": "text", "tool": "tool_use", "image": "image_reconstruction",
-              "audio": "audio_reconstruction", "video": "video_reconstruction"}
-    data = tmp_path / "data"
-    data.mkdir()
-    for split in ("train", "validation", "test"):
-        records = []
-        for group, task in groups.items():
-            records.append({
-                "id": f"{split}-{group}", "task": task, "split": split,
-                "data_class": "external_staged", "license": "cc-by-4.0",
-                "source_url": "https://example.org/dataset", "attribution": "dataset authors",
-                "review_status": "pending", "source_id": f"source-{group}",
-                "source_revision": "a" * 40, "source_row_id_sha256": "b" * 64,
-            })
-        records.append({
-            "id": f"{split}-unlicensed-text", "task": "text", "split": split,
-            "data_class": "external_staged", "license": "cc-by-nc-4.0",
-            "source_url": "https://example.org/blocked", "attribution": "dataset authors",
-            "review_status": "pending", "source_id": "blocked-source",
-            "source_revision": "a" * 40, "source_row_id_sha256": "c" * 64,
-        })
-        records.append({"id": f"{split}-bootstrap", "task": "text", "split": split,
-                        "data_class": "bootstrap"})
-        (data / f"{split}.jsonl").write_text(
-            "\\n".join(json.dumps(item) for item in records) + "\\n", encoding="utf-8"
-        )
-    coverage = assert_external_task_coverage(tmp_path, set(groups), minimum_train=1, minimum_holdout=1)
-    assert coverage["train"]["text"] == 1
