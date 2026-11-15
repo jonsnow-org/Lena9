@@ -1,0 +1,59 @@
+import hashlib
+
+import pytest
+
+from onecore.bootstrap import generate_bootstrap
+from onecore.data import (
+    DatasetError,
+    iter_training_records,
+    validate_split_disjointness,
+    validate_test_data,
+    validate_training_data,
+    validate_validation_data,
+)
+
+
+def _sha256(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_bootstrap_generates_independent_test_split_without_rewriting_train_or_validation(tmp_path):
+    report = generate_bootstrap(tmp_path)
+    assert report["status"] == "generated-synthetic-bootstrap"
+    assert report["train_records"] == 360
+    assert report["validation_records"] == 87
+    assert report["test_records"] == 87
+
+    data_root = tmp_path / "data"
+    train_manifest = data_root / "train.jsonl"
+    validation_manifest = data_root / "validation.jsonl"
+    test_manifest = data_root / "test.jsonl"
+    train_sha = _sha256(train_manifest)
+    validation_sha = _sha256(validation_manifest)
+
+    # Exercise the additive migration used when old bootstrap data lacks test.jsonl.
+    test_manifest.unlink()
+    migration = generate_bootstrap(tmp_path)
+    assert migration["status"] == "added-independent-test-split"
+    assert migration["train_manifest_preserved"] is True
+    assert migration["validation_manifest_preserved"] is True
+    assert _sha256(train_manifest) == train_sha
+    assert _sha256(validation_manifest) == validation_sha
+
+    assert validate_training_data(tmp_path)["valid"]
+    assert validate_validation_data(tmp_path)["valid"]
+    assert validate_test_data(tmp_path)["valid"]
+    disjointness = validate_split_disjointness(tmp_path)
+    assert disjointness["valid"]
+    assert all(
+        counts["record_ids"] == 0
+        and counts["asset_paths"] == 0
+        and counts["asset_content_hashes"] == 0
+        for counts in disjointness["cross_split_overlaps"].values()
+    )
+
+
+@pytest.mark.parametrize("split", ["validation", "test"])
+def test_training_iterator_rejects_held_out_splits(split):
+    with pytest.raises(DatasetError, match="non-training split"):
+        iter_training_records([{"id": "held-out", "split": split}])
