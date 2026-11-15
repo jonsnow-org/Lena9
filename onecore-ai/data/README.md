@@ -1,35 +1,44 @@
-# OneCore training data manifests
+# OneCore training data manifests and source connectors
+
+The training-data factory is connected to the ordered research notebooks. Notebook 02 reads \`data/sources.yaml\`, streams the registered datasets and adds stable samples and local assets to the three split manifests. The same fixed source shards are regenerated on each GitHub training segment, preserving manifest and checkpoint fingerprints.
+
+## Source coverage
+
+The registry includes:
+- General language and Arabic: FineWeb-2, FineWeb2-HQ-Plus, Wikimedia Wikipedia, C4 and OSCAR.
+- Mathematics, proofs and code: Open-Web-Math-Pro, Proof-Pile-2 and Stack V2 Edu.
+- Audio/speech: FLEURS, Arabic Speech Corpus, GigaSpeech 3, GigaSpeech, GigaSpeech 2, WavCaps and Common Voice.
+- Images/documents: Open Images V7, SARD and Flickr30k.
+- Video/audio-video: FineVideo, LAION BVD-V-55M, BVD-A-10M, InternVid-10M-FLT and Panda-70M.
+
+Every task still trains the same OneCore model and writes into the same shared checkpoint. Text sources contribute language/code/math records; image and video sources are converted to 64×64 frames; audio is converted to 80-bin log-mel features; the encoders, decoders, shared token space and recurrent core are all counted as one model.
 
 ## Manifest contract
 
-Each record must carry `id`, `task`, `license`, `source_url`, `attribution`, `split`, and `review_status`. The optional `data_class` distinguishes the data's evidentiary level; `verification` is required for verified synthetic records. See `manifest.schema.json`.
+Each record includes \`id\`, \`task\`, \`license\`, \`source_url\`, \`attribution\`, \`split\`, and \`review_status\`. Source records also carry \`data_class\`. The local paths in \`image\`, \`audio_features\`, and \`frames\` must resolve below \`data/assets/\`.
 
-Allowed tasks: `text`, `image_caption`, `audio_text`, `video_caption`, and `tool_use`. Task-specific fields include `text`, `caption`, `transcript`, `prompt`, `response`, `image`, `audio_features`, and ordered `frames`. All assets must resolve below `data/assets/`.
+Allowed tasks: \`text\`, \`image_caption\`, \`image_reconstruction\`, \`audio_text\`, \`audio_reconstruction\`, \`video_caption\`, \`video_reconstruction\`, and \`tool_use\`.
 
-## Three isolated splits
+## Split separation
 
-- `train.jsonl`: `split=train`; the only manifest read by the training iterator.
-- `validation.jsonl`: `split=validation`; used for model selection and regression measurement, never training.
-- `test.jsonl`: `split=test`; held out from training and validation decisions, used for independent reporting.
+- \`train.jsonl\`: training only.
+- \`validation.jsonl\`: checkpoint selection/regression measurements.
+- \`test.jsonl\`: independent held-out measurement.
 
-Record IDs, asset paths, and identical asset-content hashes must not overlap across train, validation, and test. The data gate checks this. The deterministic bootstrap generator uses split-specific image markers and mild audio loudness variation to avoid byte-identical assets across held-out splits while preserving the scene/frequency labels. Evaluation separately measures vision/audio/motion codebook usage, normalized entropy, perplexity, dead codes, and maximum assignment concentration on validation and test.
+Where a dataset does not publish all three splits, stable ID hashing assigns each record to exactly one split. The data gate checks record IDs, asset paths, and identical asset hashes across all splits.
 
-## Data classes and promotion evidence
+## Running the source acquisition
 
-- `bootstrap`: small deterministic pipeline samples from `local://onecore-bootstrap`; generated and never promotion eligible.
-- `synthetic_unverified`: synthetic records without independent reference verification; usable for research training, not promotion.
-- `synthetic_verified`: synthetic records with `review_status=verified` and a `verification` object containing nonempty `method` and `reference`; may qualify for promotion if validation/test quality thresholds and coverage pass.
-- `external_reviewed`: third-party data with the exact license, source URL, attribution, and `review_status=approved`.
-- `owner_curated`: owner-created data with documented provenance and `review_status=approved`.
+The acquisition module can also be run directly on a GitHub runner:
 
-The word synthetic is not a permanent barrier. Promotion blocks the bootstrap tier and unverified synthetic data, not a sufficiently large and independently verified synthetic curriculum.
+\`\`\`bash
+python -m onecore.acquire --root onecore-ai --profile initial
+\`\`\`
 
-## Bootstrap counts and migration
+It uses Hugging Face streaming, writes a source-level report to \`data/acquisition-report.json\`, records unavailable sources without aborting the remaining sources, and does not download model weights. The optional \`HF_TOKEN\` environment variable is used for sources that require an authenticated account.
 
-The current deterministic bootstrap generates 360 training, 87 validation, and 87 test records. It is a small engineering curriculum, not broad world knowledge. If an older generated dataset has train and validation manifests but lacks `test.jsonl`, the generator adds the test split while preserving the existing train/validation manifest bytes.
+## Modalities
 
-## Licensing, privacy, and audio
+Audio features are mono 16 kHz 80-bin log-mel arrays. Video ingestion samples up to four ordered frames per clip. Sources containing only URLs or descriptive metadata are retained in the registry; the importer only emits a training record when it can obtain the actual media payload, so it never fabricates image/video content.
 
-Public repository contents are public. Never add personal data, private conversations, passwords, secrets, or assets with unclear redistribution rights. Record exact license and attribution before using external datasets. `review_status=approved` requires owner review; generated samples are tagged explicitly.
-
-Audio preparation currently supports mono/stereo 16-bit PCM WAV input for 80-bin log-mel features. The waveform decoder uses a pseudoinverse mel bank plus Griffin–Lim and is approximate; it is not a learned production vocoder.
+The audio waveform decoder remains approximate (mel pseudoinverse plus Griffin–Lim); it is not a trained production vocoder.

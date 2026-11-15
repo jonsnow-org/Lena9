@@ -22,6 +22,7 @@ jobs:
     env:
       PYTHONPATH: onecore-ai/src
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
     steps:
       - name: Checkout exact triggering commit
         uses: actions/checkout@v4

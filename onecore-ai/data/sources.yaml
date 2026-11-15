@@ -1,0 +1,327 @@
+version: 1
+description: "Unified multimodal OneCore source registry; all records feed one shared checkpoint."
+profile: initial
+defaults:
+  split_seed: "onecore-shard-v1"
+  max_scan_multiplier: 12
+  image_size: 64
+  max_video_frames: 4
+sources:
+  # Broad general-language pretraining
+  - id: fineweb2_hq_ar
+    repo: epfml/FineWeb2-HQ-Plus
+    config: arb_Arab
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    limits: {train: 3500, validation: 80, test: 80}
+    license: odc-by
+    attribution: "FineWeb2-HQ-Plus — EPFL ML / FineWeb2 contributors"
+    enabled: true
+  - id: fineweb2_hq_en
+    repo: epfml/FineWeb2-HQ-Plus
+    config: eng_Latn
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    limits: {train: 2500, validation: 60, test: 60}
+    license: odc-by
+    attribution: "FineWeb2-HQ-Plus — EPFL ML / FineWeb2 contributors"
+    enabled: true
+  - id: fineweb2_full_ar
+    repo: HuggingFaceFW/fineweb-2
+    config: arb_Arab
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    limits: {train: 2500, validation: 60, test: 60}
+    license: odc-by
+    attribution: "FineWeb2 — Hugging Face"
+    enabled: true
+  - id: fineweb2_full_en
+    repo: HuggingFaceFW/fineweb-2
+    config: eng_Latn
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    limits: {train: 1500, validation: 40, test: 40}
+    license: odc-by
+    attribution: "FineWeb2 — Hugging Face"
+    enabled: true
+  - id: wikipedia_ar
+    repo: wikimedia/wikipedia
+    config: "20231101.ar"
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    limits: {train: 1200, validation: 40, test: 40}
+    license: cc-by-sa-4.0
+    attribution: "Wikimedia Foundation contributors"
+    enabled: true
+  - id: wikipedia_en
+    repo: wikimedia/wikipedia
+    config: "20231101.en"
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    limits: {train: 800, validation: 30, test: 30}
+    license: cc-by-sa-4.0
+    attribution: "Wikimedia Foundation contributors"
+    enabled: true
+  - id: c4_ar
+    repo: allenai/c4
+    config: ar
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    limits: {train: 1000, validation: 30, test: 30}
+    license: dataset-card-terms
+    attribution: "Allen Institute for AI — C4"
+    enabled: true
+  - id: oscar_ar
+    repo: oscar-corpus/OSCAR-2301
+    config: ar
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    limits: {train: 1000, validation: 30, test: 30}
+    license: dataset-card-terms
+    attribution: "OSCAR corpus contributors"
+    enabled: true
+
+  # Mathematics, proofs, algorithms and software
+  - id: open_web_math_pro
+    repo: gair-prox/open-web-math-pro
+    config: default
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text, content]
+    split_strategy: hash
+    limits: {train: 2200, validation: 50, test: 50}
+    license: odc-by-1.0
+    attribution: "Open-Web-Math-Pro — GAIR ProX"
+    enabled: true
+  - id: proof_pile_2
+    repo: EleutherAI/proof-pile-2
+    config: default
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text, content]
+    split_strategy: hash
+    limits: {train: 1000, validation: 30, test: 30}
+    license: dataset-card-terms
+    attribution: "EleutherAI Proof-Pile-2 contributors"
+    enabled: true
+  - id: stack_v2_edu
+    repo: common-pile/stackv2_edu_filtered
+    config: default
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    license_field: metadata.license
+    split_strategy: hash
+    limits: {train: 1800, validation: 40, test: 40}
+    license: per-document-license-metadata
+    attribution: "Common Pile — Stack V2 Edu contributors"
+    enabled: true
+
+  # Speech, sound and audio-language
+  - id: fleurs_ar
+    repo: google/fleurs
+    config: ar_eg
+    hf_splits: [train, validation, test]
+    adapter: audio
+    audio_field: audio
+    text_fields: [transcription, raw_transcription]
+    split_strategy: preserve
+    limits: {train: 500, validation: 100, test: 100}
+    license: cc-by-4.0
+    attribution: "FLEURS — Google Research and language contributors"
+    enabled: true
+  - id: arabic_speech_corpus
+    repo: tunis-ai/arabic_speech_corpus
+    config: default
+    hf_splits: [train, test]
+    adapter: audio
+    audio_field: audio
+    text_fields: [orthographic, text]
+    split_strategy: hash
+    limits: {train: 350, validation: 40, test: 60}
+    license: cc-by-4.0
+    attribution: "Arabic Speech Corpus — Nawar Halabi / University of Southampton"
+    enabled: true
+  - id: gigaspeech3_arabic
+    repo: speechcolab/gigaspeech3
+    config: EGY
+    hf_splits: [train]
+    adapter: audio
+    audio_field: audio
+    text_fields: [transcription, text]
+    split_strategy: hash
+    limits: {train: 500, validation: 30, test: 30}
+    license: other
+    attribution: "GigaSpeech 3 — SpeechColab"
+    requires_access: true
+    enabled: true
+  - id: gigaspeech_english
+    repo: speechcolab/gigaspeech
+    config: xl
+    hf_splits: [train]
+    adapter: audio
+    audio_field: audio
+    text_fields: [text, transcription]
+    split_strategy: hash
+    limits: {train: 300, validation: 20, test: 20}
+    license: apache-2.0
+    attribution: "GigaSpeech — SpeechColab"
+    requires_access: true
+    enabled: true
+  - id: gigaspeech2_multilingual
+    repo: speechcolab/gigaspeech2
+    config: default
+    hf_splits: [train]
+    adapter: audio
+    audio_field: audio
+    text_fields: [text, transcription]
+    split_strategy: hash
+    limits: {train: 300, validation: 20, test: 20}
+    license: apache-2.0
+    attribution: "GigaSpeech 2 — SpeechColab"
+    requires_access: true
+    enabled: true
+  - id: wavcaps_audio_language
+    repo: txya900619/wavcaps-10s-16k
+    config: default
+    hf_splits: [bbc, freesound, soundbible, audioset_no_audiocaps]
+    adapter: audio
+    audio_field: audio
+    text_fields: [caption]
+    split_strategy: hash
+    limits: {train: 250, validation: 25, test: 25}
+    license: source-card-terms
+    attribution: "WavCaps source contributors"
+    enabled: true
+  - id: common_voice_ar_17
+    repo: mozilla-foundation/common_voice_17_0
+    config: ar
+    hf_splits: [train]
+    adapter: audio
+    audio_field: audio
+    text_fields: [sentence, text]
+    split_strategy: hash
+    limits: {train: 300, validation: 20, test: 20}
+    license: data-collective-terms
+    attribution: "Mozilla Common Voice Arabic contributors"
+    requires_access: true
+    enabled: true
+
+  # Still images and Arabic document understanding
+  - id: open_images_v7
+    repo: bitmind/open-images-v7
+    config: default
+    hf_splits: [train, validation, test]
+    adapter: image_url
+    image_field: url
+    split_strategy: preserve
+    limits: {train: 250, validation: 40, test: 40}
+    license: cc-by-2.0
+    attribution: "Open Images — Google LLC and image contributors"
+    enabled: true
+  - id: sard_arabic_documents
+    repo: riotu-lab/SARD
+    config: default
+    hf_splits: [Amiri, Sakkal_Majalla, Arial, Calibri, Scheherazade_New, Traditional_Arabic]
+    adapter: image_base64
+    image_field: image_base64
+    text_fields: [chunk]
+    split_strategy: hash
+    limits: {train: 250, validation: 30, test: 30}
+    license: cc-by-nc-nd-4.0
+    attribution: "SARD — Nacar et al. (2025), dataset contributors"
+    enabled: true
+  - id: flickr30k_visual_test
+    repo: nlphuji/flickr30k
+    config: TEST
+    hf_splits: [test]
+    adapter: image
+    image_field: image
+    text_fields: [caption]
+    split_strategy: preserve
+    force_split: test
+    limits: {test: 250}
+    license: dataset-card-terms
+    attribution: "Flickr30k — Young et al. and image contributors"
+    enabled: true
+
+  # Video, temporal understanding and paired audio-video
+  - id: finevideo
+    repo: HuggingFaceFV/finevideo
+    config: default
+    hf_splits: [train]
+    adapter: video
+    video_field: video
+    text_fields: [caption, text, answer]
+    split_strategy: hash
+    limits: {train: 150, validation: 20, test: 20}
+    license: cc-by
+    attribution: "FineVideo — Hugging Face Video dataset contributors"
+    requires_access: true
+    enabled: true
+  - id: laion_bvd_video_55m
+    repo: laion/BVD-V-55M
+    config: default
+    hf_splits: [train]
+    adapter: video
+    video_field: video
+    text_fields: [caption, text]
+    split_strategy: hash
+    limits: {train: 200, validation: 25, test: 25}
+    license: dataset-card-terms
+    attribution: "LAION BVD-V-55M contributors"
+    requires_access: true
+    enabled: true
+  - id: laion_bvd_audio_10m
+    repo: laion/BVD-A-10M
+    config: default
+    hf_splits: [train]
+    adapter: audio
+    audio_field: audio
+    text_fields: [caption, text]
+    split_strategy: hash
+    limits: {train: 200, validation: 25, test: 25}
+    license: dataset-card-terms
+    attribution: "LAION BVD-A-10M contributors"
+    requires_access: true
+    enabled: true
+  - id: internvid_10m_flt
+    repo: OpenGVLab/InternVid
+    config: InternVid-10M-FLT
+    hf_splits: [train]
+    adapter: video
+    video_field: video
+    text_fields: [caption, text]
+    split_strategy: hash
+    limits: {train: 200, validation: 20, test: 20}
+    license: cc-by-nc-sa-4.0
+    attribution: "InternVid — OpenGVLab"
+    requires_access: true
+    enabled: true
+  - id: panda70m_video_manifest
+    repo: multimodalart/panda-70m
+    config: default
+    hf_splits: [train]
+    adapter: video_manifest
+    text_fields: [caption, text]
+    split_strategy: hash
+    limits: {train: 1000, validation: 50, test: 50}
+    license: dataset-card-terms
+    attribution: "Panda-70M — Snap Research and source-video contributors"
+    enabled: true

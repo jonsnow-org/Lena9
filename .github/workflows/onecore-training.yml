@@ -44,6 +44,7 @@ jobs:
       ONECORE_PARENT_RUN_ID: ${{ inputs.resume_run_id }}
       PYTHONPATH: onecore-ai/src
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
     steps:
       - name: Checkout isolated research branch
         uses: actions/checkout@v4

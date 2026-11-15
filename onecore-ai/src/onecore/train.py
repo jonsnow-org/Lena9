@@ -82,18 +82,18 @@ def _record_sequence(
             _sid(cfg, TOOL_START), *_text_ids(tokenizer, record["response"], cfg),
             _sid(cfg, TOOL_END), _sid(cfg, EOS),
         ]
-    elif task == "image_caption":
+    elif task in {"image_caption", "image_reconstruction"}:
         image = _load_image(assets / record["image"], cfg.image_size)
         code_ids, latents, vq_loss = model.encode_image(image)
         decoded = model.decode_image_latents(latents)
         image_loss = torch.nn.functional.mse_loss(decoded, image)
         aux_loss = vq_loss + image_loss
-        sequence = [
-            _sid(cfg, BOS), _sid(cfg, IMAGE_START),
-            *code_ids.flatten().tolist(), _sid(cfg, IMAGE_END), _sid(cfg, TEXT_START),
-            *_text_ids(tokenizer, record["caption"], cfg), _sid(cfg, EOS),
-        ]
-    elif task == "audio_text":
+        sequence = [_sid(cfg, BOS), _sid(cfg, IMAGE_START),
+                    *code_ids.flatten().tolist(), _sid(cfg, IMAGE_END)]
+        if task == "image_caption":
+            sequence.extend([_sid(cfg, TEXT_START), *_text_ids(tokenizer, record["caption"], cfg)])
+        sequence.append(_sid(cfg, EOS))
+    elif task in {"audio_text", "audio_reconstruction"}:
         mel = _load_mel(assets / record["audio_features"], cfg.audio_bins)
         code_ids, latents, vq_loss = model.encode_audio(mel)
         reconstructed = model.decode_audio_latents(latents).reshape(
@@ -101,13 +101,13 @@ def _record_sequence(
         )[:, :mel.shape[1], :]
         audio_loss = torch.nn.functional.mse_loss(reconstructed, mel)
         aux_loss = vq_loss + audio_loss
-        transcript = record.get("transcript", record.get("caption", ""))
-        sequence = [
-            _sid(cfg, BOS), _sid(cfg, AUDIO_START),
-            *code_ids.flatten().tolist(), _sid(cfg, AUDIO_END), _sid(cfg, TEXT_START),
-            *_text_ids(tokenizer, transcript, cfg), _sid(cfg, EOS),
-        ]
-    elif task == "video_caption":
+        sequence = [_sid(cfg, BOS), _sid(cfg, AUDIO_START),
+                    *code_ids.flatten().tolist(), _sid(cfg, AUDIO_END)]
+        if task == "audio_text":
+            transcript = record.get("transcript", record.get("caption", ""))
+            sequence.extend([_sid(cfg, TEXT_START), *_text_ids(tokenizer, transcript, cfg)])
+        sequence.append(_sid(cfg, EOS))
+    elif task in {"video_caption", "video_reconstruction"}:
         frames = record["frames"]
         if not isinstance(frames, list) or not 1 <= len(frames) <= cfg.max_video_frames:
             raise ValueError(f"video must contain 1..{cfg.max_video_frames} ordered frame paths")
@@ -121,7 +121,6 @@ def _record_sequence(
             ))
             sequence.extend([_sid(cfg, VIDEO_FRAME), *code_ids.flatten().tolist()])
             if index < len(image_tensors) - 1:
-                # Motion codes describe the transition to the next frame.
                 difference = image_tensors[index + 1] - frame
                 motion_ids, motion_latents, motion_vq_loss = model.encode_motion(difference)
                 motion_recon = model.decode_motion_latents(motion_latents)
@@ -129,8 +128,10 @@ def _record_sequence(
                     motion_recon, difference
                 ))
                 sequence.extend([_sid(cfg, MOTION_START), *motion_ids.flatten().tolist()])
-        sequence.extend([_sid(cfg, VIDEO_END), _sid(cfg, TEXT_START)])
-        sequence.extend(_text_ids(tokenizer, record["caption"], cfg))
+        sequence.append(_sid(cfg, VIDEO_END))
+        if task == "video_caption":
+            sequence.append(_sid(cfg, TEXT_START))
+            sequence.extend(_text_ids(tokenizer, record["caption"], cfg))
         sequence.append(_sid(cfg, EOS))
         aux_loss = torch.stack(frame_losses).mean()
     else:
@@ -171,10 +172,10 @@ def _initialize_multimodal_codebooks(
     motion_features: list[torch.Tensor] = []
     for record in records:
         task = record["task"]
-        if task == "image_caption":
+        if task in {"image_caption", "image_reconstruction"}:
             image = _load_image(root / "data" / "assets" / record["image"], cfg.image_size)
             image_features.append(model.image_encoder(patchify(image, cfg.patch_size)).reshape(-1, cfg.width))
-        elif task == "audio_text":
+        elif task in {"audio_text", "audio_reconstruction"}:
             mel = _load_mel(root / "data" / "assets" / record["audio_features"], cfg.audio_bins)
             group = cfg.audio_group_frames
             pad = (-mel.shape[1]) % group
@@ -182,7 +183,7 @@ def _initialize_multimodal_codebooks(
                 mel = torch.nn.functional.pad(mel, (0, 0, 0, pad))
             chunks = mel.reshape(1, -1, cfg.audio_token_dim)
             audio_features.append(model.audio_encoder(chunks).reshape(-1, cfg.width))
-        elif task == "video_caption":
+        elif task in {"video_caption", "video_reconstruction"}:
             frames = [_load_image(root / "data" / "assets" / p, cfg.image_size) for p in record["frames"]]
             for frame in frames:
                 image_features.append(
@@ -225,8 +226,10 @@ def _weighted_record(records_by_task: dict[str, list[dict[str, Any]]],
         target_weights = {"text": 0.75, "tool_use": 0.25}
     else:
         target_weights = {
-            "text": 0.12, "tool_use": 0.10, "image_caption": 0.28,
-            "audio_text": 0.20, "video_caption": 0.30,
+            "text": 0.10, "tool_use": 0.08,
+            "image_caption": 0.18, "image_reconstruction": 0.12,
+            "audio_text": 0.18, "audio_reconstruction": 0.07,
+            "video_caption": 0.18, "video_reconstruction": 0.09,
         }
     available = {k: v for k, v in target_weights.items() if records_by_task.get(k)}
     if not available:
@@ -334,15 +337,29 @@ def run_training(
         records = read_manifest(root / "data" / "train.jsonl")
         manifest_sha = sha256_file(root / "data" / "train.jsonl")
         allowed_tasks = {"text", "tool_use"} if stage == "text" else {
-            "text", "tool_use", "image_caption", "audio_text", "video_caption"
+            "text", "tool_use", "image_caption", "image_reconstruction",
+            "audio_text", "audio_reconstruction", "video_caption", "video_reconstruction"
         }
         records = list(iter_training_records(records, allowed_tasks))
         for record in records:
             records_by_task.setdefault(record["task"], []).append(record)
-        required = {"text", "tool_use"} if stage == "text" else {
-            "text", "tool_use", "image_caption", "audio_text", "video_caption"
-        }
+        required = {"text", "tool_use"} if stage == "text" else {"text", "tool_use"}
         missing = required - set(records_by_task)
+        if stage == "multimodal":
+            modality_groups = {
+                "image": {"image_caption", "image_reconstruction"},
+                "audio": {"audio_text", "audio_reconstruction"},
+                "video": {"video_caption", "video_reconstruction"},
+            }
+            missing_modalities = [
+                name for name, options in modality_groups.items()
+                if not (options & set(records_by_task))
+            ]
+            if missing_modalities:
+                raise ValueError(
+                    "multimodal data is missing one or more shared-model modalities: "
+                    + ", ".join(missing_modalities)
+                )
         if missing:
             raise ValueError(f"training data is missing required task categories: {sorted(missing)}")
         all_manifest_records = read_manifest(root / "data" / "train.jsonl")

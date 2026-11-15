@@ -13,6 +13,11 @@ dependencies = [
   "Pillow>=10,<13",
   "tokenizers>=0.19,<1",
   "PyYAML>=6,<7",
+  "datasets>=3.2,<5",
+  "huggingface_hub>=0.27,<2",
+  "imageio>=2.34,<3",
+  "imageio-ffmpeg>=0.5,<1",
+  "soundfile>=0.12,<1",
 ]
 
 [project.optional-dependencies]

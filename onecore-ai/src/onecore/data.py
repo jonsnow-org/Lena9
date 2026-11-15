@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-ALLOWED_TASKS = {"text", "image_caption", "audio_text", "video_caption", "tool_use"}
+ALLOWED_TASKS = {"text", "image_caption", "image_reconstruction", "audio_text", "audio_reconstruction", "video_caption", "video_reconstruction", "tool_use"}
 REQUIRED_FIELDS = {"id", "task", "license", "source_url", "attribution", "split", "review_status"}
 
 
@@ -16,7 +16,7 @@ class DatasetError(ValueError):
 
 ALLOWED_DATA_CLASSES = {
     "bootstrap", "synthetic_unverified", "synthetic_verified",
-    "external_reviewed", "owner_curated", "unapproved",
+    "external_reviewed", "external_staged", "owner_curated", "unapproved",
 }
 
 
@@ -102,8 +102,8 @@ def validate_manifest(records: list[dict[str, Any]], assets_root: str | Path,
         if not str(item["attribution"]).strip():
             errors.append(f"line {line}: attribution is required")
         review_status = str(item["review_status"]).strip().lower()
-        if review_status not in {"approved", "generated", "verified"}:
-            errors.append(f"line {line}: review_status must be 'approved', 'generated', or 'verified'")
+        if review_status not in {"approved", "generated", "verified", "pending"}:
+            errors.append(f"line {line}: review_status must be approved, generated, verified, or pending")
         data_class = classify_record_data(item)
         if data_class not in ALLOWED_DATA_CLASSES:
             errors.append(f"line {line}: unsupported data_class {data_class!r}")
@@ -119,6 +119,9 @@ def validate_manifest(records: list[dict[str, Any]], assets_root: str | Path,
                 errors.append(f"line {line}: verified synthetic data must use the synthetic license and verified status")
             if not isinstance(verification, dict) or not str(verification.get("method", "")).strip() or not str(verification.get("reference", "")).strip():
                 errors.append(f"line {line}: verified synthetic data requires verification.method and verification.reference")
+        elif data_class == "external_staged":
+            if review_status != "pending" or license_id == "local-owner-synthetic":
+                errors.append(f"line {line}: staged external records must preserve source metadata and pending status")
         elif data_class in {"external_reviewed", "owner_curated"}:
             if review_status != "approved" or license_id == "local-owner-synthetic":
                 errors.append(f"line {line}: reviewed external/owner data must use approved status and a non-synthetic license")
@@ -129,9 +132,9 @@ def validate_manifest(records: list[dict[str, Any]], assets_root: str | Path,
         if task == "tool_use" and not (item.get("prompt") and item.get("response")):
             errors.append(f"line {line}: tool_use requires prompt and response")
         asset_fields = {
-            "image_caption": ["image"],
-            "audio_text": ["audio_features"],
-            "video_caption": ["frames"],
+            "image_caption": ["image"], "image_reconstruction": ["image"],
+            "audio_text": ["audio_features"], "audio_reconstruction": ["audio_features"],
+            "video_caption": ["frames"], "video_reconstruction": ["frames"],
         }.get(task, [])
         for field in asset_fields:
             value = item.get(field)

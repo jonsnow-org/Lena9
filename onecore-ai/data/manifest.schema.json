@@ -20,8 +20,11 @@
       "enum": [
         "text",
         "image_caption",
+        "image_reconstruction",
         "audio_text",
+        "audio_reconstruction",
         "video_caption",
+        "video_reconstruction",
         "tool_use"
       ]
     },
@@ -76,7 +79,8 @@
       "enum": [
         "approved",
         "generated",
-        "verified"
+        "verified",
+        "pending"
       ]
     },
     "data_class": {
@@ -85,6 +89,7 @@
         "synthetic_unverified",
         "synthetic_verified",
         "external_reviewed",
+        "external_staged",
         "owner_curated"
       ]
     },
@@ -305,6 +310,72 @@
           },
           "source_url": {
             "pattern": "^local://owner-created"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "task": {
+            "const": "image_reconstruction"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "image"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "task": {
+            "const": "audio_reconstruction"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "audio_features"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "task": {
+            "const": "video_reconstruction"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "frames"
+        ]
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "data_class"
+        ],
+        "properties": {
+          "data_class": {
+            "const": "external_staged"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "review_status": {
+            "const": "pending"
+          },
+          "license": {
+            "not": {
+              "const": "local-owner-synthetic"
+            }
           }
         }
       }

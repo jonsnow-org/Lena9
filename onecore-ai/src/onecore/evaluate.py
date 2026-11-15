@@ -78,15 +78,15 @@ def _collect_codebook_usage(root: Path, records: list[dict[str, Any]], model: On
     assignments: dict[str, list[torch.Tensor]] = {name: [] for name in REQUIRED_CODEBOOKS}
     for record in records:
         task = record["task"]
-        if task == "image_caption":
+        if task in {"image_caption", "image_reconstruction"}:
             image = _load_image(assets / record["image"], cfg.image_size)
             ids, _, _ = model.encode_image(image)
             assignments["vision"].append(ids.reshape(-1) - cfg.vision_start)
-        elif task == "audio_text":
+        elif task in {"audio_text", "audio_reconstruction"}:
             mel = _load_mel(assets / record["audio_features"], cfg.audio_bins)
             ids, _, _ = model.encode_audio(mel)
             assignments["audio"].append(ids.reshape(-1) - cfg.audio_start)
-        elif task == "video_caption":
+        elif task in {"video_caption", "video_reconstruction"}:
             frame_tensors = [_load_image(assets / relative, cfg.image_size) for relative in record["frames"]]
             for frame in frame_tensors:
                 ids, _, _ = model.encode_image(frame)
@@ -159,16 +159,21 @@ def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
     per_task_loss = {task: mean(loss_sum, task) for task in counts}
     per_task_aux = {task: mean(aux_sum, task) for task in counts}
     modalities_tested: list[str] = []
-    metric_map = {
-        "text": "text_loss",
-        "tool_use": "tool_use",
-        "image_caption": "image_reconstruction",
-        "audio_text": "audio_reconstruction",
-        "video_caption": "video_sequence",
+    metric_groups = {
+        "text_loss": {"text"},
+        "tool_use": {"tool_use"},
+        "image_reconstruction": {"image_caption", "image_reconstruction"},
+        "audio_reconstruction": {"audio_text", "audio_reconstruction"},
+        "video_sequence": {"video_caption", "video_reconstruction"},
     }
-    for task, metric in metric_map.items():
-        if task in counts:
+    for metric, tasks in metric_groups.items():
+        if tasks & set(counts):
             modalities_tested.append(metric)
+
+    def combined_mean(source: dict[str, float], tasks: set[str]) -> float | None:
+        present = [task for task in tasks if task in counts]
+        total = sum(counts[task] for task in present)
+        return (sum(source[task] for task in present) / total) if total else None
 
     thresholds_file = Path(thresholds_path)
     threshold_doc = json.loads(thresholds_file.read_text(encoding="utf-8")) if thresholds_file.is_file() else {}
@@ -186,6 +191,8 @@ def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
         data_kind = "contains_bootstrap_data"
     elif "synthetic_unverified" in data_classes:
         data_kind = "contains_unverified_synthetic"
+    elif "external_staged" in data_classes:
+        data_kind = "external_staged_corpus"
     else:
         data_kind = "unapproved_or_mixed_data"
     data_verified_for_promotion = bool(records) and all(
@@ -208,11 +215,12 @@ def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
         "parameter_count": model.count_parameters(),
         "text_loss": mean(loss_sum, "text"),
         "tool_use": mean(loss_sum, "tool_use"),
-        "image_reconstruction": mean(aux_sum, "image_caption"),
-        "audio_reconstruction": mean(aux_sum, "audio_text"),
+        "image_reconstruction": combined_mean(aux_sum, {"image_caption", "image_reconstruction"}),
+        "audio_reconstruction": combined_mean(aux_sum, {"audio_text", "audio_reconstruction"}),
         "video_sequence": (
-            (mean(loss_sum, "video_caption") or 0.0) + (mean(aux_sum, "video_caption") or 0.0)
-            if "video_caption" in counts else None
+            (combined_mean(loss_sum, {"video_caption", "video_reconstruction"}) or 0.0)
+            + (combined_mean(aux_sum, {"video_caption", "video_reconstruction"}) or 0.0)
+            if ({"video_caption", "video_reconstruction"} & set(counts)) else None
         ),
         "per_task_loss": per_task_loss,
         "per_task_auxiliary_loss": per_task_aux,
