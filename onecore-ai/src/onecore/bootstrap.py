@@ -242,15 +242,42 @@ def generate_bootstrap(project_root: str | Path, force: bool = False) -> dict[st
     assets = data_root / "assets"
     train_manifest = data_root / "train.jsonl"
     validation_manifest = data_root / "validation.jsonl"
-    if train_manifest.exists() or validation_manifest.exists():
+    test_manifest = data_root / "test.jsonl"
+    if train_manifest.exists() or validation_manifest.exists() or test_manifest.exists():
         if not (train_manifest.exists() and validation_manifest.exists()):
-            raise FileExistsError("both train.jsonl and validation.jsonl must exist; refusing to mix or overwrite data")
-        if not force:
+            raise FileExistsError("train.jsonl and validation.jsonl must both exist before adding a test split; refusing to mix or overwrite data")
+        if force:
+            train_manifest.unlink(missing_ok=True)
+            validation_manifest.unlink(missing_ok=True)
+            test_manifest.unlink(missing_ok=True)
+        elif not test_manifest.exists():
+            # Add a new independent held-out test split without rewriting the
+            # existing train/validation manifests or changing their lineage.
+            assets.mkdir(parents=True, exist_ok=True)
+            test_records = (
+                _text_records("test", 40, 301)
+                + _tool_records("test", 15, 302)
+                + _image_records("test", 12, 303, assets)
+                + _audio_records("test", 12, 304, assets)
+                + _video_records("test", 8, 305, assets)
+            )
+            rng = random.Random(314160)
+            rng.shuffle(test_records)
+            test_manifest.write_text(
+                "\n".join(json.dumps(item, ensure_ascii=False) for item in test_records) + "\n",
+                encoding="utf-8",
+            )
+            return {
+                "status": "added-independent-test-split",
+                "train_manifest_preserved": True,
+                "validation_manifest_preserved": True,
+                "test_records": len(test_records),
+                "assets": sum(1 for p in assets.rglob("*") if p.is_file()),
+                "promotion_eligible": False,
+            }
+        else:
             return {"status": "skipped-existing-data", "train_manifest": str(train_manifest),
-                    "validation_manifest": str(validation_manifest)}
-    if force and (train_manifest.exists() or validation_manifest.exists()):
-        train_manifest.unlink(missing_ok=True)
-        validation_manifest.unlink(missing_ok=True)
+                    "validation_manifest": str(validation_manifest), "test_manifest": str(test_manifest)}
 
     assets.mkdir(parents=True, exist_ok=True)
     train_records = (
@@ -279,10 +306,24 @@ def generate_bootstrap(project_root: str | Path, force: bool = False) -> dict[st
         "\n".join(json.dumps(item, ensure_ascii=False) for item in validation_records) + "\n",
         encoding="utf-8",
     )
+    test_records = (
+        _text_records("test", 40, 301)
+        + _tool_records("test", 15, 302)
+        + _image_records("test", 12, 303, assets)
+        + _audio_records("test", 12, 304, assets)
+        + _video_records("test", 8, 305, assets)
+    )
+    test_rng = random.Random(314160)
+    test_rng.shuffle(test_records)
+    test_manifest.write_text(
+        "\n".join(json.dumps(item, ensure_ascii=False) for item in test_records) + "\n",
+        encoding="utf-8",
+    )
     return {
         "status": "generated-synthetic-bootstrap",
         "train_records": len(train_records),
         "validation_records": len(validation_records),
+        "test_records": len(test_records),
         "assets": sum(1 for p in assets.rglob("*") if p.is_file()),
         "training_data_kind": "synthetic_bootstrap",
         "promotion_eligible": False,
