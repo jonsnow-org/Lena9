@@ -14,6 +14,37 @@ class DatasetError(ValueError):
     pass
 
 
+ALLOWED_DATA_CLASSES = {
+    "bootstrap", "synthetic_unverified", "synthetic_verified",
+    "external_reviewed", "owner_curated", "unapproved",
+}
+
+
+def classify_record_data(record: dict[str, Any]) -> str:
+    """Classify provenance without treating all synthetic data as permanently ineligible.
+
+    Legacy bootstrap records are identified by their explicit local source URL.
+    Promotion eligibility is separately tied to verified data class and evidence.
+    """
+    explicit = str(record.get("data_class", "")).strip().lower()
+    if explicit:
+        return explicit
+    license_id = str(record.get("license", "")).strip().lower()
+    source_url = str(record.get("source_url", "")).strip().lower()
+    review_status = str(record.get("review_status", "")).strip().lower()
+    if license_id == "local-owner-synthetic" and source_url == "local://onecore-bootstrap":
+        return "bootstrap"
+    if license_id == "local-owner-synthetic" and review_status == "verified":
+        return "synthetic_verified"
+    if license_id == "local-owner-synthetic":
+        return "synthetic_unverified"
+    if review_status == "approved" and source_url.startswith("local://owner-created"):
+        return "owner_curated"
+    if review_status == "approved":
+        return "external_reviewed"
+    return "unapproved"
+
+
 def read_manifest(path: str | Path) -> list[dict[str, Any]]:
     manifest = Path(path)
     if not manifest.is_file():
@@ -71,12 +102,28 @@ def validate_manifest(records: list[dict[str, Any]], assets_root: str | Path,
         if not str(item["attribution"]).strip():
             errors.append(f"line {line}: attribution is required")
         review_status = str(item["review_status"]).strip().lower()
-        if review_status not in {"approved", "generated"}:
-            errors.append(f"line {line}: review_status must be 'approved' or 'generated'")
-        if license_id == "local-owner-synthetic" and review_status != "generated":
-            errors.append(f"line {line}: synthetic samples must be marked generated")
-        if license_id != "local-owner-synthetic" and review_status != "approved":
-            errors.append(f"line {line}: third-party/owner corpus must be explicitly approved before training")
+        if review_status not in {"approved", "generated", "verified"}:
+            errors.append(f"line {line}: review_status must be 'approved', 'generated', or 'verified'")
+        data_class = classify_record_data(item)
+        if data_class not in ALLOWED_DATA_CLASSES:
+            errors.append(f"line {line}: unsupported data_class {data_class!r}")
+        elif data_class == "bootstrap":
+            if license_id != "local-owner-synthetic" or str(item["source_url"]).strip() != "local://onecore-bootstrap" or review_status != "generated":
+                errors.append(f"line {line}: bootstrap data must use the local bootstrap source, synthetic license, and generated status")
+        elif data_class == "synthetic_unverified":
+            if license_id != "local-owner-synthetic" or review_status != "generated":
+                errors.append(f"line {line}: unverified synthetic data must use the synthetic license and generated status")
+        elif data_class == "synthetic_verified":
+            verification = item.get("verification")
+            if license_id != "local-owner-synthetic" or review_status != "verified":
+                errors.append(f"line {line}: verified synthetic data must use the synthetic license and verified status")
+            if not isinstance(verification, dict) or not str(verification.get("method", "")).strip() or not str(verification.get("reference", "")).strip():
+                errors.append(f"line {line}: verified synthetic data requires verification.method and verification.reference")
+        elif data_class in {"external_reviewed", "owner_curated"}:
+            if review_status != "approved" or license_id == "local-owner-synthetic":
+                errors.append(f"line {line}: reviewed external/owner data must use approved status and a non-synthetic license")
+        elif data_class == "unapproved":
+            errors.append(f"line {line}: record lacks approved or verified provenance for its declared source")
         if task == "text" and not str(item.get("text", "")).strip():
             errors.append(f"line {line}: text task requires non-empty text")
         if task == "tool_use" and not (item.get("prompt") and item.get("response")):
