@@ -393,6 +393,7 @@ sources:
     image_field: image
     image_url_prefix: "https://images.cocodataset.org/train2017"
     conversation_field: conversations
+    split_group_field: image
     split_strategy: hash
     limits: {train: 400, validation: 30, test: 30}
     license: dataset-card-terms
@@ -405,6 +406,7 @@ sources:
     config: ShareGPT4Video
     hf_splits: [train]
     adapter: metadata_only
+    split_group_field: video_id
     split_strategy: hash
     limits: {train: 2500, validation: 100, test: 100}
     license: dataset-card-terms
@@ -417,6 +419,7 @@ sources:
     adapter: video_url
     video_field: contentUrl
     text_fields: [name]
+    split_group_field: videoid
     split_strategy: preserve
     limits: {train: 60, validation: 15}
     license: dataset-card-terms
@@ -427,6 +430,7 @@ sources:
     config: default
     hf_splits: [train]
     adapter: metadata_only
+    split_group_field: video_id
     split_strategy: hash
     limits: {train: 2500, validation: 100, test: 100}
     license: dataset-card-terms
@@ -437,6 +441,7 @@ sources:
     config: default
     hf_splits: [train, validation, test]
     adapter: metadata_only
+    split_group_field: youtube_id
     split_strategy: preserve
     limits: {train: 1500, validation: 100, test: 100}
     license: dataset-card-terms
@@ -449,6 +454,7 @@ sources:
     adapter: video_repo_file
     video_field: video
     text_fields: [caption]
+    split_group_field: video
     split_strategy: hash
     limits: {train: 180, validation: 30, test: 30}
     license: dataset-card-terms

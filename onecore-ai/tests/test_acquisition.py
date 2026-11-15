@@ -12,6 +12,7 @@ from PIL import Image
 from onecore.acquire import (
     _append_manifests,
     _assign_split,
+    _grouped_split,
     _record_from_row,
     _stable_split,
     _training_manifest_base,
@@ -376,3 +377,17 @@ def test_long_natural_text_is_truncated_to_context_not_dropped(tmp_path: Path) -
     )
     assert task == "text"
     assert tuple(sequence.shape) == (1, 64)
+
+
+def test_captions_for_the_same_media_never_cross_dataset_splits() -> None:
+    source = {"id": "msrvtt", "split_strategy": "hash", "split_group_field": "video"}
+    first = {"video": "videos/video2447.mp4", "caption": "A conference"}
+    second = {"video": "videos/video2447.mp4", "caption": "A presenter speaking"}
+    split_first = _grouped_split(source, first, "train", "row-1", "stable-seed")
+    split_second = _grouped_split(source, second, "train", "row-2", "stable-seed")
+    assert split_first == split_second
+    assert _grouped_split(
+        source, {"video": "videos/video2448.mp4"}, "train", "row-3", "stable-seed"
+    ) == _grouped_split(
+        source, {"video": "videos/video2448.mp4"}, "train", "row-4", "stable-seed"
+    )

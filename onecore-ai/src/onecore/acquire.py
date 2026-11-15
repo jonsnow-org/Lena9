@@ -406,6 +406,18 @@ def _assign_split(source: dict[str, Any], hf_split: str, row_id: str, seed: str)
     return _stable_split(str(source["id"]), row_id, seed)
 
 
+def _grouped_split(
+    source: dict[str, Any], row: dict[str, Any], hf_split: str, row_id: str, seed: str
+) -> str:
+    """Keep captions/segments of one media item in the same held-out partition."""
+    group_field = source.get("split_group_field")
+    group_value = _nested(row, str(group_field)) if group_field else None
+    if group_value is None or not str(group_value).strip():
+        return _assign_split(source, hf_split, row_id, seed)
+    group_identity = f"{hf_split}:{str(group_value).strip()}"
+    return _assign_split(source, hf_split, group_identity, seed)
+
+
 def _append_manifests(project_root: Path, rows_by_split: dict[str, list[dict[str, Any]]]) -> dict[str, int]:
     counts: dict[str, int] = {}
     for split in SPLITS:
@@ -518,7 +530,7 @@ def acquire_sources(
                         continue
                     raw_identity = _row_identity(row, source_id, scanned)
                     row_id = f"{hf_split}:{raw_identity}"
-                    assigned = _assign_split(source, str(hf_split), row_id, seed)
+                    assigned = _grouped_split(source, row, str(hf_split), row_id, seed)
                     if assigned not in SPLITS or filled[assigned] >= limits.get(assigned, 0):
                         if scanned >= max_scan or all(filled[s] >= limits.get(s, 0) for s in SPLITS):
                             break
