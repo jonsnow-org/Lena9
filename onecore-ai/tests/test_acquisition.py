@@ -172,7 +172,6 @@ def test_manifest_merge_is_idempotent_and_split_local(tmp_path: Path) -> None:
     assert [item["id"] for item in validation] == ["y"]
 
 
-
 def test_row_identity_disambiguates_reused_dataset_ids_using_full_payload() -> None:
     from onecore.acquire import _row_identity
 
@@ -209,6 +208,7 @@ def test_manifest_merge_deduplicates_rows_and_keeps_source_group_in_stricter_spl
     assert {item["id"] for item in test} == {"train-caption", "test-caption"}
     assert all(item["split"] == "validation" for item in validation)
     assert all(item["split"] == "test" for item in test)
+
 
 def test_sharegpt4v_conversation_is_paired_with_its_image(tmp_path: Path, monkeypatch) -> None:
     import onecore.acquire as acquire_module
