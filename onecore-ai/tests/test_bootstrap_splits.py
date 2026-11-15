@@ -101,5 +101,11 @@ def test_workflows_use_stage_specific_external_data_gates_and_license_guard():
     assert "ONECORE_REQUIRED_TASKS:" in training
     assert "text,image,audio,video" in bootstrap
     assert "text,image,audio,video" in training
+    assert "stage == 'acquire' && 'text,audio'" in bootstrap
     assert "Enforce commercial license and immutable provenance before corpus artifact upload" in bootstrap
     assert "ONECORE_DATA_PROFILE:" in bootstrap
+    assert "start_fresh_text_training = request.get" in bootstrap
+    assert "steps.request.outputs.start_fresh_text_training == 'true'" in bootstrap
+    assert "ONECORE_SKIP_ACQUISITION: ${{ steps.request.outputs.stage != 'acquire'" in bootstrap
+    assert "steps.request.outputs.stage != 'acquire' && hashFiles('onecore-ai/run-state/checkpoint.pt')" in bootstrap
+    assert "acquisition-only stage; no checkpoint alias created" in bootstrap

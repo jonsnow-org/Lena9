@@ -1050,18 +1050,7 @@ def acquire_sources(
             + ("\n" if merged else ""), encoding="utf-8"
         )
         metadata_counts[source_id] = len(merged) - len(existing)
-    task_groups = {
-        "text": {"text"}, "tool": {"tool_use"},
-        "image": {"image_caption", "image_reconstruction"},
-        "audio": {"audio_text", "audio_reconstruction"},
-        "video": {"video_caption", "video_reconstruction"},
-    }
-    external_task_counts = {}
-    for split in SPLITS:
-        manifest = root / "data" / f"{split}.jsonl"
-        records = [json.loads(line) for line in manifest.read_text(encoding="utf-8").splitlines() if line.strip()] if manifest.is_file() else []
-        external = [item for item in records if external_record_is_trainable(item)]
-        external_task_counts[split] = {group: sum(1 for item in external if item.get("task") in tasks) for group, tasks in task_groups.items()}
+    external_task_counts = external_task_coverage(root)
     output = {
         "profile": profile,
         "registry_version": registry.get("version"),

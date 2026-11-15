@@ -56,6 +56,15 @@ jobs:
           parent_run_id = str(request.get("parent_run_id", resume_run_id)).strip()
           data_run_id = str(request.get("data_run_id", "")).strip()
           data_profile = str(request.get("data_profile", "initial"))
+          start_fresh_text_training = request.get("start_fresh_text_training", False)
+          if not isinstance(start_fresh_text_training, bool):
+              raise ValueError("start_fresh_text_training must be a JSON boolean")
+          if start_fresh_text_training and stage != "acquire":
+              raise ValueError("start_fresh_text_training is only valid for an initial acquire stage")
+          if start_fresh_text_training and resume_run_id:
+              raise ValueError("fresh random initialization cannot resume a prior checkpoint")
+          if start_fresh_text_training and data_run_id:
+              raise ValueError("fresh random initialization must use the corpus artifact created by this acquisition")
           if data_profile not in {"initial", "expanded"}:
               raise ValueError("data_profile must be initial or expanded")
           if stage not in {"acquire", "text", "multimodal", "evaluate"}:
@@ -80,12 +89,13 @@ jobs:
           print(f"parent_run_id={parent_run_id}")
           print(f"data_run_id={data_run_id}")
           print(f"data_profile={data_profile}")
+          print(f"start_fresh_text_training={str(start_fresh_text_training).lower()}")
           PY
 
       - name: Generate deterministic bootstrap data or validate existing reviewed manifests
         run: python -m onecore.bootstrap --root onecore-ai
 
-      - name: Restore imported shared corpus for text and multimodal continuation
+      - name: Restore imported shared corpus for acquisition or training continuation
         if: ${{ steps.request.outputs.data_run_id != '' }}
         uses: actions/download-artifact@v4
         with:
@@ -194,8 +204,8 @@ jobs:
           PY
       - name: Execute contract, architecture and verified external-corpus gate
         env:
-          ONECORE_SKIP_ACQUISITION: ${{ steps.request.outputs.data_run_id != '' && '1' || '0' }}
-          ONECORE_REQUIRED_TASKS: ${{ steps.request.outputs.stage == 'evaluate' && 'text,tool,image,audio,video' || steps.request.outputs.stage == 'multimodal' && 'text,image,audio,video' || 'text' }}
+          ONECORE_SKIP_ACQUISITION: ${{ steps.request.outputs.stage != 'acquire' && steps.request.outputs.data_run_id != '' && '1' || '0' }}
+          ONECORE_REQUIRED_TASKS: ${{ steps.request.outputs.stage == 'evaluate' && 'text,tool,image,audio,video' || steps.request.outputs.stage == 'multimodal' && 'text,image,audio,video' || steps.request.outputs.stage == 'acquire' && 'text,audio' || 'text' }}
           ONECORE_DATA_PROFILE: ${{ steps.request.outputs.data_profile }}
           ONECORE_MIN_TRAIN_RECORDS: '25'
           ONECORE_MIN_HOLDOUT_RECORDS: '5'
@@ -252,7 +262,7 @@ jobs:
           compression-level: 1
 
       - name: Start fresh random-initialized OneCore text training on the imported corpus
-        if: ${{ success() && steps.request.outputs.stage == 'acquire' }}
+        if: ${{ success() && steps.request.outputs.stage == 'acquire' && steps.request.outputs.start_fresh_text_training == 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
@@ -299,7 +309,7 @@ jobs:
         run: cp onecore-ai/data/acquisition-report.json onecore-ai/run-state/acquisition-report.json
 
       - name: Upload resumable checkpoint and scientific reports
-        if: ${{ always() && hashFiles('onecore-ai/run-state/checkpoint.pt') != '' }}
+        if: ${{ always() && steps.request.outputs.stage != 'acquire' && hashFiles('onecore-ai/run-state/checkpoint.pt') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: onecore-state-${{ github.run_id }}
@@ -318,7 +328,7 @@ jobs:
 
       - name: Check durable release write token
         id: release_auth
-        if: ${{ success() && steps.request.outputs.stage != 'evaluate' && hashFiles('onecore-ai/run-state/checkpoint.pt') != '' }}
+        if: ${{ success() && steps.request.outputs.stage != 'evaluate' && steps.request.outputs.stage != 'acquire' && hashFiles('onecore-ai/run-state/checkpoint.pt') != '' }}
         env:
           ONECORE_RELEASE_TOKEN: ${{ secrets.ONECORE_RELEASE_TOKEN }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -330,7 +340,7 @@ jobs:
           fi
       - name: Create durable versioned GitHub Release checkpoint
         id: release
-        if: ${{ success() && steps.request.outputs.stage != 'evaluate' && steps.release_auth.outputs.enabled == 'true' && hashFiles('onecore-ai/run-state/checkpoint.pt') != '' }}
+        if: ${{ success() && steps.request.outputs.stage != 'evaluate' && steps.request.outputs.stage != 'acquire' && steps.release_auth.outputs.enabled == 'true' && hashFiles('onecore-ai/run-state/checkpoint.pt') != '' }}
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.ONECORE_RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
@@ -367,9 +377,15 @@ jobs:
           echo "- Parent run ID: ${{ steps.request.outputs.parent_run_id }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- Run ID: ${GITHUB_RUN_ID}" >> "$GITHUB_STEP_SUMMARY"
           echo "- Branch: research/onecore-foundation" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Checkpoint release: onecore-run-${GITHUB_RUN_ID}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Durable release token configured: ${{ steps.release_auth.outputs.enabled }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Durable release step outcome: ${{ steps.release.outcome }}" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "${{ steps.request.outputs.stage }}" == "acquire" ]]; then
+            echo "- Checkpoint artifact/release: skipped (acquisition-only stage; no checkpoint alias created)" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Durable release token configured: not applicable" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Durable release step outcome: skipped" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- Checkpoint release: onecore-run-${GITHUB_RUN_ID}" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Durable release token configured: ${{ steps.release_auth.outputs.enabled }}" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Durable release step outcome: ${{ steps.release.outcome }}" >> "$GITHUB_STEP_SUMMARY"
+          fi
           if [[ -f onecore-ai/run-state/train_result.json ]]; then
             echo '### Training report' | tee -a "$GITHUB_STEP_SUMMARY"
             cat onecore-ai/run-state/train_result.json | tee -a "$GITHUB_STEP_SUMMARY"
