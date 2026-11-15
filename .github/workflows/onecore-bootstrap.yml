@@ -211,7 +211,7 @@ jobs:
           compression-level: 1
 
       - name: Create durable versioned GitHub Release checkpoint
-        if: ${{ success() && hashFiles('onecore-ai/run-state/checkpoint.pt') != '' }}
+        if: ${{ success() && steps.request.outputs.stage != 'evaluate' && hashFiles('onecore-ai/run-state/checkpoint.pt') != '' }}
         shell: bash
         run: |
           mkdir -p onecore-ai/run-state/release
