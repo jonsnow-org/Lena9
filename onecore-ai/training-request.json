@@ -1,8 +1,6 @@
 {
   "schema": "onecore-training-request-v1",
-  "stage": "multimodal",
-  "steps": 100,
-  "resume_run_id": "43713887975",
-  "parent_run_id": "43713887975",
-  "purpose": "Continue the exact unified OneCore random-initialized checkpoint from optimizer step 110 into the joint multimodal curriculum. Preserve optimizer, scheduler, RNG, tokenizer and lineage. This 100-step CPU segment uses the deterministic bootstrap corpus only, remains non-promotion-eligible, and must be evaluated separately on validation and test."
+  "stage": "acquire",
+  "steps": 1,
+  "purpose": "Acquire verified external text, function-calling, image, audio and video samples into the shared OneCore manifests and assets. Preserve deterministic Bootstrap samples in the corpus for reproducible pipeline diagnostics, but exclude every synthetic record from optimizer inputs. Enforce real external modality coverage across train/validation/test, upload the combined corpus artifact, then start the same randomly initialized OneCore checkpoint on external text and tool examples before multimodal continuation."
 }

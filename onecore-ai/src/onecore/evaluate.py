@@ -109,22 +109,40 @@ def _collect_codebook_usage(root: Path, records: list[dict[str, Any]], model: On
     }
 
 
+def select_evaluation_records(
+    records: list[dict[str, Any]],
+    data_classes: set[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Select a separate diagnostic/benchmark subset without mutating the shared manifest."""
+    selected = (
+        [record for record in records if classify_record_data(record) in data_classes]
+        if data_classes is not None else list(records)
+    )
+    if not selected:
+        filter_label = sorted(data_classes) if data_classes is not None else "all"
+        raise ValueError(f"evaluation split contains no records for data filter {filter_label}")
+    return selected
+
+
 @torch.no_grad()
 def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
                         checkpoint_path: str | Path, tokenizer_path: str | Path,
                         thresholds_path: str | Path, output_path: str | Path,
-                        split: str = "validation") -> dict[str, Any]:
+                        split: str = "validation",
+                        data_classes: set[str] | None = None) -> dict[str, Any]:
     root = Path(project_root).resolve()
     cfg, _, _ = load_config(config_path)
     if split not in {"validation", "test"}:
         raise ValueError("evaluation split must be validation or test")
     split_manifest = root / "data" / f"{split}.jsonl"
-    records = read_manifest(split_manifest)
+    all_records = read_manifest(split_manifest)
     data_report = validate_manifest(
-        records, root / "data" / "assets", expected_split=split
+        all_records, root / "data" / "assets", expected_split=split
     )
     if not data_report["valid"]:
         raise ValueError(f"{split} data gate failed: " + "; ".join(data_report["errors"][:20]))
+    records = select_evaluation_records(all_records, data_classes)
+    requested_data_filter = sorted(data_classes) if data_classes is not None else "all"
 
     checkpoint_file = Path(checkpoint_path)
     model = OneCore(cfg).cpu().eval()
@@ -199,9 +217,16 @@ def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
         data_class in verified_classes for data_class in data_classes
     )
     real_data = bool(records) and all(
-        data_class in {"external_reviewed", "owner_curated"} for data_class in data_classes
+        data_class in {"external_staged", "external_reviewed", "owner_curated"}
+        for data_class in data_classes
     )
-    split_manifest_sha256 = sha256_file(split_manifest)
+    selected_manifest_payload = json.dumps(
+        [{"id": record.get("id"), "task": record.get("task"),
+          "source_url": record.get("source_url"), "data_class": classify_record_data(record)}
+         for record in records],
+        ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+    ).encode("utf-8")
+    split_manifest_sha256 = hashlib.sha256(selected_manifest_payload).hexdigest()
     metrics = {
         "evaluation_id": f"{split}-step-{step}-{sha256_file(checkpoint_file)[:12]}",
         "split": split,
@@ -229,7 +254,9 @@ def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
         "modalities_tested": modalities_tested,
         "quality_thresholds": threshold_doc.get("thresholds", {}),
         "split_manifest_sha256": split_manifest_sha256,
-        "split_manifest_records": data_report["records"],
+        "split_manifest_records": len(records),
+        "total_manifest_records": data_report["records"],
+        "evaluation_data_filter": requested_data_filter,
         "asset_manifest_sha256": _asset_manifest_sha256(root, records),
         "codebook_usage": _collect_codebook_usage(root, records, model),
         "validation_manifest_sha256": split_manifest_sha256 if split == "validation" else None,

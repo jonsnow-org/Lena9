@@ -260,6 +260,7 @@ def _build_scheduler(optimizer: torch.optim.Optimizer, warmup_steps: int,
 
 def _weighted_record(records_by_task: dict[str, list[dict[str, Any]]],
                      stage: str, rng: random.Random) -> dict[str, Any]:
+    """Sample only from records already admitted by the real-data training gate."""
     if stage == "text":
         target_weights = {"text": 0.75, "tool_use": 0.25}
     else:
@@ -269,14 +270,13 @@ def _weighted_record(records_by_task: dict[str, list[dict[str, Any]]],
             "audio_text": 0.18, "audio_reconstruction": 0.07,
             "video_caption": 0.18, "video_reconstruction": 0.09,
         }
-    available = {k: v for k, v in target_weights.items() if records_by_task.get(k)}
+    available = {key: value for key, value in target_weights.items() if records_by_task.get(key)}
     if not available:
-        raise ValueError(f"no records available for the {stage} training stage")
-    total = sum(available.values())
+        raise ValueError(f"no imported external records are available for the {stage} training stage")
     tasks = list(available)
-    weights = [available[k] / total for k in tasks]
-    chosen = rng.choices(tasks, weights=weights, k=1)[0]
-    return rng.choice(records_by_task[chosen])
+    weights = [available[key] for key in tasks]
+    selected_task = rng.choices(tasks, weights=weights, k=1)[0]
+    return rng.choice(records_by_task[selected_task])
 
 
 def _asset_manifest_sha256(project_root: Path, records: list[dict[str, Any]]) -> str:
@@ -430,19 +430,11 @@ def run_training(
             if data_class not in TRAINABLE_DATA_CLASSES
         }
         optimizer_classes = set(optimizer_data_class_counts)
-        if optimizer_classes == {"bootstrap"}:
-            data_kind = "synthetic_bootstrap"
-        elif optimizer_classes == {"synthetic_verified"}:
-            data_kind = "synthetic_verified"
-        elif optimizer_classes == {"synthetic_unverified"}:
-            data_kind = "contains_unverified_synthetic"
-        elif optimizer_classes and optimizer_classes <= {"external_reviewed", "owner_curated"}:
-            data_kind = "reviewed_training_data"
-        elif optimizer_classes and optimizer_classes <= {"synthetic_verified", "external_reviewed", "owner_curated"}:
-            data_kind = "mixed_verified_corpus"
+        if optimizer_classes and optimizer_classes <= {"external_staged", "external_reviewed", "owner_curated"}:
+            data_kind = "external_training_data"
         else:
-            data_kind = "mixed_training_data"
-        real_data = bool(optimizer_classes) and optimizer_classes <= {"external_reviewed", "owner_curated"}
+            data_kind = "blocked_non_external_training_data"
+        real_data = bool(optimizer_classes) and optimizer_classes <= {"external_staged", "external_reviewed", "owner_curated"}
         if resume:
             saved_manifest_sha = saved_metadata.get("manifest_sha256")
             saved_asset_sha = saved_metadata.get("asset_manifest_sha256")

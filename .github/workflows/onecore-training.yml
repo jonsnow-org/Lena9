@@ -23,6 +23,11 @@ on:
         required: false
         default: ""
         type: string
+      data_run_id:
+        description: "Run ID whose corpus artifact contains the imported external datasets"
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: write
@@ -42,6 +47,7 @@ jobs:
       ONECORE_STEPS: ${{ inputs.steps }}
       ONECORE_RESUME: ${{ inputs.resume_run_id != '' }}
       ONECORE_PARENT_RUN_ID: ${{ inputs.resume_run_id }}
+      ONECORE_DATA_RUN_ID: ${{ inputs.data_run_id }}
       PYTHONPATH: onecore-ai/src
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
@@ -67,6 +73,12 @@ jobs:
           if [[ "${ONECORE_STAGE}" == "smoke" && "${ONECORE_RESUME}" == "true" ]]; then
             echo "smoke must start from fresh random initialization"; exit 2
           fi
+          if [[ "${ONECORE_STAGE}" != "smoke" && -z "${ONECORE_DATA_RUN_ID}" ]]; then
+            echo "real training requires an imported external-corpus artifact"; exit 2
+          fi
+          if [[ -n "${ONECORE_DATA_RUN_ID}" && ! "${ONECORE_DATA_RUN_ID}" =~ ^[0-9]+$ ]]; then
+            echo "data_run_id must contain digits only"; exit 2
+          fi
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -83,6 +95,15 @@ jobs:
 
       - name: Prepare deterministic bootstrap or use reviewed repository data
         run: python -m onecore.bootstrap --root onecore-ai
+
+      - name: Restore imported external dataset corpus
+        if: ${{ inputs.data_run_id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: onecore-corpus-${{ inputs.data_run_id }}
+          run-id: ${{ inputs.data_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: onecore-ai/data
 
       - name: Restore previous checkpoint artifact
         if: ${{ inputs.resume_run_id != '' }}
@@ -174,15 +195,28 @@ jobs:
               assert "group: onecore-training" in text
               assert "research/onecore-foundation" in text
           PY
-      - name: Execute contract, architecture and both data gates
+      - name: Execute project contract and architecture notebooks
         run: |
           mkdir -p onecore-ai/run-state/executed-notebooks
-          for notebook in 00_project_contract 01_architecture_budget 02_data_gate; do
+          for notebook in 00_project_contract 01_architecture_budget; do
             jupyter nbconvert --to notebook --execute "onecore-ai/notebooks/${notebook}.ipynb" \
               --output "${notebook}.executed.ipynb" \
               --output-dir onecore-ai/run-state/executed-notebooks \
               --ExecutePreprocessor.timeout=-1
           done
+
+      - name: Verify imported external corpus before optimizer training
+        if: ${{ inputs.stage != 'smoke' }}
+        env:
+          ONECORE_SKIP_ACQUISITION: "1"
+          ONECORE_REQUIRED_TASKS: text,tool,image,audio,video
+          ONECORE_MIN_TRAIN_RECORDS: "25"
+          ONECORE_MIN_HOLDOUT_RECORDS: "5"
+        run: |
+          jupyter nbconvert --to notebook --execute onecore-ai/notebooks/02_data_gate.ipynb \
+            --output 02_data_gate.executed.ipynb \
+            --output-dir onecore-ai/run-state/executed-notebooks \
+            --ExecutePreprocessor.timeout=-1
 
       - name: Execute smoke or text notebook
         if: ${{ inputs.stage == 'smoke' || inputs.stage == 'text' }}
@@ -208,9 +242,44 @@ jobs:
             --output-dir onecore-ai/run-state/executed-notebooks \
             --ExecutePreprocessor.timeout=-1
 
-      - name: Preserve source revisions and parent data fingerprint for resume
-        if: ${{ always() && hashFiles('onecore-ai/data/acquisition-report.json') != '' }}
-        run: cp onecore-ai/data/acquisition-report.json onecore-ai/run-state/acquisition-report.json
+      - name: Advance corpus lineage baseline to this checkpoint
+        if: ${{ always() && inputs.stage != 'smoke' && inputs.stage != 'evaluate' && hashFiles('onecore-ai/data/acquisition-report.json') != '' && hashFiles('onecore-ai/run-state/train_result.json') != '' }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          data = Path("onecore-ai/data")
+          report_path = data / "acquisition-report.json"
+          result = json.loads(Path("onecore-ai/run-state/train_result.json").read_text(encoding="utf-8"))
+          report = json.loads(report_path.read_text(encoding="utf-8"))
+          report["base_train_manifest_sha256"] = result.get("manifest_sha256")
+          report["base_asset_manifest_sha256"] = result.get("asset_manifest_sha256")
+          report["base_train_records"] = sum(
+              1 for line in (data / "train.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()
+          )
+          report["last_checkpoint_sha256"] = result.get("checkpoint", {}).get("sha256")
+          report["last_optimizer_step"] = result.get("optimizer_step")
+          encoded = json.dumps(report, ensure_ascii=False, indent=2)
+          report_path.write_text(encoded, encoding="utf-8")
+          Path("onecore-ai/run-state/acquisition-report.json").write_text(encoded, encoding="utf-8")
+          PY
+
+      - name: Upload acquired corpus for exact resume on the next segment
+        if: ${{ success() && inputs.stage != 'smoke' && inputs.stage != 'evaluate' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: onecore-corpus-${{ github.run_id }}
+          path: |
+            onecore-ai/data/train.jsonl
+            onecore-ai/data/validation.jsonl
+            onecore-ai/data/test.jsonl
+            onecore-ai/data/acquisition-report.json
+            onecore-ai/data/assets/
+            onecore-ai/data/metadata/
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 1
 
       - name: Upload resumable checkpoint and reports, including failed-run recovery
         if: ${{ always() && hashFiles('onecore-ai/run-state/checkpoint.pt') != '' }}
@@ -224,6 +293,8 @@ jobs:
             onecore-ai/run-state/evaluation.json
             onecore-ai/run-state/evaluation.validation.json
             onecore-ai/run-state/evaluation.test.json
+            onecore-ai/run-state/evaluation.bootstrap.validation.json
+            onecore-ai/run-state/evaluation.bootstrap.test.json
             onecore-ai/run-state/model-registry.json
             onecore-ai/run-state/acquisition-report.json
           if-no-files-found: warn
@@ -257,6 +328,8 @@ jobs:
           [[ ! -f onecore-ai/run-state/evaluation.json ]] || cp onecore-ai/run-state/evaluation.json onecore-ai/run-state/release/
           [[ ! -f onecore-ai/run-state/evaluation.validation.json ]] || cp onecore-ai/run-state/evaluation.validation.json onecore-ai/run-state/release/
           [[ ! -f onecore-ai/run-state/evaluation.test.json ]] || cp onecore-ai/run-state/evaluation.test.json onecore-ai/run-state/release/
+          [[ ! -f onecore-ai/run-state/evaluation.bootstrap.validation.json ]] || cp onecore-ai/run-state/evaluation.bootstrap.validation.json onecore-ai/run-state/release/
+          [[ ! -f onecore-ai/run-state/evaluation.bootstrap.test.json ]] || cp onecore-ai/run-state/evaluation.bootstrap.test.json onecore-ai/run-state/release/
           [[ ! -f onecore-ai/run-state/model-registry.json ]] || cp onecore-ai/run-state/model-registry.json onecore-ai/run-state/release/
           [[ ! -f onecore-ai/run-state/acquisition-report.json ]] || cp onecore-ai/run-state/acquisition-report.json onecore-ai/run-state/release/
           (cd onecore-ai/run-state/release && zip -q -1 ../onecore-state.zip ./*)

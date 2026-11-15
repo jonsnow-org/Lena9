@@ -54,12 +54,17 @@ jobs:
           steps = int(request.get("steps", 0))
           resume_run_id = str(request.get("resume_run_id", "")).strip()
           parent_run_id = str(request.get("parent_run_id", resume_run_id)).strip()
-          if stage not in {"text", "multimodal", "evaluate"}:
-              raise ValueError("stage must be text, multimodal, or evaluate")
+          data_run_id = str(request.get("data_run_id", "")).strip()
+          if stage not in {"acquire", "text", "multimodal", "evaluate"}:
+              raise ValueError("stage must be acquire, text, multimodal, or evaluate")
           if not 1 <= steps <= 250:
               raise ValueError("steps must be an integer from 1 to 250")
           if stage in {"multimodal", "evaluate"} and not resume_run_id:
               raise ValueError(f"{stage} requires a previous resumable checkpoint run ID")
+          if stage != "acquire" and not data_run_id:
+              raise ValueError("text/multimodal/evaluate require an imported onecore-corpus artifact data_run_id")
+          if data_run_id and not re.fullmatch(r"[0-9]+", data_run_id):
+              raise ValueError("data_run_id must contain digits only")
           if resume_run_id and not re.fullmatch(r"[0-9]+", resume_run_id):
               raise ValueError("resume_run_id must contain digits only")
           if parent_run_id and not re.fullmatch(r"[0-9]+", parent_run_id):
@@ -70,10 +75,20 @@ jobs:
           print(f"steps={steps}")
           print(f"resume_run_id={resume_run_id}")
           print(f"parent_run_id={parent_run_id}")
+          print(f"data_run_id={data_run_id}")
           PY
 
       - name: Generate deterministic bootstrap data or validate existing reviewed manifests
         run: python -m onecore.bootstrap --root onecore-ai
+
+      - name: Restore imported shared corpus for text and multimodal continuation
+        if: ${{ steps.request.outputs.data_run_id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: onecore-corpus-${{ steps.request.outputs.data_run_id }}
+          run-id: ${{ steps.request.outputs.data_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: onecore-ai/data
 
       - name: Restore previous checkpoint artifact
         if: ${{ steps.request.outputs.resume_run_id != '' }}
@@ -173,7 +188,12 @@ jobs:
               assert "research/onecore-foundation" in text
           print("OneCore CI, notebook integrity, isolation and serialization checks passed.")
           PY
-      - name: Execute contract, architecture and data gates
+      - name: Execute contract, architecture and verified external-corpus gate
+        env:
+          ONECORE_SKIP_ACQUISITION: ${{ steps.request.outputs.data_run_id != '' && '1' || '0' }}
+          ONECORE_REQUIRED_TASKS: text,tool,image,audio,video
+          ONECORE_MIN_TRAIN_RECORDS: '25'
+          ONECORE_MIN_HOLDOUT_RECORDS: '5'
         run: |
           mkdir -p onecore-ai/run-state/executed-notebooks
           for notebook in 00_project_contract 01_architecture_budget 02_data_gate; do
@@ -182,6 +202,31 @@ jobs:
               --output-dir onecore-ai/run-state/executed-notebooks \
               --ExecutePreprocessor.timeout=-1
           done
+
+      - name: Upload acquired shared corpus
+        if: ${{ success() && steps.request.outputs.stage == 'acquire' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: onecore-corpus-${{ github.run_id }}
+          path: |
+            onecore-ai/data/train.jsonl
+            onecore-ai/data/validation.jsonl
+            onecore-ai/data/test.jsonl
+            onecore-ai/data/acquisition-report.json
+            onecore-ai/data/assets/
+            onecore-ai/data/metadata/
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 1
+
+      - name: Start fresh random-initialized OneCore text training on the imported corpus
+        if: ${{ success() && steps.request.outputs.stage == 'acquire' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          gh workflow run onecore-training.yml --ref research/onecore-foundation \
+            -f stage=text -f steps=150 -f data_run_id=${GITHUB_RUN_ID}
 
       - name: Execute smoke or text/tool foundation segment
         if: ${{ steps.request.outputs.stage == 'text' }}
@@ -210,7 +255,7 @@ jobs:
             --ExecutePreprocessor.timeout=-1
 
       - name: Execute held-out evaluation and promotion gate
-        if: ${{ always() && steps.request.outputs.stage != '' && hashFiles('onecore-ai/run-state/checkpoint.pt') != '' }}
+        if: ${{ always() && steps.request.outputs.stage != '' && steps.request.outputs.stage != 'acquire' && hashFiles('onecore-ai/run-state/checkpoint.pt') != '' }}
         run: |
           jupyter nbconvert --to notebook --execute onecore-ai/notebooks/05_evaluation_and_promotion.ipynb \
             --output 05_evaluation_and_promotion.executed.ipynb \

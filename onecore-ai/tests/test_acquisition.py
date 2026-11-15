@@ -34,12 +34,15 @@ def test_source_registry_covers_all_shared_modalities() -> None:
     adapters = {item["adapter"] for item in sources}
     assert len(ids) >= 20
     assert len(ids) == len(sources)
-    assert {"text", "audio", "image_url", "image_base64", "video", "video_url",
-            "video_repo_file", "video_manifest"} <= adapters
-    assert {"fineweb2_hq_ar", "open_web_math_pro", "fleurs_ar", "open_images_v7",
-            "sard_arabic_documents", "finevideo", "laion_bvd_video_55m",
-            "coyo_700m", "conceptual_captions_12m", "sharegpt4v_images",
-            "webvid_10m_video", "msrvtt_video"} <= ids
+    assert {"text", "tool_use", "audio", "image_url", "image_base64", "video", "video_url",
+            "video_repo_file", "video_manifest", "metadata_only"} <= adapters
+    assert {"fineweb2_hq_ar", "fineweb2_hq_ar_saudi", "fineweb2_hq_ar_moroccan",
+            "fineweb2_hq_ar_egyptian", "fineweb2_full_ar", "fineweb2_full_ar_saudi",
+            "fineweb2_full_ar_moroccan", "fineweb2_full_ar_egyptian",
+            "open_web_math_pro", "fleurs_ar", "open_images_v7", "sard_arabic_documents",
+            "finevideo", "laion_bvd_video_55m", "coyo_700m", "conceptual_captions_12m",
+            "sharegpt4v_images", "webvid_10m_video", "msrvtt_video",
+            "saxo_function_calling", "turkish_mobile_function_calling"} <= ids
 
 
 def test_split_assignment_is_stable_and_preserves_published_holdouts() -> None:
@@ -391,3 +394,99 @@ def test_captions_for_the_same_media_never_cross_dataset_splits() -> None:
     ) == _grouped_split(
         source, {"video": "videos/video2448.mp4"}, "train", "row-4", "stable-seed"
     )
+
+
+def test_tool_use_adapter_maps_external_function_call_records(tmp_path: Path) -> None:
+    saxo = _record_from_row(
+        {"system": "You can call get_exchange_rate.", "instruction": "Get USD to TRY conversion.",
+         "output": '<functioncall> {"name":"get_exchange_rate","arguments":{"base_currency":"USD","target_currency":"TRY"}}'},
+        {"id": "saxo-tool", "repo": "Saxo/alpaca_function_calling_dataset",
+         "adapter": "tool_use", "system_fields": ["system"],
+         "text_fields": ["instruction"], "response_fields": ["output"],
+         "license": "fixture", "attribution": "fixture"},
+        "saxo-row-1", "train", tmp_path,
+    )
+    assert saxo is not None and saxo["task"] == "tool_use"
+    assert "get_exchange_rate" in saxo["prompt"]
+    assert "functioncall" in saxo["response"]
+    assert validate_manifest([saxo], tmp_path, expected_split="train")["valid"]
+
+    mobile = _record_from_row(
+        {"user_content": "Send a message to Ahmed", "tool_name": "send_message",
+         "tool_arguments": '{"recipient":"Ahmed","message":"Hello"}'},
+        {"id": "mobile-tool", "repo": "BTX24/turkish-mobile-function-calling-dataset",
+         "adapter": "tool_use", "text_fields": ["user_content"],
+         "tool_name_field": "tool_name", "tool_arguments_field": "tool_arguments",
+         "license": "fixture", "attribution": "fixture"},
+        "mobile-row-1", "train", tmp_path,
+    )
+    assert mobile is not None and mobile["task"] == "tool_use"
+    parsed = json.loads(mobile["response"])
+    assert parsed["name"] == "send_message"
+    assert parsed["arguments"]["recipient"] == "Ahmed"
+
+
+def test_video_url_adapter_resolves_source_url_alias(tmp_path: Path, monkeypatch) -> None:
+    import onecore.acquire as acquire_module
+
+    def fake_write_frames(value, assets_root: Path, prefix: str, max_frames: int = 4):
+        assert value == "https://media.example/clip.mp4"
+        target = assets_root / f"acquired/{prefix}/frame_00.png"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        Image.new("RGB", (64, 64), (90, 40, 20)).save(target, format="PNG")
+        return [str(target.relative_to(assets_root))]
+
+    monkeypatch.setattr(acquire_module, "_write_frames", fake_write_frames)
+    record = _record_from_row(
+        {"video_url": "https://media.example/clip.mp4", "name": "A city street"},
+        {"id": "webvid-alias", "repo": "video-fixture", "adapter": "video_url",
+         "video_field": "contentUrl", "video_url_fields": ["contentUrl", "video_url", "url"],
+         "text_fields": ["name"], "license": "fixture", "attribution": "fixture"},
+        "webvid-row-1", "train", tmp_path,
+    )
+    assert record is not None and record["task"] == "video_caption"
+    assert record["caption"] == "A city street"
+
+
+def test_bootstrap_is_excluded_from_real_training_sampler() -> None:
+    import random
+    from onecore.data import TRAINABLE_DATA_CLASSES, iter_training_records
+    from onecore.train import _weighted_record
+
+    assert "bootstrap" not in TRAINABLE_DATA_CLASSES
+    assert "synthetic_unverified" not in TRAINABLE_DATA_CLASSES
+    assert "synthetic_verified" not in TRAINABLE_DATA_CLASSES
+    assert "external_staged" in TRAINABLE_DATA_CLASSES
+    rows = [
+        {"id": "bootstrap-1", "task": "text", "split": "train", "data_class": "bootstrap"},
+        {"id": "external-1", "task": "text", "split": "train", "data_class": "external_staged"},
+        {"id": "external-2", "task": "tool_use", "split": "train", "data_class": "external_staged"},
+    ]
+    selected = iter_training_records(rows, {"text", "tool_use"})
+    assert [item["id"] for item in selected] == ["external-1", "external-2"]
+    sampled = [_weighted_record({"text": [selected[0]], "tool_use": [selected[1]]}, "text", random.Random(i))
+               for i in range(100)]
+    assert all(item["data_class"] == "external_staged" for item in sampled)
+
+
+
+
+def test_external_coverage_gate_counts_imported_records_not_bootstrap(tmp_path: Path) -> None:
+    from onecore.acquire import assert_external_task_coverage
+
+    data = tmp_path / "data"
+    data.mkdir()
+    task_ids = {"text": "text", "tool": "tool_use", "image": "image_caption",
+                "audio": "audio_text", "video": "video_caption"}
+    for split in ("train", "validation", "test"):
+        records = [{"id": f"{split}-{group}", "task": task, "split": split,
+                    "data_class": "external_staged"} for group, task in task_ids.items()]
+        records.append({"id": f"{split}-bootstrap", "task": "text", "split": split,
+                        "data_class": "bootstrap"})
+        (data / f"{split}.jsonl").write_text(
+            "\\n".join(json.dumps(item) for item in records) + "\\n", encoding="utf-8"
+        )
+    coverage = assert_external_task_coverage(
+        tmp_path, set(task_ids), minimum_train=1, minimum_holdout=1
+    )
+    assert coverage["train"]["text"] == 1

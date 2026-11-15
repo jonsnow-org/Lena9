@@ -15,7 +15,7 @@ sources:
     adapter: text
     text_fields: [text]
     split_strategy: hash
-    limits: {train: 3500, validation: 80, test: 80}
+    limits: {train: 12000, validation: 400, test: 400}
     license: odc-by
     attribution: "FineWeb2-HQ-Plus — EPFL ML / FineWeb2 contributors"
     enabled: true
@@ -26,9 +26,42 @@ sources:
     adapter: text
     text_fields: [text]
     split_strategy: hash
-    limits: {train: 2500, validation: 60, test: 60}
+    limits: {train: 9000, validation: 300, test: 300}
     license: odc-by
     attribution: "FineWeb2-HQ-Plus — EPFL ML / FineWeb2 contributors"
+    enabled: true
+  - id: fineweb2_hq_ar_saudi
+    repo: epfml/FineWeb2-HQ-Plus
+    config: ars_Arab
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    limits: {train: 2400, validation: 100, test: 100}
+    license: odc-by
+    attribution: "FineWeb2-HQ-Plus Arabic dialect subset"
+    enabled: true
+  - id: fineweb2_hq_ar_moroccan
+    repo: epfml/FineWeb2-HQ-Plus
+    config: ary_Arab
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    limits: {train: 3600, validation: 150, test: 150}
+    license: odc-by
+    attribution: "FineWeb2-HQ-Plus Arabic dialect subset"
+    enabled: true
+  - id: fineweb2_hq_ar_egyptian
+    repo: epfml/FineWeb2-HQ-Plus
+    config: arz_Arab
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    limits: {train: 3000, validation: 120, test: 120}
+    license: odc-by
+    attribution: "FineWeb2-HQ-Plus Arabic dialect subset"
     enabled: true
   - id: fineweb2_full_ar
     repo: HuggingFaceFW/fineweb-2
@@ -37,9 +70,42 @@ sources:
     adapter: text
     text_fields: [text]
     split_strategy: hash
-    limits: {train: 2500, validation: 60, test: 60}
+    limits: {train: 8000, validation: 300, test: 300}
     license: odc-by
     attribution: "FineWeb2 — Hugging Face"
+    enabled: true
+  - id: fineweb2_full_ar_egyptian
+    repo: HuggingFaceFW/fineweb-2
+    config: arz_Arab
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    limits: {train: 3500, validation: 120, test: 120}
+    license: odc-by-1.0
+    attribution: "FineWeb-2 Arabic dialect subset"
+    enabled: true
+  - id: fineweb2_full_ar_saudi
+    repo: HuggingFaceFW/fineweb-2
+    config: ars_Arab
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    limits: {train: 2500, validation: 100, test: 100}
+    license: odc-by-1.0
+    attribution: "FineWeb-2 Arabic dialect subset"
+    enabled: true
+  - id: fineweb2_full_ar_moroccan
+    repo: HuggingFaceFW/fineweb-2
+    config: ary_Arab
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    limits: {train: 3500, validation: 120, test: 120}
+    license: odc-by-1.0
+    attribution: "FineWeb-2 Arabic dialect subset"
     enabled: true
   - id: fineweb2_full_en
     repo: HuggingFaceFW/fineweb-2
@@ -48,7 +114,7 @@ sources:
     adapter: text
     text_fields: [text]
     split_strategy: hash
-    limits: {train: 1500, validation: 40, test: 40}
+    limits: {train: 6000, validation: 250, test: 250}
     license: odc-by
     attribution: "FineWeb2 — Hugging Face"
     enabled: true
@@ -59,7 +125,7 @@ sources:
     adapter: text
     text_fields: [text]
     split_strategy: hash
-    limits: {train: 1200, validation: 40, test: 40}
+    limits: {train: 4000, validation: 200, test: 200}
     license: cc-by-sa-4.0
     attribution: "Wikimedia Foundation contributors"
     enabled: true
@@ -70,7 +136,7 @@ sources:
     adapter: text
     text_fields: [text]
     split_strategy: hash
-    limits: {train: 800, validation: 30, test: 30}
+    limits: {train: 2500, validation: 150, test: 150}
     license: cc-by-sa-4.0
     attribution: "Wikimedia Foundation contributors"
     enabled: true
@@ -134,6 +200,32 @@ sources:
     enabled: true
 
   # Speech, sound and audio-language
+  - id: saxo_function_calling
+    repo: Saxo/alpaca_function_calling_dataset
+    config: default
+    hf_splits: [train]
+    adapter: tool_use
+    system_fields: [system]
+    text_fields: [instruction]
+    response_fields: [output]
+    split_strategy: hash
+    limits: {train: 9000, validation: 250, test: 250}
+    license: apache-2.0
+    attribution: "Saxo function-calling dataset"
+    enabled: true
+  - id: turkish_mobile_function_calling
+    repo: BTX24/turkish-mobile-function-calling-dataset
+    config: default
+    hf_splits: [train]
+    adapter: tool_use
+    text_fields: [user_content]
+    tool_name_field: tool_name
+    tool_arguments_field: tool_arguments
+    split_strategy: hash
+    limits: {train: 5000, validation: 150, test: 150}
+    license: apache-2.0
+    attribution: "Turkish mobile function-calling dataset"
+    enabled: true
   - id: fleurs_ar
     repo: google/fleurs
     config: ar_eg
@@ -221,7 +313,7 @@ sources:
     license: data-collective-terms
     attribution: "Mozilla Common Voice Arabic contributors"
     requires_access: true
-    enabled: true
+    enabled: false
 
   # Still images and Arabic document understanding
   - id: open_images_v7
@@ -328,15 +420,13 @@ sources:
   - id: wavcaps_original
     repo: cvssp/WavCaps
     config: default
-    hf_splits: [train]
-    adapter: audio
-    audio_field: audio
-    text_fields: [caption]
-    split_strategy: hash
-    limits: {train: 150, validation: 20, test: 20}
+    hf_splits: [test]
+    adapter: metadata_only
+    split_strategy: preserve
+    limits: {test: 1}
     license: cc-by-4.0
     attribution: "WavCaps — CVSSP contributors"
-    enabled: true
+    enabled: false
   - id: gigaspeech_bench_eval
     repo: speechcolab/GigaSpeechBench
     config: default
@@ -418,10 +508,11 @@ sources:
     hf_splits: [train, validation]
     adapter: video_url
     video_field: contentUrl
+    video_url_fields: [contentUrl]
     text_fields: [name]
     split_group_field: videoid
     split_strategy: preserve
-    limits: {train: 60, validation: 15}
+    limits: {train: 200, validation: 40}
     license: dataset-card-terms
     attribution: "WebVid-10M — source-video and dataset contributors"
     enabled: true
@@ -456,7 +547,7 @@ sources:
     text_fields: [caption]
     split_group_field: video
     split_strategy: hash
-    limits: {train: 180, validation: 30, test: 30}
+    limits: {train: 500, validation: 50, test: 50}
     license: dataset-card-terms
     attribution: "MSR-VTT — dataset contributors"
     enabled: true

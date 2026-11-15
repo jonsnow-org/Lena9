@@ -168,10 +168,20 @@ def _audio_array(value: Any) -> tuple[np.ndarray, int] | None:
             return np.asarray(array), rate
         raw = value.get("bytes")
         path = value.get("path")
-        if raw or path:
+        source_url = value.get("src") or value.get("url")
+        if raw or path or source_url:
             try:
                 import soundfile as sf
-                source = io.BytesIO(raw) if raw else str(path)
+                if raw:
+                    source = io.BytesIO(raw)
+                elif path and Path(path).is_file():
+                    source = str(path)
+                elif isinstance(source_url, str) and source_url.startswith(("http://", "https://")):
+                    request = urllib.request.Request(source_url, headers={"User-Agent": "OneCore-data-ingest/1.0"})
+                    with urllib.request.urlopen(request, timeout=35) as response:
+                        source = io.BytesIO(response.read(64 * 1024 * 1024 + 1))
+                else:
+                    return None
                 arr, rate = sf.read(source, dtype="float32", always_2d=False)
                 return np.asarray(arr), int(rate)
             except Exception:
@@ -257,6 +267,8 @@ def _video_frames(value: Any, max_frames: int = 4) -> list[Any]:
             return _video_frames({"bytes": raw}, max_frames=max_frames)
         except Exception:
             return []
+    if isinstance(value, str) and Path(value).is_file():
+        return _video_frames({"path": value}, max_frames=max_frames)
     if isinstance(value, (list, tuple)):
         return list(value[:max_frames])
     return []
@@ -346,6 +358,29 @@ def _record_from_row(
             record.update({"task": "image_caption", "image": relative, "caption": text[:700]})
         else:
             record.update({"task": "image_reconstruction", "image": relative})
+    elif adapter == "tool_use":
+        prompt_parts = []
+        for field in source.get("system_fields", []):
+            value = _first_text(row, [str(field)])
+            if value:
+                prompt_parts.append(value)
+        prompt = _first_text(row, list(source.get("prompt_fields") or source.get("text_fields") or []))
+        if prompt:
+            prompt_parts.append(prompt)
+        response = _first_text(row, list(source.get("response_fields") or []))
+        tool_name_field = source.get("tool_name_field")
+        tool_arguments_field = source.get("tool_arguments_field")
+        tool_name = _nested(row, str(tool_name_field)) if tool_name_field else None
+        tool_arguments = _nested(row, str(tool_arguments_field)) if tool_arguments_field else None
+        if tool_name and tool_arguments is not None:
+            try:
+                arguments = json.loads(tool_arguments) if isinstance(tool_arguments, str) else tool_arguments
+            except json.JSONDecodeError:
+                arguments = tool_arguments
+            response = json.dumps({"name": str(tool_name), "arguments": arguments}, ensure_ascii=False, sort_keys=True)
+        if len(" ".join(prompt_parts).strip()) < 8 or len(response.strip()) < 2:
+            return None
+        record.update({"task": "tool_use", "prompt": "\n".join(prompt_parts)[:1400], "response": response[:1400]})
     elif adapter == "audio":
         audio_value = _nested(row, str(source.get("audio_field") or "audio"))
         relative = f"acquired/{prefix}.npy"
@@ -357,10 +392,33 @@ def _record_from_row(
             record.update({"task": "audio_reconstruction", "audio_features": relative})
     elif adapter in {"video", "video_url", "video_repo_file"}:
         video_value = _nested(row, str(source.get("video_field") or "video"))
-        if adapter == "video_repo_file":
-            if not isinstance(video_value, str) or not video_value.strip():
+        if adapter == "video_url":
+            aliases = source.get("video_url_fields") or ["video_url", "contentUrl", "url"]
+            if not (isinstance(video_value, str) and video_value.startswith(("http://", "https://"))):
+                video_value = next((
+                    row.get(str(field)) for field in aliases
+                    if isinstance(row.get(str(field)), str)
+                    and row.get(str(field)).startswith(("http://", "https://"))
+                ), None)
+            if not isinstance(video_value, str):
                 return None
-            normalized = video_value.replace("\\", "/").lstrip("/")
+        if adapter == "video_repo_file":
+            name = str(video_value).strip().replace("\\", "/") if isinstance(video_value, str) else ""
+            if not name or Path(name).suffix.lower() not in {".mp4", ".mov", ".mkv", ".webm"}:
+                id_field = str(source.get("video_id_field") or "video_id")
+                video_id = row.get(id_field) or row.get("video_id") or row.get("id") or name
+                if video_id is None:
+                    return None
+                name = str(video_id).strip().replace("\\", "/")
+                if not name:
+                    return None
+                if not name.lower().endswith((".mp4", ".mov", ".mkv", ".webm")):
+                    if not name.lower().startswith("video"):
+                        name = f"video{name}"
+                    name = f"{name}.mp4"
+            if "/" not in name:
+                name = str(Path(str(source.get("video_directory") or "videos")) / name)
+            normalized = name.lstrip("/")
             if ".." in Path(normalized).parts:
                 return None
             from huggingface_hub import hf_hub_download
@@ -372,14 +430,7 @@ def _record_from_row(
                 token=os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_HUB_TOKEN"),
             )
             video_value = {"path": media_path}
-        elif adapter == "video_url":
-            if not isinstance(video_value, str) or not video_value.startswith(("http://", "https://")):
-                return None
         frames = _write_frames(video_value, assets_root, prefix)
-        if not frames:
-            fallback_url = row.get("video_url") or row.get("url") or row.get("contentUrl")
-            if isinstance(fallback_url, str) and fallback_url.startswith(("http://", "https://")):
-                frames = _write_frames(fallback_url, assets_root, prefix)
         if not frames:
             return None
         if text:
@@ -443,6 +494,53 @@ def _append_manifests(project_root: Path, rows_by_split: dict[str, list[dict[str
     return counts
 
 
+def external_task_coverage(project_root: str | Path) -> dict[str, dict[str, int]]:
+    """Count external usable examples by modality, excluding deterministic bootstrap rows."""
+    root = Path(project_root).resolve()
+    task_groups = {
+        "text": {"text"},
+        "tool": {"tool_use"},
+        "image": {"image_caption", "image_reconstruction"},
+        "audio": {"audio_text", "audio_reconstruction"},
+        "video": {"video_caption", "video_reconstruction"},
+    }
+    accepted_classes = {"external_staged", "external_reviewed", "owner_curated"}
+    coverage: dict[str, dict[str, int]] = {}
+    for split in SPLITS:
+        path = root / "data" / f"{split}.jsonl"
+        records = [
+            json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ] if path.is_file() else []
+        records = [record for record in records if record.get("data_class") in accepted_classes]
+        coverage[split] = {
+            group: sum(1 for record in records if record.get("task") in tasks)
+            for group, tasks in task_groups.items()
+        }
+    return coverage
+
+
+def assert_external_task_coverage(
+    project_root: str | Path, required_tasks: set[str],
+    minimum_train: int = 25, minimum_holdout: int = 5,
+) -> dict[str, dict[str, int]]:
+    coverage = external_task_coverage(project_root)
+    failures = []
+    for task_group in sorted(required_tasks):
+        if task_group not in {"text", "tool", "image", "audio", "video"}:
+            raise ValueError(f"unknown required external task group: {task_group}")
+        for split in SPLITS:
+            minimum = minimum_train if split == "train" else minimum_holdout
+            actual = coverage[split][task_group]
+            if actual < minimum:
+                failures.append(f"{split}.{task_group}={actual} (minimum {minimum})")
+    if failures:
+        raise RuntimeError(
+            "External corpus gate blocked training; imported datasets did not produce enough usable records: "
+            + "; ".join(failures)
+        )
+    return coverage
+
 def acquire_sources(
     project_root: str | Path,
     profile: str = "initial",
@@ -465,16 +563,20 @@ def acquire_sources(
     base_fingerprints = _training_manifest_base(root)
     token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_HUB_TOKEN")
     try:
-        from datasets import load_dataset
+        from datasets import Audio, load_dataset
         from huggingface_hub import HfApi
     except Exception as exc:
         raise RuntimeError("datasets and huggingface_hub are required for OneCore source acquisition") from exc
 
-    previous_report_path = root / "run-state" / "acquisition-report.json"
-    previous_report = (
-        json.loads(previous_report_path.read_text(encoding="utf-8"))
-        if previous_report_path.is_file() else {}
+    previous_report_candidates = (
+        root / "run-state" / "acquisition-report.json",
+        root / "data" / "acquisition-report.json",
     )
+    previous_report = {}
+    for previous_report_path in previous_report_candidates:
+        if previous_report_path.is_file():
+            previous_report = json.loads(previous_report_path.read_text(encoding="utf-8"))
+            break
     prior_revisions = previous_report.get("source_revisions", {})
     source_revisions: dict[str, str] = {}
     hub_api = HfApi(token=token)
@@ -519,6 +621,12 @@ def acquire_sources(
                 if revision:
                     load_kwargs["revision"] = str(revision)
                 dataset = load_dataset(**load_kwargs)
+                if source.get("adapter") == "audio":
+                    audio_field = str(source.get("audio_field") or "audio")
+                    features = getattr(dataset, "features", None) or {}
+                    audio_feature = features.get(audio_field) if hasattr(features, "get") else None
+                    if audio_feature is not None and audio_feature.__class__.__name__ == "Audio":
+                        dataset = dataset.cast_column(audio_field, Audio(decode=False))
                 target_count = sum(limits.values()) or 1
                 max_scan = max(target_count * int(defaults.get("max_scan_multiplier", 12)), target_count + 200)
                 filled = {split: 0 for split in SPLITS}
@@ -594,6 +702,18 @@ def acquire_sources(
             + ("\n" if merged else ""), encoding="utf-8"
         )
         metadata_counts[source_id] = len(merged) - len(existing)
+    task_groups = {
+        "text": {"text"}, "tool": {"tool_use"},
+        "image": {"image_caption", "image_reconstruction"},
+        "audio": {"audio_text", "audio_reconstruction"},
+        "video": {"video_caption", "video_reconstruction"},
+    }
+    external_task_counts = {}
+    for split in SPLITS:
+        manifest = root / "data" / f"{split}.jsonl"
+        records = [json.loads(line) for line in manifest.read_text(encoding="utf-8").splitlines() if line.strip()] if manifest.is_file() else []
+        external = [item for item in records if item.get("data_class") in {"external_staged", "external_reviewed", "owner_curated"}]
+        external_task_counts[split] = {group: sum(1 for item in external if item.get("task") in tasks) for group, tasks in task_groups.items()}
     output = {
         "profile": profile,
         "registry_version": registry.get("version"),
@@ -604,6 +724,11 @@ def acquire_sources(
         "new_records": added_counts,
         "new_metadata_rows": metadata_counts,
         "total_new_records": sum(added_counts.values()),
+        "external_task_counts": external_task_counts,
+        "completed_sources": sum(1 for item in source_reports if item.get("status") == "completed"),
+        "unavailable_sources": sum(1 for item in source_reports if item.get("status") == "unavailable"),
+        "metadata_only_sources": sum(1 for item in source_reports if item.get("metadata_only", 0) > 0),
+        "sources_with_access_required": sum(1 for item in source_reports if item.get("status") == "access_token_unavailable"),
     }
     report_path = root / "data" / "acquisition-report.json"
     report_path.write_text(json.dumps(output, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -615,12 +740,22 @@ def main() -> None:
     parser.add_argument("--root", default="onecore-ai")
     parser.add_argument("--profile", default="initial")
     parser.add_argument("--source", action="append", default=[])
+    parser.add_argument("--require-tasks", default="")
+    parser.add_argument("--min-train-records", type=int, default=25)
+    parser.add_argument("--min-holdout-records", type=int, default=5)
     args = parser.parse_args()
     result = acquire_sources(
         args.root,
         profile=args.profile,
         only_sources=set(args.source) if args.source else None,
     )
+    required = {value.strip() for value in args.require_tasks.split(",") if value.strip()}
+    if required:
+        result["external_task_coverage"] = assert_external_task_coverage(
+            args.root, required, args.min_train_records, args.min_holdout_records
+        )
+        report_path = Path(args.root) / "data" / "acquisition-report.json"
+        report_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 

@@ -159,8 +159,7 @@ def validate_manifest(records: list[dict[str, Any]], assets_root: str | Path,
 
 
 TRAINABLE_DATA_CLASSES = {
-    "bootstrap", "synthetic_unverified", "synthetic_verified",
-    "external_reviewed", "owner_curated",
+    "external_staged", "external_reviewed", "owner_curated",
 }
 
 
@@ -169,7 +168,7 @@ def iter_training_records(
     tasks: set[str] | None = None,
     allowed_data_classes: set[str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Select optimizer inputs, never silently training on staged/unreviewed sources."""
+    """Select authentic imported external records; deterministic synthetic Bootstrap is excluded."""
     allowed_classes = TRAINABLE_DATA_CLASSES if allowed_data_classes is None else allowed_data_classes
     selected: list[dict[str, Any]] = []
     for item in records:
