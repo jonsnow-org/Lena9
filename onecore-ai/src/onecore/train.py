@@ -57,9 +57,12 @@ def _load_mel(path: Path, bins: int) -> torch.Tensor:
 
 
 def _manifest_corpus(records: list[dict[str, Any]], output: Path) -> list[Path]:
+    # The tokenizer is part of the real training pipeline: apply the same
+    # external-only provenance filter used by the optimizer before reading text.
+    eligible_records = iter_training_records(records)
     fields = ("text", "caption", "transcript", "prompt", "response")
     lines: list[str] = []
-    for item in records:
+    for item in eligible_records:
         for field in fields:
             value = item.get(field)
             if isinstance(value, str) and value.strip():

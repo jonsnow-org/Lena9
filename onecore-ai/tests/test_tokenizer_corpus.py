@@ -1,0 +1,43 @@
+from pathlib import Path
+
+from onecore.train import _manifest_corpus
+
+
+def test_tokenizer_corpus_excludes_bootstrap_and_all_synthetic_records(tmp_path: Path) -> None:
+    records = [
+        {
+            "id": "bootstrap-1",
+            "split": "train",
+            "data_class": "bootstrap",
+            "text": "synthetic bootstrap sentinel",
+        },
+        {
+            "id": "synthetic-verified-1",
+            "split": "train",
+            "data_class": "synthetic_verified",
+            "caption": "verified synthetic sentinel",
+        },
+        {
+            "id": "external-text-1",
+            "split": "train",
+            "data_class": "external_staged",
+            "text": "authentic imported external text",
+        },
+        {
+            "id": "external-tool-1",
+            "split": "train",
+            "data_class": "external_reviewed",
+            "prompt": "external tool prompt",
+            "response": "external tool response",
+        },
+    ]
+
+    output = tmp_path / "tokenizer-corpus.txt"
+    paths = _manifest_corpus(records, output)
+    corpus = paths[0].read_text(encoding="utf-8")
+
+    assert "authentic imported external text" in corpus
+    assert "external tool prompt" in corpus
+    assert "external tool response" in corpus
+    assert "synthetic bootstrap sentinel" not in corpus
+    assert "verified synthetic sentinel" not in corpus
