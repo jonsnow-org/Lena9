@@ -2,5 +2,6 @@
   "schema": "onecore-training-request-v1",
   "stage": "acquire",
   "steps": 1,
-  "purpose": "Run external dataset acquisition after the training-only-external policy and regression fixes. Preserve generated Bootstrap examples only as pipeline-test data; exclude Bootstrap and all verified/unverified synthetic curriculum records from tokenizer corpus and optimizer inputs. Stream the registered large external datasets, verify real imported coverage for text, tools, image, audio and video across train/validation/test, publish the combined corpus artifact, then launch fresh random-initialized text/tool training using only imported external examples."
+  "purpose": "Re-run expanded external dataset acquisition after content-aware sample identity, duplicate elimination and media-group split isolation. Keep Bootstrap, all synthetic curriculum and locally owner-created records diagnostic-only; exclude them from tokenizer fitting and optimizer input. Verify imported external coverage and train/validation/test disjointness for text, tools, image, audio and video, publish the corpus artifact, then start fresh random-initialized text/tool training from external records only.",
+  "request_id": "external-acquisition-dedup-v2-20261115"
 }
