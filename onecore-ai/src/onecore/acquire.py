@@ -94,19 +94,54 @@ def _first_text(row: dict[str, Any], fields: list[str]) -> str:
     return ""
 
 
+def _identity_value(value: Any) -> Any:
+    """Convert nested dataset values into deterministic, compact identity material."""
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        raw = bytes(value)
+        return {"bytes_sha256": hashlib.sha256(raw).hexdigest(), "bytes_length": len(raw)}
+    if isinstance(value, np.ndarray):
+        contiguous = np.ascontiguousarray(value)
+        return {
+            "array_sha256": hashlib.sha256(contiguous.tobytes()).hexdigest(),
+            "array_shape": list(contiguous.shape),
+            "array_dtype": str(contiguous.dtype),
+        }
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, Image.Image):
+        image = value.convert("RGB")
+        return {
+            "image_sha256": hashlib.sha256(image.tobytes()).hexdigest(),
+            "image_size": list(image.size),
+        }
+    if isinstance(value, dict):
+        return {str(key): _identity_value(item) for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))}
+    if isinstance(value, (list, tuple)):
+        return [_identity_value(item) for item in value]
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
 def _row_identity(row: dict[str, Any], source_id: str, index: int) -> str:
+    """Include the complete row payload so reused dataset IDs cannot collide."""
+    primary = ""
     for key in ("id", "sample_id", "__key__", "image_name", "filename", "file", "url", "path",
                 "video_id", "videoid", "clip_id", "img_id"):
         value = row.get(key)
         if value is not None and str(value).strip():
-            return str(value).strip()
-    metadata = row.get("metadata")
-    if isinstance(metadata, dict):
-        for key in ("id", "content_id", "blob_id", "filename", "path"):
-            value = metadata.get(key)
-            if value is not None and str(value).strip():
-                return str(value).strip()
-    return f"{source_id}:{index}:{_stable_hash(json.dumps(row, default=str, sort_keys=True)[:2048])}"
+            primary = str(value).strip()
+            break
+    if not primary:
+        metadata = row.get("metadata")
+        if isinstance(metadata, dict):
+            for key in ("id", "content_id", "blob_id", "filename", "path"):
+                value = metadata.get(key)
+                if value is not None and str(value).strip():
+                    primary = str(value).strip()
+                    break
+    normalized = json.dumps(_identity_value(row), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return f"{primary or source_id}:{_stable_hash(normalized)}"}
 
 
 def _decode_image(value: Any) -> Image.Image | None:
@@ -322,6 +357,10 @@ def _record_from_row(
         "review_status": "pending",
         "data_class": "external_staged",
     }
+    group_field = source.get("split_group_field")
+    group_value = _nested(row, str(group_field)) if group_field else None
+    if group_value is not None and str(group_value).strip():
+        record["source_group_id"] = f"{source_id}:{str(group_value).strip()}"
     text = _first_text(row, list(source.get("text_fields") or []))
     conversation_field = source.get("conversation_field")
     if conversation_field:
@@ -470,19 +509,85 @@ def _grouped_split(
 
 
 def _append_manifests(project_root: Path, rows_by_split: dict[str, list[dict[str, Any]]]) -> dict[str, int]:
-    counts: dict[str, int] = {}
+    """Append idempotently and keep repeated records/media groups in one split.
+
+    When an identical record or grouped media appears in multiple incoming
+    partitions, the stricter partition wins (test > validation > train).
+    Conflicts with already-persisted partitions are rejected.
+    """
+    priority = {"train": 0, "validation": 1, "test": 2}
+    existing_by_split: dict[str, list[dict[str, Any]]] = {}
+    existing_ids: dict[str, str] = {}
+    existing_groups: dict[str, str] = {}
     for split in SPLITS:
         path = project_root / "data" / f"{split}.jsonl"
         existing: list[dict[str, Any]] = []
         if path.is_file():
             for line in path.read_text(encoding="utf-8").splitlines():
-                if line.strip():
-                    item = json.loads(line)
-                    item.pop("_line", None)
-                    existing.append(item)
-        seen = {str(item.get("id")) for item in existing}
-        added = [item for item in rows_by_split[split] if str(item.get("id")) not in seen]
-        combined = existing + added
+                if not line.strip():
+                    continue
+                item = json.loads(line)
+                item.pop("_line", None)
+                existing.append(item)
+                record_id = str(item.get("id", "")).strip()
+                if record_id in existing_ids and existing_ids[record_id] != split:
+                    raise ValueError(f"existing record ID occurs in multiple splits: {record_id}")
+                existing_ids[record_id] = split
+                group_id = str(item.get("source_group_id", "")).strip()
+                if group_id:
+                    if group_id in existing_groups and existing_groups[group_id] != split:
+                        raise ValueError(f"existing source group occurs in multiple splits: {group_id}")
+                    existing_groups[group_id] = split
+        existing_by_split[split] = existing
+
+    incoming = [(split, dict(item)) for split in SPLITS for item in rows_by_split.get(split, [])]
+    record_targets: dict[str, str] = {}
+    group_targets: dict[str, str] = {}
+    for source_split, item in incoming:
+        record_id = str(item.get("id", "")).strip()
+        if not record_id:
+            raise ValueError(f"new {source_split} manifest record has an empty ID")
+        if record_id in existing_ids:
+            continue
+        old_target = record_targets.get(record_id)
+        if old_target is None or priority[source_split] > priority[old_target]:
+            record_targets[record_id] = source_split
+        group_id = str(item.get("source_group_id", "")).strip()
+        if not group_id:
+            continue
+        existing_target = existing_groups.get(group_id)
+        if existing_target is not None and existing_target != source_split:
+            raise ValueError(
+                f"new source group {group_id} conflicts with existing {existing_target} split"
+            )
+        old_group_target = group_targets.get(group_id)
+        if old_group_target is None or priority[source_split] > priority[old_group_target]:
+            group_targets[group_id] = source_split
+
+    additions: dict[str, list[dict[str, Any]]] = {split: [] for split in SPLITS}
+    for source_split, item in incoming:
+        record_id = str(item.get("id", "")).strip()
+        if record_id in existing_ids:
+            continue
+        group_id = str(item.get("source_group_id", "")).strip()
+        target = record_targets[record_id]
+        if group_id and group_id in group_targets and priority[group_targets[group_id]] > priority[target]:
+            target = group_targets[group_id]
+        item["split"] = target
+        additions[target].append(item)
+
+    counts: dict[str, int] = {}
+    for split in SPLITS:
+        seen = {str(item.get("id", "")).strip() for item in existing_by_split[split]}
+        added: list[dict[str, Any]] = []
+        for item in additions[split]:
+            record_id = str(item.get("id", "")).strip()
+            if record_id in seen:
+                continue
+            seen.add(record_id)
+            added.append(item)
+        combined = existing_by_split[split] + added
+        path = project_root / "data" / f"{split}.jsonl"
         path.parent.mkdir(parents=True, exist_ok=True)
         temp = path.with_suffix(path.suffix + ".tmp")
         temp.write_text(
@@ -504,7 +609,7 @@ def external_task_coverage(project_root: str | Path) -> dict[str, dict[str, int]
         "audio": {"audio_text", "audio_reconstruction"},
         "video": {"video_caption", "video_reconstruction"},
     }
-    accepted_classes = {"external_staged", "external_reviewed", "owner_curated"}
+    accepted_classes = {"external_staged", "external_reviewed"}
     coverage: dict[str, dict[str, int]] = {}
     for split in SPLITS:
         path = root / "data" / f"{split}.jsonl"
@@ -637,7 +742,7 @@ def acquire_sources(
                     if not isinstance(row, dict):
                         continue
                     raw_identity = _row_identity(row, source_id, scanned)
-                    row_id = f"{hf_split}:{raw_identity}"
+                    row_id = raw_identity
                     assigned = _grouped_split(source, row, str(hf_split), row_id, seed)
                     if assigned not in SPLITS or filled[assigned] >= limits.get(assigned, 0):
                         if scanned >= max_scan or all(filled[s] >= limits.get(s, 0) for s in SPLITS):
@@ -712,7 +817,7 @@ def acquire_sources(
     for split in SPLITS:
         manifest = root / "data" / f"{split}.jsonl"
         records = [json.loads(line) for line in manifest.read_text(encoding="utf-8").splitlines() if line.strip()] if manifest.is_file() else []
-        external = [item for item in records if item.get("data_class") in {"external_staged", "external_reviewed", "owner_curated"}]
+        external = [item for item in records if item.get("data_class") in {"external_staged", "external_reviewed"}]
         external_task_counts[split] = {group: sum(1 for item in external if item.get("task") in tasks) for group, tasks in task_groups.items()}
     output = {
         "profile": profile,

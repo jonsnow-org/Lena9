@@ -172,6 +172,44 @@ def test_manifest_merge_is_idempotent_and_split_local(tmp_path: Path) -> None:
     assert [item["id"] for item in validation] == ["y"]
 
 
+
+def test_row_identity_disambiguates_reused_dataset_ids_using_full_payload() -> None:
+    from onecore.acquire import _row_identity
+
+    first = {"id": "utterance-7", "sentence": "كلمة أولى", "audio": {"bytes": b"first-payload"}}
+    second = {"id": "utterance-7", "sentence": "كلمة ثانية", "audio": {"bytes": b"second-payload"}}
+    assert _row_identity(first, "fleurs", 1) != _row_identity(second, "fleurs", 2)
+    assert _row_identity(first, "fleurs", 1) == _row_identity(first, "fleurs", 99)
+
+
+def test_manifest_merge_deduplicates_rows_and_keeps_source_group_in_stricter_split(tmp_path: Path) -> None:
+    data_root = tmp_path / "data"
+    data_root.mkdir()
+    rows = {
+        "train": [
+            {"id": "same-record", "task": "text", "text": "same", "split": "train",
+             "source_group_id": "video:42"},
+            {"id": "train-caption", "task": "video_caption", "caption": "one", "split": "train",
+             "source_group_id": "video:99"},
+        ],
+        "validation": [
+            {"id": "same-record", "task": "text", "text": "same", "split": "validation",
+             "source_group_id": "video:42"},
+        ],
+        "test": [
+            {"id": "test-caption", "task": "video_caption", "caption": "two", "split": "test",
+             "source_group_id": "video:99"},
+        ],
+    }
+    added = _append_manifests(tmp_path, rows)
+    assert added == {"train": 0, "validation": 1, "test": 2}
+    validation = [json.loads(line) for line in (data_root / "validation.jsonl").read_text().splitlines()]
+    test = [json.loads(line) for line in (data_root / "test.jsonl").read_text().splitlines()]
+    assert [item["id"] for item in validation] == ["same-record"]
+    assert {item["id"] for item in test} == {"train-caption", "test-caption"}
+    assert all(item["split"] == "validation" for item in validation)
+    assert all(item["split"] == "test" for item in test)
+
 def test_sharegpt4v_conversation_is_paired_with_its_image(tmp_path: Path, monkeypatch) -> None:
     import onecore.acquire as acquire_module
 

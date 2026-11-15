@@ -223,8 +223,12 @@ def validate_split_disjointness(project_root: str | Path) -> dict[str, Any]:
     id_sets = {name: {str(item.get("id", "")).strip() for item in records} for name, records in splits.items()}
     path_sets: dict[str, set[str]] = {name: set() for name in splits}
     content_hash_sets: dict[str, set[str]] = {name: set() for name in splits}
+    group_sets: dict[str, set[str]] = {name: set() for name in splits}
     for split, records in splits.items():
         for item in records:
+            group_id = str(item.get("source_group_id", "")).strip()
+            if group_id:
+                group_sets[split].add(group_id)
             values: list[str] = []
             for field in ("image", "audio_features"):
                 value = item.get(field)
@@ -252,10 +256,12 @@ def validate_split_disjointness(project_root: str | Path) -> dict[str, Any]:
         shared_ids = id_sets[left] & id_sets[right]
         shared_paths = path_sets[left] & path_sets[right]
         shared_asset_content = content_hash_sets[left] & content_hash_sets[right]
+        shared_groups = group_sets[left] & group_sets[right]
         overlaps[f"{left}__{right}"] = {
             "record_ids": len(shared_ids),
             "asset_paths": len(shared_paths),
             "asset_content_hashes": len(shared_asset_content),
+            "source_groups": len(shared_groups),
         }
         if shared_ids:
             errors.append(f"record ID leakage between {left} and {right}: {sorted(shared_ids)[:10]}")
@@ -263,6 +269,8 @@ def validate_split_disjointness(project_root: str | Path) -> dict[str, Any]:
             errors.append(f"asset path leakage between {left} and {right}: {sorted(shared_paths)[:10]}")
         if shared_asset_content:
             errors.append(f"identical asset content leakage between {left} and {right}: {len(shared_asset_content)} hash(es)")
+        if shared_groups:
+            errors.append(f"source media group leakage between {left} and {right}: {sorted(shared_groups)[:10]}")
     if errors:
         raise DatasetError("split disjointness gate failed:\n- " + "\n- ".join(errors))
     return {
