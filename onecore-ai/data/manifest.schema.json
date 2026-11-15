@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OneCore training manifest record",
+  "type": "object",
+  "required": [
+    "id",
+    "task",
+    "license",
+    "source_url",
+    "attribution",
+    "split",
+    "review_status"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "task": {
+      "enum": [
+        "text",
+        "image_caption",
+        "audio_text",
+        "video_caption",
+        "tool_use"
+      ]
+    },
+    "license": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_url": {
+      "type": "string",
+      "minLength": 1
+    },
+    "attribution": {
+      "type": "string",
+      "minLength": 1
+    },
+    "split": {
+      "const": "train",
+      "enum": [
+        "train",
+        "validation"
+      ]
+    },
+    "text": {
+      "type": "string"
+    },
+    "caption": {
+      "type": "string"
+    },
+    "transcript": {
+      "type": "string"
+    },
+    "prompt": {
+      "type": "string"
+    },
+    "response": {
+      "type": "string"
+    },
+    "image": {
+      "type": "string"
+    },
+    "audio_features": {
+      "type": "string"
+    },
+    "frames": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "review_status": {
+      "enum": [
+        "approved",
+        "generated"
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "task": {
+            "const": "text"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "text"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "task": {
+            "const": "image_caption"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "image",
+          "caption"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "task": {
+            "const": "audio_text"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "audio_features",
+          "transcript"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "task": {
+            "const": "video_caption"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "frames",
+          "caption"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "task": {
+            "const": "tool_use"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "prompt",
+          "response"
+        ]
+      }
+    }
+  ],
+  "additionalProperties": false
+}

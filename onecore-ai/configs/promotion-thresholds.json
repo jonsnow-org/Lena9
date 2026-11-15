@@ -1,0 +1,6 @@
+{
+  "schema": "onecore-quality-thresholds-v1",
+  "status": "not-approved",
+  "note": "Do not fill these with arbitrary values. Run a reviewed benchmark, agree on measurable thresholds, then set each key below.",
+  "thresholds": {}
+}

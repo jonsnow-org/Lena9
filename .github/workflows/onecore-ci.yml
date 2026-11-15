@@ -1,0 +1,78 @@
+name: OneCore — CI and notebook integrity
+
+on:
+  push:
+    branches: [research/onecore-foundation]
+    paths:
+      - "onecore-ai/**"
+      - ".github/workflows/onecore-ci.yml"
+      - ".github/workflows/onecore-training.yml"
+      - ".github/workflows/onecore-bootstrap.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "onecore-ai/**"
+      - ".github/workflows/onecore-ci.yml"
+      - ".github/workflows/onecore-training.yml"
+      - ".github/workflows/onecore-bootstrap.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: onecore-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify OneCore isolation, architecture, and tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: onecore-ai/pyproject.toml
+
+      - name: Install CPU-only PyTorch
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install project and test dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -e "onecore-ai[dev]"
+
+      - name: Compile package
+        run: python -m compileall -q onecore-ai/src
+
+      - name: Run unit and regression tests
+        run: pytest -q onecore-ai/tests
+
+      - name: Validate every notebook
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import nbformat
+          notebooks = sorted(Path("onecore-ai/notebooks").glob("*.ipynb"))
+          assert len(notebooks) == 6, f"Expected exactly 6 ordered notebooks, found {len(notebooks)}"
+          for path in notebooks:
+              nbformat.validate(nbformat.read(path, as_version=4))
+              print(f"VALID {path}")
+          PY
+
+      - name: Confirm workflows are isolated and share one training lock
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          names = ("onecore-training.yml", "onecore-bootstrap.yml")
+          for name in names:
+              text = (Path(".github/workflows") / name).read_text()
+              assert "group: onecore-training" in text
+              assert "research/onecore-foundation" in text
+          print("OneCore workflows are isolated and serialized.")
+          PY

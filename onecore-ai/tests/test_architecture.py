@@ -1,0 +1,92 @@
+import torch
+
+from onecore.config import ModelConfig
+from onecore.model import OneCore
+
+
+def tiny_config():
+    return ModelConfig(
+        width=32, unique_blocks=2, recurrent_cycles=2, attention_heads=4,
+        max_sequence_length=160, text_vocab_size=64, vision_codebook_size=16,
+        audio_codebook_size=8, motion_codebook_size=8, special_tokens=24,
+        patch_size=4, image_size=16, audio_bins=8, audio_group_frames=2,
+        max_video_frames=3, dropout=0.0,
+    )
+
+
+def test_one_shared_core_and_exact_parameter_accounting():
+    cfg = tiny_config()
+    model = OneCore(cfg)
+    assert model.lm_head.weight is model.token_embedding.weight
+    assert len(model.blocks) == cfg.unique_blocks
+    assert model.parameter_report()["effective_block_applications"] == 4
+    assert model.count_parameters() == sum(p.numel() for p in model.parameters())
+    ids = torch.randint(0, cfg.text_vocab_size, (2, 12))
+    logits = model(ids)
+    assert logits.shape == (2, 12, cfg.vocab_size)
+    assert torch.isfinite(logits).all()
+
+
+def test_image_audio_and_motion_codecs_share_the_same_embedding_space():
+    cfg = tiny_config()
+    model = OneCore(cfg)
+    images = torch.rand(2, 3, cfg.image_size, cfg.image_size)
+    image_ids, image_latents, image_vq = model.encode_image(images)
+    image_reconstruction = model.decode_image_latents(image_latents)
+    assert image_ids.min() >= cfg.vision_start
+    assert image_ids.max() < cfg.audio_start
+    assert image_reconstruction.shape == images.shape
+
+    mel = torch.randn(2, 10, cfg.audio_bins)
+    audio_ids, audio_latents, audio_vq = model.encode_audio(mel)
+    decoded_mel = model.decode_audio_latents(audio_latents).reshape(
+        2, -1, cfg.audio_bins
+    )[:, :mel.shape[1]]
+    assert audio_ids.min() >= cfg.audio_start
+    assert audio_ids.max() < cfg.motion_start
+    assert decoded_mel.shape == mel.shape
+
+    differences = torch.randn_like(images)
+    motion_ids, motion_latents, motion_vq = model.encode_motion(differences)
+    motion_reconstruction = model.decode_motion_latents(motion_latents)
+    assert motion_ids.min() >= cfg.motion_start
+    assert motion_ids.max() < cfg.special_start
+    assert motion_reconstruction.shape == differences.shape
+
+    total = image_vq + audio_vq + motion_vq
+    total = total + (image_reconstruction - images).pow(2).mean()
+    total = total + (decoded_mel - mel).pow(2).mean()
+    total = total + (motion_reconstruction - differences).pow(2).mean()
+    total.backward()
+    assert model.image_encoder.weight.grad is not None
+    assert model.audio_encoder.weight.grad is not None
+    assert model.motion_encoder.weight.grad is not None
+
+
+def test_generation_can_be_constrained_to_a_modality_codebook():
+    cfg = tiny_config()
+    model = OneCore(cfg).eval()
+    prompt = torch.tensor([[cfg.special_id(0), cfg.special_id(3)]])
+    generated = model.generate(
+        prompt, max_new_tokens=cfg.image_tokens_per_frame,
+        allowed_range=(cfg.vision_start, cfg.audio_start), top_k=4,
+    )
+    codes = generated[:, prompt.shape[1]:]
+    assert codes.shape[1] == cfg.image_tokens_per_frame
+    assert torch.all((codes >= cfg.vision_start) & (codes < cfg.audio_start))
+    decoded = model.decode_image_codes(codes)
+    assert decoded.shape == (1, 3, cfg.image_size, cfg.image_size)
+
+def test_unified_image_audio_and_video_generation():
+    cfg = tiny_config()
+    model = OneCore(cfg).eval()
+
+    audio_codes, mel = model.generate_audio(code_count=3, top_k=4)
+    assert audio_codes.shape == (1, 3)
+    assert mel.shape == (1, 6, cfg.audio_bins)
+    assert torch.all((audio_codes >= cfg.audio_start) & (audio_codes < cfg.motion_start))
+
+    frames, video_stream = model.generate_video(frame_count=2, top_k=4)
+    assert frames.shape == (2, 3, cfg.image_size, cfg.image_size)
+    assert video_stream.ndim == 2
+    assert torch.isfinite(frames).all()
