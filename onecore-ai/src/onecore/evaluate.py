@@ -10,7 +10,7 @@ import torch
 
 from .checkpoint import load_checkpoint, sha256_file
 from .config import load_config
-from .data import read_manifest, validate_manifest
+from .data import classify_record_data, read_manifest, validate_manifest
 from .model import OneCore
 from .train import _record_sequence
 from .tokenizer import load_tokenizer
@@ -104,11 +104,28 @@ def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
 
     thresholds_file = Path(thresholds_path)
     threshold_doc = json.loads(thresholds_file.read_text(encoding="utf-8")) if thresholds_file.is_file() else {}
-    contains_synthetic = any(
-        record["license"] == "local-owner-synthetic" or record["review_status"] != "approved"
-        for record in records
+    data_classes = sorted({classify_record_data(record) for record in records})
+    verified_classes = {"synthetic_verified", "external_reviewed", "owner_curated"}
+    if data_classes == ["bootstrap"]:
+        data_kind = "synthetic_bootstrap"
+    elif data_classes == ["synthetic_verified"]:
+        data_kind = "synthetic_verified"
+    elif set(data_classes).issubset({"external_reviewed", "owner_curated"}):
+        data_kind = "reviewed_external_or_owner"
+    elif set(data_classes).issubset(verified_classes):
+        data_kind = "mixed_verified_corpus"
+    elif "bootstrap" in data_classes:
+        data_kind = "contains_bootstrap_data"
+    elif "synthetic_unverified" in data_classes:
+        data_kind = "contains_unverified_synthetic"
+    else:
+        data_kind = "unapproved_or_mixed_data"
+    data_verified_for_promotion = bool(records) and all(
+        data_class in verified_classes for data_class in data_classes
     )
-    data_kind = "contains_synthetic_or_unapproved_data" if contains_synthetic else f"reviewed_{split}_data"
+    real_data = bool(records) and all(
+        data_class in {"external_reviewed", "owner_curated"} for data_class in data_classes
+    )
     split_manifest_sha256 = sha256_file(split_manifest)
     metrics = {
         "evaluation_id": f"{split}-step-{step}-{sha256_file(checkpoint_file)[:12]}",
@@ -116,8 +133,10 @@ def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
         "checkpoint_sha256": sha256_file(checkpoint_file),
         "checkpoint_step": step,
         "tokenizer_sha256": tokenizer_sha,
-        "real_data": not contains_synthetic,
+        "real_data": real_data,
         "data_kind": data_kind,
+        "data_classes": data_classes,
+        "data_verified_for_promotion": data_verified_for_promotion,
         "parameter_count": model.count_parameters(),
         "text_loss": mean(loss_sum, "text"),
         "tool_use": mean(loss_sum, "tool_use"),
@@ -149,12 +168,12 @@ def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
 
 
 def promotion_gate(metrics: dict[str, Any], baseline: dict[str, Any] | None = None,
-                   require_real_data: bool = True) -> tuple[bool, list[str]]:
+                   require_verified_data: bool = True) -> tuple[bool, list[str]]:
     failures: list[str] = []
     if metrics.get("split") != "validation":
         failures.append("top-level candidate metrics must come from the validation split")
-    if metrics.get("real_data") is not True and require_real_data:
-        failures.append("validation candidate was evaluated only on synthetic/unapproved data")
+    if metrics.get("data_verified_for_promotion") is not True and require_verified_data:
+        failures.append("validation corpus is bootstrap or unverified; only independently verified synthetic or reviewed data can qualify")
     if not isinstance(metrics.get("parameter_count"), int) or metrics["parameter_count"] <= 0:
         failures.append("parameter_count is missing or invalid")
     if not isinstance(metrics.get("checkpoint_sha256"), str) or len(metrics["checkpoint_sha256"]) != 64:
@@ -195,8 +214,8 @@ def promotion_gate(metrics: dict[str, Any], baseline: dict[str, Any] | None = No
         test_hash = test_metrics.get("split_manifest_sha256") or test_metrics.get("test_manifest_sha256")
         if not isinstance(validation_hash, str) or not isinstance(test_hash, str) or validation_hash == test_hash:
             failures.append("validation and test manifest fingerprints are missing or not independent")
-        if test_metrics.get("real_data") is not True and require_real_data:
-            failures.append("test split contains only synthetic/unapproved data")
+        if test_metrics.get("data_verified_for_promotion") is not True and require_verified_data:
+            failures.append("test corpus is bootstrap or unverified; only independently verified synthetic or reviewed data can qualify")
         test_observed = set(test_metrics.get("modalities_tested", []))
         test_missing = required_modalities - test_observed
         if test_missing:
