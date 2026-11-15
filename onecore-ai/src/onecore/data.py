@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -140,3 +141,70 @@ def validate_validation_data(project_root: str | Path) -> dict[str, Any]:
     if not records:
         raise DatasetError("validation manifest is empty")
     return report
+
+def validate_test_data(project_root: str | Path) -> dict[str, Any]:
+    root = Path(project_root)
+    records = read_manifest(root / "data" / "test.jsonl")
+    report = validate_manifest(records, root / "data" / "assets", expected_split="test")
+    if not report["valid"]:
+        details = "\n".join(report["errors"][:30])
+        raise DatasetError(f"test data gate failed with {len(report['errors'])} error(s):\n{details}")
+    if not records:
+        raise DatasetError("test manifest is empty")
+    return report
+
+
+def validate_split_disjointness(project_root: str | Path) -> dict[str, Any]:
+    root = Path(project_root)
+    assets_root = (root / "data" / "assets").resolve()
+    splits = {name: read_manifest(root / "data" / f"{name}.jsonl") for name in ("train", "validation", "test")}
+    id_sets = {name: {str(item.get("id", "")).strip() for item in records} for name, records in splits.items()}
+    path_sets: dict[str, set[str]] = {name: set() for name in splits}
+    content_hash_sets: dict[str, set[str]] = {name: set() for name in splits}
+    for split, records in splits.items():
+        for item in records:
+            values: list[str] = []
+            for field in ("image", "audio_features"):
+                value = item.get(field)
+                if isinstance(value, str) and value.strip():
+                    values.append(value)
+            frames = item.get("frames")
+            if isinstance(frames, list):
+                values.extend(value for value in frames if isinstance(value, str) and value.strip())
+            for relative in values:
+                target = (assets_root / relative).resolve()
+                if assets_root not in target.parents:
+                    raise DatasetError(f"asset path escapes data/assets root in {split}: {relative}")
+                if not target.is_file():
+                    raise DatasetError(f"asset is missing in {split}: {relative}")
+                path_sets[split].add(relative)
+                digest = hashlib.sha256()
+                with target.open("rb") as stream:
+                    for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                        digest.update(chunk)
+                content_hash_sets[split].add(digest.hexdigest())
+    overlaps: dict[str, dict[str, int]] = {}
+    errors: list[str] = []
+    pairs = (("train", "validation"), ("train", "test"), ("validation", "test"))
+    for left, right in pairs:
+        shared_ids = id_sets[left] & id_sets[right]
+        shared_paths = path_sets[left] & path_sets[right]
+        shared_asset_content = content_hash_sets[left] & content_hash_sets[right]
+        overlaps[f"{left}__{right}"] = {
+            "record_ids": len(shared_ids),
+            "asset_paths": len(shared_paths),
+            "asset_content_hashes": len(shared_asset_content),
+        }
+        if shared_ids:
+            errors.append(f"record ID leakage between {left} and {right}: {sorted(shared_ids)[:10]}")
+        if shared_paths:
+            errors.append(f"asset path leakage between {left} and {right}: {sorted(shared_paths)[:10]}")
+        if shared_asset_content:
+            errors.append(f"identical asset content leakage between {left} and {right}: {len(shared_asset_content)} hash(es)")
+    if errors:
+        raise DatasetError("split disjointness gate failed:\n- " + "\n- ".join(errors))
+    return {
+        "valid": True,
+        "split_record_counts": {name: len(records) for name, records in splits.items()},
+        "cross_split_overlaps": overlaps,
+    }
