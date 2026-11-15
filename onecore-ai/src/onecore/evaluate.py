@@ -45,6 +45,7 @@ def _asset_manifest_sha256(root: Path, records: list[dict[str, Any]]) -> str:
 def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
                         checkpoint_path: str | Path, tokenizer_path: str | Path,
                         thresholds_path: str | Path, output_path: str | Path,
+                        split: str = "validation") -> dict[str, Any]:
     root = Path(project_root).resolve()
     cfg, _, _ = load_config(config_path)
     if split not in {"validation", "test"}:
@@ -107,7 +108,7 @@ def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
         record["license"] == "local-owner-synthetic" or record["review_status"] != "approved"
         for record in records
     )
-    data_kind = "contains_synthetic_or_unapproved_data" if contains_synthetic else "reviewed_validation_data"
+    data_kind = "contains_synthetic_or_unapproved_data" if contains_synthetic else f"reviewed_{split}_data"
     split_manifest_sha256 = sha256_file(split_manifest)
     metrics = {
         "evaluation_id": f"{split}-step-{step}-{sha256_file(checkpoint_file)[:12]}",
@@ -239,7 +240,10 @@ def main() -> None:
         root, root / args.config, root / args.checkpoint,
         root / args.tokenizer, root / args.thresholds, root / args.output, split=args.split,
     )
-    passed, failures = promotion_gate(metrics)
+    if args.split == "validation":
+        passed, failures = promotion_gate(metrics)
+    else:
+        passed, failures = False, ["a test-only report cannot be promoted; evaluate validation and test together in notebook 05"]
     print(json.dumps({
         "metrics": metrics, "promotion_gate_passed": passed, "failures": failures,
     }, ensure_ascii=False, indent=2))
