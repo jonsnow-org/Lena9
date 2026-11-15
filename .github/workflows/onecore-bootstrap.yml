@@ -112,7 +112,11 @@ jobs:
           if not report_path.is_file():
               raise FileNotFoundError("resumed checkpoint artifact lacks train_result.json")
           report = json.loads(report_path.read_text(encoding="utf-8"))
-          digest = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
+          digest_builder = hashlib.sha256()
+          with checkpoint.open("rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest_builder.update(chunk)
+          digest = digest_builder.hexdigest()
           expected_digest = report.get("checkpoint", {}).get("sha256")
           if not expected_digest or digest != expected_digest:
               raise ValueError(f"checkpoint SHA-256 mismatch: expected {expected_digest}, got {digest}")
@@ -223,7 +227,7 @@ jobs:
             gh release upload "$tag" onecore-ai/run-state/onecore-state.zip --clobber
           else
             gh release create "$tag" onecore-ai/run-state/onecore-state.zip \
-              --title "OneCore ${ { steps.request.outputs.stage } } checkpoint — run ${GITHUB_RUN_ID}" \
+              --title "OneCore ${{ steps.request.outputs.stage }} checkpoint — run ${GITHUB_RUN_ID}" \
               --notes "$notes" \
               --target "${GITHUB_SHA}"
           fi
@@ -232,20 +236,18 @@ jobs:
         if: always()
         shell: bash
         run: |
-          {
-            echo "## OneCore staged training run"
-            echo "- Stage: ${{ steps.request.outputs.stage }}"
-            echo "- Requested optimizer steps: ${{ steps.request.outputs.steps }}"
-            echo "- Parent run ID: ${{ steps.request.outputs.parent_run_id }}"
-            echo "- Run ID: ${GITHUB_RUN_ID}"
-            echo "- Branch: research/onecore-foundation"
-            echo "- Checkpoint release: onecore-run-${GITHUB_RUN_ID}"
-            if [[ -f onecore-ai/run-state/train_result.json ]]; then
-              echo '### Training report'
-              cat onecore-ai/run-state/train_result.json | tee -a "$GITHUB_STEP_SUMMARY"
-            fi
-            if [[ -f onecore-ai/run-state/evaluation.json ]]; then
-              echo '### Evaluation report'
-              cat onecore-ai/run-state/evaluation.json | tee -a "$GITHUB_STEP_SUMMARY"
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
+          echo "## OneCore staged training run" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Stage: ${{ steps.request.outputs.stage }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Requested optimizer steps: ${{ steps.request.outputs.steps }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Parent run ID: ${{ steps.request.outputs.parent_run_id }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Run ID: ${GITHUB_RUN_ID}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Branch: research/onecore-foundation" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Checkpoint release: onecore-run-${GITHUB_RUN_ID}" >> "$GITHUB_STEP_SUMMARY"
+          if [[ -f onecore-ai/run-state/train_result.json ]]; then
+            echo '### Training report' | tee -a "$GITHUB_STEP_SUMMARY"
+            cat onecore-ai/run-state/train_result.json | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+          if [[ -f onecore-ai/run-state/evaluation.json ]]; then
+            echo '### Evaluation report' | tee -a "$GITHUB_STEP_SUMMARY"
+            cat onecore-ai/run-state/evaluation.json | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
