@@ -235,8 +235,9 @@ jobs:
         if: ${{ success() && inputs.stage != 'evaluate' && inputs.stage != 'smoke' && hashFiles('onecore-ai/run-state/checkpoint.pt') != '' }}
         env:
           ONECORE_RELEASE_TOKEN: ${{ secrets.ONECORE_RELEASE_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [[ -n "${ONECORE_RELEASE_TOKEN}" ]]; then
+          if [[ -n "${ONECORE_RELEASE_TOKEN}" || -n "${GH_TOKEN}" ]]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           else
             echo "enabled=false" >> "$GITHUB_OUTPUT"
@@ -246,7 +247,7 @@ jobs:
         if: ${{ success() && inputs.stage != 'evaluate' && steps.release_auth.outputs.enabled == 'true' && hashFiles('onecore-ai/run-state/checkpoint.pt') != '' }}
         continue-on-error: true
         env:
-          GH_TOKEN: ${{ secrets.ONECORE_RELEASE_TOKEN }}
+          GH_TOKEN: ${{ secrets.ONECORE_RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
           mkdir -p onecore-ai/run-state/release
