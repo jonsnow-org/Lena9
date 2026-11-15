@@ -1,0 +1,8 @@
+{
+  "schema": "onecore-training-request-v1",
+  "stage": "text",
+  "steps": 100,
+  "resume_run_id": "43704424531",
+  "parent_run_id": "43704424531",
+  "purpose": "Continue the same random-initialized OneCore checkpoint after the 10-step synthetic engineering bootstrap. This is a bounded CPU segment; it does not imply promotion or model readiness."
+}
