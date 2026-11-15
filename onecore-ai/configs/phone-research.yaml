@@ -1,6 +1,6 @@
 seed: 20261115
 model:
-  width: 384
+  width: 1024
   unique_blocks: 4
   recurrent_cycles: 3
   attention_heads: 8

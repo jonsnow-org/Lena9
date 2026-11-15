@@ -49,17 +49,17 @@ Every successful training segment is retained as a GitHub Actions artifact and a
 
 ## First model budget
 
-The initial research configuration is deliberately much smaller than the 100–150M exploratory ceiling:
-- width: 384
+The agreed first architecture experiment is 50–70M parameters; the principal research target after validation is 100–150M, with 200M considered only if evidence justifies it:
+- width: 1024
 - unique recurrent blocks: 4
 - recurrent cycles: 3
 - 8 attention heads
 - 4,096 text-token slots plus learned visual/audio/motion code ranges and special tokens
 - 8×8 RGB image patches; 64×64 training images
 - 80-bin log-mel audio frames grouped in fours
-- approximately 9.8M parameters before runtime counting (all modalities included)
+- approximately 57.6M parameters before runtime counting (all modalities included)
 
-The exact count is computed from the instantiated model and saved into every checkpoint. Never rely on a hand-written approximate parameter count.
+The exact count is computed from the instantiated model and saved into every checkpoint. CI asserts that the first experiment remains between 50M and 70M. The previous 9.8M run was only an undersized pipeline test and is not an approved model-size checkpoint.
 
 ## Dataset contract
 

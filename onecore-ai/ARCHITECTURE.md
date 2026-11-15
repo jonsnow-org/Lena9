@@ -18,7 +18,7 @@ The embedding matrix and LM output head are tied by parameter identity. The moda
 
 ## Recurrent core
 
-The current experimental configuration has 4 unique blocks and applies them for 3 cycles. Effective block applications = 12, but only 4 block parameter sets are stored.
+The current first research configuration has width 1024, 4 unique blocks and applies them for 3 cycles. Effective block applications = 12, but only 4 block parameter sets are stored. The complete trainable model is expected to be approximately 57.6M parameters; CI enforces the 50–70M initial budget.
 
 The core uses causal self-attention, RMSNorm, and SwiGLU. Recurrent-cycle embeddings provide a learned signal indicating which pass is being computed.
 

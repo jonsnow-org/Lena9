@@ -8,7 +8,11 @@ from onecore.config import load_config
 def test_repository_config_loads_without_undefined_fields():
     root = Path(__file__).resolve().parents[1]
     model, train, raw = load_config(root / "configs" / "phone-research.yaml")
-    assert model.width == 384
+    assert model.width == 1024
+    from onecore.model import OneCore
+    instantiated = OneCore(model)
+    count = instantiated.count_parameters()
+    assert 50_000_000 <= count <= 70_000_000, f'initial OneCore research budget out of agreed range: {count:,}'
     assert model.vocab_size == (
         model.text_vocab_size + model.vision_codebook_size
         + model.audio_codebook_size + model.motion_codebook_size

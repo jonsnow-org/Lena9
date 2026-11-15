@@ -9,7 +9,7 @@ import yaml
 
 @dataclass(frozen=True)
 class ModelConfig:
-    width: int = 384
+    width: int = 1024
     unique_blocks: int = 4
     recurrent_cycles: int = 3
     attention_heads: int = 8
