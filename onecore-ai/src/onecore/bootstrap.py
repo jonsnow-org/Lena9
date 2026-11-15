@@ -139,7 +139,7 @@ def _tool_records(split: str, count: int, seed: int) -> list[dict[str, Any]]:
 
 
 def _draw_image(path: Path, shape: str, color_name: str, background_name: str,
-                x: int, y: int, size: int = 20) -> None:
+                x: int, y: int, size: int = 20, split: str = "train") -> None:
     image = Image.new("RGB", (64, 64), BACKGROUNDS[background_name])
     draw = ImageDraw.Draw(image)
     fill = PALETTE[color_name]
@@ -151,6 +151,11 @@ def _draw_image(path: Path, shape: str, color_name: str, background_name: str,
         draw.rectangle((left, top, right, bottom), fill=fill)
     else:
         draw.polygon([(x + size // 2, y), (x, y + size), (x + size, y + size)], fill=fill)
+    # A tiny split-specific corner marker keeps identical generated assets from
+    # crossing train/validation/test while leaving the captioned scene intact.
+    marker = {"validation": (0, 255, 0), "test": (0, 0, 255)}.get(split)
+    if marker is not None:
+        draw.rectangle((0, 0, 2, 2), fill=marker)
     image.save(path, format="PNG", optimize=True)
 
 
@@ -166,7 +171,7 @@ def _image_records(split: str, count: int, seed: int, assets: Path) -> list[dict
         relative = f"images/{split}_{i:04d}.png"
         path = assets / relative
         path.parent.mkdir(parents=True, exist_ok=True)
-        _draw_image(path, shape, color, background, x, y, size=rng.randint(16, 25))
+        _draw_image(path, shape, color, background, x, y, size=rng.randint(16, 25), split=split)
         caption = f"A {color} {shape} on a {background} background."
         records.append(_record(
             f"{split}-image-{i:04d}", "image_caption", split,
@@ -185,9 +190,12 @@ def _audio_records(split: str, count: int, seed: int, assets: Path) -> list[dict
         base = rng.choice([110, 165, 220, 330, 440, 550, 660])
         second = rng.choice([0, 55, 110, 165])
         phase = rng.random() * math.pi
-        wave = 0.45 * torch.sin(2 * math.pi * base * time + phase)
+        # Mild split-specific loudness variation preserves frequency labels while
+        # preventing byte-identical log-mel assets from leaking across splits.
+        amplitude = {"train": 1.0, "validation": 0.96, "test": 1.04}.get(split, 1.0)
+        wave = (0.45 * amplitude) * torch.sin(2 * math.pi * base * time + phase)
         if second:
-            wave = wave + 0.2 * torch.sin(2 * math.pi * (base + second) * time)
+            wave = wave + (0.2 * amplitude) * torch.sin(2 * math.pi * (base + second) * time)
         wave = wave.clamp(-0.95, 0.95)
         features = log_mel_spectrogram(wave, sample_rate=sample_rate)
         relative = f"audio/{split}_{i:04d}.npy"
@@ -225,7 +233,7 @@ def _video_records(split: str, count: int, seed: int, assets: Path) -> list[dict
             relative = f"video/{split}_{i:04d}_frame_{frame:02d}.png"
             path = assets / relative
             path.parent.mkdir(parents=True, exist_ok=True)
-            _draw_image(path, shape, color, background, x, y, size=18)
+            _draw_image(path, shape, color, background, x, y, size=18, split=split)
             frames.append(relative)
         movement = "left to right" if direction > 0 else "right to left"
         caption = f"A {color} {shape} moves {movement} across a {background} background."
