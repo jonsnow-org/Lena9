@@ -69,6 +69,13 @@ def _row_identity(row: dict[str, Any], source_id: str, index: int) -> str:
 
 
 def _decode_image(value: Any) -> Image.Image | None:
+    if isinstance(value, np.ndarray):
+        array = value
+        if array.dtype != np.uint8:
+            if np.issubdtype(array.dtype, np.floating) and array.size and float(array.max()) <= 1.0:
+                array = array * 255.0
+            array = np.clip(array, 0, 255).astype("uint8")
+        return Image.fromarray(array).convert("RGB")
     if isinstance(value, Image.Image):
         return value.convert("RGB")
     if isinstance(value, dict):
@@ -81,6 +88,8 @@ def _decode_image(value: Any) -> Image.Image | None:
     if isinstance(value, (bytes, bytearray)):
         return Image.open(io.BytesIO(value)).convert("RGB")
     if isinstance(value, str):
+        if value.startswith("data:image/") and "," in value:
+            value = value.split(",", 1)[1]
         if value.startswith(("http://", "https://")):
             request = urllib.request.Request(value, headers={"User-Agent": "OneCore-data-ingest/1.0"})
             with urllib.request.urlopen(request, timeout=25) as response:
@@ -301,8 +310,10 @@ def _assign_split(source: dict[str, Any], hf_split: str, row_id: str, seed: str)
     if forced:
         return str(forced)
     strategy = str(source.get("split_strategy", "preserve"))
-    if strategy == "preserve" and hf_split in SPLITS:
+    if hf_split in {"validation", "test"}:
         return hf_split
+    if strategy == "preserve" and hf_split == "train":
+        return "train"
     return _stable_split(str(source["id"]), row_id, seed)
 
 
@@ -356,6 +367,7 @@ def acquire_sources(
     except Exception as exc:
         raise RuntimeError("The datasets package is required for OneCore source acquisition") from exc
 
+    metadata_rows: dict[str, list[dict[str, Any]]] = {}
     for source in registry.get("sources", []):
         source_id = str(source.get("id", ""))
         if only_sources and source_id not in only_sources:
@@ -394,6 +406,25 @@ def acquire_sources(
                         if scanned >= max_scan or all(filled[s] >= limits.get(s, 0) for s in SPLITS):
                             break
                         continue
+                    if source.get("adapter") in {"video_manifest", "metadata_only"}:
+                        fields = {
+                            key: row.get(key) for key in (
+                                "video_id", "youtube_id", "url", "video_url", "start",
+                                "end", "timestamp", "caption", "text", "language",
+                            ) if row.get(key) is not None
+                        }
+                        metadata_rows.setdefault(source_id, []).append({
+                            "id": f"hf-{source_id}-{_stable_hash(row_id)[:24]}",
+                            "source": source.get("repo"),
+                            "source_url": str(source.get("url") or f"https://huggingface.co/datasets/{source['repo']}"),
+                            "attribution": source.get("attribution"),
+                            "split": assigned,
+                            "fields": fields,
+                        })
+                        filled[assigned] += 1
+                        report["accepted"] += 1
+                        report["metadata_only"] = report.get("metadata_only", 0) + 1
+                        continue
                     try:
                         record = _record_from_row(row, source, row_id, assigned, assets_root)
                     except Exception:
@@ -417,12 +448,26 @@ def acquire_sources(
         source_reports.append(report)
 
     added_counts = _append_manifests(root, rows_by_split)
+    metadata_counts: dict[str, int] = {}
+    metadata_root = root / "data" / "metadata"
+    for source_id, entries in metadata_rows.items():
+        metadata_root.mkdir(parents=True, exist_ok=True)
+        target = metadata_root / f"{source_id}.jsonl"
+        existing = [json.loads(line) for line in target.read_text(encoding="utf-8").splitlines() if line.strip()] if target.is_file() else []
+        known = {item.get("id") for item in existing}
+        merged = existing + [item for item in entries if item.get("id") not in known]
+        target.write_text(
+            "\n".join(json.dumps(item, ensure_ascii=False, sort_keys=True) for item in merged)
+            + ("\n" if merged else ""), encoding="utf-8"
+        )
+        metadata_counts[source_id] = len(merged) - len(existing)
     output = {
         "profile": profile,
         "registry_version": registry.get("version"),
         "source_count": len(source_reports),
         "sources": source_reports,
         "new_records": added_counts,
+        "new_metadata_rows": metadata_counts,
         "total_new_records": sum(added_counts.values()),
     }
     report_path = root / "data" / "acquisition-report.json"

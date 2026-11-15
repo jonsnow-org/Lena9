@@ -169,7 +169,6 @@ sources:
     limits: {train: 500, validation: 30, test: 30}
     license: other
     attribution: "GigaSpeech 3 — SpeechColab"
-    requires_access: true
     enabled: true
   - id: gigaspeech_english
     repo: speechcolab/gigaspeech
@@ -324,4 +323,39 @@ sources:
     limits: {train: 1000, validation: 50, test: 50}
     license: dataset-card-terms
     attribution: "Panda-70M — Snap Research and source-video contributors"
+    enabled: true
+  - id: wavcaps_original
+    repo: cvssp/WavCaps
+    config: default
+    hf_splits: [train]
+    adapter: audio
+    audio_field: audio
+    text_fields: [caption]
+    split_strategy: hash
+    limits: {train: 150, validation: 20, test: 20}
+    license: cc-by-4.0
+    attribution: "WavCaps — CVSSP contributors"
+    enabled: true
+  - id: gigaspeech_bench_eval
+    repo: speechcolab/GigaSpeechBench
+    config: default
+    hf_splits: [test]
+    adapter: metadata_only
+    split_strategy: preserve
+    limits: {test: 250}
+    license: cc-by-4.0
+    attribution: "GigaSpeechBench — SpeechColab"
+    enabled: true
+  - id: laion_bvd_image_300m
+    repo: laion/BVD-I-300M
+    config: default
+    hf_splits: [train]
+    adapter: image
+    image_field: image
+    text_fields: [caption, text]
+    split_strategy: hash
+    limits: {train: 200, validation: 20, test: 20}
+    license: dataset-card-terms
+    attribution: "LAION BVD-I-300M contributors"
+    requires_access: true
     enabled: true
