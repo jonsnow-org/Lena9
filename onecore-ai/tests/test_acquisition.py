@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
 import json
 from pathlib import Path
@@ -26,6 +27,18 @@ def _png_base64() -> str:
     Image.new("RGB", (16, 12), (20, 80, 140)).save(stream, format="PNG")
     return base64.b64encode(stream.getvalue()).decode("ascii")
 
+
+def _external_metadata(source_id: str, row_id: str) -> dict[str, str]:
+    return {
+        "license": "cc-by-4.0",
+        "source_url": "https://example.org/dataset",
+        "attribution": "fixture dataset authors",
+        "review_status": "pending",
+        "data_class": "external_staged",
+        "source_id": source_id,
+        "source_revision": "a" * 40,
+        "source_row_id_sha256": hashlib.sha256(row_id.encode("utf-8")).hexdigest(),
+    }
 
 def test_source_registry_covers_all_shared_modalities() -> None:
     root = Path(__file__).resolve().parents[1]
@@ -551,8 +564,13 @@ def test_bootstrap_is_excluded_from_real_training_sampler() -> None:
     assert "external_staged" in TRAINABLE_DATA_CLASSES
     rows = [
         {"id": "bootstrap-1", "task": "text", "split": "train", "data_class": "bootstrap"},
-        {"id": "external-1", "task": "text", "split": "train", "data_class": "external_staged"},
-        {"id": "external-2", "task": "tool_use", "split": "train", "data_class": "external_staged"},
+        {**_external_metadata("sampler-text-source", "external-1"),
+         "id": "external-1", "task": "text", "split": "train",
+         "text": "A sufficiently long authentic imported external text sample."},
+        {**_external_metadata("sampler-tool-source", "external-2"),
+         "id": "external-2", "task": "tool_use", "split": "train",
+         "prompt": "Please call the lookup tool with this query.",
+         "response": '{"name":"lookup","arguments":{"query":"sample"}}'},
     ]
     selected = iter_training_records(rows, {"text", "tool_use"})
     assert [item["id"] for item in selected] == ["external-1", "external-2"]
@@ -560,29 +578,61 @@ def test_bootstrap_is_excluded_from_real_training_sampler() -> None:
                for i in range(100)]
     assert all(item["data_class"] == "external_staged" for item in sampled)
 
-
-
-
 def test_external_coverage_gate_counts_imported_records_not_bootstrap(tmp_path: Path) -> None:
     from onecore.acquire import assert_external_task_coverage
 
     data = tmp_path / "data"
-    data.mkdir()
+    assets = data / "assets" / "acquired"
+    assets.mkdir(parents=True)
     task_ids = {"text": "text", "tool": "tool_use", "image": "image_caption",
                 "audio": "audio_text", "video": "video_caption"}
     for split in ("train", "validation", "test"):
-        records = [{"id": f"{split}-{group}", "task": task, "split": split,
-                    "data_class": "external_staged"} for group, task in task_ids.items()]
-        records.append({"id": f"{split}-bootstrap", "task": "text", "split": split,
-                        "data_class": "bootstrap"})
+        image_rel = f"acquired/{split}-image.png"
+        audio_rel = f"acquired/{split}-audio.npy"
+        frame_rels = [f"acquired/{split}-frame-1.png", f"acquired/{split}-frame-2.png"]
+        Image.new("RGB", (16, 16), (30, 70, 120)).save(assets / Path(image_rel).name, format="PNG")
+        np.save(assets / Path(audio_rel).name, np.zeros((8, 80), dtype=np.float32), allow_pickle=False)
+        for index, relative in enumerate(frame_rels):
+            Image.new("RGB", (16, 16), (40 + index * 30, 90, 140)).save(
+                assets / Path(relative).name, format="PNG"
+            )
+        records = [
+            {**_external_metadata(f"{split}-text-source", f"{split}-text"),
+             "id": f"{split}-text", "task": "text", "split": split,
+             "text": "This is a sufficiently long imported external text sample."},
+            {**_external_metadata(f"{split}-tool-source", f"{split}-tool"),
+             "id": f"{split}-tool", "task": "tool_use", "split": split,
+             "prompt": "Call the search tool with a simple query.",
+             "response": '{"name":"search","arguments":{"query":"example"}}'},
+            {**_external_metadata(f"{split}-image-source", f"{split}-image"),
+             "id": f"{split}-image", "task": "image_caption", "split": split,
+             "image": image_rel, "caption": "A small fixture image."},
+            {**_external_metadata(f"{split}-audio-source", f"{split}-audio"),
+             "id": f"{split}-audio", "task": "audio_text", "split": split,
+             "audio_features": audio_rel, "transcript": "Fixture speech transcript."},
+            {**_external_metadata(f"{split}-video-source", f"{split}-video"),
+             "id": f"{split}-video", "task": "video_caption", "split": split,
+             "frames": frame_rels, "caption": "A fixture video with two frames."},
+            {**_external_metadata(f"{split}-metadata-image-source", f"{split}-metadata-image"),
+             "id": f"{split}-metadata-image", "task": "image_caption", "split": split,
+             "caption": "Metadata-only image record with no image payload."},
+            {**_external_metadata(f"{split}-metadata-audio-source", f"{split}-metadata-audio"),
+             "id": f"{split}-metadata-audio", "task": "audio_text", "split": split,
+             "transcript": "Metadata-only audio record with no audio payload."},
+            {**_external_metadata(f"{split}-metadata-video-source", f"{split}-metadata-video"),
+             "id": f"{split}-metadata-video", "task": "video_caption", "split": split,
+             "caption": "Metadata-only video record with no frames."},
+            {"id": f"{split}-bootstrap", "task": "text", "split": split,
+             "data_class": "bootstrap"},
+        ]
         (data / f"{split}.jsonl").write_text(
             "\n".join(json.dumps(item) for item in records) + "\n", encoding="utf-8"
         )
     coverage = assert_external_task_coverage(
         tmp_path, set(task_ids), minimum_train=1, minimum_holdout=1
     )
-    assert coverage["train"]["text"] == 1
-
+    for split in ("train", "validation", "test"):
+        assert coverage[split] == {group: 1 for group in task_ids}
 
 @pytest.mark.parametrize(("license_id", "expected"), [
     ("odc-by", True), ("odc-by-1.0", True), ("CC-BY-4.0", True),
@@ -649,36 +699,84 @@ def test_external_asset_report_counts_only_real_licensed_media_files(tmp_path: P
     audio_path = "acquired/audio.npy"
     frame_one = "acquired/frame_01.png"
     frame_two = "acquired/frame_02.png"
-    for path, payload in [(image_path, b"image"), (audio_path, b"audio"),
-                          (frame_one, b"frame-one"), (frame_two, b"frame-two")]:
-        (assets / Path(path).name).write_bytes(payload)
-    base = {
-        "license": "cc-by-4.0", "source_url": "https://example.org/dataset",
-        "attribution": "dataset authors", "split": "train", "review_status": "pending",
-        "data_class": "external_staged", "source_id": "media-source",
-        "source_revision": "a" * 40, "source_row_id_sha256": "b" * 64,
-    }
+    Image.new("RGB", (16, 16), (20, 80, 140)).save(assets / Path(image_path).name, format="PNG")
+    np.save(assets / Path(audio_path).name, np.zeros((8, 80), dtype=np.float32), allow_pickle=False)
+    Image.new("RGB", (16, 16), (70, 80, 140)).save(assets / Path(frame_one).name, format="PNG")
+    Image.new("RGB", (16, 16), (100, 80, 140)).save(assets / Path(frame_two).name, format="PNG")
     records = [
-        {**base, "id": "image-record", "task": "image_reconstruction", "image": image_path},
-        {**base, "id": "audio-record", "task": "audio_reconstruction", "audio_features": audio_path},
-        {**base, "id": "video-record", "task": "video_reconstruction", "frames": [frame_one, frame_two]},
-        {"id": "metadata-only", "task": "video_caption", "data_class": "external_staged",
-         "license": "cc-by-4.0", "source_url": "https://example.org/metadata",
-         "attribution": "dataset authors", "split": "train", "review_status": "pending"},
+        {**_external_metadata("image-source", "image-record"),
+         "id": "image-record", "task": "image_reconstruction", "split": "train", "image": image_path},
+        {**_external_metadata("audio-source", "audio-record"),
+         "id": "audio-record", "task": "audio_reconstruction", "split": "train", "audio_features": audio_path},
+        {**_external_metadata("video-source", "video-record"),
+         "id": "video-record", "task": "video_reconstruction", "split": "train", "frames": [frame_one, frame_two]},
+        {**_external_metadata("metadata-source", "metadata-only"),
+         "id": "metadata-only", "task": "video_caption", "split": "train",
+         "caption": "Metadata-only video caption with no frames."},
     ]
-    (data / "train.jsonl").write_text("\\n".join(json.dumps(item) for item in records) + "\\n", encoding="utf-8")
+    (data / "train.jsonl").write_text(
+        "\n".join(json.dumps(item) for item in records) + "\n", encoding="utf-8"
+    )
     report = _external_asset_report(tmp_path, "train")
     assert report["records_by_task"] == {
         "image_reconstruction": 1, "audio_reconstruction": 1, "video_reconstruction": 1,
     }
+    assert report["metadata_only_records"] == 1
+    assert report["unusable_external_records"] == 1
     assert report["image_files"] == 1
     assert report["audio_feature_files"] == 1
     assert report["video_frame_files"] == 2
     assert report["unique_asset_files"] == 4
     assert report["missing_asset_files"] == 0
 
-
 def test_external_coverage_gate_counts_only_licensed_pinned_records(tmp_path: Path) -> None:
+    from onecore.acquire import assert_external_task_coverage
+    groups = {"text": "text", "tool": "tool_use", "image": "image_reconstruction",
+              "audio": "audio_reconstruction", "video": "video_reconstruction"}
+    data = tmp_path / "data"
+    assets = data / "assets" / "acquired"
+    assets.mkdir(parents=True)
+    for split in ("train", "validation", "test"):
+        image_rel = f"acquired/{split}-image.png"
+        audio_rel = f"acquired/{split}-audio.npy"
+        frame_rels = [f"acquired/{split}-frame-1.png", f"acquired/{split}-frame-2.png"]
+        Image.new("RGB", (16, 16), (30, 70, 120)).save(assets / Path(image_rel).name, format="PNG")
+        np.save(assets / Path(audio_rel).name, np.zeros((8, 80), dtype=np.float32), allow_pickle=False)
+        for index, relative in enumerate(frame_rels):
+            Image.new("RGB", (16, 16), (40 + index * 30, 90, 140)).save(
+                assets / Path(relative).name, format="PNG"
+            )
+        records = [
+            {**_external_metadata(f"{split}-text-source", f"{split}-text"),
+             "id": f"{split}-text", "task": "text", "split": split,
+             "text": "This is a sufficiently long imported external text sample."},
+            {**_external_metadata(f"{split}-tool-source", f"{split}-tool"),
+             "id": f"{split}-tool", "task": "tool_use", "split": split,
+             "prompt": "Call the search tool with a simple query.",
+             "response": '{"name":"search","arguments":{"query":"example"}}'},
+            {**_external_metadata(f"{split}-image-source", f"{split}-image"),
+             "id": f"{split}-image", "task": "image_reconstruction", "split": split,
+             "image": image_rel},
+            {**_external_metadata(f"{split}-audio-source", f"{split}-audio"),
+             "id": f"{split}-audio", "task": "audio_reconstruction", "split": split,
+             "audio_features": audio_rel},
+            {**_external_metadata(f"{split}-video-source", f"{split}-video"),
+             "id": f"{split}-video", "task": "video_reconstruction", "split": split,
+             "frames": frame_rels},
+            {**_external_metadata(f"{split}-unlicensed-source", f"{split}-unlicensed-text"),
+             "id": f"{split}-unlicensed-text", "task": "text", "split": split,
+             "license": "cc-by-nc-4.0", "text": "This noncommercial text must be excluded."},
+            {"id": f"{split}-bootstrap", "task": "text", "split": split,
+             "data_class": "bootstrap"},
+        ]
+        (data / f"{split}.jsonl").write_text(
+            "\n".join(json.dumps(item) for item in records) + "\n", encoding="utf-8"
+        )
+    coverage = assert_external_task_coverage(tmp_path, set(groups), minimum_train=1, minimum_holdout=1)
+    for split in ("train", "validation", "test"):
+        assert coverage[split] == {group: 1 for group in groups}
+
+
     from onecore.acquire import assert_external_task_coverage
     groups = {"text": "text", "tool": "tool_use", "image": "image_reconstruction",
               "audio": "audio_reconstruction", "video": "video_reconstruction"}

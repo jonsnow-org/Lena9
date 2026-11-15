@@ -83,19 +83,85 @@ def _training_manifest_base(root: Path) -> dict[str, Any]:
 
 
 
+def _external_record_has_usable_payload(record: dict[str, Any], assets_root: Path) -> bool:
+    """Require real, decodable payloads before counting external modality coverage."""
+    task = str(record.get("task", ""))
+
+    def asset_path(value: Any) -> Path | None:
+        if not isinstance(value, str) or not value.strip():
+            return None
+        target = (assets_root / value).resolve()
+        if assets_root not in target.parents or not target.is_file() or target.stat().st_size <= 0:
+            return None
+        return target
+
+    def valid_image(value: Any) -> bool:
+        target = asset_path(value)
+        if target is None:
+            return False
+        try:
+            with Image.open(target) as image:
+                image.verify()
+            return True
+        except Exception:
+            return False
+
+    def valid_audio(value: Any) -> bool:
+        target = asset_path(value)
+        if target is None:
+            return False
+        try:
+            features = np.load(target, allow_pickle=False)
+            return bool(
+                features.ndim == 2 and features.shape[0] > 0 and features.shape[1] == 80
+                and np.isfinite(features).all()
+            )
+        except Exception:
+            return False
+
+    if task == "text":
+        return len(str(record.get("text", "")).strip()) >= 24
+    if task == "tool_use":
+        return len(str(record.get("prompt", "")).strip()) >= 8 and len(
+            str(record.get("response", "")).strip()
+        ) >= 2
+    if task in {"image_caption", "image_reconstruction"}:
+        return valid_image(record.get("image")) and (
+            task != "image_caption" or bool(str(record.get("caption", "")).strip())
+        )
+    if task in {"audio_text", "audio_reconstruction"}:
+        return valid_audio(record.get("audio_features")) and (
+            task != "audio_text" or bool(str(record.get("transcript", "")).strip())
+        )
+    if task in {"video_caption", "video_reconstruction"}:
+        frames = record.get("frames")
+        if not isinstance(frames, list) or len(frames) < 2 or not all(valid_image(frame) for frame in frames):
+            return False
+        return task != "video_caption" or bool(str(record.get("caption", "")).strip())
+    return False
+
+
 def _external_asset_report(project_root: str | Path, split: str) -> dict[str, Any]:
     root = Path(project_root).resolve()
     manifest = root / "data" / f"{split}.jsonl"
     assets_root = (root / "data" / "assets").resolve()
-    records = [json.loads(line) for line in manifest.read_text(encoding="utf-8").splitlines() if line.strip()] if manifest.is_file() else []
-    external = [record for record in records if external_record_is_trainable(record)]
+    records = [
+        json.loads(line) for line in manifest.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ] if manifest.is_file() else []
+    external = [
+        record for record in records
+        if str(record.get("split", "")) == split and external_record_is_trainable(record)
+    ]
+    usable = [record for record in external if _external_record_has_usable_payload(record, assets_root)]
     tasks: dict[str, int] = {}
+    for record in usable:
+        task = str(record.get("task", ""))
+        tasks[task] = tasks.get(task, 0) + 1
     image_paths: set[str] = set()
     audio_paths: set[str] = set()
     video_paths: set[str] = set()
     for record in external:
-        task = str(record.get("task", ""))
-        tasks[task] = tasks.get(task, 0) + 1
         image = record.get("image")
         if isinstance(image, str) and image.strip():
             image_paths.add(image)
@@ -114,8 +180,17 @@ def _external_asset_report(project_root: str | Path, split: str) -> dict[str, An
             missing += 1
         else:
             total_bytes += target.stat().st_size
+    metadata_only = sum(
+        1 for record in external
+        if record.get("task") in {"image_caption", "image_reconstruction"} and not record.get("image")
+        or record.get("task") in {"audio_text", "audio_reconstruction"} and not record.get("audio_features")
+        or record.get("task") in {"video_caption", "video_reconstruction"}
+        and (not isinstance(record.get("frames"), list) or len(record.get("frames", [])) < 2)
+    )
     return {
         "records_by_task": tasks,
+        "metadata_only_records": metadata_only,
+        "unusable_external_records": len(external) - len(usable),
         "image_files": len(image_paths),
         "audio_feature_files": len(audio_paths),
         "video_frame_files": len(video_paths),
@@ -123,7 +198,6 @@ def _external_asset_report(project_root: str | Path, split: str) -> dict[str, An
         "missing_asset_files": missing,
         "unique_asset_bytes": total_bytes,
     }
-
 
 def _stable_split(source_id: str, row_id: str, seed: str = "onecore-shard-v1") -> str:
     bucket = int(_stable_hash(f"{seed}:{source_id}:{row_id}")[:8], 16) % 100
@@ -668,8 +742,9 @@ def _append_manifests(project_root: Path, rows_by_split: dict[str, list[dict[str
 
 
 def external_task_coverage(project_root: str | Path) -> dict[str, dict[str, int]]:
-    """Count external usable examples by modality, excluding deterministic bootstrap rows."""
+    """Count licensed, pinned external examples with decoded payloads; exclude metadata-only rows."""
     root = Path(project_root).resolve()
+    assets_root = (root / "data" / "assets").resolve()
     task_groups = {
         "text": {"text"},
         "tool": {"tool_use"},
@@ -677,7 +752,6 @@ def external_task_coverage(project_root: str | Path) -> dict[str, dict[str, int]
         "audio": {"audio_text", "audio_reconstruction"},
         "video": {"video_caption", "video_reconstruction"},
     }
-    accepted_classes = {"external_staged", "external_reviewed"}
     coverage: dict[str, dict[str, int]] = {}
     for split in SPLITS:
         path = root / "data" / f"{split}.jsonl"
@@ -685,13 +759,17 @@ def external_task_coverage(project_root: str | Path) -> dict[str, dict[str, int]
             json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()
             if line.strip()
         ] if path.is_file() else []
-        records = [record for record in records if external_record_is_trainable(record)]
+        usable = [
+            record for record in records
+            if str(record.get("split", "")) == split
+            and external_record_is_trainable(record)
+            and _external_record_has_usable_payload(record, assets_root)
+        ]
         coverage[split] = {
-            group: sum(1 for record in records if record.get("task") in tasks)
+            group: sum(1 for record in usable if record.get("task") in tasks)
             for group, tasks in task_groups.items()
         }
     return coverage
-
 
 def assert_external_task_coverage(
     project_root: str | Path, required_tasks: set[str],
