@@ -37,3 +37,16 @@ def test_reference_evidence_recomputes_expected_answer_and_text():
     assert verify_record(record)
     record["verification"]["expected"] = 55
     assert not verify_record(record)
+
+
+def test_exact_division_and_audio_scene_caption_cover_both_objects():
+    assert solve("math.integer_arithmetic.v1", {"a": 84, "b": 7, "op": "/"}) == 12
+    caption = solve("media.audio_transcript.v1", {
+        "language": "ar",
+        "color1": "أحمر", "shape1": "دائرة",
+        "color2": "أزرق", "shape2": "مربع",
+        "direction_ar": "اليسار إلى اليمين",
+        "background": "أبيض",
+    })
+    assert "أحمر دائرة" in caption
+    assert "أزرق مربع" in caption

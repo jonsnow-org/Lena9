@@ -43,3 +43,13 @@ The module uses Hugging Face streaming, writes \`data/acquisition-report.json\`,
 Audio features are normalized to mono 16 kHz and 80-bin log-mel arrays. Video ingestion samples up to four ordered frames per clip. A source row is emitted as a training example only when the corresponding media payload can be read; metadata-only rows are preserved separately rather than converted into invented visual content.
 
 The waveform decoder remains approximate (mel pseudoinverse plus Griffin–Lim), not a trained production vocoder.
+
+## Deterministic verified synthetic curriculum — v2
+
+The GitHub Actions training workflow generates a reproducible pilot corpus from scratch using deterministic reference solvers; it does not use teacher-model outputs or third-party weights. The current domains cover integer arithmetic (including exact division), abstract logic, fixed science facts, programming outputs, BFS shortest paths, Arabic↔English vocabulary, dependency planning, and spatial relations.
+
+Each generated scene is linked across one text problem, one tool call, image caption/reconstruction, audio cue/transcript/reconstruction, and video caption/reconstruction. The reference answer, solver identifier, canonical answer hash, and generated asset SHA-256 hashes are recorded. The workflow verifies all generated answers, assets, record IDs, asset paths/content, domain-problem fingerprints, and scene fingerprints across train/validation/test.
+
+The pilot audio uses a deterministic four-formant synthetic scene cue. It is **not natural speech, phoneme-level Arabic/English speech, or a trained text-to-speech system**. Speech coverage remains a research gap.
+
+Training may retain the small bootstrap corpus as a low-weight engineering subset. Validation and test manifests are rebuilt to retain only `synthetic_verified`, `external_reviewed`, or `owner_curated` records; bootstrap, staged, and unapproved records are excluded from held-out scoring. Synthetic verified data are eligible for scientific evaluation, but the pilot remains non-promotion-eligible until coverage and quality thresholds are independently benchmarked and approved.

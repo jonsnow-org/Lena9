@@ -14,10 +14,12 @@ from PIL import Image, ImageDraw
 from .acquire import _append_manifests, _training_manifest_base
 from .audio import log_mel_spectrogram
 from .curriculum_reference import (
-    SCIENCE_FACTS, TRANSLATION_PAIRS, make_verification, render_answer, solve,
+    SCIENCE_FACTS, TRANSLATION_PAIRS, canonical_json, make_verification, render_answer, solve, verify_record,
 )
+from .data import classify_record_data, read_manifest, validate_manifest, validate_split_disjointness
 
-CURRICULUM_VERSION = "onecore-verified-curriculum-v1"
+
+CURRICULUM_VERSION = "onecore-verified-curriculum-v2"
 SEED = 20261115
 DOMAINS = (
     "math", "logic", "science", "programming", "algorithms",
@@ -47,11 +49,11 @@ BACKGROUND_RGB = {
     "أبيض": (245, 245, 245), "رمادي فاتح": (205, 205, 205),
     "أزرق فاتح": (190, 220, 245), "أسود": (35, 35, 35),
 }
-SPLIT_MARKERS = {"train": (0, 255, 0), "validation": (0, 0, 255), "test": (255, 0, 0)}
 F0_BY_COLOR = {"أحمر": 110, "أزرق": 130, "أخضر": 150, "أصفر": 170, "بنفسجي": 190, "برتقالي": 210}
 F1_BY_SHAPE = {"دائرة": 480, "مربع": 620, "مثلث": 760}
 F2_BY_BACKGROUND = {"أبيض": 1200, "رمادي فاتح": 1450, "أزرق فاتح": 1700, "أسود": 1950}
 F3_BY_SHAPE = {"دائرة": 2450, "مربع": 2750, "مثلث": 3050}
+F4_BY_COLOR = {"أحمر": 3300, "أزرق": 3500, "أخضر": 3700, "أصفر": 3900, "بنفسجي": 4100, "برتقالي": 4300}
 
 
 def _sha256(path: Path) -> str:
@@ -82,7 +84,7 @@ def _verified_record(
         "curriculum_version": CURRICULUM_VERSION,
         "group_id": group_id,
         "domain": domain,
-        "difficulty": "basic" if domain in {"math", "language"} else "intermediate",
+        "difficulty": "basic" if domain in {"math", "arabic_language", "english_language"} else "intermediate",
         "problem": problem,
         "answer": answer,
         "verification": verification,
@@ -92,21 +94,28 @@ def _verified_record(
     return record
 
 
-def _build_domain_problem(domain: str, rng: random.Random) -> tuple[dict[str, Any], str, str]:
+def _build_domain_problem(domain: str, rng: random.Random, split: str, domain_index: int) -> tuple[dict[str, Any], str, str]:
     if domain == "math":
-        a, b = rng.randint(2, 50), rng.randint(2, 50)
-        op = rng.choice(("+", "-", "*"))
+        op = rng.choice(("+", "-", "*", "/"))
+        if op == "/":
+            divisor, quotient = rng.randint(2, 50), rng.randint(2, 50)
+            a, b = divisor * quotient, divisor
+        else:
+            a, b = rng.randint(-999, 999), rng.randint(-999, 999)
         problem = {"a": a, "b": b, "op": op}
         return problem, f"احسب {a} {op} {b}.", "math.integer_arithmetic.v1"
 
     if domain == "logic":
-        a, b, c = rng.choice((
-            ("الطيور", "الحيوانات", "الكائنات الحية"),
-            ("المربعات", "المستطيلات", "الأشكال الرباعية"),
-            ("الأشجار", "النباتات", "الكائنات الحية"),
-            ("الأعداد الزوجية", "الأعداد الصحيحة", "الأعداد"),
-            ("الثدييات", "الحيوانات", "الكائنات الحية"),
-        ))
+        categories = (
+            "الطيور", "الحيوانات", "الكائنات الحية", "المربعات", "المستطيلات",
+            "الأشكال الرباعية", "الأشجار", "النباتات", "الأعداد الزوجية",
+            "الأعداد الصحيحة", "الأعداد", "الثدييات", "المواد", "المعادن",
+            "المركبات", "العناصر", "الكواكب", "الأجرام السماوية", "النجوم",
+            "الطلاب", "الأشخاص", "المواطنون", "السيارات", "وسائل النقل",
+            "الأسماك", "الفقاريات", "الحشرات", "الزهور", "الفواكه",
+            "الأجهزة", "الأدوات", "المباني", "المدن", "القرى",
+        )
+        a, b, c = rng.sample(categories, 3)
         premise_a_to_b = rng.choice((True, True, False))
         premise_b_to_c = rng.choice((True, True, False))
         problem = {
@@ -124,7 +133,9 @@ def _build_domain_problem(domain: str, rng: random.Random) -> tuple[dict[str, An
         return problem, question, "logic.transitive_membership.v1"
 
     if domain == "science":
-        fact_id = rng.choice(sorted(SCIENCE_FACTS))
+        split_index = {"train": 0, "validation": 1, "test": 2}[split]
+        fact_ids = [fact_id for index, fact_id in enumerate(sorted(SCIENCE_FACTS)) if index % 3 == split_index]
+        fact_id = fact_ids[domain_index % len(fact_ids)]
         problem = {"fact_id": fact_id, "language": "ar"}
         return problem, SCIENCE_FACTS[fact_id]["question_ar"], "science.fact_lookup.v1"
 
@@ -137,44 +148,61 @@ def _build_domain_problem(domain: str, rng: random.Random) -> tuple[dict[str, An
         return problem, question, "programming.output.v1"
 
     if domain == "algorithms":
-        nodes = ["A", "B", "C", "D", "E", "F"]
-        edges = [(nodes[i], nodes[i + 1]) for i in range(len(nodes) - 1)]
-        candidates = [(nodes[0], nodes[2]), (nodes[1], nodes[3]), (nodes[2], nodes[4]), (nodes[3], nodes[5])]
-        for edge in candidates:
-            if rng.random() < 0.55:
-                edges.append(edge)
+        nodes = list("ABCDEFGH")
+        order = rng.sample(nodes, len(nodes))
+        edge_set: set[tuple[str, str]] = set()
+        for index in range(1, len(order)):
+            parent = rng.choice(order[:index])
+            edge_set.add(tuple(sorted((parent, order[index]))))
+        for index, left in enumerate(nodes):
+            for right in nodes[index + 1:]:
+                edge = tuple(sorted((left, right)))
+                if edge not in edge_set and rng.random() < 0.18:
+                    edge_set.add(edge)
+        edges = sorted(edge_set)
         graph = {node: [] for node in nodes}
         for left, right in edges:
             graph[left].append(right)
             graph[right].append(left)
         for neighbors in graph.values():
             neighbors.sort()
-        problem = {"graph": graph, "start": "A", "goal": "F"}
+        start, goal = rng.sample(nodes, 2)
+        problem = {"graph": graph, "start": start, "goal": goal}
         edge_text = ", ".join(f"{left}-{right}" for left, right in edges)
-        question = f"في رسم بياني غير موجه وغير موزون حوافه {edge_text}، ما أقصر مسار من A إلى F؟"
+        question = f"في رسم بياني غير موجه وغير موزون حوافه {edge_text}، ما أقصر مسار من {start} إلى {goal}؟"
         return problem, question, "algorithms.bfs.v1"
 
-    english_pairs = [(word, translation) for word, translation in TRANSLATION_PAIRS.items() if word.isascii()]
+    english_pairs = sorted((word, translation) for word, translation in TRANSLATION_PAIRS.items() if word.isascii())
+    split_index = {"train": 0, "validation": 1, "test": 2}[split]
+    split_pairs = [pair for index, pair in enumerate(english_pairs) if index % 3 == split_index]
+    word_en, word_ar = split_pairs[domain_index % len(split_pairs)]
     if domain == "arabic_language":
-        word_en, word_ar = rng.choice(english_pairs)
         problem = {"source_language": "en", "target_language": "ar", "word": word_en}
         return problem, f"ترجم كلمة {word_en} إلى العربية.", "language.translation.v1"
 
     if domain == "english_language":
-        word_en, word_ar = rng.choice(english_pairs)
         problem = {"source_language": "ar", "target_language": "en", "word": word_ar}
         return problem, f"Translate the Arabic word '{word_ar}' into English.", "language.translation.v1"
 
     if domain == "planning":
-        tasks = ["تهيئة البيئة", "جمع البيانات", "تنظيف البيانات", "تدريب النموذج", "تقييم النموذج", "إعداد التقرير"]
-        dependencies = {
-            "تهيئة البيئة": [],
-            "جمع البيانات": [],
-            "تنظيف البيانات": ["جمع البيانات"],
-            "تدريب النموذج": ["تهيئة البيئة", "تنظيف البيانات"],
-            "تقييم النموذج": ["تدريب النموذج"],
-            "إعداد التقرير": ["تقييم النموذج"],
-        }
+        task_pool = (
+            "تحديد الهدف", "تهيئة البيئة", "جمع البيانات", "تنظيف البيانات", "توحيد البيانات",
+            "تحليل المتطلبات", "تصميم الخطة", "تنفيذ التجربة", "تدريب النموذج", "اختبار النتائج",
+            "مراجعة الجودة", "حفظ المخرجات", "إعداد التقرير", "نشر النسخة", "مراقبة الأداء",
+            "تجهيز المواد", "ترتيب الأدوات", "بدء العمل", "إنهاء المهمة", "مراجعة الخطوات",
+            "تحديد الموارد", "توزيع الأدوار", "إعداد الجدول", "التحقق من القيود",
+            "بناء النموذج الأولي", "قياس الأداء", "تصحيح الأخطاء", "توثيق القرار",
+            "إرسال الملخص", "أرشفة النتائج",
+        )
+        tasks = rng.sample(task_pool, 6)
+        topological_order = rng.sample(tasks, len(tasks))
+        dependencies: dict[str, list[str]] = {task: [] for task in tasks}
+        for index, task in enumerate(topological_order[1:], 1):
+            prerequisites = {rng.choice(topological_order[:index])}
+            for candidate in topological_order[:index]:
+                if candidate not in prerequisites and rng.random() < 0.25:
+                    prerequisites.add(candidate)
+            dependencies[task] = sorted(prerequisites)
         problem = {"tasks": tasks, "dependencies": dependencies}
         dependency_text = "؛ ".join(
             f"{task} يعتمد على {', '.join(prerequisites) if prerequisites else 'لا يعتمد على مهام أخرى'}"
@@ -215,6 +243,10 @@ def _make_scene(rng: random.Random) -> dict[str, Any]:
         "color1_en": COLORS_EN[color1], "color2_en": COLORS_EN[color2],
         "background_en": BACKGROUNDS_EN[background],
         "direction_ar": direction_ar, "direction_en": direction_en,
+        "y1": rng.choice((4, 8, 12, 16)),
+        "y2": rng.choice((28, 32, 36, 40)),
+        "size1": rng.choice((12, 16, 20)),
+        "size2": rng.choice((12, 16, 20)),
     }
 
 
@@ -237,9 +269,8 @@ def _write_image_scene(path: Path, scene: dict[str, Any], split: str, rng: rando
     path.parent.mkdir(parents=True, exist_ok=True)
     image = Image.new("RGB", (64, 64), BACKGROUND_RGB[scene["background"]])
     draw = ImageDraw.Draw(image)
-    _draw_shape(draw, scene["shape1"], 5, 8 + rng.randint(0, 8), 16, COLOR_RGB[scene["color1"]])
-    _draw_shape(draw, scene["shape2"], 40, 34 + rng.randint(0, 8), 16, COLOR_RGB[scene["color2"]])
-    _mark_split(image, split)
+    _draw_shape(draw, scene["shape1"], 4, scene["y1"], scene["size1"], COLOR_RGB[scene["color1"]])
+    _draw_shape(draw, scene["shape2"], 40, scene["y2"], scene["size2"], COLOR_RGB[scene["color2"]])
     image.save(path, format="PNG")
 
 
@@ -252,9 +283,8 @@ def _write_video_scene(path_list: list[Path], scene: dict[str, Any], split: str)
             x = 2 + frame_index * 13
         else:
             x = 41 - frame_index * 13
-        _draw_shape(draw, scene["shape1"], x, 8, 16, COLOR_RGB[scene["color1"]])
-        _draw_shape(draw, scene["shape2"], 40, 40, 16, COLOR_RGB[scene["color2"]])
-        _mark_split(image, split)
+        _draw_shape(draw, scene["shape1"], x, scene["y1"], scene["size1"], COLOR_RGB[scene["color1"]])
+        _draw_shape(draw, scene["shape2"], 40, scene["y2"], scene["size2"], COLOR_RGB[scene["color2"]])
         image.save(path, format="PNG")
 
 
@@ -262,17 +292,17 @@ def _synthesize_formant_audio(problem: dict[str, Any], split: str, rng: random.R
     sample_rate = 16000
     samples_per_segment = 2400
     f0 = int(problem["f0"])
-    f1, f2, f3 = [int(value) for value in problem["formants"]]
+    f1, f2, f3, f4 = [int(value) for value in problem["formants"]]
     states = [
-        [f1, f2, f3],
-        [f1 + 80, f2 - 120, f3 + 90],
-        [f1 - 60, f2 + 100, f3 - 80],
-        [f1, f2, f3],
+        [f1, f2, f3, f4],
+        [f1 + 80, f2 - 120, f3 + 90, f4 - 60],
+        [f1 - 60, f2 + 100, f3 - 80, f4 + 120],
+        [f1, f2, f3, f4],
     ]
     if problem["direction_ar"] == "اليمين إلى اليسار":
         states.reverse()
     phase = rng.random() * 2.0 * math.pi
-    amplitude = {"train": 0.42, "validation": 0.38, "test": 0.46}.get(split, 0.42)
+    amplitude = 0.42
     window = torch.hann_window(samples_per_segment, dtype=torch.float32)
     time = torch.arange(samples_per_segment, dtype=torch.float32) / sample_rate
     segments: list[torch.Tensor] = []
@@ -298,6 +328,7 @@ def _audio_problem(scene: dict[str, Any], domain: str) -> dict[str, Any]:
             F1_BY_SHAPE[scene["shape1"]],
             F2_BY_BACKGROUND[scene["background"]],
             F3_BY_SHAPE[scene["shape2"]],
+            F4_BY_COLOR[scene["color2"]],
         ],
         "vowel_pattern": "four_segment_formant_sweep",
         "audio_kind": "synthetic_formant_scene_cue",
@@ -308,27 +339,216 @@ def _asset_hashes(paths: list[str], assets_root: Path) -> dict[str, str]:
     return {relative: _sha256(assets_root / relative) for relative in paths}
 
 
-def _write_report(root: Path, report: dict[str, Any], counts: dict[str, int], added: dict[str, int]) -> None:
+def _verify_record_assets(record: dict[str, Any], assets_root: Path) -> bool:
+    expected = record.get("verification", {}).get("asset_sha256")
+    if not isinstance(expected, dict):
+        return record.get("task") in {"text", "tool_use"}
+    if record.get("task") in {"image_caption", "image_reconstruction"}:
+        paths = [record.get("image")]
+    elif record.get("task") in {"audio_text", "audio_reconstruction"}:
+        paths = [record.get("audio_features")]
+    elif record.get("task") in {"video_caption", "video_reconstruction"}:
+        paths = record.get("frames")
+    else:
+        return False
+    if not isinstance(paths, list) or any(not isinstance(path, str) or not path.strip() for path in paths):
+        return False
+    if set(expected) != set(paths):
+        return False
+    root = assets_root.resolve()
+    for relative in paths:
+        target = (root / relative).resolve()
+        if root not in target.parents or not target.is_file():
+            return False
+        if expected.get(relative) != _sha256(target):
+            return False
+    return True
+
+
+def _filter_heldout_manifests(root: Path) -> dict[str, dict[str, int]]:
+    allowed = {"synthetic_verified", "external_reviewed", "owner_curated"}
+    removed: dict[str, dict[str, int]] = {"validation": {}, "test": {}}
+    for split in ("validation", "test"):
+        path = root / "data" / f"{split}.jsonl"
+        records = read_manifest(path)
+        kept: list[dict[str, Any]] = []
+        for record in records:
+            data_class = classify_record_data(record)
+            if data_class in allowed:
+                record.pop("_line", None)
+                kept.append(record)
+            else:
+                removed[split][data_class] = removed[split].get(data_class, 0) + 1
+        path.write_text(
+            "\n".join(json.dumps(item, ensure_ascii=False, sort_keys=True) for item in kept) + ("\n" if kept else ""),
+            encoding="utf-8",
+        )
+    return removed
+
+
+def _verify_curriculum_splits(root: Path) -> dict[str, Any]:
+    assets_root = root / "data" / "assets"
+    records_by_split = {
+        split: read_manifest(root / "data" / f"{split}.jsonl")
+        for split in ("train", "validation", "test")
+    }
+    manifest_reports = {
+        split: validate_manifest(records_by_split[split], assets_root, expected_split=split)
+        for split in ("train", "validation", "test")
+    }
+    for split, report in manifest_reports.items():
+        if not report["valid"]:
+            raise ValueError(f"verified curriculum {split} data gate failed: " + "; ".join(report["errors"][:20]))
+
+    generated_by_split: dict[str, list[dict[str, Any]]] = {
+        split: [
+            record for record in records_by_split[split]
+            if record.get("data_class") == "synthetic_verified"
+            and record.get("curriculum_version") == CURRICULUM_VERSION
+        ]
+        for split in ("train", "validation", "test")
+    }
+    verification_counts: dict[str, int] = {}
+    asset_counts: dict[str, int] = {}
+    domain_problem_hashes: dict[str, dict[str, set[str]]] = {
+        split: {domain: set() for domain in DOMAINS}
+        for split in ("train", "validation", "test")
+    }
+    scene_hashes: dict[str, set[str]] = {split: set() for split in ("train", "validation", "test")}
+    scene_by_group: dict[str, dict[str, str]] = {split: {} for split in ("train", "validation", "test")}
+    for split, records in generated_by_split.items():
+        if not records:
+            raise ValueError(f"verified curriculum has no records in {split}")
+        checked = 0
+        checked_assets = 0
+        for record in records:
+            if not verify_record(record):
+                raise ValueError(f"reference verification failed for generated record {record.get('id')}")
+            if not _verify_record_assets(record, assets_root):
+                raise ValueError(f"asset hash verification failed for generated record {record.get('id')}")
+            checked += 1
+            if isinstance(record.get("verification", {}).get("asset_sha256"), dict):
+                checked_assets += len(record["verification"]["asset_sha256"])
+            if record.get("task") == "text":
+                domain = str(record.get("domain", ""))
+                if domain not in DOMAINS:
+                    raise ValueError(f"unknown verified curriculum domain: {domain}")
+                problem_hash = hashlib.sha256(canonical_json(record["problem"]).encode("utf-8")).hexdigest()
+                domain_problem_hashes[split][domain].add(problem_hash)
+                scene = record.get("scene")
+                if not isinstance(scene, dict):
+                    raise ValueError(f"verified text record lacks its linked scene: {record.get('id')}")
+                scene_hash = hashlib.sha256(canonical_json(scene).encode("utf-8")).hexdigest()
+                group_id = str(record.get("group_id", ""))
+                prior = scene_by_group[split].get(group_id)
+                if prior and prior != scene_hash:
+                    raise ValueError(f"scene linkage changed within group {group_id}")
+                scene_by_group[split][group_id] = scene_hash
+                scene_hashes[split].add(scene_hash)
+        verification_counts[split] = checked
+        asset_counts[split] = checked_assets
+
+    pair_overlaps: dict[str, dict[str, int]] = {}
+    errors: list[str] = []
+    for left, right in (("train", "validation"), ("train", "test"), ("validation", "test")):
+        problem_overlap = sum(
+            len(domain_problem_hashes[left][domain] & domain_problem_hashes[right][domain])
+            for domain in DOMAINS
+        )
+        scene_overlap = len(scene_hashes[left] & scene_hashes[right])
+        pair_overlaps[f"{left}__{right}"] = {
+            "domain_problem_hashes": problem_overlap,
+            "scene_hashes": scene_overlap,
+        }
+        if problem_overlap:
+            errors.append(f"verified problem leakage between {left} and {right}: {problem_overlap} hash(es)")
+        if scene_overlap:
+            errors.append(f"verified scene leakage between {left} and {right}: {scene_overlap} hash(es)")
+    if errors:
+        raise ValueError("verified curriculum split gate failed: " + "; ".join(errors))
+
+    heldout_classes = {
+        split: sorted({classify_record_data(record) for record in records_by_split[split]})
+        for split in ("validation", "test")
+    }
+    eligible_classes = {"synthetic_verified", "external_reviewed", "owner_curated"}
+    for split in ("validation", "test"):
+        if not heldout_classes[split] or not set(heldout_classes[split]).issubset(eligible_classes):
+            raise ValueError(f"{split} held-out set contains bootstrap, staged or unapproved data classes")
+
+    split_report = validate_split_disjointness(root)
+    return {
+        "manifest_reports": manifest_reports,
+        "verified_records_checked": verification_counts,
+        "verified_assets_sha256_checked": asset_counts,
+        "domain_problem_hash_counts": {
+            split: {domain: len(values) for domain, values in domain_problem_hashes[split].items()}
+            for split in ("train", "validation", "test")
+        },
+        "scene_hash_counts": {split: len(values) for split, values in scene_hashes.items()},
+        "cross_split_overlaps": pair_overlaps,
+        "heldout_data_classes": heldout_classes,
+        "split_disjointness": split_report,
+        "promotion_eligible": False,
+    }
+
+
+def _write_report(
+    root: Path, report: dict[str, Any], counts: dict[str, int], added: dict[str, int],
+    removed: dict[str, dict[str, int]], validation_report: dict[str, Any],
+) -> None:
     report_path = root / "data" / "acquisition-report.json"
     already_generated = isinstance(report.get("verified_curriculum"), dict)
     if not already_generated:
         previous_new = report.get("new_records", {})
+        staged_removed = {
+            split: int(removed.get(split, {}).get("external_staged", 0))
+            for split in ("train", "validation", "test")
+        }
         report["new_records"] = {
-            split: int(previous_new.get(split, 0)) + int(added.get(split, 0))
+            split: max(0, int(previous_new.get(split, 0)) - staged_removed[split]) + int(added.get(split, 0))
             for split in ("train", "validation", "test")
         }
     report["verified_curriculum"] = {
         "version": CURRICULUM_VERSION,
         "group_counts": counts,
         "record_counts": {split: count * 8 for split, count in counts.items()},
+        "validation_report": validation_report,
         "records_added_this_invocation": added,
         "domains": list(DOMAINS),
         "verification_method": "deterministic_reference_solver_v1",
-        "asset_integrity": "sha256 verified at data gate",
+        "asset_integrity": "SHA-256 checked for each generated asset and split-disjointness gated",
         "audio_kind": "synthetic_formant_scene_cue; not natural speech or a trained TTS output",
+        "heldout_policy": "validation/test retain only synthetic_verified, external_reviewed, or owner_curated data",
+        "heldout_removed_by_class": removed,
+        "validation": {
+            "verified_records_checked": validation_report["verified_records_checked"],
+            "verified_assets_sha256_checked": validation_report["verified_assets_sha256_checked"],
+            "cross_split_overlaps": validation_report["cross_split_overlaps"],
+            "heldout_data_classes": validation_report["heldout_data_classes"],
+            "split_disjointness": validation_report["split_disjointness"],
+        },
         "promotion_eligible": False,
-        "promotion_note": "pilot corpus; independent quality thresholds and larger coverage remain unapproved",
+        "promotion_note": "pilot corpus; quality thresholds and broad natural-speech coverage remain unapproved",
     }
+    final_fingerprints = _training_manifest_base(root)
+    report["extended_train_manifest_sha256"] = final_fingerprints["base_train_manifest_sha256"]
+    report["extended_asset_manifest_sha256"] = final_fingerprints["base_asset_manifest_sha256"]
+    report["extended_validation_manifest_sha256"] = _sha256(root / "data" / "validation.jsonl")
+    report["extended_test_manifest_sha256"] = _sha256(root / "data" / "test.jsonl")
+    verified_report_path = root / "data" / "verified-curriculum-report.json"
+    verified_report_path.write_text(json.dumps(validation_report | {
+        "version": CURRICULUM_VERSION,
+        "group_counts": counts,
+        "records_added": added,
+        "heldout_removed_by_class": removed,
+        "extended_train_manifest_sha256": report["extended_train_manifest_sha256"],
+        "extended_asset_manifest_sha256": report["extended_asset_manifest_sha256"],
+        "extended_validation_manifest_sha256": report["extended_validation_manifest_sha256"],
+        "extended_test_manifest_sha256": report["extended_test_manifest_sha256"],
+        "promotion_eligible": False,
+    }, ensure_ascii=False, indent=2), encoding="utf-8")
+    report["verified_curriculum_report_sha256"] = _sha256(verified_report_path)
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
@@ -384,19 +604,37 @@ def generate_verified_curriculum(
 
     rows_by_split: dict[str, list[dict[str, Any]]] = {split: [] for split in counts}
     domain_group_counts: dict[str, dict[str, int]] = {split: {domain: 0 for domain in DOMAINS} for split in counts}
+    seen_domain_problems: dict[str, set[str]] = {domain: set() for domain in DOMAINS}
+    seen_scene_hashes: set[str] = set()
     for split in ("train", "validation", "test"):
         split_base = SPLIT_BASE_IDS[split]
         for local_index in range(counts[split]):
             global_index = split_base + local_index
             domain = DOMAINS[local_index % len(DOMAINS)]
+            domain_index = local_index // len(DOMAINS)
             domain_group_counts[split][domain] += 1
             rng = random.Random(SEED + global_index)
-            group_id = f"onecore-verified-v1-{global_index:07d}"
-            domain_problem, question, domain_reference = _build_domain_problem(domain, rng)
+            group_id = f"onecore-verified-v2-{global_index:07d}"
+            split_specific_domain = domain in {"science", "arabic_language", "english_language"}
+            for attempt in range(1000):
+                domain_problem, question, domain_reference = _build_domain_problem(domain, rng, split, domain_index)
+                problem_hash = hashlib.sha256(canonical_json(domain_problem).encode("utf-8")).hexdigest()
+                if split_specific_domain or problem_hash not in seen_domain_problems[domain]:
+                    seen_domain_problems[domain].add(problem_hash)
+                    break
+            else:
+                raise ValueError(f"could not generate a unique held-out problem for domain {domain}")
             domain_expected = solve(domain_reference, domain_problem)
             domain_answer = render_answer(domain_reference, domain_expected)
 
-            scene = _make_scene(rng)
+            for attempt in range(10000):
+                scene = _make_scene(rng)
+                scene_hash = hashlib.sha256(canonical_json(scene).encode("utf-8")).hexdigest()
+                if scene_hash not in seen_scene_hashes:
+                    seen_scene_hashes.add(scene_hash)
+                    break
+            else:
+                raise ValueError("synthetic scene space exhausted; increase scene variation before scaling the corpus")
             image_caption = solve("media.image_caption.v1", scene)
             audio_problem = _audio_problem(scene, domain)
             audio_transcript = solve("media.audio_transcript.v1", audio_problem)
@@ -435,7 +673,17 @@ def generate_verified_curriculum(
             rows_by_split[split].append(_verified_record(
                 split, group_id, domain, "text", "text",
                 domain_reference, domain_problem, domain_expected, domain_answer,
-                extra={"text": text_body, "scene": scene, "tool_expression": calculator_expression},
+                extra={
+                    "text": text_body,
+                    "scene": scene,
+                    "tool_expression": calculator_expression,
+                    "calculator_problem": {"a": calculator_a, "b": calculator_b, "op": calculator_op},
+                    "calculator_verification": make_verification(
+                        "math.integer_arithmetic.v1",
+                        {"a": calculator_a, "b": calculator_b, "op": calculator_op},
+                        calculator_value,
+                    ),
+                },
             ))
             rows_by_split[split].append(_verified_record(
                 split, group_id, domain, "tool", "tool_use",
@@ -486,7 +734,9 @@ def generate_verified_curriculum(
                 ))
 
     added = _append_manifests(root, rows_by_split)
-    _write_report(root, report, counts, added)
+    removed = _filter_heldout_manifests(root)
+    validation_report = _verify_curriculum_splits(root)
+    _write_report(root, report, counts, added, removed, validation_report)
     final_fingerprints = _training_manifest_base(root)
     if checkpoint_path.is_file():
         parent_manifest = str(parent_metadata.get("manifest_sha256") or "")
@@ -525,3 +775,23 @@ def generate_verified_curriculum(
         "verification_method": "deterministic_reference_solver_v1",
         "promotion_eligible": False,
     }
+
+def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Generate and verify OneCore deterministic synthetic curriculum")
+    parser.add_argument("--root", default="onecore-ai")
+    parser.add_argument("--train-groups", type=int, default=DEFAULT_GROUP_COUNTS["train"])
+    parser.add_argument("--validation-groups", type=int, default=DEFAULT_GROUP_COUNTS["validation"])
+    parser.add_argument("--test-groups", type=int, default=DEFAULT_GROUP_COUNTS["test"])
+    args = parser.parse_args()
+    report = generate_verified_curriculum(args.root, {
+        "train": args.train_groups,
+        "validation": args.validation_groups,
+        "test": args.test_groups,
+    })
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+
+
+if __name__ == "__main__":
+    main()

@@ -48,8 +48,8 @@ SCIENCE_FACTS: dict[str, dict[str, str]] = {
     "light_speed": {
         "question_ar": "ما سرعة الضوء التقريبية في الفراغ؟",
         "question_en": "What is the approximate speed of light in vacuum?",
-        "answer_ar": "300000 كيلومتر في الثانية",
-        "answer_en": "300000 kilometers per second",
+        "answer_ar": "حوالي 300000 كيلومتر في الثانية",
+        "answer_en": "about 300000 kilometers per second",
     },
     "human_chromosomes": {
         "question_ar": "كم عدد الكروموسومات في الخلية الجسدية البشرية المعتادة؟",
@@ -57,20 +57,272 @@ SCIENCE_FACTS: dict[str, dict[str, str]] = {
         "answer_ar": "46",
         "answer_en": "46",
     },
+    "earth_satellite": {
+        "question_ar": "ما القمر الطبيعي للأرض؟",
+        "question_en": "What is Earth's natural satellite?",
+        "answer_ar": "القمر",
+        "answer_en": "the Moon",
+    },
+    "gravity": {
+        "question_ar": "كيف توصف الجاذبية بين الكتل؟",
+        "question_en": "How is gravity between masses described?",
+        "answer_ar": "قوة تجاذب بين الكتل",
+        "answer_en": "an attractive force between masses",
+    },
+    "oxygen_atomic_number": {
+        "question_ar": "ما العدد الذري للأكسجين؟",
+        "question_en": "What is the atomic number of oxygen?",
+        "answer_ar": "8",
+        "answer_en": "8",
+    },
+    "carbon_atomic_number": {
+        "question_ar": "ما العدد الذري للكربون؟",
+        "question_en": "What is the atomic number of carbon?",
+        "answer_ar": "6",
+        "answer_en": "6",
+    },
+    "earth_rotation": {
+        "question_ar": "كم تستغرق دورة الأرض المعتادة حول محورها تقريبًا؟",
+        "question_en": "About how long does Earth take to rotate once on its axis?",
+        "answer_ar": "حوالي 24 ساعة",
+        "answer_en": "about 24 hours",
+    },
+    "day_night": {
+        "question_ar": "ما السبب الأساسي لتعاقب الليل والنهار؟",
+        "question_en": "What primarily causes day and night?",
+        "answer_ar": "دوران الأرض حول محورها",
+        "answer_en": "Earth's rotation on its axis",
+    },
+    "plant_roots": {
+        "question_ar": "ما الذي تمتصه جذور النباتات من التربة؟",
+        "question_en": "What do plant roots absorb from soil?",
+        "answer_ar": "الماء والأملاح المعدنية",
+        "answer_en": "water and mineral salts",
+    },
+    "cell_unit": {
+        "question_ar": "ما الوحدة الأساسية لبنية الكائنات الحية؟",
+        "question_en": "What is the basic structural unit of living organisms?",
+        "answer_ar": "الخلية",
+        "answer_en": "the cell",
+    },
+    "atom_nucleus": {
+        "question_ar": "ما الجسيمات الموجودة في نواة معظم الذرات؟",
+        "question_en": "Which particles are in the nuclei of most atoms?",
+        "answer_ar": "البروتونات والنيوترونات في معظم الأنوية",
+        "answer_en": "protons and neutrons in most nuclei",
+    },
+    "electron_charge": {
+        "question_ar": "ما شحنة الإلكترون؟",
+        "question_en": "What is the charge of an electron?",
+        "answer_ar": "سالبة",
+        "answer_en": "negative",
+    },
+    "proton_charge": {
+        "question_ar": "ما شحنة البروتون؟",
+        "question_en": "What is the charge of a proton?",
+        "answer_ar": "موجبة",
+        "answer_en": "positive",
+    },
+    "neutron_charge": {
+        "question_ar": "ما شحنة النيوترون؟",
+        "question_en": "What is the charge of a neutron?",
+        "answer_ar": "متعادلة",
+        "answer_en": "neutral",
+    },
+    "water_freezing": {
+        "question_ar": "ما درجة تجمد الماء النقي عند ضغط جوي واحد؟",
+        "question_en": "At what temperature does pure water freeze at one atmosphere?",
+        "answer_ar": "0 درجة مئوية",
+        "answer_en": "0 degrees Celsius",
+    },
+    "meter_centimeter": {
+        "question_ar": "كم سنتيمترًا في المتر الواحد؟",
+        "question_en": "How many centimeters are in one meter?",
+        "answer_ar": "100 سنتيمتر",
+        "answer_en": "100 centimeters",
+    },
+    "kilometer_meter": {
+        "question_ar": "كم مترًا في الكيلومتر الواحد؟",
+        "question_en": "How many meters are in one kilometer?",
+        "answer_ar": "1000 متر",
+        "answer_en": "1000 meters",
+    },
+    "hour_minutes": {
+        "question_ar": "كم دقيقة في الساعة الواحدة؟",
+        "question_en": "How many minutes are in one hour?",
+        "answer_ar": "60 دقيقة",
+        "answer_en": "60 minutes",
+    },
+    "minute_seconds": {
+        "question_ar": "كم ثانية في الدقيقة الواحدة؟",
+        "question_en": "How many seconds are in one minute?",
+        "answer_ar": "60 ثانية",
+        "answer_en": "60 seconds",
+    },
+    "square_sides": {
+        "question_ar": "كم ضلعًا متساويًا للمربع؟",
+        "question_en": "How many equal sides does a square have?",
+        "answer_ar": "4 أضلاع متساوية",
+        "answer_en": "four equal sides",
+    },
+    "rectangle_opposite_sides": {
+        "question_ar": "ما العلاقة بين طولي الضلعين المتقابلين في المستطيل؟",
+        "question_en": "What is the length relation between opposite sides of a rectangle?",
+        "answer_ar": "متساويان في الطول",
+        "answer_en": "they are equal in length",
+    },
+    "circle_edges": {
+        "question_ar": "هل للدائرة حواف مستقيمة؟",
+        "question_en": "Does a circle have straight edges?",
+        "answer_ar": "لا حواف مستقيمة",
+        "answer_en": "no straight edges",
+    },
+    "prime_definition": {
+        "question_ar": "ما تعريف العدد الأولي؟",
+        "question_en": "What defines a prime number?",
+        "answer_ar": "عدد صحيح أكبر من 1 له قاسمان موجبان فقط",
+        "answer_en": "an integer greater than 1 with exactly two positive divisors",
+    },
+    "zero_even": {
+        "question_ar": "هل الصفر عدد زوجي؟",
+        "question_en": "Is zero an even number?",
+        "answer_ar": "نعم",
+        "answer_en": "yes",
+    },
 }
 
 TRANSLATION_PAIRS: dict[str, str] = {
-    "water": "ماء", "book": "كتاب", "sun": "شمس", "tree": "شجرة",
-    "house": "منزل", "cat": "قط", "light": "ضوء", "road": "طريق",
-    "heart": "قلب", "river": "نهر", "bread": "خبز", "key": "مفتاح",
-    "door": "باب", "friend": "صديق", "garden": "حديقة",
-    "ماء": "water", "كتاب": "book", "شمس": "sun", "شجرة": "tree",
-    "منزل": "house", "قط": "cat", "ضوء": "light", "طريق": "road",
-    "قلب": "heart", "نهر": "river", "خبز": "bread", "مفتاح": "key",
-    "باب": "door", "صديق": "friend", "حديقة": "garden",
+    "water": "ماء",
+    "ماء": "water",
+    "book": "كتاب",
+    "كتاب": "book",
+    "sun": "شمس",
+    "شمس": "sun",
+    "tree": "شجرة",
+    "شجرة": "tree",
+    "house": "منزل",
+    "منزل": "house",
+    "cat": "قط",
+    "قط": "cat",
+    "light": "ضوء",
+    "ضوء": "light",
+    "road": "طريق",
+    "طريق": "road",
+    "heart": "قلب",
+    "قلب": "heart",
+    "river": "نهر",
+    "نهر": "river",
+    "bread": "خبز",
+    "خبز": "bread",
+    "key": "مفتاح",
+    "مفتاح": "key",
+    "door": "باب",
+    "باب": "door",
+    "friend": "صديق",
+    "صديق": "friend",
+    "garden": "حديقة",
+    "حديقة": "garden",
+    "apple": "تفاحة",
+    "تفاحة": "apple",
+    "milk": "حليب",
+    "حليب": "milk",
+    "school": "مدرسة",
+    "مدرسة": "school",
+    "teacher": "معلم",
+    "معلم": "teacher",
+    "student": "طالب",
+    "طالب": "student",
+    "window": "نافذة",
+    "نافذة": "window",
+    "chair": "كرسي",
+    "كرسي": "chair",
+    "table": "طاولة",
+    "طاولة": "table",
+    "pencil": "قلم",
+    "قلم": "pencil",
+    "paper": "ورقة",
+    "ورقة": "paper",
+    "cloud": "سحابة",
+    "سحابة": "cloud",
+    "rain": "مطر",
+    "مطر": "rain",
+    "snow": "ثلج",
+    "ثلج": "snow",
+    "mountain": "جبل",
+    "جبل": "mountain",
+    "sea": "بحر",
+    "بحر": "sea",
+    "fish": "سمكة",
+    "سمكة": "fish",
+    "bird": "طائر",
+    "طائر": "bird",
+    "horse": "حصان",
+    "حصان": "horse",
+    "dog": "كلب",
+    "كلب": "dog",
+    "flower": "زهرة",
+    "زهرة": "flower",
+    "seed": "بذرة",
+    "بذرة": "seed",
+    "fruit": "فاكهة",
+    "فاكهة": "fruit",
+    "orange": "برتقالة",
+    "برتقالة": "orange",
+    "lemon": "ليمون",
+    "ليمون": "lemon",
+    "grape": "عنب",
+    "عنب": "grape",
+    "clock": "ساعة",
+    "ساعة": "clock",
+    "time": "وقت",
+    "وقت": "time",
+    "day": "يوم",
+    "يوم": "day",
+    "night": "ليل",
+    "ليل": "night",
+    "morning": "صباح",
+    "صباح": "morning",
+    "evening": "مساء",
+    "مساء": "evening",
+    "family": "أسرة",
+    "أسرة": "family",
+    "mother": "أم",
+    "أم": "mother",
+    "father": "أب",
+    "أب": "father",
+    "child": "طفل",
+    "طفل": "child",
+    "city": "مدينة",
+    "مدينة": "city",
+    "village": "قرية",
+    "قرية": "village",
+    "street": "شارع",
+    "شارع": "street",
+    "market": "سوق",
+    "سوق": "market",
+    "money": "مال",
+    "مال": "money",
+    "work": "عمل",
+    "عمل": "work",
+    "play": "يلعب",
+    "يلعب": "play",
+    "read": "يقرأ",
+    "يقرأ": "read",
+    "write": "يكتب",
+    "يكتب": "write",
+    "eat": "يأكل",
+    "يأكل": "eat",
+    "drink": "يشرب",
+    "يشرب": "drink",
+    "sleep": "ينام",
+    "ينام": "sleep",
+    "walk": "يمشي",
+    "يمشي": "walk",
+    "run": "يجري",
+    "يجري": "run",
+    "speak": "يتكلم",
+    "يتكلم": "speak",
 }
-
-
 def canonical_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
@@ -84,6 +336,10 @@ def solve(reference: str, problem: dict[str, Any]) -> Any:
             return a - b
         if op == "*":
             return a * b
+        if op == "/":
+            if b == 0 or a % b != 0:
+                raise ValueError("reference division must be exact and divisor nonzero")
+            return a // b
         raise ValueError(f"unsupported arithmetic operator: {op}")
 
     if reference == "logic.transitive_membership.v1":
@@ -188,11 +444,13 @@ def solve(reference: str, problem: dict[str, Any]) -> Any:
         if str(problem.get("language", "ar")) == "en":
             return (
                 f"Synthetic acoustic cue: a {problem['color1_en']} {problem['shape1_en']} "
-                f"moves {problem['direction_en']} on a {problem['background_en']} background."
+                f"moves {problem['direction_en']}; a {problem['color2_en']} {problem['shape2_en']} "
+                f"remains still on a {problem['background_en']} background."
             )
         return (
             f"إشارة صوتية اصطناعية للمشهد: {problem['color1']} {problem['shape1']} "
-            f"يتحرك {problem['direction_ar']} على خلفية {problem['background']}."
+            f"يتحرك {problem['direction_ar']}، بينما يبقى {problem['color2']} {problem['shape2']} "
+            f"ثابتًا على خلفية {problem['background']}."
         )
 
     if reference == "media.video_caption.v1":
@@ -252,7 +510,32 @@ def verify_record(record: dict[str, Any]) -> bool:
 
     task = str(record.get("task", ""))
     if task == "text":
-        return answer in str(record.get("text", ""))
+        text = str(record.get("text", ""))
+        if answer not in text:
+            return False
+        calculator_verification = record.get("calculator_verification")
+        if calculator_verification is not None:
+            calculator_problem = record.get("calculator_problem")
+            if not isinstance(calculator_problem, dict):
+                return False
+            if calculator_verification.get("method") != "deterministic_reference_solver_v1":
+                return False
+            if calculator_verification.get("reference") != "math.integer_arithmetic.v1":
+                return False
+            expected_calculator = calculator_verification.get("expected")
+            digest = hashlib.sha256(canonical_json(expected_calculator).encode("utf-8")).hexdigest()
+            if calculator_verification.get("reference_sha256") != digest:
+                return False
+            actual_calculator = solve("math.integer_arithmetic.v1", calculator_problem)
+            if canonical_json(actual_calculator) != canonical_json(expected_calculator):
+                return False
+            expression = (
+                f"{calculator_problem['a']} {calculator_problem['op']} "
+                f"{calculator_problem['b']} = {render_answer('math.integer_arithmetic.v1', actual_calculator)}"
+            )
+            if f"الحاسبة: {expression}." not in text:
+                return False
+        return True
     if task == "tool_use":
         try:
             payload = json.loads(str(record.get("response", "")))
