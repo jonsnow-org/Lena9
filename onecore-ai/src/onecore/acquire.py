@@ -528,7 +528,7 @@ def acquire_sources(
                             key: row.get(key) for key in (
                                 "video_id", "youtube_id", "videoid", "clip_id", "url", "contentUrl",
                                 "video_url", "video_path", "zip_folder", "page_dir",
-                                "image", "image_url", "conversations", "start", "end",
+                                "image", "image_url", "conversations", "captions", "start", "end",
                                 "span_start", "span_end", "timestamp", "timestamps", "keyframe",
                                 "segment", "recipe_type", "name", "sentence", "caption", "text", "language",
                             ) if row.get(key) is not None

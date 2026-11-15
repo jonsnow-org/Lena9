@@ -201,7 +201,7 @@ def test_sharegpt4v_conversation_is_paired_with_its_image(tmp_path: Path, monkey
     assert record["task"] == "image_caption"
     assert "Question: What is visible?" in record["caption"]
     assert "Answer: A tray with food containers." in record["caption"]
-    assert (tmp_path / "data" / "assets" / record["image"]).is_file()
+    assert (tmp_path / record["image"]).is_file()
 
 
 def test_video_url_adapter_builds_frames_for_onecore(tmp_path: Path, monkeypatch) -> None:
