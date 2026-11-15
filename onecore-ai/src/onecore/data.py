@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -44,6 +45,69 @@ def classify_record_data(record: dict[str, Any]) -> str:
         return "external_reviewed"
     return "unapproved"
 
+
+
+COMMERCIAL_TRAINING_LICENSES = frozenset({
+    "apache-2.0", "mit", "bsd-2-clause", "bsd-3-clause", "isc",
+    "cc0-1.0", "cc-by-1.0", "cc-by-2.0", "cc-by-2.5", "cc-by-3.0", "cc-by-4.0",
+    "cc-by-sa-1.0", "cc-by-sa-1.1", "cc-by-sa-2.0", "cc-by-sa-2.5", "cc-by-sa-3.0", "cc-by-sa-4.0",
+    "odc-by-1.0", "public-domain", "unlicense",
+})
+
+
+def _canonical_license_token(value: str) -> str:
+    token = str(value).strip().lower()
+    token = re.sub(r"\\bapache\\s+license\\s*,?\\s*version\\s*2\\.0\\b", "apache-2.0", token)
+    token = re.sub(r"\\bmit\\s+license\\b", "mit", token)
+    token = re.sub(r"\\bbsd\\s+3[- ]clause\\s+new\\s+revised\\s+license\\b", "bsd-3-clause", token)
+    token = re.sub(r"\\bbsd\\s+2[- ]clause\\s+simplified\\s+license\\b", "bsd-2-clause", token)
+    token = token.replace("creative commons", "cc")
+    token = token.replace("attribution-sharealike", "by-sa").replace("attribution sharealike", "by-sa")
+    token = token.replace("attribution", "by").replace("sharealike", "sa")
+    token = re.sub(r"\\b(?:license|licence|version|international)\\b", "", token)
+    token = re.sub(r"[^a-z0-9.+-]+", "-", token).strip("-")
+    aliases = {
+        "cc0": "cc0-1.0", "odc-by": "odc-by-1.0",
+        "apache-2": "apache-2.0", "apache-license-2.0": "apache-2.0",
+        "mit-license": "mit", "isc-license": "isc",
+        "bsd-3-clause-new-revised": "bsd-3-clause",
+        "bsd-2-clause-simplified": "bsd-2-clause",
+    }
+    return aliases.get(token, token)
+
+
+def license_is_trainable(value: Any) -> bool:
+    """Return true only for explicit licenses permitting commercial training."""
+    raw = str(value or "").strip().lower()
+    if not raw or raw in {"unknown", "tbd", "none", "other", "dataset-card-terms",
+                          "source-card-terms", "data-collective-terms",
+                          "per-document-license-metadata"}:
+        return False
+    parts = re.split(r"\\s+(?:and|or)\\s+|[,;|/]", raw, flags=re.IGNORECASE)
+    canonical = [_canonical_license_token(part) for part in parts if part.strip()]
+    return bool(canonical) and all(item in COMMERCIAL_TRAINING_LICENSES for item in canonical)
+
+
+def is_immutable_source_revision(value: Any) -> bool:
+    """Require a pinned Git/Hugging Face commit SHA rather than a mutable branch/tag."""
+    return bool(re.fullmatch(r"[0-9a-f]{40,64}", str(value or "").strip().lower()))
+
+
+def has_immutable_external_provenance(record: dict[str, Any]) -> bool:
+    source_id = str(record.get("source_id", "")).strip()
+    revision = str(record.get("source_revision", "")).strip().lower()
+    row_hash = str(record.get("source_row_id_sha256", "")).strip().lower()
+    return bool(source_id) and is_immutable_source_revision(revision) and bool(
+        re.fullmatch(r"[0-9a-f]{64}", row_hash)
+    )
+
+
+def external_record_is_trainable(record: dict[str, Any]) -> bool:
+    """Defense-in-depth filter for optimizer/tokenizer/evaluation external records."""
+    data_class = classify_record_data(record)
+    return data_class in {"external_staged", "external_reviewed"} and license_is_trainable(
+        record.get("license")
+    ) and has_immutable_external_provenance(record)
 
 def read_manifest(path: str | Path) -> list[dict[str, Any]]:
     manifest = Path(path)
@@ -105,6 +169,11 @@ def validate_manifest(records: list[dict[str, Any]], assets_root: str | Path,
         if review_status not in {"approved", "generated", "verified", "pending"}:
             errors.append(f"line {line}: review_status must be approved, generated, verified, or pending")
         data_class = classify_record_data(item)
+        if data_class in {"external_staged", "external_reviewed"}:
+            if not license_is_trainable(license_id):
+                errors.append(f"line {line}: external license {license_id!r} is not approved for commercial training")
+            if not has_immutable_external_provenance(item):
+                errors.append(f"line {line}: external records require source_id, immutable source_revision SHA, and source_row_id_sha256")
         if data_class not in ALLOWED_DATA_CLASSES:
             errors.append(f"line {line}: unsupported data_class {data_class!r}")
         elif data_class == "bootstrap":
@@ -174,7 +243,10 @@ def iter_training_records(
     for item in records:
         if item.get("split") != "train":
             raise DatasetError("non-training split reached training iterator")
-        if classify_record_data(item) not in allowed_classes:
+        data_class = classify_record_data(item)
+        if data_class not in allowed_classes:
+            continue
+        if data_class in {"external_staged", "external_reviewed"} and not external_record_is_trainable(item):
             continue
         if tasks is None or item.get("task") in tasks:
             selected.append(item)

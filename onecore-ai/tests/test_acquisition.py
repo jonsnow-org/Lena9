@@ -18,7 +18,7 @@ from onecore.acquire import (
     _stable_split,
     _training_manifest_base,
 )
-from onecore.data import validate_manifest
+from onecore.data import license_is_trainable, validate_manifest
 
 
 def _png_base64() -> str:
@@ -37,6 +37,14 @@ def test_source_registry_covers_all_shared_modalities() -> None:
     assert len(ids) == len(sources)
     assert {"text", "tool_use", "audio", "image_url", "image_base64", "video", "video_url",
             "video_repo_file", "video_manifest", "metadata_only"} <= adapters
+    for source in sources:
+        if not source.get("enabled", True):
+            continue
+        assert str(source.get("attribution", "")).strip(), source["id"]
+        if source.get("license_field"):
+            assert source.get("license") == "per-document-license-metadata", source["id"]
+        else:
+            assert license_is_trainable(source.get("license")), source["id"]
     assert {"fineweb2_hq_ar", "fineweb2_hq_ar_saudi", "fineweb2_hq_ar_moroccan",
             "fineweb2_hq_ar_egyptian", "fineweb2_full_ar", "fineweb2_full_ar_saudi",
             "fineweb2_full_ar_moroccan", "fineweb2_full_ar_egyptian",
@@ -64,8 +72,9 @@ def test_arabic_document_images_become_captioned_onecore_records(tmp_path: Path)
         "adapter": "image_base64",
         "image_field": "image_base64",
         "text_fields": ["chunk"],
-        "license": "source-test-license",
+        "license": "cc-by-4.0",
         "attribution": "SARD test fixture",
+        "_resolved_revision": "a" * 40,
     }
     record = _record_from_row(
         {"image_base64": _png_base64(), "chunk": "نص عربي تجريبي لقراءة المستند"},
@@ -89,8 +98,10 @@ def test_open_image_without_caption_trains_shared_visual_reconstruction(tmp_path
         "adapter": "image",
         "image_field": "image",
         "text_fields": [],
-        "license": "source-test-license",
+        "license": "cc-by-4.0",
+        "license": "cc-by-2.0",
         "attribution": "Open Images fixture",
+        "_resolved_revision": "a" * 40,
     }
     record = _record_from_row(
         {"image": Image.new("RGB", (16, 16), (40, 90, 130))},
@@ -117,7 +128,7 @@ def test_image_adapter_exposes_decode_failure_reason(tmp_path: Path, monkeypatch
         "adapter": "image",
         "image_field": "image",
         "text_fields": [],
-        "license": "fixture",
+        "license": "cc-by-4.0",
         "attribution": "fixture",
     }
     with pytest.raises(ValueError, match="image adapter could not decode or download"):
@@ -154,8 +165,9 @@ def test_audio_and_video_payloads_are_prepared_as_shared_modalities(tmp_path: Pa
         "adapter": "video",
         "video_field": "video",
         "text_fields": [],
-        "license": "source-test-license",
+        "license": "cc-by-4.0",
         "attribution": "Video fixture",
+        "_resolved_revision": "a" * 40,
     }
     video_record = _record_from_row(
         {"video": [Image.new("RGB", (16, 16), (i * 40, 20, 60)) for i in range(4)]},
@@ -236,7 +248,7 @@ def test_records_share_stable_media_group_identity_across_captions(tmp_path: Pat
         "adapter": "text",
         "text_fields": ["caption"],
         "split_group_field": "video_id",
-        "license": "fixture",
+        "license": "cc-by-4.0",
         "attribution": "fixture",
     }
     first = _record_from_row(
@@ -268,7 +280,7 @@ def test_sharegpt4v_conversation_is_paired_with_its_image(tmp_path: Path, monkey
         "image_field": "image",
         "image_url_prefix": "https://images.cocodataset.org/train2017",
         "conversation_field": "conversations",
-        "license": "fixture",
+        "license": "cc-by-4.0",
         "attribution": "ShareGPT4V fixture",
     }
     record = _record_from_row(
@@ -309,7 +321,7 @@ def test_video_url_adapter_builds_frames_for_onecore(tmp_path: Path, monkeypatch
         "adapter": "video_url",
         "video_field": "contentUrl",
         "text_fields": ["name"],
-        "license": "fixture",
+        "license": "cc-by-4.0",
         "attribution": "WebVid fixture",
     }
     record = _record_from_row(
@@ -353,7 +365,7 @@ def test_video_repo_file_adapter_uses_pinned_hub_revision(tmp_path: Path, monkey
         "video_field": "video",
         "text_fields": ["caption"],
         "_resolved_revision": "pinned-sha",
-        "license": "fixture",
+        "license": "cc-by-4.0",
         "attribution": "MSR-VTT fixture",
     }
     record = _record_from_row(
@@ -405,7 +417,7 @@ def test_source_revision_and_parent_fingerprints_cover_existing_media(tmp_path: 
         "id": "parent-image",
         "task": "image_reconstruction",
         "image": "parent.png",
-        "license": "fixture",
+        "license": "cc-by-4.0",
         "source_url": "https://example.test/source",
         "attribution": "fixture",
         "split": "train",
@@ -423,7 +435,7 @@ def test_source_revision_and_parent_fingerprints_cover_existing_media(tmp_path: 
         "id": "new-text",
         "task": "text",
         "text": "A streamed training sentence.",
-        "license": "fixture",
+        "license": "cc-by-4.0",
         "source_url": "https://example.test/new",
         "attribution": "fixture",
         "split": "train",
@@ -483,7 +495,7 @@ def test_tool_use_adapter_maps_external_function_call_records(tmp_path: Path) ->
         {"id": "saxo-tool", "repo": "Saxo/alpaca_function_calling_dataset",
          "adapter": "tool_use", "system_fields": ["system"],
          "text_fields": ["instruction"], "response_fields": ["output"],
-         "license": "fixture", "attribution": "fixture"},
+         "license": "apache-2.0", "attribution": "fixture", "_resolved_revision": "a" * 40},
         "saxo-row-1", "train", tmp_path,
     )
     assert saxo is not None and saxo["task"] == "tool_use"
@@ -497,7 +509,7 @@ def test_tool_use_adapter_maps_external_function_call_records(tmp_path: Path) ->
         {"id": "mobile-tool", "repo": "BTX24/turkish-mobile-function-calling-dataset",
          "adapter": "tool_use", "text_fields": ["user_content"],
          "tool_name_field": "tool_name", "tool_arguments_field": "tool_arguments",
-         "license": "fixture", "attribution": "fixture"},
+         "license": "apache-2.0", "attribution": "fixture"},
         "mobile-row-1", "train", tmp_path,
     )
     assert mobile is not None and mobile["task"] == "tool_use"
@@ -521,7 +533,7 @@ def test_video_url_adapter_resolves_source_url_alias(tmp_path: Path, monkeypatch
         {"video_url": "https://media.example/clip.mp4", "name": "A city street"},
         {"id": "webvid-alias", "repo": "video-fixture", "adapter": "video_url",
          "video_field": "contentUrl", "video_url_fields": ["contentUrl", "video_url", "url"],
-         "text_fields": ["name"], "license": "fixture", "attribution": "fixture"},
+         "text_fields": ["name"], "license": "cc-by-4.0", "attribution": "fixture"},
         "webvid-row-1", "train", tmp_path,
     )
     assert record is not None and record["task"] == "video_caption"
@@ -569,4 +581,130 @@ def test_external_coverage_gate_counts_imported_records_not_bootstrap(tmp_path: 
     coverage = assert_external_task_coverage(
         tmp_path, set(task_ids), minimum_train=1, minimum_holdout=1
     )
+    assert coverage["train"]["text"] == 1
+
+
+@pytest.mark.parametrize(("license_id", "expected"), [
+    ("odc-by", True), ("odc-by-1.0", True), ("CC-BY-4.0", True),
+    ("CC-BY-SA-4.0", True), ("Apache-2.0", True), ("MIT", True),
+    ("CC-BY-NC-4.0", False), ("CC-BY-ND-4.0", False),
+    ("AGPL-3.0", False), ("dataset-card-terms", False),
+    ("source-card-terms", False), ("per-document-license-metadata", False),
+    ("unknown", False),
+])
+def test_commercial_training_license_allowlist(license_id: str, expected: bool) -> None:
+    assert license_is_trainable(license_id) is expected
+
+
+def test_external_manifest_requires_approved_license_and_immutable_provenance(tmp_path: Path) -> None:
+    record = {
+        "id": "external-license-test", "task": "text", "text": "licensed external text",
+        "license": "cc-by-4.0", "source_url": "https://example.org/dataset",
+        "attribution": "dataset authors", "split": "train", "review_status": "pending",
+        "data_class": "external_staged", "source_id": "test-source",
+        "source_revision": "a" * 40, "source_row_id_sha256": "b" * 64,
+    }
+    assert validate_manifest([record], tmp_path, expected_split="train")["valid"]
+    blocked = {**record, "id": "external-nc", "license": "cc-by-nc-4.0"}
+    report = validate_manifest([blocked], tmp_path, expected_split="train")
+    assert not report["valid"]
+    assert any("not approved for commercial training" in error for error in report["errors"])
+    unpinned = {**record, "id": "external-unpinned", "source_revision": "main"}
+    report = validate_manifest([unpinned], tmp_path, expected_split="train")
+    assert not report["valid"]
+    assert any("immutable source_revision" in error for error in report["errors"])
+
+
+def test_training_iterator_excludes_external_rows_without_license_or_source_sha() -> None:
+    from onecore.data import iter_training_records
+    valid = {
+        "id": "valid-external", "task": "text", "text": "real licensed text",
+        "split": "train", "data_class": "external_staged", "license": "cc-by-4.0",
+        "source_id": "source", "source_revision": "a" * 40,
+        "source_row_id_sha256": "b" * 64,
+    }
+    invalid_license = {**valid, "id": "invalid-license", "license": "cc-by-nc-4.0"}
+    missing_provenance = {**valid, "id": "missing-provenance", "source_revision": ""}
+    selected = iter_training_records([valid, invalid_license, missing_provenance])
+    assert [item["id"] for item in selected] == ["valid-external"]
+
+
+def test_source_limits_apply_initial_and_expanded_profile_overrides() -> None:
+    from onecore.acquire import _source_limits
+    source = {
+        "id": "profile-test",
+        "limits": {"train": 10, "validation": 2, "test": 2},
+        "profile_limits": {"expanded": {"train": 100, "validation": 20}},
+    }
+    assert _source_limits(source, "initial") == {"train": 10, "validation": 2, "test": 2}
+    assert _source_limits(source, "expanded") == {"train": 100, "validation": 20, "test": 2}
+
+
+def test_external_asset_report_counts_only_real_licensed_media_files(tmp_path: Path) -> None:
+    from onecore.acquire import _external_asset_report
+    data = tmp_path / "data"
+    assets = data / "assets" / "acquired"
+    assets.mkdir(parents=True)
+    image_path = "acquired/image.png"
+    audio_path = "acquired/audio.npy"
+    frame_one = "acquired/frame_01.png"
+    frame_two = "acquired/frame_02.png"
+    for path, payload in [(image_path, b"image"), (audio_path, b"audio"),
+                          (frame_one, b"frame-one"), (frame_two, b"frame-two")]:
+        (assets / Path(path).name).write_bytes(payload)
+    base = {
+        "license": "cc-by-4.0", "source_url": "https://example.org/dataset",
+        "attribution": "dataset authors", "split": "train", "review_status": "pending",
+        "data_class": "external_staged", "source_id": "media-source",
+        "source_revision": "a" * 40, "source_row_id_sha256": "b" * 64,
+    }
+    records = [
+        {**base, "id": "image-record", "task": "image_reconstruction", "image": image_path},
+        {**base, "id": "audio-record", "task": "audio_reconstruction", "audio_features": audio_path},
+        {**base, "id": "video-record", "task": "video_reconstruction", "frames": [frame_one, frame_two]},
+        {"id": "metadata-only", "task": "video_caption", "data_class": "external_staged",
+         "license": "cc-by-4.0", "source_url": "https://example.org/metadata",
+         "attribution": "dataset authors", "split": "train", "review_status": "pending"},
+    ]
+    (data / "train.jsonl").write_text("\\n".join(json.dumps(item) for item in records) + "\\n", encoding="utf-8")
+    report = _external_asset_report(tmp_path, "train")
+    assert report["records_by_task"] == {
+        "image_reconstruction": 1, "audio_reconstruction": 1, "video_reconstruction": 1,
+    }
+    assert report["image_files"] == 1
+    assert report["audio_feature_files"] == 1
+    assert report["video_frame_files"] == 2
+    assert report["unique_asset_files"] == 4
+    assert report["missing_asset_files"] == 0
+
+
+def test_external_coverage_gate_counts_only_licensed_pinned_records(tmp_path: Path) -> None:
+    from onecore.acquire import assert_external_task_coverage
+    groups = {"text": "text", "tool": "tool_use", "image": "image_reconstruction",
+              "audio": "audio_reconstruction", "video": "video_reconstruction"}
+    data = tmp_path / "data"
+    data.mkdir()
+    for split in ("train", "validation", "test"):
+        records = []
+        for group, task in groups.items():
+            records.append({
+                "id": f"{split}-{group}", "task": task, "split": split,
+                "data_class": "external_staged", "license": "cc-by-4.0",
+                "source_url": "https://example.org/dataset", "attribution": "dataset authors",
+                "review_status": "pending", "source_id": f"source-{group}",
+                "source_revision": "a" * 40, "source_row_id_sha256": "b" * 64,
+            })
+        records.append({
+            "id": f"{split}-unlicensed-text", "task": "text", "split": split,
+            "data_class": "external_staged", "license": "cc-by-nc-4.0",
+            "source_url": "https://example.org/blocked", "attribution": "dataset authors",
+            "review_status": "pending", "source_id": "blocked-source",
+            "source_revision": "a" * 40, "source_row_id_sha256": "c" * 64,
+        })
+        records.append({"id": f"{split}-bootstrap", "task": "text", "split": split,
+                        "data_class": "bootstrap"})
+        (data / f"{split}.jsonl").write_text(
+            "\\n".join(json.dumps(item) for item in records) + "\\n", encoding="utf-8"
+        )
+    coverage = assert_external_task_coverage(tmp_path, set(groups), minimum_train=1, minimum_holdout=1)
     assert coverage["train"]["text"] == 1

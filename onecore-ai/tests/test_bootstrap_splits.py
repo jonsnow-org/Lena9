@@ -69,7 +69,10 @@ def test_training_iterator_admits_external_records_and_excludes_every_synthetic_
         {"id": "pending-external", "task": "text", "split": "train",
          "license": "cc-by-4.0", "source_url": "https://example.org/dataset",
          "attribution": "dataset authors", "review_status": "pending",
-         "data_class": "external_staged", "text": "imported real external sample"},
+         "data_class": "external_staged", "license": "cc-by-4.0",
+         "source_id": "external-text-source",
+         "source_revision": "a" * 40, "source_row_id_sha256": "b" * 64,
+         "text": "imported real external sample"},
         {"id": "verified-synthetic", "task": "text", "split": "train",
          "license": "local-owner-synthetic", "source_url": "local://onecore-verified-curriculum",
          "attribution": "OneCore verified curriculum", "review_status": "verified",
@@ -89,3 +92,14 @@ def test_both_onecore_training_workflows_use_builtin_release_token_fallback():
     for name in ("onecore-bootstrap.yml", "onecore-training.yml"):
         workflow = (repo_root / ".github" / "workflows" / name).read_text(encoding="utf-8")
         assert "secrets.ONECORE_RELEASE_TOKEN || secrets.GITHUB_TOKEN" in workflow
+
+def test_workflows_use_stage_specific_external_data_gates_and_license_guard():
+    repo_root = Path(__file__).resolve().parents[2]
+    bootstrap = (repo_root / ".github" / "workflows" / "onecore-bootstrap.yml").read_text(encoding="utf-8")
+    training = (repo_root / ".github" / "workflows" / "onecore-training.yml").read_text(encoding="utf-8")
+    assert "ONECORE_REQUIRED_TASKS:" in bootstrap
+    assert "ONECORE_REQUIRED_TASKS:" in training
+    assert "text,image,audio,video" in bootstrap
+    assert "text,image,audio,video" in training
+    assert "Enforce commercial license and immutable provenance before corpus artifact upload" in bootstrap
+    assert "ONECORE_DATA_PROFILE:" in bootstrap

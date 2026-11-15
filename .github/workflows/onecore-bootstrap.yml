@@ -55,6 +55,9 @@ jobs:
           resume_run_id = str(request.get("resume_run_id", "")).strip()
           parent_run_id = str(request.get("parent_run_id", resume_run_id)).strip()
           data_run_id = str(request.get("data_run_id", "")).strip()
+          data_profile = str(request.get("data_profile", "initial"))
+          if data_profile not in {"initial", "expanded"}:
+              raise ValueError("data_profile must be initial or expanded")
           if stage not in {"acquire", "text", "multimodal", "evaluate"}:
               raise ValueError("stage must be acquire, text, multimodal, or evaluate")
           if not 1 <= steps <= 250:
@@ -76,6 +79,7 @@ jobs:
           print(f"resume_run_id={resume_run_id}")
           print(f"parent_run_id={parent_run_id}")
           print(f"data_run_id={data_run_id}")
+          print(f"data_profile={data_profile}")
           PY
 
       - name: Generate deterministic bootstrap data or validate existing reviewed manifests
@@ -191,7 +195,8 @@ jobs:
       - name: Execute contract, architecture and verified external-corpus gate
         env:
           ONECORE_SKIP_ACQUISITION: ${{ steps.request.outputs.data_run_id != '' && '1' || '0' }}
-          ONECORE_REQUIRED_TASKS: text,tool,image,audio,video
+          ONECORE_REQUIRED_TASKS: ${{ steps.request.outputs.stage == 'evaluate' && 'text,tool,image,audio,video' || steps.request.outputs.stage == 'multimodal' && 'text,image,audio,video' || 'text' }}
+          ONECORE_DATA_PROFILE: ${{ steps.request.outputs.data_profile }}
           ONECORE_MIN_TRAIN_RECORDS: '25'
           ONECORE_MIN_HOLDOUT_RECORDS: '5'
         run: |
@@ -202,6 +207,33 @@ jobs:
               --output-dir onecore-ai/run-state/executed-notebooks \
               --ExecutePreprocessor.timeout=-1
           done
+
+      - name: Enforce commercial license and immutable provenance before corpus artifact upload
+        if: ${{ success() && steps.request.outputs.stage == 'acquire' }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from onecore.data import classify_record_data, read_manifest, validate_manifest
+          root = Path("onecore-ai")
+          assets = root / "data" / "assets"
+          for split in ("train", "validation", "test"):
+              records = read_manifest(root / "data" / f"{split}.jsonl")
+              report = validate_manifest(records, assets, expected_split=split)
+              external = [item for item in records
+                          if classify_record_data(item) in {"external_staged", "external_reviewed"}]
+              license_counts = {}
+              for item in external:
+                  license_id = str(item.get("license", ""))
+                  license_counts[license_id] = license_counts.get(license_id, 0) + 1
+              print(json.dumps({"split": split, "valid": report["valid"],
+                                "records": report["records"], "task_counts": report["task_counts"],
+                                "external_records": len(external), "license_counts": license_counts,
+                                "errors": report["errors"][:20]}, ensure_ascii=False, indent=2))
+              if not report["valid"]:
+                  raise SystemExit(f"{split} manifest failed license/provenance validation")
+          PY
 
       - name: Upload acquired shared corpus
         if: ${{ success() && steps.request.outputs.stage == 'acquire' }}

@@ -17,9 +17,25 @@ import yaml
 from PIL import Image
 
 from .audio import log_mel_spectrogram
+from .data import external_record_is_trainable, is_immutable_source_revision, license_is_trainable
 
 
 SPLITS = ("train", "validation", "test")
+
+
+
+def _source_limits(source: dict[str, Any], profile: str) -> dict[str, int]:
+    base = {str(key): int(value) for key, value in (source.get("limits") or {}).items()}
+    overrides = (source.get("profile_limits") or {}).get(profile, {})
+    if not isinstance(overrides, dict):
+        raise ValueError(f"profile limits for {source.get('id')} / {profile} must be a mapping")
+    for key, value in overrides.items():
+        if str(key) not in SPLITS or int(value) < 0:
+            raise ValueError(f"invalid profile limit {key}={value} for source {source.get('id')}")
+        base[str(key)] = int(value)
+    if any(key not in SPLITS or value < 0 for key, value in base.items()):
+        raise ValueError(f"invalid source limits for {source.get('id')}: {base}")
+    return base
 
 
 def _stable_hash(value: str) -> str:
@@ -63,6 +79,49 @@ def _training_manifest_base(root: Path) -> dict[str, Any]:
         "base_train_manifest_sha256": _sha256_file(manifest),
         "base_asset_manifest_sha256": hashlib.sha256(encoded).hexdigest(),
         "base_train_records": len(records),
+    }
+
+
+
+def _external_asset_report(project_root: str | Path, split: str) -> dict[str, Any]:
+    root = Path(project_root).resolve()
+    manifest = root / "data" / f"{split}.jsonl"
+    assets_root = (root / "data" / "assets").resolve()
+    records = [json.loads(line) for line in manifest.read_text(encoding="utf-8").splitlines() if line.strip()] if manifest.is_file() else []
+    external = [record for record in records if external_record_is_trainable(record)]
+    tasks: dict[str, int] = {}
+    image_paths: set[str] = set()
+    audio_paths: set[str] = set()
+    video_paths: set[str] = set()
+    for record in external:
+        task = str(record.get("task", ""))
+        tasks[task] = tasks.get(task, 0) + 1
+        image = record.get("image")
+        if isinstance(image, str) and image.strip():
+            image_paths.add(image)
+        audio = record.get("audio_features")
+        if isinstance(audio, str) and audio.strip():
+            audio_paths.add(audio)
+        frames = record.get("frames")
+        if isinstance(frames, list):
+            video_paths.update(value for value in frames if isinstance(value, str) and value.strip())
+    all_paths = image_paths | audio_paths | video_paths
+    total_bytes = 0
+    missing = 0
+    for relative in all_paths:
+        target = (assets_root / relative).resolve()
+        if assets_root not in target.parents or not target.is_file():
+            missing += 1
+        else:
+            total_bytes += target.stat().st_size
+    return {
+        "records_by_task": tasks,
+        "image_files": len(image_paths),
+        "audio_feature_files": len(audio_paths),
+        "video_frame_files": len(video_paths),
+        "unique_asset_files": len(all_paths),
+        "missing_asset_files": missing,
+        "unique_asset_bytes": total_bytes,
     }
 
 
@@ -348,9 +407,15 @@ def _record_from_row(
     source_url = str(source.get("url") or f"https://huggingface.co/datasets/{source['repo']}")
     attribution = str(source.get("attribution") or source["repo"])
     record_id = f"hf-{source_id}-{_stable_hash(row_id)[:24]}"
+    license_id = _license_for_row(row, source)
+    if not license_is_trainable(license_id):
+        raise ValueError(f"license {license_id!r} is not approved for commercial training")
     record: dict[str, Any] = {
         "id": record_id,
-        "license": _license_for_row(row, source),
+        "source_id": source_id,
+        "source_revision": str(source.get("_resolved_revision") or ""),
+        "source_row_id_sha256": _stable_hash(row_id),
+        "license": license_id,
         "source_url": source_url,
         "attribution": attribution,
         "split": split,
@@ -620,7 +685,7 @@ def external_task_coverage(project_root: str | Path) -> dict[str, dict[str, int]
             json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()
             if line.strip()
         ] if path.is_file() else []
-        records = [record for record in records if record.get("data_class") in accepted_classes]
+        records = [record for record in records if external_record_is_trainable(record)]
         coverage[split] = {
             group: sum(1 for record in records if record.get("task") in tasks)
             for group, tasks in task_groups.items()
@@ -708,15 +773,27 @@ def acquire_sources(
             except Exception as exc:
                 revision_error = f"{type(exc).__name__}: {str(exc)[:240]}"
                 revision = None
-        if revision:
-            source_revisions[source_id] = str(revision)
+        if not is_immutable_source_revision(revision):
+            source_reports.append({
+                "source": source_id, "repo": source.get("repo"), "revision": revision,
+                "status": "unavailable", "read": 0, "accepted": 0, "failed_rows": 0,
+                "errors": [{"type": "ImmutableRevisionRequired",
+                            "message": "source revision must be a pinned 40-64 character commit SHA"}],
+                **({"revision_lookup_warning": revision_error} if revision_error else {}),
+            })
+            continue
+        source_revisions[source_id] = str(revision)
+        limits = _source_limits(source, profile)
         report = {
             "source": source_id, "repo": source.get("repo"), "revision": revision,
             "status": "started", "read": 0, "accepted": 0, "failed_rows": 0, "by_split": {},
+            "limits": limits,
+            "accepted_by_output_split": {split: 0 for split in SPLITS},
+            "license_counts": {},
+            "metadata_only_by_split": {split: 0 for split in SPLITS},
         }
         if revision_error:
             report["revision_lookup_warning"] = revision_error
-        limits = {str(k): int(v) for k, v in (source.get("limits") or {}).items()}
         for hf_split in source.get("hf_splits", ["train"]):
             try:
                 load_kwargs = {
@@ -772,11 +849,14 @@ def acquire_sources(
                         filled[assigned] += 1
                         report["accepted"] += 1
                         report["metadata_only"] = report.get("metadata_only", 0) + 1
+                        report["metadata_only_by_split"][assigned] += 1
                         continue
                     conversion_error = None
                     try:
                         source["_resolved_revision"] = revision
                         record = _record_from_row(row, source, row_id, assigned, assets_root)
+                        if record is not None and not external_record_is_trainable(record):
+                            raise ValueError("external record lacks approved license or immutable source provenance")
                     except Exception as exc:
                         record = None
                         conversion_error = {
@@ -795,6 +875,9 @@ def acquire_sources(
                         rows_by_split[assigned].append(record)
                         filled[assigned] += 1
                         report["accepted"] += 1
+                        report["accepted_by_output_split"][assigned] += 1
+                        license_id = str(record.get("license", ""))
+                        report["license_counts"][license_id] = report["license_counts"].get(license_id, 0) + 1
                     if scanned >= max_scan or all(filled[s] >= limits.get(s, 0) for s in SPLITS):
                         break
                 report["by_split"][str(hf_split)] = {"scanned": scanned, "accepted": filled}
@@ -831,7 +914,7 @@ def acquire_sources(
     for split in SPLITS:
         manifest = root / "data" / f"{split}.jsonl"
         records = [json.loads(line) for line in manifest.read_text(encoding="utf-8").splitlines() if line.strip()] if manifest.is_file() else []
-        external = [item for item in records if item.get("data_class") in {"external_staged", "external_reviewed"}]
+        external = [item for item in records if external_record_is_trainable(item)]
         external_task_counts[split] = {group: sum(1 for item in external if item.get("task") in tasks) for group, tasks in task_groups.items()}
     output = {
         "profile": profile,
@@ -844,9 +927,11 @@ def acquire_sources(
         "new_metadata_rows": metadata_counts,
         "total_new_records": sum(added_counts.values()),
         "external_task_counts": external_task_counts,
+        "external_media_assets": {split: _external_asset_report(root, split) for split in SPLITS},
         "completed_sources": sum(1 for item in source_reports if item.get("status") == "completed"),
         "unavailable_sources": sum(1 for item in source_reports if item.get("status") == "unavailable"),
         "metadata_only_sources": sum(1 for item in source_reports if item.get("metadata_only", 0) > 0),
+        "metadata_only_rows": sum(int(item.get("metadata_only", 0)) for item in source_reports),
         "sources_with_access_required": sum(1 for item in source_reports if item.get("status") == "access_token_unavailable"),
     }
     report_path = root / "data" / "acquisition-report.json"

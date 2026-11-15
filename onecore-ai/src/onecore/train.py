@@ -388,7 +388,7 @@ def run_training(
         records = list(iter_training_records(records, allowed_tasks))
         for record in records:
             records_by_task.setdefault(record["task"], []).append(record)
-        required = {"text", "tool_use"} if stage == "text" else {"text", "tool_use"}
+        required = {"text"}
         missing = required - set(records_by_task)
         if stage == "multimodal":
             modality_groups = {
