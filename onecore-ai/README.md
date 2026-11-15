@@ -50,7 +50,7 @@ Do not commit private or personally identifying data, secrets, private source co
 
 ## GitHub-only training and checkpoint retention
 
-Training runs in bounded segments of up to 250 optimizer steps per job. The request-file workflow is triggered by a commit changing `onecore-ai/training-request.json`; it pins the exact commit, runs CI, restores model/optimizer/scheduler/RNG/tokenizer state, and executes the selected notebook stage followed by validation/test evaluation. Checkpoints are Actions artifacts, not Git objects.
+Training runs in bounded segments of up to 250 optimizer steps per job. The request-file workflow is triggered by a commit changing `onecore-ai/training-request.json`; it pins the exact commit, runs CI, restores model/optimizer/scheduler/RNG/tokenizer state, and executes the selected notebook stage followed by validation/test evaluation. Checkpoints are Actions artifacts, not Git objects. The same job reruns `compileall`, the full pytest suite, six-notebook integrity validation, and workflow isolation/serialization checks before any optimizer step; a failed preflight blocks training.
 
 Artifacts are retained for 90 days. Durable GitHub Release upload currently receives `403 Resource not accessible by integration` from the repository `GITHUB_TOKEN`; a release is skipped unless `ONECORE_RELEASE_TOKEN` is configured with `contents:write` access or repository/org Actions settings permit release writes. Training itself remains GitHub Actions-only and does not use paid/external hosts.
 
