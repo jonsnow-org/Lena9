@@ -170,7 +170,7 @@ def iter_training_records(
     allowed_data_classes: set[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Select optimizer inputs, never silently training on staged/unreviewed sources."""
-    allowed_classes = allowed_data_classes or TRAINABLE_DATA_CLASSES
+    allowed_classes = TRAINABLE_DATA_CLASSES if allowed_data_classes is None else allowed_data_classes
     selected: list[dict[str, Any]] = []
     for item in records:
         if item.get("split") != "train":

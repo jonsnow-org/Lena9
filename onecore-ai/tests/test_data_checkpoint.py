@@ -1,5 +1,7 @@
 import json
 
+import yaml
+
 import pytest
 import torch
 
@@ -7,6 +9,7 @@ from onecore.checkpoint import load_checkpoint, save_checkpoint
 from onecore.config import ModelConfig
 from onecore.data import validate_manifest
 from onecore.model import OneCore
+from onecore.train import run_training
 
 
 def tiny_config():
@@ -72,3 +75,23 @@ def test_checkpoint_roundtrip_preserves_model_optimizer_scheduler_and_rng(tmp_pa
     assert restored_scheduler.last_epoch == scheduler.last_epoch
     for left, right in zip(model.parameters(), restored.parameters()):
         assert torch.equal(left, right)
+
+
+def test_smoke_training_segment_saves_checkpoint_and_empty_data_class_counts(tmp_path):
+    model_config = tiny_config().to_dict()
+    model_config.pop("vocab_size")
+    config_path = tmp_path / "smoke-config.yaml"
+    config_path.write_text(yaml.safe_dump({
+        "model": model_config,
+        "training": {
+            "learning_rate": 1e-3, "weight_decay": 0.0, "gradient_accumulation": 1,
+            "max_grad_norm": 1.0, "checkpoint_every": 1, "max_steps_per_job": 10,
+            "total_steps": 10, "warmup_steps": 0, "cpu_threads": 1,
+        },
+        "seed": 42,
+    }), encoding="utf-8")
+    report = run_training(tmp_path, config_path, "smoke", 1, tmp_path / "run-state")
+    assert report["optimizer_step"] == 1
+    assert report["optimizer_data_class_counts"] == {}
+    assert report["excluded_data_class_counts"] == {}
+    assert (tmp_path / "run-state" / "checkpoint.pt").is_file()

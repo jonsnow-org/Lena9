@@ -371,6 +371,8 @@ def run_training(
     asset_lineage_status = "not-applicable"
     data_extension: dict[str, Any] | None = None
     external_data_counts: dict[str, int] = {}
+    optimizer_data_class_counts: dict[str, int] = {}
+    excluded_data_class_counts: dict[str, int] = {}
 
     if stage != "smoke":
         data_report = validate_training_data(root)
