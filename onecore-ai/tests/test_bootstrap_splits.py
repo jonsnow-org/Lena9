@@ -77,3 +77,10 @@ def test_training_iterator_excludes_unreviewed_external_records():
     ]
     selected = iter_training_records(records)
     assert [item["id"] for item in selected] == ["bootstrap", "verified-synthetic"]
+
+
+def test_both_onecore_training_workflows_use_builtin_release_token_fallback():
+    repo_root = Path(__file__).resolve().parents[2]
+    for name in ("onecore-bootstrap.yml", "onecore-training.yml"):
+        workflow = (repo_root / ".github" / "workflows" / name).read_text(encoding="utf-8")
+        assert "secrets.ONECORE_RELEASE_TOKEN || secrets.GITHUB_TOKEN" in workflow
