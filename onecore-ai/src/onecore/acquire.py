@@ -141,7 +141,7 @@ def _row_identity(row: dict[str, Any], source_id: str, index: int) -> str:
                     primary = str(value).strip()
                     break
     normalized = json.dumps(_identity_value(row), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    return f"{primary or source_id}:{_stable_hash(normalized)}"}
+    return f"{primary or source_id}:{_stable_hash(normalized)}"
 
 
 def _decode_image(value: Any) -> Image.Image | None:
