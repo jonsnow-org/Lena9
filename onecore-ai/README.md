@@ -56,6 +56,6 @@ Artifacts are retained for 90 days. Durable GitHub Release upload currently rece
 
 ## Current research status
 
-The original 10-step run was an engineering bootstrap. The subsequent 100-step text/tool continuation reached optimizer step 110 and showed lower synthetic training and validation losses, but it remains a research checkpoint, not a final model. The current small bootstrap does not establish general language, science, coding, or multimodal capability. Promotion remains blocked until a large verified curriculum, independent test coverage, and approved quality thresholds are in place.
+The original 10-step run was an engineering bootstrap. The subsequent 100-step text/tool continuation reached optimizer step 110 and showed lower synthetic training and validation losses, but it remains a research checkpoint, not a final model. The current small bootstrap does not establish general language, science, coding, or multimodal capability. Evaluation now measures held-out codebook usage, entropy, perplexity, dead codes, and max-code concentration, but those thresholds are not calibrated. Promotion remains blocked until a large verified curriculum, independent test coverage, and approved loss/codebook thresholds are in place.
 
 See `docs/training-operations.md`, `data/README.md`, and `notebooks/README.md` for operational details.

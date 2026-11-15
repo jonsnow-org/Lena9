@@ -12,7 +12,7 @@ Allowed tasks: `text`, `image_caption`, `audio_text`, `video_caption`, and `tool
 - `validation.jsonl`: `split=validation`; used for model selection and regression measurement, never training.
 - `test.jsonl`: `split=test`; held out from training and validation decisions, used for independent reporting.
 
-Record IDs, asset paths, and identical asset-content hashes must not overlap across train, validation, and test. The data gate checks this. The deterministic bootstrap generator uses split-specific image markers and mild audio loudness variation to avoid byte-identical assets across held-out splits while preserving the scene/frequency labels.
+Record IDs, asset paths, and identical asset-content hashes must not overlap across train, validation, and test. The data gate checks this. The deterministic bootstrap generator uses split-specific image markers and mild audio loudness variation to avoid byte-identical assets across held-out splits while preserving the scene/frequency labels. Evaluation separately measures vision/audio/motion codebook usage, normalized entropy, perplexity, dead codes, and maximum assignment concentration on validation and test.
 
 ## Data classes and promotion evidence
 
