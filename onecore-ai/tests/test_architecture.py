@@ -1,6 +1,8 @@
+from pathlib import Path
+
 import torch
 
-from onecore.config import ModelConfig
+from onecore.config import ModelConfig, load_config
 from onecore.model import OneCore
 
 
@@ -90,3 +92,14 @@ def test_unified_image_audio_and_video_generation():
     assert frames.shape == (2, 3, cfg.image_size, cfg.image_size)
     assert video_stream.ndim == 2
     assert torch.isfinite(frames).all()
+
+def test_phone_research_config_exact_trainable_parameter_budget():
+    root = Path(__file__).resolve().parents[1]
+    cfg, _, _ = load_config(root / "configs" / "phone-research.yaml")
+    model = OneCore(cfg)
+    expected = 57_579_201
+    actual = model.count_parameters()
+    assert actual == expected
+    assert model.parameter_report()["parameters"] == actual
+    assert model.lm_head.weight is model.token_embedding.weight
+    assert 50_000_000 <= actual <= 70_000_000
