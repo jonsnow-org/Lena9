@@ -205,6 +205,8 @@ jobs:
             onecore-ai/run-state/tokenizer.json
             onecore-ai/run-state/train_result.json
             onecore-ai/run-state/evaluation.json
+            onecore-ai/run-state/evaluation.validation.json
+            onecore-ai/run-state/evaluation.test.json
             onecore-ai/run-state/model-registry.json
           if-no-files-found: warn
           retention-days: 90
@@ -219,6 +221,8 @@ jobs:
           [[ ! -f onecore-ai/run-state/tokenizer.json ]] || cp onecore-ai/run-state/tokenizer.json onecore-ai/run-state/release/
           [[ ! -f onecore-ai/run-state/train_result.json ]] || cp onecore-ai/run-state/train_result.json onecore-ai/run-state/release/
           [[ ! -f onecore-ai/run-state/evaluation.json ]] || cp onecore-ai/run-state/evaluation.json onecore-ai/run-state/release/
+          [[ ! -f onecore-ai/run-state/evaluation.validation.json ]] || cp onecore-ai/run-state/evaluation.validation.json onecore-ai/run-state/release/
+          [[ ! -f onecore-ai/run-state/evaluation.test.json ]] || cp onecore-ai/run-state/evaluation.test.json onecore-ai/run-state/release/
           [[ ! -f onecore-ai/run-state/model-registry.json ]] || cp onecore-ai/run-state/model-registry.json onecore-ai/run-state/release/
           (cd onecore-ai/run-state/release && zip -q -1 ../onecore-state.zip ./*)
           tag="onecore-run-${GITHUB_RUN_ID}"
