@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import numpy as np
+import pytest
 import yaml
 from PIL import Image
 
@@ -103,6 +104,24 @@ def test_open_image_without_caption_trains_shared_visual_reconstruction(tmp_path
     assert "caption" not in record
     report = validate_manifest([record], tmp_path, expected_split="train")
     assert report["valid"], report["errors"]
+
+
+
+def test_image_adapter_exposes_decode_failure_reason(tmp_path: Path, monkeypatch) -> None:
+    import onecore.acquire as acquire_module
+
+    monkeypatch.setattr(acquire_module, "_save_image", lambda _value, _destination: False)
+    source = {
+        "id": "image-error-test",
+        "repo": "fixture/images",
+        "adapter": "image",
+        "image_field": "image",
+        "text_fields": [],
+        "license": "fixture",
+        "attribution": "fixture",
+    }
+    with pytest.raises(ValueError, match="image adapter could not decode or download"):
+        _record_from_row({"image": "https://example.invalid/image.jpg"}, source, "row-1", "train", tmp_path)
 
 
 def test_audio_and_video_payloads_are_prepared_as_shared_modalities(tmp_path: Path) -> None:

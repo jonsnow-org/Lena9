@@ -395,7 +395,7 @@ def _record_from_row(
                 image_value = str(url_prefix).rstrip("/") + "/" + Path(image_value).name
         relative = f"acquired/{prefix}.png"
         if not _save_image(image_value, assets_root / relative):
-            return None
+            raise ValueError(f"image adapter could not decode or download field {source.get('image_field') or 'image'}")
         if text:
             record.update({"task": "image_caption", "image": relative, "caption": text[:700]})
         else:
@@ -427,7 +427,7 @@ def _record_from_row(
         audio_value = _nested(row, str(source.get("audio_field") or "audio"))
         relative = f"acquired/{prefix}.npy"
         if not _save_audio_features(audio_value, assets_root / relative):
-            return None
+            raise ValueError(f"audio adapter could not decode or extract features from field {source.get('audio_field') or 'audio'}")
         if text:
             record.update({"task": "audio_text", "audio_features": relative, "transcript": text[:900]})
         else:
@@ -474,7 +474,7 @@ def _record_from_row(
             video_value = {"path": media_path}
         frames = _write_frames(video_value, assets_root, prefix)
         if not frames:
-            return None
+            raise ValueError(f"video adapter could not decode frames from field {source.get('video_field') or 'video'}")
         if text:
             record.update({"task": "video_caption", "frames": frames, "caption": text[:700]})
         else:
@@ -773,13 +773,24 @@ def acquire_sources(
                         report["accepted"] += 1
                         report["metadata_only"] = report.get("metadata_only", 0) + 1
                         continue
+                    conversion_error = None
                     try:
                         source["_resolved_revision"] = revision
                         record = _record_from_row(row, source, row_id, assigned, assets_root)
-                    except Exception:
+                    except Exception as exc:
                         record = None
+                        conversion_error = {
+                            "split": str(hf_split),
+                            "row_id_sha256": _stable_hash(row_id)[:16],
+                            "type": type(exc).__name__,
+                            "message": str(exc)[:320],
+                        }
                     if record is None:
                         report["failed_rows"] += 1
+                        if conversion_error is not None:
+                            samples = report.setdefault("conversion_error_samples", [])
+                            if len(samples) < 10:
+                                samples.append(conversion_error)
                     else:
                         rows_by_split[assigned].append(record)
                         filled[assigned] += 1
