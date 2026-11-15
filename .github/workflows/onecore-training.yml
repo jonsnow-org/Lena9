@@ -208,6 +208,10 @@ jobs:
             --output-dir onecore-ai/run-state/executed-notebooks \
             --ExecutePreprocessor.timeout=-1
 
+      - name: Preserve source revisions and parent data fingerprint for resume
+        if: ${{ always() && hashFiles('onecore-ai/data/acquisition-report.json') != '' }}
+        run: cp onecore-ai/data/acquisition-report.json onecore-ai/run-state/acquisition-report.json
+
       - name: Upload resumable checkpoint and reports, including failed-run recovery
         if: ${{ always() && hashFiles('onecore-ai/run-state/checkpoint.pt') != '' }}
         uses: actions/upload-artifact@v4
@@ -221,7 +225,7 @@ jobs:
             onecore-ai/run-state/evaluation.validation.json
             onecore-ai/run-state/evaluation.test.json
             onecore-ai/run-state/model-registry.json
-            onecore-ai/data/acquisition-report.json
+            onecore-ai/run-state/acquisition-report.json
           if-no-files-found: warn
           retention-days: 90
           compression-level: 1
@@ -253,7 +257,7 @@ jobs:
           [[ ! -f onecore-ai/run-state/evaluation.validation.json ]] || cp onecore-ai/run-state/evaluation.validation.json onecore-ai/run-state/release/
           [[ ! -f onecore-ai/run-state/evaluation.test.json ]] || cp onecore-ai/run-state/evaluation.test.json onecore-ai/run-state/release/
           [[ ! -f onecore-ai/run-state/model-registry.json ]] || cp onecore-ai/run-state/model-registry.json onecore-ai/run-state/release/
-          [[ ! -f onecore-ai/data/acquisition-report.json ]] || cp onecore-ai/data/acquisition-report.json onecore-ai/run-state/release/
+          [[ ! -f onecore-ai/run-state/acquisition-report.json ]] || cp onecore-ai/run-state/acquisition-report.json onecore-ai/run-state/release/
           (cd onecore-ai/run-state/release && zip -q -1 ../onecore-state.zip ./*)
           tag="onecore-run-${GITHUB_RUN_ID}"
           if gh release view "$tag" >/dev/null 2>&1; then

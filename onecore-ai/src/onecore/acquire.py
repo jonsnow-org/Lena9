@@ -26,6 +26,46 @@ def _stable_hash(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8", errors="replace")).hexdigest()
 
 
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _training_manifest_base(root: Path) -> dict[str, Any]:
+    manifest = root / "data" / "train.jsonl"
+    if not manifest.is_file():
+        return {"base_train_manifest_sha256": None, "base_asset_manifest_sha256": None, "base_train_records": 0}
+    records = [
+        json.loads(line) for line in manifest.read_text(encoding="utf-8").splitlines() if line.strip()
+    ]
+    assets_root = (root / "data" / "assets").resolve()
+    paths: set[str] = set()
+    for record in records:
+        for field in ("image", "audio_features"):
+            value = record.get(field)
+            if isinstance(value, str) and value.strip():
+                paths.add(value)
+        frames = record.get("frames")
+        if isinstance(frames, list):
+            paths.update(value for value in frames if isinstance(value, str) and value.strip())
+    entries: list[dict[str, str]] = []
+    for relative in sorted(paths):
+        target = (assets_root / relative).resolve()
+        if assets_root not in target.parents or not target.is_file():
+            raise FileNotFoundError(f"base training asset is missing or escapes data/assets: {relative}")
+        entries.append({"path": relative, "sha256": _sha256_file(target)})
+    encoded = json.dumps(entries, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return {
+        "base_train_manifest_sha256": _sha256_file(manifest),
+        "base_asset_manifest_sha256": hashlib.sha256(encoded).hexdigest(),
+        "base_train_records": len(records),
+    }
+
+
 def _stable_split(source_id: str, row_id: str, seed: str = "onecore-shard-v1") -> str:
     bucket = int(_stable_hash(f"{seed}:{source_id}:{row_id}")[:8], 16) % 100
     if bucket < 96:
@@ -55,7 +95,8 @@ def _first_text(row: dict[str, Any], fields: list[str]) -> str:
 
 
 def _row_identity(row: dict[str, Any], source_id: str, index: int) -> str:
-    for key in ("id", "sample_id", "image_name", "filename", "file", "url", "path", "video_id"):
+    for key in ("id", "sample_id", "__key__", "image_name", "filename", "file", "url", "path",
+                "video_id", "videoid", "clip_id", "img_id"):
         value = row.get(key)
         if value is not None and str(value).strip():
             return str(value).strip()
@@ -81,10 +122,13 @@ def _decode_image(value: Any) -> Image.Image | None:
     if isinstance(value, dict):
         raw = value.get("bytes")
         path = value.get("path")
+        source_url = value.get("src") or value.get("url")
         if raw:
             return Image.open(io.BytesIO(raw)).convert("RGB")
         if path and Path(path).is_file():
             return Image.open(path).convert("RGB")
+        if isinstance(source_url, str) and source_url.startswith(("http://", "https://")):
+            return _decode_image(source_url)
     if isinstance(value, (bytes, bytearray)):
         return Image.open(io.BytesIO(value)).convert("RGB")
     if isinstance(value, str):
@@ -201,6 +245,18 @@ def _video_frames(value: Any, max_frames: int = 4) -> list[Any]:
             finally:
                 if temp_path:
                     Path(temp_path).unlink(missing_ok=True)
+    if isinstance(value, str) and value.startswith(("http://", "https://")):
+        try:
+            request = urllib.request.Request(
+                value, headers={"User-Agent": "OneCore-data-ingest/1.0"}
+            )
+            with urllib.request.urlopen(request, timeout=35) as response:
+                raw = response.read(64 * 1024 * 1024 + 1)
+            if len(raw) > 64 * 1024 * 1024:
+                return []
+            return _video_frames({"bytes": raw}, max_frames=max_frames)
+        except Exception:
+            return []
     if isinstance(value, (list, tuple)):
         return list(value[:max_frames])
     return []
@@ -255,12 +311,34 @@ def _record_from_row(
         "data_class": "external_staged",
     }
     text = _first_text(row, list(source.get("text_fields") or []))
+    conversation_field = source.get("conversation_field")
+    if conversation_field:
+        turns = _nested(row, str(conversation_field))
+        if isinstance(turns, list):
+            question = next((
+                str(turn.get("value", "")).strip() for turn in turns
+                if isinstance(turn, dict)
+                and str(turn.get("from", "")).lower() in {"human", "user"}
+                and str(turn.get("value", "")).strip()
+            ), "")
+            answer = next((
+                str(turn.get("value", "")).strip() for turn in turns
+                if isinstance(turn, dict)
+                and str(turn.get("from", "")).lower() in {"gpt", "assistant"}
+                and str(turn.get("value", "")).strip()
+            ), "")
+            if answer:
+                text = f"Question: {question}\nAnswer: {answer}" if question else answer
     if adapter == "text":
         if len(text) < 24:
             return None
         record.update({"task": "text", "text": text[:2200]})
     elif adapter in {"image", "image_url", "image_base64"}:
         image_value = _nested(row, str(source.get("image_field") or "image"))
+        if isinstance(image_value, str) and not image_value.startswith(("http://", "https://")):
+            url_prefix = source.get("image_url_prefix")
+            if url_prefix and image_value.strip():
+                image_value = str(url_prefix).rstrip("/") + "/" + Path(image_value).name
         relative = f"acquired/{prefix}.png"
         if not _save_image(image_value, assets_root / relative):
             return None
@@ -277,20 +355,31 @@ def _record_from_row(
             record.update({"task": "audio_text", "audio_features": relative, "transcript": text[:900]})
         else:
             record.update({"task": "audio_reconstruction", "audio_features": relative})
-    elif adapter == "video":
+    elif adapter in {"video", "video_url", "video_repo_file"}:
         video_value = _nested(row, str(source.get("video_field") or "video"))
+        if adapter == "video_repo_file":
+            if not isinstance(video_value, str) or not video_value.strip():
+                return None
+            normalized = video_value.replace("\\", "/").lstrip("/")
+            if ".." in Path(normalized).parts:
+                return None
+            from huggingface_hub import hf_hub_download
+            media_path = hf_hub_download(
+                repo_id=str(source["repo"]),
+                filename=normalized,
+                repo_type="dataset",
+                revision=str(source.get("_resolved_revision") or source.get("revision") or "main"),
+                token=os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_HUB_TOKEN"),
+            )
+            video_value = {"path": media_path}
+        elif adapter == "video_url":
+            if not isinstance(video_value, str) or not video_value.startswith(("http://", "https://")):
+                return None
         frames = _write_frames(video_value, assets_root, prefix)
         if not frames:
-            # Some video records publish a direct media URL rather than decoded frames.
-            url = row.get("video_url") or row.get("url")
-            if isinstance(url, str) and url.lower().split("?")[0].endswith((".mp4", ".webm", ".mov")):
-                try:
-                    request = urllib.request.Request(url, headers={"User-Agent": "OneCore-data-ingest/1.0"})
-                    with urllib.request.urlopen(request, timeout=45) as response:
-                        raw = response.read(80 * 1024 * 1024)
-                    frames = _write_frames({"bytes": raw}, assets_root, prefix)
-                except Exception:
-                    frames = []
+            fallback_url = row.get("video_url") or row.get("url") or row.get("contentUrl")
+            if isinstance(fallback_url, str) and fallback_url.startswith(("http://", "https://")):
+                frames = _write_frames(fallback_url, assets_root, prefix)
         if not frames:
             return None
         if text:
@@ -361,12 +450,22 @@ def acquire_sources(
     assets_root = root / "data" / "assets"
     rows_by_split: dict[str, list[dict[str, Any]]] = {split: [] for split in SPLITS}
     source_reports: list[dict[str, Any]] = []
+    base_fingerprints = _training_manifest_base(root)
     token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_HUB_TOKEN")
     try:
         from datasets import load_dataset
+        from huggingface_hub import HfApi
     except Exception as exc:
-        raise RuntimeError("The datasets package is required for OneCore source acquisition") from exc
+        raise RuntimeError("datasets and huggingface_hub are required for OneCore source acquisition") from exc
 
+    previous_report_path = root / "run-state" / "acquisition-report.json"
+    previous_report = (
+        json.loads(previous_report_path.read_text(encoding="utf-8"))
+        if previous_report_path.is_file() else {}
+    )
+    prior_revisions = previous_report.get("source_revisions", {})
+    source_revisions: dict[str, str] = {}
+    hub_api = HfApi(token=token)
     metadata_rows: dict[str, list[dict[str, Any]]] = {}
     for source in registry.get("sources", []):
         source_id = str(source.get("id", ""))
@@ -379,18 +478,35 @@ def acquire_sources(
             source_reports.append({"source": source_id, "status": "access_token_unavailable"})
             continue
 
-        report = {"source": source_id, "repo": source.get("repo"), "status": "started",
-                  "read": 0, "accepted": 0, "failed_rows": 0, "by_split": {}}
+        revision = source.get("revision") or prior_revisions.get(source_id)
+        revision_error = None
+        if not revision:
+            try:
+                revision = hub_api.dataset_info(str(source["repo"]), token=token).sha
+            except Exception as exc:
+                revision_error = f"{type(exc).__name__}: {str(exc)[:240]}"
+                revision = None
+        if revision:
+            source_revisions[source_id] = str(revision)
+        report = {
+            "source": source_id, "repo": source.get("repo"), "revision": revision,
+            "status": "started", "read": 0, "accepted": 0, "failed_rows": 0, "by_split": {},
+        }
+        if revision_error:
+            report["revision_lookup_warning"] = revision_error
         limits = {str(k): int(v) for k, v in (source.get("limits") or {}).items()}
         for hf_split in source.get("hf_splits", ["train"]):
             try:
-                dataset = load_dataset(
-                    str(source["repo"]),
-                    str(source.get("config") or "default"),
-                    split=str(hf_split),
-                    streaming=True,
-                    token=token,
-                )
+                load_kwargs = {
+                    "path": str(source["repo"]),
+                    "name": str(source.get("config") or "default"),
+                    "split": str(hf_split),
+                    "streaming": True,
+                    "token": token,
+                }
+                if revision:
+                    load_kwargs["revision"] = str(revision)
+                dataset = load_dataset(**load_kwargs)
                 target_count = sum(limits.values()) or 1
                 max_scan = max(target_count * int(defaults.get("max_scan_multiplier", 12)), target_count + 200)
                 filled = {split: 0 for split in SPLITS}
@@ -400,7 +516,8 @@ def acquire_sources(
                     report["read"] += 1
                     if not isinstance(row, dict):
                         continue
-                    row_id = _row_identity(row, source_id, scanned)
+                    raw_identity = _row_identity(row, source_id, scanned)
+                    row_id = f"{hf_split}:{raw_identity}"
                     assigned = _assign_split(source, str(hf_split), row_id, seed)
                     if assigned not in SPLITS or filled[assigned] >= limits.get(assigned, 0):
                         if scanned >= max_scan or all(filled[s] >= limits.get(s, 0) for s in SPLITS):
@@ -409,8 +526,11 @@ def acquire_sources(
                     if source.get("adapter") in {"video_manifest", "metadata_only"}:
                         fields = {
                             key: row.get(key) for key in (
-                                "video_id", "youtube_id", "url", "video_url", "start",
-                                "end", "timestamp", "caption", "text", "language",
+                                "video_id", "youtube_id", "videoid", "clip_id", "url", "contentUrl",
+                                "video_url", "video_path", "zip_folder", "page_dir",
+                                "image", "image_url", "conversations", "start", "end",
+                                "span_start", "span_end", "timestamp", "timestamps", "keyframe",
+                                "segment", "recipe_type", "name", "sentence", "caption", "text", "language",
                             ) if row.get(key) is not None
                         }
                         metadata_rows.setdefault(source_id, []).append({
@@ -426,6 +546,7 @@ def acquire_sources(
                         report["metadata_only"] = report.get("metadata_only", 0) + 1
                         continue
                     try:
+                        source["_resolved_revision"] = revision
                         record = _record_from_row(row, source, row_id, assigned, assets_root)
                     except Exception:
                         record = None
@@ -464,6 +585,8 @@ def acquire_sources(
     output = {
         "profile": profile,
         "registry_version": registry.get("version"),
+        **base_fingerprints,
+        "source_revisions": source_revisions,
         "source_count": len(source_reports),
         "sources": source_reports,
         "new_records": added_counts,

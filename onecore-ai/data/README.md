@@ -8,8 +8,8 @@ The registry connects:
 - General language: FineWeb-2, FineWeb2-HQ-Plus, Wikimedia Wikipedia, C4 and OSCAR.
 - Mathematics, proofs and code: Open-Web-Math-Pro, Proof-Pile-2 and Stack V2 Edu.
 - Speech and audio-language: FLEURS, Arabic Speech Corpus, GigaSpeech 3, GigaSpeech, GigaSpeech 2, WavCaps and Common Voice.
-- Images and documents: Open Images V7, SARD and Flickr30k.
-- Video and temporal data: FineVideo, LAION BVD-V-55M, BVD-A-10M, BVD-I-300M, InternVid-10M-FLT and Panda-70M.
+- Images and documents: Open Images V7, SARD, Flickr30k, COYO-700M, Conceptual Captions 12M and ShareGPT4V.
+- Video and temporal data: MSR-VTT, WebVid-10M, ShareGPT4Video, HD-VILA-100M, YouCook2, FineVideo, LAION BVD-V-55M, BVD-A-10M, BVD-I-300M, InternVid-10M-FLT and Panda-70M.
 - Evaluation metadata: GigaSpeechBench.
 
 All usable records enter one shared OneCore checkpoint. Images/video become 64×64 frames; audio becomes 80-bin log-mel features; text, tool actions and all media tokens use the same vocabulary, recurrent core and trainable parameter set.

@@ -169,6 +169,7 @@ sources:
     limits: {train: 500, validation: 30, test: 30}
     license: other
     attribution: "GigaSpeech 3 — SpeechColab"
+    requires_access: true
     enabled: true
   - id: gigaspeech_english
     repo: speechcolab/gigaspeech
@@ -358,4 +359,98 @@ sources:
     license: dataset-card-terms
     attribution: "LAION BVD-I-300M contributors"
     requires_access: true
+    enabled: true
+  # Large-scale image-text pairs
+  - id: coyo_700m
+    repo: kakaobrain/coyo-700m
+    config: default
+    hf_splits: [train]
+    adapter: image_url
+    image_field: url
+    text_fields: [text]
+    split_strategy: hash
+    limits: {train: 500, validation: 50, test: 50}
+    license: cc-by-4.0
+    attribution: "COYO-700M — Kakao Brain and dataset contributors"
+    enabled: true
+  - id: conceptual_captions_12m
+    repo: laion/conceptual-captions-12m-webdataset
+    config: default
+    hf_splits: [train]
+    adapter: image
+    image_field: jpg
+    text_fields: [txt]
+    split_strategy: hash
+    limits: {train: 300, validation: 30, test: 30}
+    license: dataset-card-terms
+    attribution: "Conceptual Captions 12M — LAION and source contributors"
+    enabled: true
+  - id: sharegpt4v_images
+    repo: Lin-Chen/ShareGPT4V
+    config: ShareGPT4V
+    hf_splits: [train]
+    adapter: image_url
+    image_field: image
+    image_url_prefix: "https://images.cocodataset.org/train2017"
+    conversation_field: conversations
+    split_strategy: hash
+    limits: {train: 400, validation: 30, test: 30}
+    license: dataset-card-terms
+    attribution: "ShareGPT4V — Lin Chen and contributors"
+    enabled: true
+
+  # Video catalogs and temporal annotations
+  - id: sharegpt4video_temporal_manifest
+    repo: ShareGPT4Video/ShareGPT4Video
+    config: ShareGPT4Video
+    hf_splits: [train]
+    adapter: metadata_only
+    split_strategy: hash
+    limits: {train: 2500, validation: 100, test: 100}
+    license: dataset-card-terms
+    attribution: "ShareGPT4Video — source-video and dataset contributors"
+    enabled: true
+  - id: webvid_10m_video
+    repo: TempoFunk/webvid-10M
+    config: default
+    hf_splits: [train, validation]
+    adapter: video_url
+    video_field: contentUrl
+    text_fields: [name]
+    split_strategy: preserve
+    limits: {train: 60, validation: 15}
+    license: dataset-card-terms
+    attribution: "WebVid-10M — source-video and dataset contributors"
+    enabled: true
+  - id: hdvila_100m_manifest
+    repo: TempoFunk/hdvila-100M
+    config: default
+    hf_splits: [train]
+    adapter: metadata_only
+    split_strategy: hash
+    limits: {train: 2500, validation: 100, test: 100}
+    license: dataset-card-terms
+    attribution: "HD-VILA-100M — dataset contributors"
+    enabled: true
+  - id: youcook2_temporal_manifest
+    repo: lmms-eval/YouCook2
+    config: default
+    hf_splits: [train, validation, test]
+    adapter: metadata_only
+    split_strategy: preserve
+    limits: {train: 1500, validation: 100, test: 100}
+    license: dataset-card-terms
+    attribution: "YouCook2 — dataset contributors"
+    enabled: true
+  - id: msrvtt_video
+    repo: NTQAI/MSR-VTT-Video-Captioning-Vi
+    config: default
+    hf_splits: [train]
+    adapter: video_repo_file
+    video_field: video
+    text_fields: [caption]
+    split_strategy: hash
+    limits: {train: 180, validation: 30, test: 30}
+    license: dataset-card-terms
+    attribution: "MSR-VTT — dataset contributors"
     enabled: true

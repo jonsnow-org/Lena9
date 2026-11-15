@@ -28,10 +28,15 @@ def _sid(cfg: ModelConfig, offset: int) -> int:
     return cfg.special_id(offset)
 
 
-def _text_ids(tokenizer: Tokenizer, text: str, cfg: ModelConfig) -> list[int]:
+def _text_ids(tokenizer: Tokenizer, text: str, cfg: ModelConfig,
+              max_tokens: int | None = None) -> list[int]:
     ids = tokenizer.encode(text).ids
     if not ids or any(token < 0 or token >= cfg.text_vocab_size for token in ids):
         raise ValueError("tokenizer emitted no IDs or an ID outside the reserved text vocabulary")
+    if max_tokens is not None:
+        if max_tokens < 1:
+            raise ValueError("max_tokens must be positive")
+        ids = ids[:max_tokens]
     return ids
 
 
@@ -73,14 +78,25 @@ def _record_sequence(
     assets = project_root / "data" / "assets"
     task = record["task"]
     aux_loss = torch.zeros((), dtype=torch.float32)
+    max_tokens = cfg.max_sequence_length
 
     if task == "text":
-        sequence = [_sid(cfg, BOS), *_text_ids(tokenizer, record["text"], cfg), _sid(cfg, EOS)]
-    elif task == "tool_use":
         sequence = [
-            _sid(cfg, BOS), *_text_ids(tokenizer, record["prompt"], cfg),
-            _sid(cfg, TOOL_START), *_text_ids(tokenizer, record["response"], cfg),
-            _sid(cfg, TOOL_END), _sid(cfg, EOS),
+            _sid(cfg, BOS),
+            *_text_ids(tokenizer, record["text"], cfg, max_tokens=max_tokens - 2),
+            _sid(cfg, EOS),
+        ]
+    elif task == "tool_use":
+        prompt_ids = _text_ids(
+            tokenizer, record["prompt"], cfg, max_tokens=max(1, (max_tokens - 4) // 2)
+        )
+        response_budget = max_tokens - len(prompt_ids) - 4
+        response_ids = _text_ids(
+            tokenizer, record["response"], cfg, max_tokens=max(1, response_budget)
+        )
+        sequence = [
+            _sid(cfg, BOS), *prompt_ids, _sid(cfg, TOOL_START),
+            *response_ids, _sid(cfg, TOOL_END), _sid(cfg, EOS),
         ]
     elif task in {"image_caption", "image_reconstruction"}:
         image = _load_image(assets / record["image"], cfg.image_size)
@@ -88,30 +104,50 @@ def _record_sequence(
         decoded = model.decode_image_latents(latents)
         image_loss = torch.nn.functional.mse_loss(decoded, image)
         aux_loss = vq_loss + image_loss
-        sequence = [_sid(cfg, BOS), _sid(cfg, IMAGE_START),
-                    *code_ids.flatten().tolist(), _sid(cfg, IMAGE_END)]
+        sequence = [
+            _sid(cfg, BOS), _sid(cfg, IMAGE_START),
+            *code_ids.flatten().tolist(), _sid(cfg, IMAGE_END),
+        ]
         if task == "image_caption":
-            sequence.extend([_sid(cfg, TEXT_START), *_text_ids(tokenizer, record["caption"], cfg)])
+            caption_budget = max_tokens - len(sequence) - 2
+            sequence.extend([
+                _sid(cfg, TEXT_START),
+                *_text_ids(tokenizer, record["caption"], cfg, max_tokens=max(1, caption_budget)),
+            ])
         sequence.append(_sid(cfg, EOS))
     elif task in {"audio_text", "audio_reconstruction"}:
         mel = _load_mel(assets / record["audio_features"], cfg.audio_bins)
+        transcript_ids: list[int] = []
+        if task == "audio_text":
+            transcript = record.get("transcript", record.get("caption", ""))
+            transcript_ids = _text_ids(
+                tokenizer, transcript, cfg, max_tokens=min(160, max_tokens // 3)
+            )
+        audio_token_budget = max(
+            1, max_tokens - 4 - (1 + len(transcript_ids) if transcript_ids else 0)
+        )
+        max_mel_frames = cfg.audio_group_frames * audio_token_budget
+        mel = mel[:, :max_mel_frames, :]
         code_ids, latents, vq_loss = model.encode_audio(mel)
         reconstructed = model.decode_audio_latents(latents).reshape(
             1, -1, cfg.audio_bins
         )[:, :mel.shape[1], :]
         audio_loss = torch.nn.functional.mse_loss(reconstructed, mel)
         aux_loss = vq_loss + audio_loss
-        sequence = [_sid(cfg, BOS), _sid(cfg, AUDIO_START),
-                    *code_ids.flatten().tolist(), _sid(cfg, AUDIO_END)]
+        sequence = [
+            _sid(cfg, BOS), _sid(cfg, AUDIO_START),
+            *code_ids.flatten().tolist(), _sid(cfg, AUDIO_END),
+        ]
         if task == "audio_text":
-            transcript = record.get("transcript", record.get("caption", ""))
-            sequence.extend([_sid(cfg, TEXT_START), *_text_ids(tokenizer, transcript, cfg)])
+            sequence.extend([_sid(cfg, TEXT_START), *transcript_ids])
         sequence.append(_sid(cfg, EOS))
     elif task in {"video_caption", "video_reconstruction"}:
         frames = record["frames"]
         if not isinstance(frames, list) or not 1 <= len(frames) <= cfg.max_video_frames:
             raise ValueError(f"video must contain 1..{cfg.max_video_frames} ordered frame paths")
-        image_tensors = [_load_image(assets / relative, cfg.image_size) for relative in frames]
+        image_tensors = [
+            _load_image(assets / relative, cfg.image_size) for relative in frames
+        ]
         sequence = [_sid(cfg, BOS), _sid(cfg, VIDEO_START)]
         frame_losses = []
         for index, frame in enumerate(image_tensors):
@@ -130,8 +166,11 @@ def _record_sequence(
                 sequence.extend([_sid(cfg, MOTION_START), *motion_ids.flatten().tolist()])
         sequence.append(_sid(cfg, VIDEO_END))
         if task == "video_caption":
+            caption_budget = max_tokens - len(sequence) - 2
             sequence.append(_sid(cfg, TEXT_START))
-            sequence.extend(_text_ids(tokenizer, record["caption"], cfg))
+            sequence.extend(_text_ids(
+                tokenizer, record["caption"], cfg, max_tokens=max(1, caption_budget)
+            ))
         sequence.append(_sid(cfg, EOS))
         aux_loss = torch.stack(frame_losses).mean()
     else:
@@ -141,11 +180,10 @@ def _record_sequence(
         raise ValueError(f"record {record.get('id')} produced an empty sequence")
     if len(sequence) > cfg.max_sequence_length:
         raise ValueError(
-            f"record {record.get('id')} has {len(sequence)} tokens; "
-            f"limit is {cfg.max_sequence_length}. Reduce frames/caption length or raise context."
+            f"record {record.get('id')} has {len(sequence)} tokens after bounded encoding; "
+            f"limit is {cfg.max_sequence_length}."
         )
     return torch.tensor(sequence, dtype=torch.long).unsqueeze(0), aux_loss, task
-
 
 def _smoke_sample(model: OneCore, step: int) -> tuple[torch.Tensor, torch.Tensor]:
     cfg = model.cfg
@@ -331,6 +369,8 @@ def run_training(
     asset_manifest_sha: str | None = None
     training_data_fingerprint: str | None = None
     asset_lineage_status = "not-applicable"
+    data_extension: dict[str, Any] | None = None
+    external_data_counts: dict[str, int] = {}
 
     if stage != "smoke":
         data_report = validate_training_data(root)
@@ -371,6 +411,14 @@ def run_training(
         training_data_fingerprint = hashlib.sha256(json.dumps(
             fingerprint_payload, sort_keys=True, separators=(",", ":")
         ).encode("utf-8")).hexdigest()
+        data_class_counts: dict[str, int] = {}
+        for record in all_manifest_records:
+            data_class = str(record.get("data_class") or "unclassified")
+            data_class_counts[data_class] = data_class_counts.get(data_class, 0) + 1
+        external_data_counts = {
+            data_class: count for data_class, count in data_class_counts.items()
+            if data_class in {"external_staged", "external_reviewed", "owner_curated"}
+        }
         contains_synthetic = any(
             record["license"] == "local-owner-synthetic" or record["review_status"] != "approved"
             for record in all_manifest_records
@@ -379,21 +427,41 @@ def run_training(
         real_data = not contains_synthetic
         if resume:
             saved_manifest_sha = saved_metadata.get("manifest_sha256")
-            if saved_manifest_sha and saved_manifest_sha != manifest_sha:
-                raise ValueError(
-                    "training manifest fingerprint changed since the saved checkpoint; "
-                    "refusing silent data-lineage mixing. Start a new lineage or explicitly rebase the curriculum."
-                )
             saved_asset_sha = saved_metadata.get("asset_manifest_sha256")
-            if saved_asset_sha and saved_asset_sha != asset_manifest_sha:
-                raise ValueError("training asset fingerprints changed since the saved checkpoint; refusing silent data-lineage mixing")
             saved_data_fingerprint = saved_metadata.get("training_data_fingerprint")
-            if saved_data_fingerprint and saved_data_fingerprint != training_data_fingerprint:
-                raise ValueError("training data fingerprint changed since the saved checkpoint; refusing silent data-lineage mixing")
-            asset_lineage_status = (
-                "verified-against-parent" if saved_asset_sha
-                else "established-on-resume-from-legacy-manifest-only-checkpoint"
-            )
+            if saved_manifest_sha and saved_manifest_sha != manifest_sha:
+                acquisition_report_path = root / "data" / "acquisition-report.json"
+                acquisition_report = (
+                    json.loads(acquisition_report_path.read_text(encoding="utf-8"))
+                    if acquisition_report_path.is_file() else {}
+                )
+                base_manifest_sha = acquisition_report.get("base_train_manifest_sha256")
+                base_asset_sha = acquisition_report.get("base_asset_manifest_sha256")
+                if base_manifest_sha != saved_manifest_sha or base_asset_sha != saved_asset_sha:
+                    raise ValueError(
+                        "training manifest changed but the importer did not prove an append-only extension "
+                        "from the exact parent manifest and asset fingerprints; refusing to mix lineages"
+                    )
+                data_extension = {
+                    "mode": "verified_append_only",
+                    "parent_manifest_sha256": saved_manifest_sha,
+                    "parent_asset_manifest_sha256": saved_asset_sha,
+                    "extended_manifest_sha256": manifest_sha,
+                    "extended_asset_manifest_sha256": asset_manifest_sha,
+                    "base_train_records": acquisition_report.get("base_train_records"),
+                    "new_records": acquisition_report.get("new_records", {}),
+                    "source_revisions": acquisition_report.get("source_revisions", {}),
+                }
+                asset_lineage_status = "verified-append-only-data-extension"
+            else:
+                if saved_asset_sha and saved_asset_sha != asset_manifest_sha:
+                    raise ValueError("training asset fingerprints changed since the saved checkpoint; refusing silent data-lineage mixing")
+                if saved_data_fingerprint and saved_data_fingerprint != training_data_fingerprint:
+                    raise ValueError("training data fingerprint changed since the saved checkpoint; refusing silent data-lineage mixing")
+                asset_lineage_status = (
+                    "verified-against-parent" if saved_asset_sha
+                    else "established-on-resume-from-legacy-manifest-only-checkpoint"
+                )
         else:
             asset_lineage_status = "fingerprinted-on-fresh-run"
         if not tokenizer_path.exists():
@@ -465,6 +533,8 @@ def run_training(
                 "asset_manifest_sha256": asset_manifest_sha,
                 "training_data_fingerprint": training_data_fingerprint,
                 "asset_lineage_status": asset_lineage_status,
+                "data_extension": data_extension,
+                "external_data_counts": external_data_counts,
                 "lineage_id": lineage_id,
                 "parent_checkpoint_sha256": parent_checkpoint_sha256,
                 "parent_optimizer_step": parent_optimizer_step,
@@ -486,6 +556,8 @@ def run_training(
         "asset_manifest_sha256": asset_manifest_sha,
         "training_data_fingerprint": training_data_fingerprint,
         "asset_lineage_status": asset_lineage_status,
+        "data_extension": data_extension,
+        "external_data_counts": external_data_counts,
         "lineage_id": lineage_id,
         "parent_checkpoint_sha256": parent_checkpoint_sha256,
         "parent_optimizer_step": parent_optimizer_step,
@@ -519,6 +591,8 @@ def run_training(
         "asset_manifest_sha256": asset_manifest_sha,
         "training_data_fingerprint": training_data_fingerprint,
         "asset_lineage_status": asset_lineage_status,
+        "data_extension": data_extension,
+        "external_data_counts": external_data_counts,
         "lineage_id": lineage_id,
         "parent_checkpoint_sha256": parent_checkpoint_sha256,
         "parent_optimizer_step": parent_optimizer_step,
@@ -526,6 +600,8 @@ def run_training(
         "codebook_report": codebook_report,
         "checkpoint": checkpoint_report,
         "task_counts": task_counts,
+        "external_data_counts": external_data_counts,
+        "data_extension": data_extension,
         "promotion_eligible": False,
         "promotion_note": "training completion is not an evaluation or promotion decision",
     }

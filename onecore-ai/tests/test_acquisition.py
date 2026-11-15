@@ -14,6 +14,7 @@ from onecore.acquire import (
     _assign_split,
     _record_from_row,
     _stable_split,
+    _training_manifest_base,
 )
 from onecore.data import validate_manifest
 
@@ -32,9 +33,12 @@ def test_source_registry_covers_all_shared_modalities() -> None:
     adapters = {item["adapter"] for item in sources}
     assert len(ids) >= 20
     assert len(ids) == len(sources)
-    assert {"text", "audio", "image_url", "image_base64", "video", "video_manifest"} <= adapters
+    assert {"text", "audio", "image_url", "image_base64", "video", "video_url",
+            "video_repo_file", "video_manifest"} <= adapters
     assert {"fineweb2_hq_ar", "open_web_math_pro", "fleurs_ar", "open_images_v7",
-            "sard_arabic_documents", "finevideo", "laion_bvd_video_55m"} <= ids
+            "sard_arabic_documents", "finevideo", "laion_bvd_video_55m",
+            "coyo_700m", "conceptual_captions_12m", "sharegpt4v_images",
+            "webvid_10m_video", "msrvtt_video"} <= ids
 
 
 def test_split_assignment_is_stable_and_preserves_published_holdouts() -> None:
@@ -162,3 +166,213 @@ def test_manifest_merge_is_idempotent_and_split_local(tmp_path: Path) -> None:
     validation = [json.loads(line) for line in (data_root / "validation.jsonl").read_text().splitlines()]
     assert [item["id"] for item in train] == ["x"]
     assert [item["id"] for item in validation] == ["y"]
+
+
+def test_sharegpt4v_conversation_is_paired_with_its_image(tmp_path: Path, monkeypatch) -> None:
+    import onecore.acquire as acquire_module
+
+    def save_fixture(_value, destination: Path) -> bool:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        Image.new("RGB", (64, 64), (80, 90, 100)).save(destination, format="PNG")
+        return True
+
+    monkeypatch.setattr(acquire_module, "_save_image", save_fixture)
+    source = {
+        "id": "sharegpt4v-test",
+        "repo": "Lin-Chen/ShareGPT4V",
+        "adapter": "image_url",
+        "image_field": "image",
+        "image_url_prefix": "https://images.cocodataset.org/train2017",
+        "conversation_field": "conversations",
+        "license": "fixture",
+        "attribution": "ShareGPT4V fixture",
+    }
+    record = _record_from_row(
+        {
+            "image": "coco/train2017/000000000009.jpg",
+            "conversations": [
+                {"from": "human", "value": "What is visible? <image>"},
+                {"from": "gpt", "value": "A tray with food containers."},
+            ],
+        },
+        source, "share-row-1", "train", tmp_path,
+    )
+    assert record is not None
+    assert record["task"] == "image_caption"
+    assert "Question: What is visible?" in record["caption"]
+    assert "Answer: A tray with food containers." in record["caption"]
+    assert (tmp_path / "data" / "assets" / record["image"]).is_file()
+
+
+def test_video_url_adapter_builds_frames_for_onecore(tmp_path: Path, monkeypatch) -> None:
+    import onecore.acquire as acquire_module
+
+    def fake_write_frames(value, assets_root: Path, prefix: str, max_frames: int = 4):
+        assert value == "https://media.example/video.mp4"
+        saved = []
+        for index in range(3):
+            relative = f"acquired/{prefix}/frame_{index:02d}.png"
+            target = assets_root / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            Image.new("RGB", (64, 64), (index * 30, 60, 90)).save(target, format="PNG")
+            saved.append(relative)
+        return saved
+
+    monkeypatch.setattr(acquire_module, "_write_frames", fake_write_frames)
+    source = {
+        "id": "webvid-test",
+        "repo": "TempoFunk/webvid-10M",
+        "adapter": "video_url",
+        "video_field": "contentUrl",
+        "text_fields": ["name"],
+        "license": "fixture",
+        "attribution": "WebVid fixture",
+    }
+    record = _record_from_row(
+        {"contentUrl": "https://media.example/video.mp4", "name": "Aerial forest view"},
+        source, "video-row-1", "train", tmp_path,
+    )
+    assert record is not None
+    assert record["task"] == "video_caption"
+    assert record["caption"] == "Aerial forest view"
+    assert len(record["frames"]) == 3
+
+
+def test_video_repo_file_adapter_uses_pinned_hub_revision(tmp_path: Path, monkeypatch) -> None:
+    import sys
+    import types
+    import onecore.acquire as acquire_module
+
+    downloaded = tmp_path / "video.mp4"
+    downloaded.write_bytes(b"fake-mp4")
+    seen = {}
+
+    def fake_download(**kwargs):
+        seen.update(kwargs)
+        return str(downloaded)
+
+    fake_hub = types.SimpleNamespace(hf_hub_download=fake_download)
+    monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hub)
+
+    def fake_write_frames(value, assets_root: Path, prefix: str, max_frames: int = 4):
+        assert value == {"path": str(downloaded)}
+        target = assets_root / f"acquired/{prefix}/frame_00.png"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        Image.new("RGB", (64, 64), (10, 20, 30)).save(target, format="PNG")
+        return [str(target.relative_to(assets_root))]
+
+    monkeypatch.setattr(acquire_module, "_write_frames", fake_write_frames)
+    source = {
+        "id": "msrvtt-test",
+        "repo": "NTQAI/MSR-VTT-Video-Captioning-Vi",
+        "adapter": "video_repo_file",
+        "video_field": "video",
+        "text_fields": ["caption"],
+        "_resolved_revision": "pinned-sha",
+        "license": "fixture",
+        "attribution": "MSR-VTT fixture",
+    }
+    record = _record_from_row(
+        {"video": "videos/video2447.mp4", "caption": "A conference scene"},
+        source, "msrvtt-row-1", "train", tmp_path,
+    )
+    assert record is not None
+    assert record["task"] == "video_caption"
+    assert seen["filename"] == "videos/video2447.mp4"
+    assert seen["revision"] == "pinned-sha"
+
+
+def test_long_natural_text_is_truncated_to_context_not_dropped(tmp_path: Path) -> None:
+    from onecore.config import ModelConfig
+    from onecore.model import OneCore
+    from onecore.train import _record_sequence
+
+    class Encoded:
+        ids = [index % 2000 for index in range(1000)]
+
+    class FakeTokenizer:
+        def encode(self, _text: str):
+            return Encoded()
+
+    cfg = ModelConfig(
+        width=32, unique_blocks=1, recurrent_cycles=1, attention_heads=4,
+        max_sequence_length=64, text_vocab_size=4096,
+        vision_codebook_size=8, audio_codebook_size=8, motion_codebook_size=8,
+        special_tokens=24, patch_size=8, image_size=64,
+        audio_bins=80, audio_group_frames=4, max_video_frames=4,
+    )
+    model = OneCore(cfg)
+    sequence, _, task = _record_sequence(
+        {"id": "long-text", "task": "text", "text": "A long natural-language document"},
+        model, FakeTokenizer(), tmp_path,
+    )
+    assert task == "text"
+    assert tuple(sequence.shape) == (1, 64)
+
+
+def test_source_revision_and_parent_fingerprints_cover_existing_media(tmp_path: Path) -> None:
+    from onecore.train import _asset_manifest_sha256
+
+    assets = tmp_path / "data" / "assets"
+    assets.mkdir(parents=True)
+    image_path = assets / "parent.png"
+    Image.new("RGB", (64, 64), (11, 22, 33)).save(image_path, format="PNG")
+    record = {
+        "id": "parent-image",
+        "task": "image_reconstruction",
+        "image": "parent.png",
+        "license": "fixture",
+        "source_url": "https://example.test/source",
+        "attribution": "fixture",
+        "split": "train",
+        "review_status": "pending",
+        "data_class": "external_staged",
+    }
+    manifest = tmp_path / "data" / "train.jsonl"
+    manifest.write_text(json.dumps(record, ensure_ascii=False) + "\n", encoding="utf-8")
+    base = _training_manifest_base(tmp_path)
+    assert base["base_train_records"] == 1
+    assert base["base_train_manifest_sha256"] is not None
+    assert base["base_asset_manifest_sha256"] == _asset_manifest_sha256(tmp_path, [record])
+
+    appended = {
+        "id": "new-text",
+        "task": "text",
+        "text": "A streamed training sentence.",
+        "license": "fixture",
+        "source_url": "https://example.test/new",
+        "attribution": "fixture",
+        "split": "train",
+        "review_status": "pending",
+        "data_class": "external_staged",
+    }
+    _append_manifests(tmp_path, {"train": [appended], "validation": [], "test": []})
+    assert base["base_train_manifest_sha256"] != _training_manifest_base(tmp_path)["base_train_manifest_sha256"]
+
+
+def test_long_natural_text_is_truncated_to_context_not_dropped(tmp_path: Path) -> None:
+    from onecore.config import ModelConfig
+    from onecore.model import OneCore
+    from onecore.train import _record_sequence
+
+    class Encoded:
+        ids = [index % 2000 for index in range(1000)]
+
+    class FakeTokenizer:
+        def encode(self, _text: str):
+            return Encoded()
+
+    cfg = ModelConfig(
+        width=32, unique_blocks=1, recurrent_cycles=1, attention_heads=4,
+        max_sequence_length=64, text_vocab_size=4096,
+        vision_codebook_size=8, audio_codebook_size=8, motion_codebook_size=8,
+        special_tokens=24, patch_size=8, image_size=64,
+        audio_bins=80, audio_group_frames=4, max_video_frames=4,
+    )
+    model = OneCore(cfg)
+    sequence, _, task = _record_sequence(
+        {"id": "long-text", "task": "text", "text": "A long natural-language document"},
+        model, FakeTokenizer(), tmp_path,
+    )
+    assert task == "text"
+    assert tuple(sequence.shape) == (1, 64)
