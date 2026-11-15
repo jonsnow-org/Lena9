@@ -9,7 +9,7 @@ All six notebooks are executed on GitHub Actions only. The staged request workfl
 | 02 | `02_data_gate.ipynb` | Validate train/validation/test provenance, licenses, assets, and cross-split leakage |
 | 03 | `03_text_pretraining.ipynb` | Text/tool foundation inside the same general model and checkpoint |
 | 04 | `04_multimodal_curriculum.ipynb` | Joint image/audio/video/tool curriculum inside the same model/checkpoint |
-| 05 | `05_evaluation_and_promotion.ipynb` | Separate validation/test reports, quality thresholds, promotion gate |
+| 05 | `05_evaluation_and_promotion.ipynb` | Separate validation/test reports, per-codebook collapse metrics, quality thresholds, promotion gate |
 
 ## Exact first-stage architecture
 
@@ -31,5 +31,5 @@ Verified synthetic cognitive data is not permanently excluded: it must be tagged
 
 - Image, audio log-mel, video-frame, and tool-use training share the same model and checkpoint.
 - Audio waveform reconstruction is an approximate Griffin–Lim decoder over log-mel features, not a production neural vocoder.
-- The initial codebook-usage report is a snapshot from initialization; it is not yet a post-training validation/test codebook-collapse study.
+- Notebook 05 measures held-out codebook usage, normalized entropy, perplexity, dead-code count, and max-code concentration for vision/audio/motion on validation and test; approved collapse thresholds remain uncalibrated.
 - The current small synthetic bootstrap has not established general-language, scientific, coding, cross-modal, or real-world capability.

@@ -1,6 +1,44 @@
 {
   "schema": "onecore-quality-thresholds-v1",
   "status": "not-approved",
-  "note": "Do not fill these with arbitrary values. Run a reviewed benchmark, agree on measurable thresholds, then set each key below.",
+  "note": "Do not fill these with arbitrary values. Run a reviewed benchmark, agree on measurable thresholds, then set each required key. Loss limits are upper bounds; codebook usage and normalized entropy are lower bounds; max-code concentration is an upper bound. Validation and test thresholds must be calibrated separately.",
+  "required_keys": {
+    "validation_loss_metrics": [
+      "text_loss",
+      "tool_use",
+      "image_reconstruction",
+      "audio_reconstruction",
+      "video_sequence"
+    ],
+    "test_loss_metrics": [
+      "test_text_loss",
+      "test_tool_use",
+      "test_image_reconstruction",
+      "test_audio_reconstruction",
+      "test_video_sequence"
+    ],
+    "validation_codebook_usage": [
+      "min_vision_usage_fraction",
+      "max_vision_max_code_fraction",
+      "min_vision_normalized_entropy",
+      "min_audio_usage_fraction",
+      "max_audio_max_code_fraction",
+      "min_audio_normalized_entropy",
+      "min_motion_usage_fraction",
+      "max_motion_max_code_fraction",
+      "min_motion_normalized_entropy"
+    ],
+    "test_codebook_usage": [
+      "test_min_vision_usage_fraction",
+      "test_max_vision_max_code_fraction",
+      "test_min_vision_normalized_entropy",
+      "test_min_audio_usage_fraction",
+      "test_max_audio_max_code_fraction",
+      "test_min_audio_normalized_entropy",
+      "test_min_motion_usage_fraction",
+      "test_max_motion_max_code_fraction",
+      "test_min_motion_normalized_entropy"
+    ]
+  },
   "thresholds": {}
 }

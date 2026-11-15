@@ -44,7 +44,7 @@ Artifacts are retained for 90 days and remain the immediate resume source. Durab
 
 ## Promotion
 
-Training completion or a lower loss is not readiness. Promotion requires an independently hashed validation and test bundle from the same checkpoint, full modality coverage, verified data (reviewed real/owner-curated or independently verified synthetic), approved numeric thresholds for both splits, and no unacceptable regression. The current bootstrap evaluation remains blocked; no model registry promotion is recorded.
+Training completion or a lower loss is not readiness. Promotion requires an independently hashed validation and test bundle from the same checkpoint, full modality coverage, verified data (reviewed real/owner-curated or independently verified synthetic), approved numeric thresholds for both splits, and no unacceptable regression. Evaluation now reports per-codebook used/dead codes, usage fraction, perplexity, normalized entropy, and max-code concentration for vision/audio/motion on both held-out splits. The collapse thresholds are still uncalibrated; the bootstrap remains blocked and no model registry promotion is recorded.
 
 ## Safety and licensing
 
