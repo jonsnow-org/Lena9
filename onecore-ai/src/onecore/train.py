@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import random
 from pathlib import Path
 from typing import Any
@@ -237,6 +238,29 @@ def _weighted_record(records_by_task: dict[str, list[dict[str, Any]]],
     return rng.choice(records_by_task[chosen])
 
 
+def _asset_manifest_sha256(project_root: Path, records: list[dict[str, Any]]) -> str:
+    assets_root = (project_root / "data" / "assets").resolve()
+    paths: set[str] = set()
+    for record in records:
+        for field in ("image", "audio_features"):
+            value = record.get(field)
+            if isinstance(value, str) and value.strip():
+                paths.add(value)
+        frames = record.get("frames")
+        if isinstance(frames, list):
+            paths.update(value for value in frames if isinstance(value, str) and value.strip())
+    entries: list[dict[str, str]] = []
+    for relative in sorted(paths):
+        target = (assets_root / relative).resolve()
+        if assets_root not in target.parents:
+            raise ValueError(f"asset path escapes the data/assets root: {relative}")
+        if not target.is_file():
+            raise FileNotFoundError(f"training asset is missing: {relative}")
+        entries.append({"path": relative, "sha256": sha256_file(target)})
+    encoded = json.dumps(entries, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def run_training(
     project_root: str | Path,
     config_path: str | Path,
@@ -271,6 +295,9 @@ def run_training(
     checkpoint_path = out / "checkpoint.pt"
     step = 0
     saved_metadata: dict[str, Any] = {}
+    parent_checkpoint_sha256 = sha256_file(checkpoint_path) if resume else None
+    parent_optimizer_step: int | None = None
+    parent_run_id = os.environ.get("ONECORE_PARENT_RUN_ID", "").strip() or None
     if resume:
         step, saved = load_checkpoint(
             checkpoint_path, model, optimizer, scheduler=scheduler, map_location="cpu"
@@ -279,10 +306,16 @@ def run_training(
         if saved_config != cfg.to_dict():
             raise ValueError("checkpoint model config does not match this run config")
         saved_metadata = saved.get("metadata", {})
+        parent_optimizer_step = step
         seed = int(saved_metadata.get("seed", seed))
         # load_checkpoint has restored Python/NumPy/Torch RNG states exactly.
-        # Do not reseed here: doing so would make a resumed run diverge.
-
+        # Do not reseed here: this preserves deterministic continuation.
+    lineage_id = saved_metadata.get("lineage_id")
+    if not lineage_id:
+        lineage_id = (
+            f"onecore-random-init-run-{parent_run_id}"
+            if parent_run_id else f"onecore-random-init-seed-{seed}"
+        )
     tokenizer_path = out / "tokenizer.json"
     records: list[dict[str, Any]] = []
     records_by_task: dict[str, list[dict[str, Any]]] = {}
@@ -292,6 +325,9 @@ def run_training(
     tokenizer_sha = None
     codebook_initialized = bool(saved_metadata.get("codebooks_initialized", False))
     codebook_report = saved_metadata.get("codebook_report", {})
+    asset_manifest_sha: str | None = None
+    training_data_fingerprint: str | None = None
+    asset_lineage_status = "not-applicable"
 
     if stage != "smoke":
         data_report = validate_training_data(root)
@@ -310,18 +346,39 @@ def run_training(
         if missing:
             raise ValueError(f"training data is missing required task categories: {sorted(missing)}")
         all_manifest_records = read_manifest(root / "data" / "train.jsonl")
+        asset_manifest_sha = _asset_manifest_sha256(root, all_manifest_records)
+        fingerprint_payload = {
+            "train_manifest_sha256": manifest_sha,
+            "asset_manifest_sha256": asset_manifest_sha,
+        }
+        training_data_fingerprint = hashlib.sha256(json.dumps(
+            fingerprint_payload, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")).hexdigest()
         contains_synthetic = any(
             record["license"] == "local-owner-synthetic" or record["review_status"] != "approved"
             for record in all_manifest_records
         )
         data_kind = "contains_synthetic_or_unapproved_data" if contains_synthetic else "reviewed_training_data"
         real_data = not contains_synthetic
-        if resume and saved_metadata.get("manifest_sha256") and saved_metadata["manifest_sha256"] != manifest_sha:
-            raise ValueError(
-                "training manifest fingerprint changed since the saved checkpoint; "
-                "refusing silent data-lineage mixing. Start a new lineage or explicitly rebase the curriculum."
+        if resume:
+            saved_manifest_sha = saved_metadata.get("manifest_sha256")
+            if saved_manifest_sha and saved_manifest_sha != manifest_sha:
+                raise ValueError(
+                    "training manifest fingerprint changed since the saved checkpoint; "
+                    "refusing silent data-lineage mixing. Start a new lineage or explicitly rebase the curriculum."
+                )
+            saved_asset_sha = saved_metadata.get("asset_manifest_sha256")
+            if saved_asset_sha and saved_asset_sha != asset_manifest_sha:
+                raise ValueError("training asset fingerprints changed since the saved checkpoint; refusing silent data-lineage mixing")
+            saved_data_fingerprint = saved_metadata.get("training_data_fingerprint")
+            if saved_data_fingerprint and saved_data_fingerprint != training_data_fingerprint:
+                raise ValueError("training data fingerprint changed since the saved checkpoint; refusing silent data-lineage mixing")
+            asset_lineage_status = (
+                "verified-against-parent" if saved_asset_sha
+                else "established-on-resume-from-legacy-manifest-only-checkpoint"
             )
-
+        else:
+            asset_lineage_status = "fingerprinted-on-fresh-run"
         if not tokenizer_path.exists():
             # A smoke checkpoint has no tokenizer and is safe to continue from:
             # no text IDs were trained in that phase. Any checkpoint that already
@@ -388,9 +445,17 @@ def run_training(
                 "stage": stage, "real_data": real_data, "data_kind": data_kind,
                 "seed": seed, "tokenizer_sha256": tokenizer_sha,
                 "manifest_sha256": manifest_sha,
+                "asset_manifest_sha256": asset_manifest_sha,
+                "training_data_fingerprint": training_data_fingerprint,
+                "asset_lineage_status": asset_lineage_status,
+                "lineage_id": lineage_id,
+                "parent_checkpoint_sha256": parent_checkpoint_sha256,
+                "parent_optimizer_step": parent_optimizer_step,
+                "parent_run_id": parent_run_id,
                 "codebooks_initialized": codebook_initialized,
                 "codebook_report": codebook_report,
                 "last_loss": losses[-1],
+                "scheduler_step": scheduler.last_epoch,
             }
             save_checkpoint(
                 checkpoint_path, model, optimizer, scheduler, step,
@@ -401,6 +466,13 @@ def run_training(
         "stage": stage, "real_data": real_data, "data_kind": data_kind,
         "seed": seed, "tokenizer_sha256": tokenizer_sha,
         "manifest_sha256": manifest_sha,
+        "asset_manifest_sha256": asset_manifest_sha,
+        "training_data_fingerprint": training_data_fingerprint,
+        "asset_lineage_status": asset_lineage_status,
+        "lineage_id": lineage_id,
+        "parent_checkpoint_sha256": parent_checkpoint_sha256,
+        "parent_optimizer_step": parent_optimizer_step,
+        "parent_run_id": parent_run_id,
         "codebooks_initialized": codebook_initialized,
         "codebook_report": codebook_report,
         "last_loss": losses[-1] if losses else None,
@@ -427,6 +499,13 @@ def run_training(
         "learning_rate": scheduler.get_last_lr()[0],
         "tokenizer_sha256": tokenizer_sha,
         "manifest_sha256": manifest_sha,
+        "asset_manifest_sha256": asset_manifest_sha,
+        "training_data_fingerprint": training_data_fingerprint,
+        "asset_lineage_status": asset_lineage_status,
+        "lineage_id": lineage_id,
+        "parent_checkpoint_sha256": parent_checkpoint_sha256,
+        "parent_optimizer_step": parent_optimizer_step,
+        "parent_run_id": parent_run_id,
         "codebook_report": codebook_report,
         "checkpoint": checkpoint_report,
         "task_counts": task_counts,
