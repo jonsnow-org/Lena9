@@ -593,6 +593,91 @@ def test_video_url_adapter_resolves_source_url_alias(tmp_path: Path, monkeypatch
     assert record["caption"] == "A city street"
 
 
+def test_acquisition_resume_promotes_pending_rows_and_skips_processed_source_rows(tmp_path: Path, monkeypatch) -> None:
+    import sys
+    import types
+    import yaml
+    from onecore.acquire import acquire_sources
+
+    rows = [
+        {"id": "row-1", "assigned": "train", "text": "This is a real external sample number one."},
+        {"id": "row-2", "assigned": "train", "text": "This is a real external sample number two."},
+        {"id": "row-3", "assigned": "validation", "text": "This is a real external validation sample."},
+        {"id": "row-4", "assigned": "test", "text": "This is a real external test sample."},
+        {"id": "row-5", "assigned": "train", "text": "This is a real external sample number five."},
+        {"id": "row-6", "assigned": "train", "text": "This is a real external sample number six."},
+    ]
+    skip_calls: list[int] = []
+    load_calls: list[dict[str, object]] = []
+
+    class FakeDataset:
+        def __init__(self, values):
+            self.values = list(values)
+            self.features = {}
+        def __iter__(self):
+            return iter(self.values)
+        def skip(self, offset: int):
+            skip_calls.append(offset)
+            return FakeDataset(self.values[offset:])
+
+    def fake_load_dataset(**kwargs):
+        load_calls.append(dict(kwargs))
+        return FakeDataset(rows)
+
+    datasets_module = types.ModuleType("datasets")
+    datasets_module.Audio = lambda decode=False: object()
+    datasets_module.load_dataset = fake_load_dataset
+    hub_module = types.ModuleType("huggingface_hub")
+    class FakeHfApi:
+        def __init__(self, token=None):
+            self.token = token
+        def dataset_info(self, repo_id, token=None):
+            return types.SimpleNamespace(sha="a" * 40)
+    hub_module.HfApi = FakeHfApi
+    monkeypatch.setitem(sys.modules, "datasets", datasets_module)
+    monkeypatch.setitem(sys.modules, "huggingface_hub", hub_module)
+    monkeypatch.setattr(
+        "onecore.acquire._grouped_split",
+        lambda source, row, hf_split, row_id, seed: str(row["assigned"]),
+    )
+
+    source_file = tmp_path / "sources.yaml"
+    registry = {
+        "version": "resume-test-v1",
+        "defaults": {"split_seed": "onecore-shard-v1", "max_scan_multiplier": 12},
+        "sources": [{
+            "id": "resume-text", "repo": "fixture/resume-text", "adapter": "text",
+            "enabled": True, "license": "cc-by-4.0", "attribution": "Fixture authors",
+            "revision": "a" * 40, "hf_splits": ["train"], "text_fields": ["text"],
+            "limits": {"train": 1, "validation": 1, "test": 1},
+            "profile_limits": {"expanded": {"train": 3, "validation": 1, "test": 1}},
+        }],
+    }
+    source_file.write_text(yaml.safe_dump(registry), encoding="utf-8")
+
+    initial = acquire_sources(tmp_path / "onecore", profile="initial", source_file=source_file)
+    initial_source = initial["sources"][0]
+    assert initial_source["by_split"]["train"]["total_scanned"] == 4
+    assert initial_source["pending_rows_by_output_split"] == {"train": 1, "validation": 0, "test": 0}
+    assert initial_source["accepted_by_output_split"] == {"train": 1, "validation": 1, "test": 1}
+
+    expanded = acquire_sources(tmp_path / "onecore", profile="expanded", source_file=source_file)
+    expanded_source = expanded["sources"][0]
+    assert skip_calls == [4]
+    assert len(load_calls) == 2
+    assert expanded_source["by_split"]["train"]["start_offset"] == 4
+    assert expanded_source["by_split"]["train"]["scanned"] == 1
+    assert expanded_source["by_split"]["train"]["total_scanned"] == 5
+    assert expanded_source["pending_rows_promoted"] == 1
+    assert expanded_source["pending_rows_by_output_split"] == {"train": 0, "validation": 0, "test": 0}
+    assert expanded_source["accepted_by_output_split"] == {"train": 3, "validation": 1, "test": 1}
+    assert expanded_source["new_accepted_by_output_split"] == {"train": 2, "validation": 0, "test": 0}
+    assert expanded["external_task_counts"] == {
+        "train": {"text": 3, "tool": 0, "image": 0, "audio": 0, "video": 0},
+        "validation": {"text": 1, "tool": 0, "image": 0, "audio": 0, "video": 0},
+        "test": {"text": 1, "tool": 0, "image": 0, "audio": 0, "video": 0},
+    }
+
 def test_bootstrap_is_excluded_from_real_training_sampler() -> None:
     import random
     from onecore.data import TRAINABLE_DATA_CLASSES, iter_training_records
@@ -729,6 +814,22 @@ def test_source_limits_apply_initial_and_expanded_profile_overrides() -> None:
     assert _source_limits(source, "initial") == {"train": 10, "validation": 2, "test": 2}
     assert _source_limits(source, "expanded") == {"train": 100, "validation": 20, "test": 2}
 
+
+def test_persist_acquisition_progress_uses_cumulative_offsets(tmp_path: Path) -> None:
+    from onecore.acquire import persist_acquisition_progress
+
+    data = tmp_path / "onecore" / "data"
+    data.mkdir(parents=True)
+    (data / "acquisition-report.json").write_text(json.dumps({
+        "sources": [{
+            "source": "resume-text", "revision": "a" * 40,
+            "by_split": {"train": {"start_offset": 4, "scanned": 1, "total_scanned": 5}},
+        }],
+    }), encoding="utf-8")
+    state = persist_acquisition_progress(tmp_path / "onecore")
+    progress = json.loads((data / "resume-cache" / "source-progress.json").read_text(encoding="utf-8"))
+    assert state["sources"] == 1
+    assert progress["resume-text"] == {"revision": "a" * 40, "by_split": {"train": 5}}
 
 def test_metadata_only_adapter_never_materializes_a_training_record(tmp_path: Path) -> None:
     source = {

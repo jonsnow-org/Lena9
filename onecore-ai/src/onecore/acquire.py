@@ -860,23 +860,110 @@ def assert_external_task_coverage(
         )
     return coverage
 
+def _source_manifest_records(
+    project_root: Path, source_id: str, revision: str
+) -> dict[str, list[dict[str, Any]]]:
+    records_by_split: dict[str, list[dict[str, Any]]] = {split: [] for split in SPLITS}
+    for split in SPLITS:
+        manifest = project_root / "data" / f"{split}.jsonl"
+        if not manifest.is_file():
+            continue
+        for line in manifest.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            item = json.loads(line)
+            if (
+                str(item.get("source_id", "")) == source_id
+                and str(item.get("source_revision", "")) == revision
+                and external_record_is_trainable(item)
+            ):
+                records_by_split[split].append(item)
+    return records_by_split
+
+
+def _source_metadata_records(
+    project_root: Path, source_id: str, revision: str, *, allow_missing_revision: bool = False
+) -> dict[str, list[dict[str, Any]]]:
+    records_by_split: dict[str, list[dict[str, Any]]] = {split: [] for split in SPLITS}
+    metadata_path = project_root / "data" / "metadata" / f"{source_id}.jsonl"
+    if not metadata_path.is_file():
+        return records_by_split
+    for line in metadata_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        item = json.loads(line)
+        item_revision = str(item.get("source_revision", ""))
+        if item_revision != revision and not (allow_missing_revision and not item_revision):
+            continue
+        split = str(item.get("split", ""))
+        if split in records_by_split:
+            records_by_split[split].append(item)
+    return records_by_split
+
+
+def _write_jsonl_atomic(path: Path, entries: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not entries:
+        if path.exists():
+            path.unlink()
+        return
+    temp = path.with_suffix(path.suffix + ".tmp")
+    temp.write_text(
+        "\n".join(json.dumps(item, ensure_ascii=False, sort_keys=True) for item in entries) + "\n",
+        encoding="utf-8",
+    )
+    os.replace(temp, path)
+
+
+def persist_acquisition_progress(project_root: str | Path) -> dict[str, Any]:
+    """Persist source cursors only after the corpus artifact has uploaded successfully."""
+    root = Path(project_root).resolve()
+    report_path = root / "data" / "acquisition-report.json"
+    if not report_path.is_file():
+        raise FileNotFoundError(f"acquisition report not found: {report_path}")
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    progress_path = root / "data" / "resume-cache" / "source-progress.json"
+    previous = json.loads(progress_path.read_text(encoding="utf-8")) if progress_path.is_file() else {}
+    progress = dict(previous)
+    for source_report in report.get("sources", []):
+        source_id = str(source_report.get("source", "")).strip()
+        revision = str(source_report.get("revision", "")).strip()
+        by_split = source_report.get("by_split")
+        if not source_id or not is_immutable_source_revision(revision) or not isinstance(by_split, dict):
+            continue
+        offsets = {
+            str(hf_split): int(metrics.get("total_scanned", metrics.get("scanned", 0)))
+            for hf_split, metrics in by_split.items() if isinstance(metrics, dict)
+        }
+        progress[source_id] = {"revision": revision, "by_split": offsets}
+    progress_path.parent.mkdir(parents=True, exist_ok=True)
+    temp = progress_path.with_suffix(progress_path.suffix + ".tmp")
+    temp.write_text(json.dumps(progress, ensure_ascii=False, sort_keys=True, indent=2), encoding="utf-8")
+    os.replace(temp, progress_path)
+    return {"sources": len(progress), "progress_path": str(progress_path)}
+
+
 def acquire_sources(
     project_root: str | Path,
     profile: str = "initial",
     source_file: str | Path | None = None,
     only_sources: set[str] | None = None,
 ) -> dict[str, Any]:
-    """Stream selected Hugging Face datasets into OneCore's shared manifest/assets.
+    """Stream external datasets, resume immutable source cursors, and retain quota overflow.
 
-    Rows are deterministically sharded by source identity, so repeated GitHub jobs
-    regenerate the same fixed corpus and preserve the checkpoint's data fingerprint.
+    Accepted records are appended to the shared manifests. Rows that were already
+    scanned but fell outside the current per-split quota are held in a pending cache,
+    so expanding a profile can promote them without rereading the source.
     """
     root = Path(project_root).resolve()
     registry_path = Path(source_file) if source_file else root / "data" / "sources.yaml"
     registry = yaml.safe_load(registry_path.read_text(encoding="utf-8"))
     defaults = registry.get("defaults", {})
     seed = str(defaults.get("split_seed", "onecore-shard-v1"))
-    assets_root = root / "data" / "assets"
+    assets_root = (root / "data" / "assets").resolve()
+    pending_root = root / "data" / "pending"
+    resume_cache_root = root / "data" / "resume-cache"
+    resume_pending_root = resume_cache_root / "pending"
     rows_by_split: dict[str, list[dict[str, Any]]] = {split: [] for split in SPLITS}
     source_reports: list[dict[str, Any]] = []
     base_fingerprints = _training_manifest_base(root)
@@ -887,28 +974,45 @@ def acquire_sources(
     except Exception as exc:
         raise RuntimeError("datasets and huggingface_hub are required for OneCore source acquisition") from exc
 
+    # The corpus artifact is authoritative when a previous corpus is restored.
     previous_report_candidates = (
-        root / "run-state" / "acquisition-report.json",
         root / "data" / "acquisition-report.json",
+        root / "run-state" / "acquisition-report.json",
     )
-    previous_report = {}
+    previous_report: dict[str, Any] = {}
     for previous_report_path in previous_report_candidates:
         if previous_report_path.is_file():
             previous_report = json.loads(previous_report_path.read_text(encoding="utf-8"))
             break
     prior_revisions = previous_report.get("source_revisions", {})
-    source_revisions: dict[str, str] = {}
+    prior_source_reports = {
+        str(item.get("source", "")): item for item in previous_report.get("sources", [])
+        if isinstance(item, dict) and str(item.get("source", "")).strip()
+    }
+    progress_path = resume_cache_root / "source-progress.json"
+    progress_state = json.loads(progress_path.read_text(encoding="utf-8")) if progress_path.is_file() else {}
+    source_revisions: dict[str, str] = dict(prior_revisions)
     hub_api = HfApi(token=token)
     metadata_rows: dict[str, list[dict[str, Any]]] = {}
+
     for source in registry.get("sources", []):
         source_id = str(source.get("id", ""))
         if only_sources and source_id not in only_sources:
             continue
+        adapter = str(source.get("adapter", "text"))
         if not source.get("enabled", True):
-            source_reports.append({"source": source_id, "status": "disabled"})
+            source_reports.append({"source": source_id, "repo": source.get("repo"), "adapter": adapter, "status": "disabled"})
+            # Disabled sources may not keep unpromoted rows in a future corpus artifact.
+            cache_name = f"source-{_stable_hash(source_id)[:16]}.jsonl"
+            for cache_path in (pending_root / cache_name, resume_pending_root / cache_name):
+                if cache_path.exists():
+                    cache_path.unlink()
             continue
         if source.get("requires_access") and not token:
-            source_reports.append({"source": source_id, "status": "access_token_unavailable"})
+            source_reports.append({
+                "source": source_id, "repo": source.get("repo"), "adapter": adapter,
+                "status": "access_token_unavailable",
+            })
             continue
 
         revision = source.get("revision") or prior_revisions.get(source_id)
@@ -921,120 +1025,301 @@ def acquire_sources(
                 revision = None
         if not is_immutable_source_revision(revision):
             source_reports.append({
-                "source": source_id, "repo": source.get("repo"), "revision": revision,
+                "source": source_id, "repo": source.get("repo"), "adapter": adapter, "revision": revision,
                 "status": "unavailable", "read": 0, "accepted": 0, "failed_rows": 0,
                 "errors": [{"type": "ImmutableRevisionRequired",
                             "message": "source revision must be a pinned 40-64 character commit SHA"}],
                 **({"revision_lookup_warning": revision_error} if revision_error else {}),
             })
             continue
-        source_revisions[source_id] = str(revision)
+        revision = str(revision)
+        source_revisions[source_id] = revision
         limits = _source_limits(source, profile)
-        report = {
-            "source": source_id, "repo": source.get("repo"), "revision": revision,
+        previous_source_report = prior_source_reports.get(source_id, {})
+        previous_revision = str(previous_source_report.get("revision") or prior_revisions.get(source_id) or "")
+        revision_matches = previous_revision == revision
+        offsets: dict[str, int] = {}
+        if revision_matches:
+            for hf_split, metrics in (previous_source_report.get("by_split") or {}).items():
+                if isinstance(metrics, dict):
+                    offsets[str(hf_split)] = int(metrics.get("total_scanned", metrics.get("scanned", 0)))
+        cached_progress = progress_state.get(source_id, {})
+        if str(cached_progress.get("revision", "")) == revision:
+            for hf_split, total_scanned in (cached_progress.get("by_split") or {}).items():
+                offsets[str(hf_split)] = max(offsets.get(str(hf_split), 0), int(total_scanned))
+
+        if adapter in {"metadata_only", "video_manifest"}:
+            existing_metadata = _source_metadata_records(
+                root, source_id, revision, allow_missing_revision=revision_matches
+            )
+            prior_accepted = {split: len(existing_metadata[split]) for split in SPLITS}
+            existing_metadata_ids = {str(item.get("id", "")) for split in SPLITS for item in existing_metadata[split]}
+            manifest_records = {split: [] for split in SPLITS}
+        else:
+            manifest_records = _source_manifest_records(root, source_id, revision)
+            prior_accepted = {split: len(manifest_records[split]) for split in SPLITS}
+            existing_metadata_ids = set()
+        remaining_limits = {split: max(0, int(limits.get(split, 0)) - prior_accepted[split]) for split in SPLITS}
+
+        cache_name = f"source-{_stable_hash(source_id)[:16]}.jsonl"
+        pending_paths = (pending_root / cache_name, resume_pending_root / cache_name)
+        pending_by_id: dict[str, dict[str, Any]] = {}
+        pending_discarded = 0
+        existing_record_ids = {
+            str(item.get("id", "")) for split in SPLITS for item in manifest_records[split]
+        }
+        if adapter not in {"metadata_only", "video_manifest"}:
+            for pending_path in pending_paths:
+                if not pending_path.is_file():
+                    continue
+                for line in pending_path.read_text(encoding="utf-8").splitlines():
+                    if not line.strip():
+                        continue
+                    try:
+                        entry = json.loads(line)
+                        record = entry.get("record")
+                        entry_source = str(entry.get("source_id", ""))
+                        entry_revision = str(entry.get("source_revision", ""))
+                        entry_split = str(entry.get("split", ""))
+                        record_id = str(record.get("id", "")) if isinstance(record, dict) else ""
+                        if (
+                            entry_source != source_id or entry_revision != revision or entry_split not in SPLITS
+                            or not isinstance(record, dict) or not record_id
+                            or str(record.get("split", "")) != entry_split
+                            or record_id in existing_record_ids
+                            or not external_record_is_trainable(record)
+                            or not _external_record_has_usable_payload(record, assets_root)
+                        ):
+                            pending_discarded += 1
+                            continue
+                        pending_by_id.setdefault(record_id, {
+                            "source_id": source_id, "source_revision": revision,
+                            "split": entry_split, "record": record,
+                        })
+                    except Exception:
+                        pending_discarded += 1
+
+        report: dict[str, Any] = {
+            "source": source_id, "repo": source.get("repo"), "adapter": adapter, "revision": revision,
             "status": "started", "read": 0, "accepted": 0, "failed_rows": 0, "by_split": {},
-            "limits": limits,
-            "accepted_by_output_split": {split: 0 for split in SPLITS},
-            "license_counts": {},
-            "metadata_only_by_split": {split: 0 for split in SPLITS},
+            "limits": limits, "prior_accepted_by_output_split": prior_accepted,
+            "remaining_limits": remaining_limits, "accepted_by_output_split": dict(prior_accepted),
+            "new_accepted_by_output_split": {split: 0 for split in SPLITS},
+            "license_counts": {}, "metadata_only_by_split": {split: 0 for split in SPLITS},
+            "pending_rows_added": 0, "pending_rows_promoted": 0, "pending_rows_discarded": pending_discarded,
+            "pending_rows_by_output_split": {split: 0 for split in SPLITS},
+            "prior_scan_offsets": offsets, "resumed_from_revision": revision_matches,
         }
         if revision_error:
             report["revision_lookup_warning"] = revision_error
-        for hf_split in source.get("hf_splits", ["train"]):
-            try:
-                load_kwargs = {
-                    "path": str(source["repo"]),
-                    "name": str(source.get("config") or "default"),
-                    "split": str(hf_split),
-                    "streaming": True,
-                    "token": token,
+
+        new_accepted_by_output_split = {split: 0 for split in SPLITS}
+        seen_source_ids = set(existing_record_ids) | set(existing_metadata_ids)
+        pending_promoted_ids: set[str] = set()
+        pending_keep: list[dict[str, Any]] = []
+        pending_promoted_by_split = {split: 0 for split in SPLITS}
+        for record_id, entry in sorted(pending_by_id.items()):
+            assigned = entry["split"]
+            if new_accepted_by_output_split[assigned] < remaining_limits[assigned]:
+                rows_by_split[assigned].append(entry["record"])
+                new_accepted_by_output_split[assigned] += 1
+                seen_source_ids.add(record_id)
+                pending_promoted_ids.add(record_id)
+                pending_promoted_by_split[assigned] += 1
+                report["pending_rows_promoted"] += 1
+                report["accepted"] += 1
+                license_id = str(entry["record"].get("license", ""))
+                report["license_counts"][license_id] = report["license_counts"].get(license_id, 0) + 1
+            else:
+                pending_keep.append(entry)
+
+        if adapter in {"metadata_only", "video_manifest"}:
+            # Catalog metadata is recorded for provenance only; it never enters optimizer manifests.
+            metadata_new_by_split = {split: 0 for split in SPLITS}
+        else:
+            metadata_new_by_split = None
+
+        if all(new_accepted_by_output_split[split] >= remaining_limits[split] for split in SPLITS):
+            report["already_satisfied"] = True
+            for hf_split in source.get("hf_splits", ["train"]):
+                start_offset = offsets.get(str(hf_split), 0)
+                report["by_split"][str(hf_split)] = {
+                    "start_offset": start_offset, "scanned": 0, "total_scanned": start_offset,
+                    "accepted": {split: 0 for split in SPLITS}, "pending": {split: 0 for split in SPLITS},
                 }
-                if revision:
-                    load_kwargs["revision"] = str(revision)
-                dataset = load_dataset(**load_kwargs)
-                if source.get("adapter") == "audio":
-                    audio_field = str(source.get("audio_field") or "audio")
-                    features = getattr(dataset, "features", None) or {}
-                    audio_feature = features.get(audio_field) if hasattr(features, "get") else None
-                    if audio_feature is not None and audio_feature.__class__.__name__ == "Audio":
-                        dataset = dataset.cast_column(audio_field, Audio(decode=False))
-                target_count = sum(limits.values()) or 1
-                max_scan = max(target_count * int(defaults.get("max_scan_multiplier", 12)), target_count + 200)
-                filled = {split: 0 for split in SPLITS}
+        else:
+            for hf_split in source.get("hf_splits", ["train"]):
+                start_offset = offsets.get(str(hf_split), 0)
+                per_hf_accepted = {split: 0 for split in SPLITS}
+                per_hf_pending = {split: 0 for split in SPLITS}
                 scanned = 0
-                for row in dataset:
-                    scanned += 1
-                    report["read"] += 1
-                    if not isinstance(row, dict):
-                        continue
-                    raw_identity = _row_identity(row, source_id, scanned)
-                    row_id = raw_identity
-                    assigned = _grouped_split(source, row, str(hf_split), row_id, seed)
-                    if assigned not in SPLITS or filled[assigned] >= limits.get(assigned, 0):
-                        if scanned >= max_scan or all(filled[s] >= limits.get(s, 0) for s in SPLITS):
+                try:
+                    load_kwargs = {
+                        "path": str(source["repo"]), "name": str(source.get("config") or "default"),
+                        "split": str(hf_split), "streaming": True, "token": token,
+                    }
+                    load_kwargs["revision"] = revision
+                    dataset = load_dataset(**load_kwargs)
+                    if adapter == "audio":
+                        audio_field = str(source.get("audio_field") or "audio")
+                        features = getattr(dataset, "features", None) or {}
+                        audio_feature = features.get(audio_field) if hasattr(features, "get") else None
+                        if audio_feature is not None and audio_feature.__class__.__name__ == "Audio":
+                            dataset = dataset.cast_column(audio_field, Audio(decode=False))
+                    if start_offset:
+                        skip_method = getattr(dataset, "skip", None)
+                        if callable(skip_method):
+                            dataset = skip_method(start_offset)
+                        else:
+                            iterator = iter(dataset)
+                            for _ in range(start_offset):
+                                try:
+                                    next(iterator)
+                                except StopIteration:
+                                    break
+                            dataset = iterator
+                    target_count = sum(remaining_limits.values()) or 1
+                    max_scan = max(target_count * int(defaults.get("max_scan_multiplier", 12)), target_count + 200)
+                    for row in dataset:
+                        if all(new_accepted_by_output_split[split] >= remaining_limits[split] for split in SPLITS):
                             break
-                        continue
-                    if source.get("adapter") in {"video_manifest", "metadata_only"}:
-                        fields = {
-                            key: row.get(key) for key in (
-                                "video_id", "youtube_id", "videoid", "clip_id", "url", "contentUrl",
-                                "video_url", "video_path", "zip_folder", "page_dir",
-                                "image", "image_url", "conversations", "captions", "start", "end",
-                                "span_start", "span_end", "timestamp", "timestamps", "keyframe",
-                                "segment", "recipe_type", "name", "sentence", "caption", "text", "language",
-                            ) if row.get(key) is not None
-                        }
-                        metadata_rows.setdefault(source_id, []).append({
-                            "id": f"hf-{source_id}-{_stable_hash(row_id)[:24]}",
-                            "source": source.get("repo"),
-                            "source_url": str(source.get("url") or f"https://huggingface.co/datasets/{source['repo']}"),
-                            "attribution": source.get("attribution"),
-                            "split": assigned,
-                            "fields": fields,
-                        })
-                        filled[assigned] += 1
-                        report["accepted"] += 1
-                        report["metadata_only"] = report.get("metadata_only", 0) + 1
-                        report["metadata_only_by_split"][assigned] += 1
-                        continue
-                    conversion_error = None
-                    try:
-                        source["_resolved_revision"] = revision
-                        record = _record_from_row(row, source, row_id, assigned, assets_root)
-                        if record is not None and not external_record_is_trainable(record):
-                            raise ValueError("external record lacks approved license or immutable source provenance")
-                    except Exception as exc:
-                        record = None
-                        conversion_error = {
-                            "split": str(hf_split),
-                            "row_id_sha256": _stable_hash(row_id)[:16],
-                            "type": type(exc).__name__,
-                            "message": str(exc)[:320],
-                        }
-                    if record is None:
-                        report["failed_rows"] += 1
-                        if conversion_error is not None:
-                            samples = report.setdefault("conversion_error_samples", [])
-                            if len(samples) < 10:
-                                samples.append(conversion_error)
-                    else:
-                        rows_by_split[assigned].append(record)
-                        filled[assigned] += 1
-                        report["accepted"] += 1
-                        report["accepted_by_output_split"][assigned] += 1
-                        license_id = str(record.get("license", ""))
-                        report["license_counts"][license_id] = report["license_counts"].get(license_id, 0) + 1
-                    if scanned >= max_scan or all(filled[s] >= limits.get(s, 0) for s in SPLITS):
-                        break
-                report["by_split"][str(hf_split)] = {"scanned": scanned, "accepted": filled}
-            except Exception as exc:
-                report.setdefault("errors", []).append(
-                    {"split": str(hf_split), "type": type(exc).__name__, "message": str(exc)[:500]}
-                )
-        report["status"] = "completed" if report["accepted"] else (
+                        scanned += 1
+                        report["read"] += 1
+                        if not isinstance(row, dict):
+                            continue
+                        absolute_index = start_offset + scanned
+                        raw_identity = _row_identity(row, source_id, absolute_index)
+                        assigned = _grouped_split(source, row, str(hf_split), raw_identity, seed)
+                        if assigned not in SPLITS:
+                            continue
+                        if adapter in {"video_manifest", "metadata_only"}:
+                            if new_accepted_by_output_split[assigned] >= remaining_limits[assigned]:
+                                continue
+                            metadata_fields = {
+                                key: row.get(key) for key in (
+                                    "video_id", "youtube_id", "videoid", "clip_id", "url", "contentUrl",
+                                    "video_url", "video_path", "zip_folder", "page_dir",
+                                    "image", "image_url", "conversations", "captions", "start", "end",
+                                    "span_start", "span_end", "timestamp", "timestamps", "keyframe",
+                                    "segment", "recipe_type", "name", "sentence", "caption", "text", "language",
+                                ) if row.get(key) is not None
+                            }
+                            metadata_id = f"hf-{source_id}-{_stable_hash(raw_identity)[:24]}"
+                            if metadata_id in existing_metadata_ids:
+                                continue
+                            metadata_rows.setdefault(source_id, []).append({
+                                "id": metadata_id, "source_id": source_id, "source_revision": revision,
+                                "source": source.get("repo"),
+                                "source_url": str(source.get("url") or f"https://huggingface.co/datasets/{source['repo']}"),
+                                "attribution": source.get("attribution"), "split": assigned,
+                                "fields": metadata_fields,
+                            })
+                            existing_metadata_ids.add(metadata_id)
+                            new_accepted_by_output_split[assigned] += 1
+                            metadata_new_by_split[assigned] += 1
+                            report["accepted"] += 1
+                            report["metadata_only"] = report.get("metadata_only", 0) + 1
+                            report["metadata_only_by_split"][assigned] += 1
+                            per_hf_accepted[assigned] += 1
+                        else:
+                            if new_accepted_by_output_split[assigned] >= remaining_limits[assigned]:
+                                # Keep overflow rows for a future larger profile rather than dropping them.
+                                conversion_error = None
+                                try:
+                                    source["_resolved_revision"] = revision
+                                    record = _record_from_row(row, source, raw_identity, assigned, assets_root)
+                                    if record is not None and not external_record_is_trainable(record):
+                                        raise ValueError("external record lacks approved license or immutable source provenance")
+                                except Exception as exc:
+                                    record = None
+                                    conversion_error = {
+                                        "split": str(hf_split), "row_id_sha256": _stable_hash(raw_identity)[:16],
+                                        "type": type(exc).__name__, "message": str(exc)[:320],
+                                    }
+                                if record is None:
+                                    report["failed_rows"] += 1
+                                    if conversion_error is not None:
+                                        samples = report.setdefault("conversion_error_samples", [])
+                                        if len(samples) < 10:
+                                            samples.append(conversion_error)
+                                    continue
+                                record_id = str(record.get("id", ""))
+                                if record_id not in seen_source_ids:
+                                    pending_entry = {
+                                        "source_id": source_id, "source_revision": revision,
+                                        "split": assigned, "record": record,
+                                    }
+                                    pending_keep.append(pending_entry)
+                                    seen_source_ids.add(record_id)
+                                    report["pending_rows_added"] += 1
+                                    per_hf_pending[assigned] += 1
+                                continue
+                            conversion_error = None
+                            try:
+                                source["_resolved_revision"] = revision
+                                record = _record_from_row(row, source, raw_identity, assigned, assets_root)
+                                if record is not None and not external_record_is_trainable(record):
+                                    raise ValueError("external record lacks approved license or immutable source provenance")
+                            except Exception as exc:
+                                record = None
+                                conversion_error = {
+                                    "split": str(hf_split), "row_id_sha256": _stable_hash(raw_identity)[:16],
+                                    "type": type(exc).__name__, "message": str(exc)[:320],
+                                }
+                            if record is None:
+                                report["failed_rows"] += 1
+                                if conversion_error is not None:
+                                    samples = report.setdefault("conversion_error_samples", [])
+                                    if len(samples) < 10:
+                                        samples.append(conversion_error)
+                            else:
+                                record_id = str(record.get("id", ""))
+                                if record_id in seen_source_ids:
+                                    continue
+                                rows_by_split[assigned].append(record)
+                                seen_source_ids.add(record_id)
+                                new_accepted_by_output_split[assigned] += 1
+                                per_hf_accepted[assigned] += 1
+                                report["accepted"] += 1
+                                license_id = str(record.get("license", ""))
+                                report["license_counts"][license_id] = report["license_counts"].get(license_id, 0) + 1
+                        if scanned >= max_scan:
+                            break
+                except Exception as exc:
+                    report.setdefault("errors", []).append({
+                        "split": str(hf_split), "type": type(exc).__name__, "message": str(exc)[:500],
+                    })
+                report["by_split"][str(hf_split)] = {
+                    "start_offset": start_offset, "scanned": scanned,
+                    "total_scanned": start_offset + scanned,
+                    "accepted": per_hf_accepted, "pending": per_hf_pending,
+                }
+
+        pending_final = pending_keep
+        pending_dedup: dict[str, dict[str, Any]] = {}
+        for entry in pending_final:
+            record_id = str(entry.get("record", {}).get("id", ""))
+            if record_id:
+                pending_dedup.setdefault(record_id, entry)
+        pending_final = [pending_dedup[key] for key in sorted(pending_dedup)]
+        pending_counts = {split: 0 for split in SPLITS}
+        for entry in pending_final:
+            pending_counts[str(entry.get("split", ""))] += 1
+        report["pending_rows_by_output_split"] = pending_counts
+        _write_jsonl_atomic(pending_paths[0], pending_final)
+        _write_jsonl_atomic(pending_paths[1], pending_final)
+        report["total_read"] = sum(int(item.get("total_scanned", 0)) for item in report["by_split"].values())
+        report["status"] = "completed" if report["accepted"] or report.get("already_satisfied") else (
             "unavailable" if report.get("errors") else "no_compatible_rows"
         )
         source_reports.append(report)
+
+    # Preserve prior source reports when a caller explicitly acquires only a subset.
+    if only_sources:
+        current_ids = {str(item.get("source", "")) for item in source_reports}
+        for source_id, prior_source_report in prior_source_reports.items():
+            if source_id not in only_sources and source_id not in current_ids:
+                source_reports.append(prior_source_report)
 
     added_counts = _append_manifests(root, rows_by_split)
     metadata_counts: dict[str, int] = {}
@@ -1042,29 +1327,46 @@ def acquire_sources(
     for source_id, entries in metadata_rows.items():
         metadata_root.mkdir(parents=True, exist_ok=True)
         target = metadata_root / f"{source_id}.jsonl"
-        existing = [json.loads(line) for line in target.read_text(encoding="utf-8").splitlines() if line.strip()] if target.is_file() else []
+        existing = [
+            json.loads(line) for line in target.read_text(encoding="utf-8").splitlines() if line.strip()
+        ] if target.is_file() else []
         known = {item.get("id") for item in existing}
         merged = existing + [item for item in entries if item.get("id") not in known]
-        target.write_text(
-            "\n".join(json.dumps(item, ensure_ascii=False, sort_keys=True) for item in merged)
-            + ("\n" if merged else ""), encoding="utf-8"
-        )
+        _write_jsonl_atomic(target, merged)
         metadata_counts[source_id] = len(merged) - len(existing)
+
+    # Recompute cumulative source counts from the final manifests/metadata files.
+    for source_report in source_reports:
+        source_id = str(source_report.get("source", "")).strip()
+        revision = str(source_report.get("revision", "")).strip()
+        adapter = str(source_report.get("adapter", ""))
+        if not source_id or not is_immutable_source_revision(revision):
+            continue
+        if adapter in {"metadata_only", "video_manifest"}:
+            records_by_split = _source_metadata_records(root, source_id, revision)
+            cumulative = {split: len(records_by_split[split]) for split in SPLITS}
+        else:
+            records_by_split = _source_manifest_records(root, source_id, revision)
+            cumulative = {split: len(records_by_split[split]) for split in SPLITS}
+        prior = source_report.get("prior_accepted_by_output_split") or {split: 0 for split in SPLITS}
+        new_counts = {split: max(0, cumulative[split] - int(prior.get(split, 0))) for split in SPLITS}
+        source_report["accepted_by_output_split"] = cumulative
+        source_report["new_accepted_by_output_split"] = new_counts
+        source_report["total_accepted"] = sum(cumulative.values())
+        source_report["accepted"] = sum(new_counts.values())
+        if adapter in {"metadata_only", "video_manifest"}:
+            source_report["metadata_only_by_split"] = cumulative
+            source_report["metadata_only"] = sum(new_counts.values())
+
     external_task_counts = external_task_coverage(root)
     output = {
-        "profile": profile,
-        "registry_version": registry.get("version"),
-        **base_fingerprints,
-        "source_revisions": source_revisions,
-        "source_count": len(source_reports),
-        "sources": source_reports,
-        "new_records": added_counts,
-        "new_metadata_rows": metadata_counts,
-        "total_new_records": sum(added_counts.values()),
-        "external_task_counts": external_task_counts,
+        "profile": profile, "registry_version": registry.get("version"), **base_fingerprints,
+        "source_revisions": source_revisions, "source_count": len(source_reports),
+        "sources": source_reports, "new_records": added_counts, "new_metadata_rows": metadata_counts,
+        "total_new_records": sum(added_counts.values()), "external_task_counts": external_task_counts,
         "external_media_assets": {split: _external_asset_report(root, split) for split in SPLITS},
         "completed_sources": sum(1 for item in source_reports if item.get("status") == "completed"),
-        "unavailable_sources": sum(1 for item in source_reports if item.get("status") == "unavailable"),
+        "unavailable_sources": sum(1 for item in source_reports if item.get("status") in {"unavailable", "access_token_unavailable"}),
         "metadata_only_sources": sum(1 for item in source_reports if item.get("metadata_only", 0) > 0),
         "metadata_only_rows": sum(int(item.get("metadata_only", 0)) for item in source_reports),
         "sources_with_access_required": sum(1 for item in source_reports if item.get("status") == "access_token_unavailable"),
@@ -1072,7 +1374,6 @@ def acquire_sources(
     report_path = root / "data" / "acquisition-report.json"
     report_path.write_text(json.dumps(output, ensure_ascii=False, indent=2), encoding="utf-8")
     return output
-
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Acquire streaming datasets for the unified OneCore model")
