@@ -772,6 +772,7 @@ def generate_verified_curriculum(
             "text", "tool_use", "image_caption", "image_reconstruction",
             "audio_text", "audio_reconstruction", "video_caption", "video_reconstruction",
         )} for split in counts},
+        "validation_report": validation_report,
         "verification_method": "deterministic_reference_solver_v1",
         "promotion_eligible": False,
     }

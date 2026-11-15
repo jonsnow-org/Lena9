@@ -61,7 +61,7 @@ def test_training_iterator_rejects_held_out_splits(split):
 
 
 
-def test_training_iterator_excludes_unreviewed_external_records():
+def test_training_iterator_admits_external_records_and_excludes_every_synthetic_class():
     records = [
         {"id": "bootstrap", "task": "text", "split": "train",
          "license": "local-owner-synthetic", "source_url": "local://onecore-bootstrap",
@@ -69,15 +69,15 @@ def test_training_iterator_excludes_unreviewed_external_records():
         {"id": "pending-external", "task": "text", "split": "train",
          "license": "cc-by-4.0", "source_url": "https://example.org/dataset",
          "attribution": "dataset authors", "review_status": "pending",
-         "data_class": "external_staged", "text": "not reviewed"},
+         "data_class": "external_staged", "text": "imported real external sample"},
         {"id": "verified-synthetic", "task": "text", "split": "train",
          "license": "local-owner-synthetic", "source_url": "local://onecore-verified-curriculum",
          "attribution": "OneCore verified curriculum", "review_status": "verified",
          "data_class": "synthetic_verified", "verification": {"method": "reference_solver_v1", "reference": "math.integer_arithmetic.v1"},
-         "text": "verified"},
+         "text": "verified synthetic sample"},
     ]
     selected = iter_training_records(records)
-    assert [item["id"] for item in selected] == ["bootstrap", "verified-synthetic"]
+    assert [item["id"] for item in selected] == ["pending-external"]
 
 
 def test_both_onecore_training_workflows_use_builtin_release_token_fallback():

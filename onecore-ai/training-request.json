@@ -2,5 +2,5 @@
   "schema": "onecore-training-request-v1",
   "stage": "acquire",
   "steps": 1,
-  "purpose": "Acquire verified external text, function-calling, image, audio and video samples into the shared OneCore manifests and assets. Preserve deterministic Bootstrap samples in the corpus for reproducible pipeline diagnostics, but exclude every synthetic record from optimizer inputs. Enforce real external modality coverage across train/validation/test, upload the combined corpus artifact, then start the same randomly initialized OneCore checkpoint on external text and tool examples before multimodal continuation."
+  "purpose": "Run external dataset acquisition after the training-only-external policy and regression fixes. Preserve generated Bootstrap examples only as pipeline-test data; exclude Bootstrap and all verified/unverified synthetic curriculum records from tokenizer corpus and optimizer inputs. Stream the registered large external datasets, verify real imported coverage for text, tools, image, audio and video across train/validation/test, publish the combined corpus artifact, then launch fresh random-initialized text/tool training using only imported external examples."
 }

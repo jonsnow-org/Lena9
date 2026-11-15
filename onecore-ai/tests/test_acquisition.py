@@ -484,7 +484,7 @@ def test_external_coverage_gate_counts_imported_records_not_bootstrap(tmp_path: 
         records.append({"id": f"{split}-bootstrap", "task": "text", "split": split,
                         "data_class": "bootstrap"})
         (data / f"{split}.jsonl").write_text(
-            "\\n".join(json.dumps(item) for item in records) + "\\n", encoding="utf-8"
+            "\n".join(json.dumps(item) for item in records) + "\n", encoding="utf-8"
         )
     coverage = assert_external_task_coverage(
         tmp_path, set(task_ids), minimum_train=1, minimum_holdout=1
