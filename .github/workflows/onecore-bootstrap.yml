@@ -63,6 +63,8 @@ jobs:
               raise ValueError("resume_run_id must contain digits only")
           if parent_run_id and not re.fullmatch(r"[0-9]+", parent_run_id):
               raise ValueError("parent_run_id must contain digits only")
+          if resume_run_id and parent_run_id != resume_run_id:
+              raise ValueError("parent_run_id must match resume_run_id for exact checkpoint ancestry")
           print(f"stage={stage}")
           print(f"steps={steps}")
           print(f"resume_run_id={resume_run_id}")

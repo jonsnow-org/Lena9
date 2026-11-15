@@ -63,6 +63,9 @@ jobs:
           if [[ "${ONECORE_STAGE}" == "multimodal" || "${ONECORE_STAGE}" == "evaluate" ]] && [[ "${ONECORE_RESUME}" != "true" ]]; then
             echo "multimodal/evaluate stages must restore a previous GitHub checkpoint"; exit 2
           fi
+          if [[ "${ONECORE_STAGE}" == "smoke" && "${ONECORE_RESUME}" == "true" ]]; then
+            echo "smoke must start from fresh random initialization"; exit 2
+          fi
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -223,7 +226,7 @@ jobs:
 
       - name: Check durable release write token
         id: release_auth
-        if: ${{ success() && inputs.stage != 'evaluate' && hashFiles('onecore-ai/run-state/checkpoint.pt') != '' }}
+        if: ${{ success() && inputs.stage != 'evaluate' && inputs.stage != 'smoke' && hashFiles('onecore-ai/run-state/checkpoint.pt') != '' }}
         env:
           ONECORE_RELEASE_TOKEN: ${{ secrets.ONECORE_RELEASE_TOKEN }}
         run: |
