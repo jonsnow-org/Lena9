@@ -6,7 +6,7 @@ All six notebooks are executed on GitHub Actions only. The staged request workfl
 |---|---|---|
 | 00 | `00_project_contract.ipynb` | Scope, isolation, reproducibility, no external model weights |
 | 01 | `01_architecture_budget.ipynb` | Instantiate the full unified model and count all trainable parameters |
-| 02 | `02_data_gate.ipynb` | Validate train/validation/test provenance, licenses, assets, and cross-split leakage |
+| 02 | `02_data_gate.ipynb` | Validate train/validation/test manifests, assets, and cross-split leakage |
 | 03 | `03_text_pretraining.ipynb` | Text/tool foundation inside the same general model and checkpoint |
 | 04 | `04_multimodal_curriculum.ipynb` | Joint image/audio/video/tool curriculum inside the same model/checkpoint |
 | 05 | `05_evaluation_and_promotion.ipynb` | Separate validation/test reports, per-codebook collapse metrics, quality thresholds, promotion gate |
@@ -25,7 +25,7 @@ Before training, the workflow verifies the parent checkpoint SHA-256, optimizer 
 
 The current bootstrap is 360 train / 87 validation / 87 test synthetic records. It is an engineering curriculum, not broad knowledge. Validation and test are never read by the training iterator; cross-split record IDs, asset paths, and identical asset-content hashes are checked. A missing test manifest is added without rewriting train/validation data.
 
-Only imported external records enter tokenizer fitting and optimizer updates. External staged records can train the model but cannot qualify it for promotion until they are independently reviewed. Promotion requires reviewed external records only, independent validation/test hashes, full modality coverage, and approved thresholds for both splits. Bootstrap and all synthetic/locally created records remain diagnostic fixtures only.
+Every usable data class enters tokenizer fitting and optimizer updates from the train split. Validation and test preserve all available data classes but remain independent and excluded from gradient updates. Promotion depends on independent evaluation fingerprints, full modality coverage, and measured quality thresholds.
 
 ## Implemented versus not yet verified
 

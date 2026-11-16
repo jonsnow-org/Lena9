@@ -16,7 +16,7 @@ All usable records enter one shared OneCore checkpoint. Images/video become 64×
 
 ## Manifest contract
 
-Each record preserves a stable identifier, task, source URL, attribution, split, and review classification. Local paths in \`image\`, \`audio_features\`, and \`frames\` resolve below \`data/assets/\`.
+Each record preserves a stable identifier, task, source URL, source metadata, split, and data-class grouping. Local paths in \`image\`, \`audio_features\`, and \`frames\` resolve below \`data/assets/\`.
 
 Supported tasks: \`text\`, \`image_caption\`, \`image_reconstruction\`, \`audio_text\`, \`audio_reconstruction\`, \`video_caption\`, \`video_reconstruction\`, and \`tool_use\`.
 

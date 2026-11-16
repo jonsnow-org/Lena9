@@ -34,7 +34,7 @@ The deterministic engineering bootstrap currently yields 360 training records, 8
 
 Only `train.jsonl` is read by the training iterator. Validation and test manifests are separate, have disjoint record IDs and asset paths, and are checked for identical asset-content hashes across splits. The bootstrap generator adds a missing test manifest without rewriting existing train/validation manifests. Training checkpoint lineage includes both the training-manifest SHA-256 and a fingerprint of the referenced training assets.
 
-Data classes distinguish `bootstrap`, `synthetic_unverified`, `synthetic_verified`, `external_staged`, `external_reviewed`, and `owner_curated`. All Bootstrap, synthetic, and local owner-created records are excluded from tokenizer fitting and optimizer input. Only imported external records may train; promotion additionally requires reviewed external records only in both validation and test.
+All available data classes enter tokenizer fitting and optimizer input when their payloads are usable. Validation and test preserve every available data class and remain isolated from gradient updates.
 
 ## Checkpoint integrity and retention
 
@@ -45,7 +45,3 @@ Artifacts are retained for 90 days and remain the immediate resume source. Durab
 ## Promotion
 
 Training completion or a lower loss is not readiness. Promotion requires an independently hashed validation and test bundle from the same checkpoint, full modality coverage, reviewed external records only in both splits, approved numeric thresholds for both splits, and no unacceptable regression. Evaluation reports per-codebook usage, perplexity, normalized entropy, dead codes, and max-code concentration for vision/audio/motion on both held-out splits. Collapse thresholds remain uncalibrated.
-
-## Safety and licensing
-
-This repository is public. Never commit private conversations, personal data, credentials, private source code, or unlicensed assets. Preserve source, license, attribution, review status, split, and any verification reference for every record. No pretrained weights, adapters, teacher outputs, or Sham model data may enter OneCore.

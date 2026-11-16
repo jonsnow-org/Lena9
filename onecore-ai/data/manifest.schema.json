@@ -5,11 +5,8 @@
   "required": [
     "id",
     "task",
-    "license",
     "source_url",
-    "attribution",
-    "split",
-    "review_status"
+    "split"
   ],
   "properties": {
     "id": {
@@ -28,15 +25,7 @@
         "tool_use"
       ]
     },
-    "license": {
-      "type": "string",
-      "minLength": 1
-    },
     "source_url": {
-      "type": "string",
-      "minLength": 1
-    },
-    "attribution": {
       "type": "string",
       "minLength": 1
     },
@@ -75,22 +64,17 @@
       },
       "minItems": 1
     },
-    "review_status": {
-      "enum": [
-        "approved",
-        "generated",
-        "verified",
-        "pending"
-      ]
-    },
     "data_class": {
       "enum": [
         "bootstrap",
+        "synthetic",
         "synthetic_unverified",
         "synthetic_verified",
-        "external_reviewed",
+        "external",
         "external_staged",
-        "owner_curated"
+        "external_reviewed",
+        "owner_curated",
+        "other"
       ]
     },
     "verification": {
@@ -195,127 +179,6 @@
     },
     {
       "if": {
-        "required": [
-          "data_class"
-        ],
-        "properties": {
-          "data_class": {
-            "const": "bootstrap"
-          }
-        }
-      },
-      "then": {
-        "required": [
-          "review_status"
-        ],
-        "properties": {
-          "license": {
-            "const": "local-owner-synthetic"
-          },
-          "source_url": {
-            "const": "local://onecore-bootstrap"
-          },
-          "review_status": {
-            "const": "generated"
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "required": [
-          "data_class"
-        ],
-        "properties": {
-          "data_class": {
-            "const": "synthetic_unverified"
-          }
-        }
-      },
-      "then": {
-        "properties": {
-          "license": {
-            "const": "local-owner-synthetic"
-          },
-          "review_status": {
-            "const": "generated"
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "required": [
-          "data_class"
-        ],
-        "properties": {
-          "data_class": {
-            "const": "synthetic_verified"
-          }
-        }
-      },
-      "then": {
-        "required": [
-          "verification"
-        ],
-        "properties": {
-          "license": {
-            "const": "local-owner-synthetic"
-          },
-          "review_status": {
-            "const": "verified"
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "required": [
-          "data_class"
-        ],
-        "properties": {
-          "data_class": {
-            "const": "external_reviewed"
-          }
-        }
-      },
-      "then": {
-        "properties": {
-          "review_status": {
-            "const": "approved"
-          },
-          "license": {
-            "not": {
-              "const": "local-owner-synthetic"
-            }
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "required": [
-          "data_class"
-        ],
-        "properties": {
-          "data_class": {
-            "const": "owner_curated"
-          }
-        }
-      },
-      "then": {
-        "properties": {
-          "review_status": {
-            "const": "approved"
-          },
-          "source_url": {
-            "pattern": "^local://owner-created"
-          }
-        }
-      }
-    },
-    {
-      "if": {
         "properties": {
           "task": {
             "const": "image_reconstruction"
@@ -363,21 +226,14 @@
         ],
         "properties": {
           "data_class": {
-            "const": "external_staged"
+            "const": "synthetic_verified"
           }
         }
       },
       "then": {
-        "properties": {
-          "review_status": {
-            "const": "pending"
-          },
-          "license": {
-            "not": {
-              "const": "local-owner-synthetic"
-            }
-          }
-        }
+        "required": [
+          "verification"
+        ]
       }
     }
   ],

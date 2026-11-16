@@ -38,7 +38,7 @@ This is the first executable research baseline, not a mature multimodal product.
 
 The next scientific gates are:
 - test codebook usage/collapse and modality reconstruction quality;
-- train on a large, reviewed, licensed, paired multimodal corpus;
+- train on a large, diverse, paired multimodal corpus;
 - measure text/tool and cross-modal generalization on held-out data;
 - compare recurrent cycles against an equal-compute non-recurrent baseline;
 - test quantization/low-bit inference only after a stable full-precision baseline exists;
