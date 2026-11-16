@@ -823,7 +823,7 @@ def test_metadata_only_adapter_never_materializes_a_training_record(tmp_path: Pa
     )
     assert record is None
 
-def test_external_asset_report_counts_only_real_source policyd_media_files(tmp_path: Path) -> None:
+def test_asset_report_counts_all_usable_media_files(tmp_path: Path) -> None:
     from onecore.acquire import _external_asset_report
     data = tmp_path / "data"
     assets = data / "assets" / "acquired"
@@ -855,14 +855,14 @@ def test_external_asset_report_counts_only_real_source policyd_media_files(tmp_p
         "image_reconstruction": 1, "audio_reconstruction": 1, "video_reconstruction": 1,
     }
     assert report["metadata_only_records"] == 1
-    assert report["unusable_external_records"] == 1
+    assert report["unusable_records"] == 1
     assert report["image_files"] == 1
     assert report["audio_feature_files"] == 1
     assert report["video_frame_files"] == 2
     assert report["unique_asset_files"] == 4
     assert report["missing_asset_files"] == 0
 
-def test_external_coverage_gate_counts_only_source policyd_pinned_records(tmp_path: Path) -> None:
+def test_task_coverage_gate_counts_all_usable_records(tmp_path: Path) -> None:
     from onecore.acquire import assert_task_coverage
     groups = {"text": "text", "tool": "tool_use", "image": "image_reconstruction",
               "audio": "audio_reconstruction", "video": "video_reconstruction"}
@@ -896,9 +896,9 @@ def test_external_coverage_gate_counts_only_source policyd_pinned_records(tmp_pa
             {**_external_metadata(f"{split}-video-source", f"{split}-video"),
              "id": f"{split}-video", "task": "video_reconstruction", "split": split,
              "frames": frame_rels},
-            {**_external_metadata(f"{split}-unsource policyd-source", f"{split}-unsource policyd-text"),
-             "id": f"{split}-unsource policyd-text", "task": "text", "split": split,
-             "text": "This additional text must be excluded."},
+            {**_external_metadata(f"{split}-additional-source-source", f"{split}-additional-source-text"),
+             "id": f"{split}-additional-source-text", "task": "text", "split": split,
+             "text": "This additional imported text should be included."},
             {"id": f"{split}-bootstrap", "task": "text", "split": split,
              "data_class": "bootstrap"},
         ]
@@ -907,4 +907,4 @@ def test_external_coverage_gate_counts_only_source policyd_pinned_records(tmp_pa
         )
     coverage = assert_task_coverage(tmp_path, set(groups), minimum_train=1, minimum_holdout=1)
     for split in ("train", "validation", "test"):
-        assert coverage[split] == {group: 1 for group in groups}
+        assert coverage[split] == {group: (2 if group == "text" else 1) for group in groups}

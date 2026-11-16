@@ -825,7 +825,7 @@ def _append_manifests(project_root: Path, rows_by_split: dict[str, list[dict[str
         counts[split] = len(added)
     return counts
 
-def external_task_coverage(project_root: str | Path) -> dict[str, dict[str, int]]:
+def task_coverage(project_root: str | Path) -> dict[str, dict[str, int]]:
     """Count usable records with decoded payloads; exclude metadata-only rows."""
     root = Path(project_root).resolve()
     assets_root = (root / "data" / "assets").resolve()
@@ -854,11 +854,11 @@ def external_task_coverage(project_root: str | Path) -> dict[str, dict[str, int]
         }
     return coverage
 
-def assert_external_task_coverage(
+def assert_task_coverage(
     project_root: str | Path, required_tasks: set[str],
     minimum_train: int = 25, minimum_holdout: int = 5,
 ) -> dict[str, dict[str, int]]:
-    coverage = external_task_coverage(project_root)
+    coverage = task_coverage(project_root)
     failures = []
     for task_group in sorted(required_tasks):
         if task_group not in {"text", "tool", "image", "audio", "video"}:
@@ -1369,12 +1369,12 @@ def acquire_sources(
             source_report["metadata_only_by_split"] = cumulative
             source_report["metadata_only"] = sum(new_counts.values())
 
-    external_task_counts = external_task_coverage(root)
+    task_counts = task_coverage(root)
     output = {
         "profile": profile, "registry_version": registry.get("version"), **base_fingerprints,
         "source_revisions": source_revisions, "source_count": len(source_reports),
         "sources": source_reports, "new_records": added_counts, "new_metadata_rows": metadata_counts,
-        "total_new_records": sum(added_counts.values()), "external_task_counts": external_task_counts,
+        "total_new_records": sum(added_counts.values()), "task_counts": task_counts,
         "external_media_assets": {split: _external_asset_report(root, split) for split in SPLITS},
         "completed_sources": sum(1 for item in source_reports if item.get("status") == "completed"),
         "unavailable_sources": sum(1 for item in source_reports if item.get("status") in {"unavailable", "access_token_unavailable"}),
@@ -1402,7 +1402,7 @@ def main() -> None:
     )
     required = {value.strip() for value in args.require_tasks.split(",") if value.strip()}
     if required:
-        result["external_task_coverage"] = assert_external_task_coverage(
+        result["task_coverage"] = assert_task_coverage(
             args.root, required, args.min_train_records, args.min_holdout_records
         )
         report_path = Path(args.root) / "data" / "acquisition-report.json"
