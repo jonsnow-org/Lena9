@@ -272,7 +272,7 @@ private fun ExternalNetworksSection(viewModel: AdminViewModel) {
                 Text("ربط شبكات الإعلانات الخارجية البديلة (Fallback Ad Networks)", style = twText(14, FontWeight.Bold, 20), color = Color.White)
             }
             Note("إذا لم تكن هناك حملات محلية نشطة للمعلنين، يمكن ملء المساحات الشاغرة تلقائياً عبر شبكات خارجية مثل PropellerAds أو Adsterra أو Taboola أو Monetag لتعظيم الدخل السلبي. الصق كود الإعلان الكامل (وسم <script> كاملاً) كما هو من لوحة الشبكة، ثم فعّل المفتاح.")
-            Text("⚠️ مهم عند توليد الكود من لوحة الشبكة: اختر نوع وحدة إعلانية "Banner" أو "Native Banner" بمقاس ثابت (مثل 300x250 أو 320x50) فقط. لا تستخدم أنواع "Social Bar" / "In-Page Push" / "Popunder" — هذه الأنواع مصمَّمة لتغطية الشاشة كإشعار عائم على أي موقع، وحمايتنا الأمنية (عزل الإعلان داخل إطار معزول تماماً) تمنعها من تغطية الشاشة هنا لكنها قد تظهر فارغة لأنها غير مصمَّمة أصلاً للعرض داخل صندوق صغير.",
+            Text("⚠️ مهم عند توليد الكود من لوحة الشبكة: اختر نوع وحدة إعلانية \"Banner\" أو \"Native Banner\" بمقاس ثابت (مثل 300x250 أو 320x50) فقط. لا تستخدم أنواع \"Social Bar\" / \"In-Page Push\" / \"Popunder\" — هذه الأنواع مصمَّمة لتغطية الشاشة كإشعار عائم على أي موقع، وحمايتنا الأمنية (عزل الإعلان داخل إطار معزول تماماً) تمنعها من تغطية الشاشة هنا لكنها قد تظهر فارغة لأنها غير مصمَّمة أصلاً للعرض داخل صندوق صغير.",
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Adm.amber500.copy(alpha = 0.1f)).border(1.dp, Adm.amber500.copy(alpha = 0.3f), RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 8.dp),
                 style = twText(11, FontWeight.Normal, 18), color = Adm.amber400)
 
@@ -301,7 +301,7 @@ private fun ExternalNetworksSection(viewModel: AdminViewModel) {
             }
             Net("Monetag") {
                 NetHeader("Monetag", monetagEnabled) { monetagEnabled = !monetagEnabled }
-                Note("كود المالك الحقيقي (نوع "Vignette" — بيني كامل الشاشة يظهر أحياناً بين تنقلات الصفحة) ثابت في كود التطبيق نفسه — لا مربع لصق. مفتاح واحد فقط للتشغيل/الإيقاف الكامل، بدل مواضع متعددة كـ Adsterra، لأن هذا النوع لا يرتبط بموضع محدد في صفحة معيّنة أصلاً.")
+                Note("كود المالك الحقيقي (نوع \"Vignette\" — بيني كامل الشاشة يظهر أحياناً بين تنقلات الصفحة) ثابت في كود التطبيق نفسه — لا مربع لصق. مفتاح واحد فقط للتشغيل/الإيقاف الكامل، بدل مواضع متعددة كـ Adsterra، لأن هذا النوع لا يرتبط بموضع محدد في صفحة معيّنة أصلاً.")
                 Note("مستبعدة عن نسخة APK دائماً وبلا أي خيار — هذا النوع يحقن سكربتاً في متصفح الويب مباشرة، ولا يوجد محرك متصفح مماثل داخل تطبيق الجوال الأصلي إطلاقاً.", Tw.slate500)
             }
             Net("Start.io") {
@@ -309,7 +309,7 @@ private fun ExternalNetworksSection(viewModel: AdminViewModel) {
                 Note("شريط إعلاني أصلي (App ID: ${StartIoAds.APP_ID}) يظهر أسفل شاشة تطبيق الجوال فقط، ولا يظهر في الموقع. يُخفى تلقائياً عند إيقاف إعلانات المنصة من المفتاح العام.")
             }
 
-            Text("⚠️ "متوافقة مع نسخة APK" لا تؤثر على ظهور الشبكة بالموقع (المتصفح) إطلاقاً — تتحكم فقط بظهورها داخل تطبيق APK حال بنائه لاحقاً. اتركها معطّلة لأي شبكة لم تؤكّد لك بنفسك (بالتواصل معها مباشرة) أن سياستها تسمح بعرض نفس هذا الكود داخل تطبيق مثبَّت، لا موقع ويب فقط — AdSense تحديداً يمنع هذا صراحة.",
+            Text("⚠️ \"متوافقة مع نسخة APK\" لا تؤثر على ظهور الشبكة بالموقع (المتصفح) إطلاقاً — تتحكم فقط بظهورها داخل تطبيق APK حال بنائه لاحقاً. اتركها معطّلة لأي شبكة لم تؤكّد لك بنفسك (بالتواصل معها مباشرة) أن سياستها تسمح بعرض نفس هذا الكود داخل تطبيق مثبَّت، لا موقع ويب فقط — AdSense تحديداً يمنع هذا صراحة.",
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color(0xFF451A03).copy(alpha = 0.3f)).border(1.dp, Color(0xFF92400E).copy(alpha = 0.4f), RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 8.dp),
                 style = twText(11, FontWeight.Normal, 18), color = Adm.amber300.copy(alpha = 0.9f))
 
