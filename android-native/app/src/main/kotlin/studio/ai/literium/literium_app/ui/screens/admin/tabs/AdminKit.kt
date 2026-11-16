@@ -36,7 +36,7 @@ import studio.ai.literium.literium_app.ui.theme.Tw
 import studio.ai.literium.literium_app.ui.theme.twClickable
 import studio.ai.literium.literium_app.ui.theme.twText
 
-/** أدوات مشتركة لتبويبات الأدمن — تترجم أصناف Tailwind المتكررة في components/admin/*.tsx حرفياً. */
+/** أدوات مشتركة لتبويبات الأدمن — تترجم أصناف Tailwind المتكررة في ملفات components/admin حرفياً. */
 object Adm {
     val emerald400 = Color(0xFF34D399); val emerald500 = Color(0xFF10B981); val emerald600 = Color(0xFF059669)
     val amber300 = Color(0xFFFCD34D); val amber400 = Color(0xFFFBBF24); val amber500 = Color(0xFFF59E0B); val amber600 = Color(0xFFD97706)
