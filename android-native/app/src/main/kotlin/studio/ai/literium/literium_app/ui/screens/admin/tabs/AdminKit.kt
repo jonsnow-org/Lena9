@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -167,3 +168,51 @@ fun AdmEmpty(text: String) {
 fun AdmFlow(content: @Composable () -> Unit) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { content() }
 }
+
+/** حقل إدخال داكن (bg-slate-950 border-slate-800 rounded-xl text-xs) متعدد الأسطر اختيارياً. */
+@Composable
+fun AdmInput(
+    value: String,
+    onChange: (String) -> Unit,
+    placeholder: String,
+    modifier: Modifier = Modifier,
+    minLines: Int = 1,
+    mono: Boolean = false,
+    keyboardType: androidx.compose.ui.text.input.KeyboardType = androidx.compose.ui.text.input.KeyboardType.Text
+) {
+    val s = RoundedCornerShape(12.dp)
+    Box(modifier.fillMaxWidth().clip(s).background(Tw.slate950).border(1.dp, Tw.slate800, s).padding(horizontal = 12.dp, vertical = 10.dp)) {
+        if (value.isEmpty()) Text(placeholder, style = twText(12, FontWeight.Normal, 16), color = Tw.slate500)
+        BasicTextField(
+            value = value, onValueChange = onChange, singleLine = minLines == 1, minLines = minLines,
+            textStyle = twText(12, FontWeight.Normal, 16).copy(color = Color.White, fontFamily = if (mono) Adm.mono else FontFamily.Default),
+            cursorBrush = SolidColor(Color.White),
+            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = keyboardType),
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+@Composable
+fun AdmLabel(text: String) {
+    Text(text, Modifier.padding(bottom = 6.dp), style = twText(12, FontWeight.Bold, 16), color = Tw.slate300)
+}
+
+/** غلاف نافذة منبثقة على نمط rounded-3xl bg-slate-900 border-slate-800 (مودالات الأدمن). */
+@Composable
+fun AdmDialog(onDismiss: () -> Unit, content: @Composable () -> Unit) {
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        val s = RoundedCornerShape(24.dp)
+        Column(
+            Modifier.padding(12.dp).fillMaxWidth().clip(s).background(Tw.slate900).border(1.dp, Tw.slate800, s)
+                .androidxVerticalScroll().padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp)
+        ) { content() }
+    }
+}
+
+@Composable
+private fun Modifier.androidxVerticalScroll(): Modifier = this.then(Modifier.verticalScroll(rememberScrollState()))
