@@ -2,9 +2,9 @@
   "schema": "onecore-training-request-v1",
   "stage": "acquire",
   "steps": 150,
-  "purpose": "Continue from verified corpus run 43811430834, import usable external image payloads from FineOpenimages, and enforce train/validation/test disjointness with pinned source lineage. Require real external text, image and audio task coverage in all three partitions. After the data gates pass, run 150 optimizer steps from fresh random initialization in the same GitHub Actions CPU job, using external text records only; retain the image/audio corpus for later unified multimodal training. Do not train on tool-use/video until verified non-synthetic external sources with usable payloads are available. Bootstrap, synthetic and owner-created examples remain diagnostic-only and excluded from tokenizer and optimizer.",
-  "request_id": "external-corpus-incremental-image-after-ci-pass-v7-20261116",
+  "purpose": "Extend the existing verified external corpus from run 43811430834 with licensed real video payloads and external tool examples. Require real, usable external records from all five families—text, tool use, image, audio and video—in train, validation and test before tokenizer fitting. Then initialize OneCore from random weights and run 150 joint optimizer steps on GitHub Actions CPU, with one external sample from each family per optimizer update. Bootstrap, synthetic and owner-curated examples remain diagnostic-only and are excluded from tokenizer, optimizer and generalization metrics.",
+  "request_id": "onecore-five-family-joint-150-v9-20261116",
   "data_profile": "expanded",
   "base_corpus_run_id": "43811430834",
-  "start_fresh_text_training": true
+  "start_fresh_joint_training": true
 }

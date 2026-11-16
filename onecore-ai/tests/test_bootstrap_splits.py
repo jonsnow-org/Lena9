@@ -101,16 +101,16 @@ def test_workflows_use_stage_specific_external_data_gates_and_license_guard():
     assert "ONECORE_REQUIRED_TASKS:" in training
     assert "text,tool,image,audio,video" in bootstrap
     assert "text,tool,image,audio,video" in training
-    assert "stage == 'acquire' && 'text,image,audio'" in bootstrap
+    assert "stage == 'acquire' && 'text,tool,image,audio,video'" in bootstrap
     assert "stage == 'multimodal' && 'text,tool,image,audio,video'" in bootstrap
     assert "inputs.stage == 'multimodal' && 'text,tool,image,audio,video'" in training
     assert "Enforce commercial license and immutable provenance before corpus artifact upload" in bootstrap
     assert "ONECORE_DATA_PROFILE:" in bootstrap
-    assert "start_fresh_text_training = request.get" in bootstrap
-    assert "steps.request.outputs.start_fresh_text_training == 'true'" in bootstrap
+    assert "start_fresh_joint_training = request.get" in bootstrap
+    assert "steps.request.outputs.start_fresh_joint_training == 'true'" in bootstrap
     assert "ONECORE_SKIP_ACQUISITION: ${{ steps.request.outputs.stage != 'acquire'" in bootstrap
-    assert "(steps.request.outputs.stage != 'acquire' || steps.request.outputs.start_fresh_text_training == 'true')" in bootstrap
+    assert "(steps.request.outputs.stage != 'acquire' || steps.request.outputs.start_fresh_joint_training == 'true')" in bootstrap
     assert "Restore prior verified corpus as the base for incremental acquisition" in bootstrap
-    assert "Start fresh random-initialized OneCore text foundation training in the same CPU job" in bootstrap
+    assert "Start fresh random-initialized OneCore joint multimodal training in the same CPU job" in bootstrap
     assert "gh workflow run onecore-training.yml" not in bootstrap
     assert "acquisition-only stage; no checkpoint alias created" in bootstrap
