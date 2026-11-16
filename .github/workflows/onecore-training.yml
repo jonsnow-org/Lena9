@@ -209,7 +209,7 @@ jobs:
         if: ${{ inputs.stage != 'smoke' }}
         env:
           ONECORE_SKIP_ACQUISITION: "1"
-          ONECORE_REQUIRED_TASKS: ${{ inputs.stage == 'evaluate' && 'text,tool,image,audio,video' || inputs.stage == 'multimodal' && 'text,image,audio,video' || 'text' }}
+          ONECORE_REQUIRED_TASKS: ${{ inputs.stage == 'evaluate' && 'text,tool,image,audio,video' || inputs.stage == 'multimodal' && 'text,tool,image,audio,video' || 'text' }}
           ONECORE_MIN_TRAIN_RECORDS: "25"
           ONECORE_MIN_HOLDOUT_RECORDS: "5"
         run: |

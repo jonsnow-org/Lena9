@@ -137,7 +137,7 @@ sources:
       expanded: {train: 6000, validation: 250, test: 250}
     license: odc-by
     attribution: "FineWeb2 — Hugging Face"
-    enabled: true
+    enabled: false  # eng_Latn is not published in the available FineWeb2 configurations
   - id: wikipedia_ar
     repo: wikimedia/wikipedia
     config: "20231101.ar"
@@ -227,7 +227,7 @@ sources:
       expanded: {train: 1800, validation: 40, test: 40}
     license: per-document-license-metadata
     attribution: "Common Pile — Stack V2 Edu contributors"
-    enabled: true
+    enabled: false  # actual rows expose mixed individual licenses not approved by the current commercial allowlist
 
   # Speech, sound and audio-language
   - id: saxo_function_calling
