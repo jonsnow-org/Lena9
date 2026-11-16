@@ -20,7 +20,7 @@ def main() -> None:
     train = sub.add_parser("train", help="run a bounded CPU training segment")
     train.add_argument("--root", default=".")
     train.add_argument("--config", default="configs/phone-research.yaml")
-    train.add_argument("--stage", choices=["smoke", "text", "multimodal"], required=True)
+    train.add_argument("--stage", choices=["smoke", "text", "joint", "multimodal"], required=True)
     train.add_argument("--steps", type=int, default=1)
     train.add_argument("--output-dir", default="run-state")
     train.add_argument("--resume", action="store_true")

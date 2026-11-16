@@ -64,10 +64,10 @@ def test_source_registry_covers_all_shared_modalities() -> None:
             "open_web_math_pro", "fleurs_ar", "open_images_v7", "sard_arabic_documents",
             "finevideo", "laion_bvd_video_55m", "coyo_700m", "conceptual_captions_12m",
             "sharegpt4v_images", "webvid_10m_video", "msrvtt_video",
-            "saxo_function_calling", "turkish_mobile_function_calling"} <= ids
+            "saxo_function_calling", "turkish_mobile_function_calling", "videos4camera_bench"} <= ids
     enabled = {item["id"] for item in sources if item.get("enabled", True)}
-    assert {"saxo_function_calling", "turkish_mobile_function_calling",
-            "open_images_v7", "coyo_700m"} <= enabled
+    assert {"turkish_mobile_function_calling", "open_images_v7", "coyo_700m", "videos4camera_bench"} <= enabled
+    assert "saxo_function_calling" not in enabled
 
 
 def test_split_assignment_is_stable_and_preserves_published_holdouts() -> None:
@@ -318,6 +318,48 @@ def test_records_share_stable_media_group_identity_across_captions(tmp_path: Pat
     assert first is not None and second is not None
     assert first["id"] != second["id"]
     assert first["source_group_id"] == second["source_group_id"]
+
+
+def test_video_url_grouping_keeps_segments_in_one_split_and_source_group(tmp_path: Path, monkeypatch) -> None:
+    import onecore.acquire as acquire_module
+
+    source = {
+        "id": "videos4camera_bench",
+        "repo": "syCen/Videos4CameraBench",
+        "adapter": "video",
+        "video_field": "video",
+        "split_group_filename_field": "video",
+        "split_strategy": "hash",
+        "validation_percent": 10,
+        "test_percent": 10,
+        "license": "cc-by-4.0",
+        "attribution": "Videos4CameraBench contributors",
+    }
+    rows = [
+        {"video": {"src": "https://huggingface.co/datasets/syCen/Videos4CameraBench/resolve/rev/source-video-17.0.1.mp4"}},
+        {"video": {"src": "https://huggingface.co/datasets/syCen/Videos4CameraBench/resolve/rev/source-video-17.0.4.mp4"}},
+    ]
+    first_split = _grouped_split(source, rows[0], "train", "row-1", "video-seed")
+    second_split = _grouped_split(source, rows[1], "train", "row-2", "video-seed")
+    assert first_split == second_split
+
+    def fake_write_frames(_value, assets_root: Path, prefix: str, max_frames: int = 4) -> list[str]:
+        paths = []
+        for index in range(2):
+            relative = f"acquired/{prefix}/frame_{index:02d}.png"
+            target = assets_root / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            Image.new("RGB", (16, 16), (index * 50 + 20, 40, 70)).save(target, format="PNG")
+            paths.append(relative)
+        return paths
+
+    monkeypatch.setattr(acquire_module, "_write_frames", fake_write_frames)
+    first = _record_from_row(rows[0], source, "row-1", first_split, tmp_path)
+    second = _record_from_row(rows[1], source, "row-2", second_split, tmp_path)
+    assert first is not None and second is not None
+    assert first["task"] == second["task"] == "video_reconstruction"
+    assert first["source_group_id"] == second["source_group_id"]
+    assert len(first["frames"]) == len(second["frames"]) == 2
 
 
 def test_sharegpt4v_conversation_is_paired_with_its_image(tmp_path: Path, monkeypatch) -> None:

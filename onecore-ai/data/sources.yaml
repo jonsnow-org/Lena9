@@ -242,7 +242,7 @@ sources:
     limits: {train: 9000, validation: 250, test: 250}
     license: apache-2.0
     attribution: "Saxo function-calling dataset"
-    enabled: true
+    enabled: false  # reformats an upstream Llama-3 function-calling set; teacher/authorship provenance not verified
   - id: turkish_mobile_function_calling
     repo: BTX24/turkish-mobile-function-calling-dataset
     config: default
@@ -401,6 +401,22 @@ sources:
     enabled: false
 
   # Video, temporal understanding and paired audio-video
+  - id: videos4camera_bench
+    repo: syCen/Videos4CameraBench
+    config: default
+    hf_splits: [train]
+    adapter: video
+    video_field: video
+    split_group_filename_field: video
+    split_strategy: hash
+    validation_percent: 10
+    test_percent: 10
+    limits: {train: 60, validation: 6, test: 6}
+    profile_limits:
+      expanded: {train: 100, validation: 10, test: 10}
+    license: cc-by-4.0
+    attribution: "Videos4CameraBench — syCen and video contributors"
+    enabled: true
   - id: finevideo
     repo: HuggingFaceFV/finevideo
     config: default

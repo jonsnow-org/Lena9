@@ -80,11 +80,18 @@ jobs:
               assert "research/onecore-foundation" in text
           bootstrap = (Path(".github/workflows") / "onecore-bootstrap.yml").read_text(encoding="utf-8")
           assert "gh workflow run onecore-training.yml" not in bootstrap, "training must not dispatch a workflow absent from the default branch"
-          assert "Start fresh random-initialized OneCore text foundation training in the same CPU job" in bootstrap
+          assert "Start fresh random-initialized OneCore joint multimodal training in the same CPU job" in bootstrap
           import yaml
           registry = yaml.safe_load(Path("onecore-ai/data/sources.yaml").read_text(encoding="utf-8"))
+          video_sources = [item for item in registry["sources"] if item.get("id") == "videos4camera_bench"]
+          assert len(video_sources) == 1 and video_sources[0].get("enabled") is True
+          assert video_sources[0].get("adapter") == "video"
+          assert video_sources[0].get("license") == "cc-by-4.0"
+          assert video_sources[0].get("validation_percent") == 10 and video_sources[0].get("test_percent") == 10
+          enabled = {item["id"] for item in registry["sources"] if item.get("enabled", True)}
+          assert "turkish_mobile_function_calling" in enabled and "saxo_function_calling" not in enabled
           image_sources = [item for item in registry["sources"] if item.get("id") == "openimages_finedet_v1"]
           assert len(image_sources) == 1 and image_sources[0].get("enabled") is True
           assert image_sources[0].get("adapter") == "image" and image_sources[0].get("license") == "cc-by-4.0"
-          print("OneCore workflows are isolated, serialized, same-job training is enforced, and the external image source is configured.")
+          print("OneCore workflows are isolated, stale runs are replaceable, five-family training is enforced, and external image/video sources are configured.")
           PY

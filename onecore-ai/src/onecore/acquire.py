@@ -8,6 +8,7 @@ import json
 import os
 import tempfile
 import urllib.request
+from urllib.parse import unquote, urlparse
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -218,11 +219,19 @@ def _external_asset_report(project_root: str | Path, split: str) -> dict[str, An
         "unique_asset_bytes": total_bytes,
     }
 
-def _stable_split(source_id: str, row_id: str, seed: str = "onecore-shard-v1") -> str:
+def _stable_split(
+    source_id: str, row_id: str, seed: str = "onecore-shard-v1",
+    validation_percent: int = 2, test_percent: int = 2,
+) -> str:
+    validation_percent = int(validation_percent)
+    test_percent = int(test_percent)
+    if validation_percent < 0 or test_percent < 0 or validation_percent + test_percent >= 100:
+        raise ValueError("validation/test split percentages must be non-negative and sum to less than 100")
     bucket = int(_stable_hash(f"{seed}:{source_id}:{row_id}")[:8], 16) % 100
-    if bucket < 96:
+    train_cut = 100 - validation_percent - test_percent
+    if bucket < train_cut:
         return "train"
-    if bucket < 98:
+    if bucket < 100 - test_percent:
         return "validation"
     return "test"
 
@@ -419,6 +428,9 @@ def _video_frames(value: Any, max_frames: int = 4) -> list[Any]:
             return list(frames[:max_frames])
         path = value.get("path")
         raw = value.get("bytes")
+        src = value.get("src") or value.get("url")
+        if src and not path and not raw:
+            return _video_frames(str(src), max_frames=max_frames)
         if path or raw:
             temp_path = None
             try:
@@ -490,6 +502,28 @@ def _license_for_row(row: dict[str, Any], source: dict[str, Any]) -> str:
     return str(source.get("license") or "source-card-terms")
 
 
+def _source_group_value(row: dict[str, Any], source: dict[str, Any]) -> Any:
+    """Resolve a source/media group, including segmented video filenames."""
+    group_field = source.get("split_group_field")
+    if group_field:
+        return _nested(row, str(group_field))
+    filename_field = source.get("split_group_filename_field")
+    if not filename_field:
+        return None
+    raw = _nested(row, str(filename_field))
+    if isinstance(raw, dict):
+        raw = raw.get("src") or raw.get("path") or raw.get("url")
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    filename = Path(unquote(urlparse(raw).path)).name
+    stem = Path(filename).stem
+    # Videos4CameraBench files name segments <source-video-id>.<clip>.<segment>.mp4.
+    parts = stem.split(".")
+    if len(parts) > 1 and all(part.isdigit() for part in parts[1:]):
+        stem = parts[0]
+    return stem or filename
+
+
 def _record_from_row(
     row: dict[str, Any], source: dict[str, Any], row_id: str, split: str,
     assets_root: Path,
@@ -515,8 +549,7 @@ def _record_from_row(
         "review_status": "pending",
         "data_class": "external_staged",
     }
-    group_field = source.get("split_group_field")
-    group_value = _nested(row, str(group_field)) if group_field else None
+    group_value = _source_group_value(row, source)
     if group_value is not None and str(group_value).strip():
         group_payload = json.dumps(
             _identity_value(group_value), ensure_ascii=False, sort_keys=True, separators=(",", ":")
@@ -595,10 +628,16 @@ def _record_from_row(
         if adapter == "video_url":
             aliases = source.get("video_url_fields") or ["video_url", "contentUrl", "url"]
             if not (isinstance(video_value, str) and video_value.startswith(("http://", "https://"))):
+                candidates = []
+                for field in aliases:
+                    candidate = _nested(row, str(field))
+                    if isinstance(candidate, dict):
+                        candidate = candidate.get("src") or candidate.get("path") or candidate.get("url")
+                    candidates.append(candidate)
                 video_value = next((
-                    row.get(str(field)) for field in aliases
-                    if isinstance(row.get(str(field)), str)
-                    and row.get(str(field)).startswith(("http://", "https://"))
+                    candidate for candidate in candidates
+                    if isinstance(candidate, str)
+                    and candidate.startswith(("http://", "https://"))
                 ), None)
             if not isinstance(video_value, str):
                 return None
@@ -660,15 +699,18 @@ def _assign_split(source: dict[str, Any], hf_split: str, row_id: str, seed: str)
         return hf_split
     if strategy == "preserve" and hf_split == "train":
         return "train"
-    return _stable_split(str(source["id"]), row_id, seed)
+    return _stable_split(
+        str(source["id"]), row_id, seed,
+        validation_percent=int(source.get("validation_percent", 2)),
+        test_percent=int(source.get("test_percent", 2)),
+    )
 
 
 def _grouped_split(
     source: dict[str, Any], row: dict[str, Any], hf_split: str, row_id: str, seed: str
 ) -> str:
     """Keep captions/segments of one media item in the same held-out partition."""
-    group_field = source.get("split_group_field")
-    group_value = _nested(row, str(group_field)) if group_field else None
+    group_value = _source_group_value(row, source)
     if group_value is None or not str(group_value).strip():
         return _assign_split(source, hf_split, row_id, seed)
     group_identity = f"{hf_split}:{str(group_value).strip()}"
