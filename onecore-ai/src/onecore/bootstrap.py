@@ -14,9 +14,7 @@ from PIL import Image, ImageDraw
 from .audio import log_mel_spectrogram
 
 
-LICENSE = "local-owner-synthetic"
 SOURCE = "local://onecore-bootstrap"
-ATTRIBUTION = "Generated deterministically by the OneCore project bootstrap curriculum; no third-party data."
 PALETTE = {
     "red": (220, 52, 63),
     "blue": (45, 104, 205),
@@ -36,9 +34,8 @@ SHAPES = ("circle", "square", "triangle")
 
 def _record(record_id: str, task: str, split: str, **fields: Any) -> dict[str, Any]:
     return {
-        "id": record_id, "task": task, "license": LICENSE,
-        "source_url": SOURCE, "attribution": ATTRIBUTION, "split": split,
-        "review_status": "generated",
+        "id": record_id, "task": task, "source_url": SOURCE, "split": split,
+        "data_class": "bootstrap",
         **fields,
     }
 

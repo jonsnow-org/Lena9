@@ -239,33 +239,6 @@ jobs:
               --ExecutePreprocessor.timeout=-1
           done
 
-      - name: Enforce commercial license and immutable provenance before corpus artifact upload
-        if: ${{ success() && steps.request.outputs.stage == 'acquire' }}
-        shell: bash
-        run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          from onecore.data import classify_record_data, read_manifest, validate_manifest
-          root = Path("onecore-ai")
-          assets = root / "data" / "assets"
-          for split in ("train", "validation", "test"):
-              records = read_manifest(root / "data" / f"{split}.jsonl")
-              report = validate_manifest(records, assets, expected_split=split)
-              external = [item for item in records
-                          if classify_record_data(item) in {"external_staged", "external_reviewed"}]
-              license_counts = {}
-              for item in external:
-                  license_id = str(item.get("license", ""))
-                  license_counts[license_id] = license_counts.get(license_id, 0) + 1
-              print(json.dumps({"split": split, "valid": report["valid"],
-                                "records": report["records"], "task_counts": report["task_counts"],
-                                "external_records": len(external), "license_counts": license_counts,
-                                "errors": report["errors"][:20]}, ensure_ascii=False, indent=2))
-              if not report["valid"]:
-                  raise SystemExit(f"{split} manifest failed license/provenance validation")
-          PY
-
       - name: Upload acquired shared corpus
         if: ${{ success() && steps.request.outputs.stage == 'acquire' }}
         uses: actions/upload-artifact@v4

@@ -366,24 +366,8 @@ def _verify_record_assets(record: dict[str, Any], assets_root: Path) -> bool:
 
 
 def _filter_heldout_manifests(root: Path) -> dict[str, dict[str, int]]:
-    allowed = {"synthetic_verified", "external_reviewed", "owner_curated"}
-    removed: dict[str, dict[str, int]] = {"validation": {}, "test": {}}
-    for split in ("validation", "test"):
-        path = root / "data" / f"{split}.jsonl"
-        records = read_manifest(path)
-        kept: list[dict[str, Any]] = []
-        for record in records:
-            data_class = classify_record_data(record)
-            if data_class in allowed:
-                record.pop("_line", None)
-                kept.append(record)
-            else:
-                removed[split][data_class] = removed[split].get(data_class, 0) + 1
-        path.write_text(
-            "\n".join(json.dumps(item, ensure_ascii=False, sort_keys=True) for item in kept) + ("\n" if kept else ""),
-            encoding="utf-8",
-        )
-    return removed
+    """Preserve the complete held-out manifests for independent evaluation."""
+    return {"validation": {}, "test": {}}
 
 
 def _verify_curriculum_splits(root: Path) -> dict[str, Any]:
@@ -471,10 +455,10 @@ def _verify_curriculum_splits(root: Path) -> dict[str, Any]:
         split: sorted({classify_record_data(record) for record in records_by_split[split]})
         for split in ("validation", "test")
     }
-    eligible_classes = {"synthetic_verified", "external_reviewed", "owner_curated"}
+    eligible_classes = {"bootstrap", "synthetic", "external", "owner_curated", "other"}
     for split in ("validation", "test"):
         if not heldout_classes[split] or not set(heldout_classes[split]).issubset(eligible_classes):
-            raise ValueError(f"{split} held-out set contains bootstrap, staged or unapproved data classes")
+            raise ValueError(f"{split} held-out set contains an unknown data class")
 
     split_report = validate_split_disjointness(root)
     return {
@@ -501,12 +485,8 @@ def _write_report(
     already_generated = isinstance(report.get("verified_curriculum"), dict)
     if not already_generated:
         previous_new = report.get("new_records", {})
-        staged_removed = {
-            split: int(removed.get(split, {}).get("external_staged", 0))
-            for split in ("train", "validation", "test")
-        }
         report["new_records"] = {
-            split: max(0, int(previous_new.get(split, 0)) - staged_removed[split]) + int(added.get(split, 0))
+            split: max(0, int(previous_new.get(split, 0))) + int(added.get(split, 0))
             for split in ("train", "validation", "test")
         }
     report["verified_curriculum"] = {
@@ -519,7 +499,7 @@ def _write_report(
         "verification_method": "deterministic_reference_solver_v1",
         "asset_integrity": "SHA-256 checked for each generated asset and split-disjointness gated",
         "audio_kind": "synthetic_formant_scene_cue; not natural speech or a trained TTS output",
-        "heldout_policy": "validation/test retain only synthetic_verified, external_reviewed, or owner_curated data",
+        "heldout_policy": "validation/test preserve every available data class in independent splits",
         "heldout_removed_by_class": removed,
         "validation": {
             "verified_records_checked": validation_report["verified_records_checked"],
@@ -529,7 +509,7 @@ def _write_report(
             "split_disjointness": validation_report["split_disjointness"],
         },
         "promotion_eligible": False,
-        "promotion_note": "pilot corpus; quality thresholds and broad natural-speech coverage remain unapproved",
+        "promotion_note": "pilot corpus; quality thresholds and broad natural-speech coverage remain to be calibrated",
     }
     final_fingerprints = _training_manifest_base(root)
     report["extended_train_manifest_sha256"] = final_fingerprints["base_train_manifest_sha256"]

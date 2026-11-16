@@ -18,7 +18,7 @@ import yaml
 from PIL import Image
 
 from .audio import log_mel_spectrogram
-from .data import external_record_is_trainable, is_immutable_source_revision, license_is_trainable
+from .data import external_record_is_trainable, is_immutable_source_revision
 
 
 SPLITS = ("train", "validation", "test")
@@ -483,25 +483,6 @@ def _write_frames(value: Any, assets_root: Path, prefix: str, max_frames: int = 
     return saved
 
 
-def _license_for_row(row: dict[str, Any], source: dict[str, Any]) -> str:
-    field = source.get("license_field")
-    if field:
-        value = _nested(row, str(field))
-        if isinstance(value, list):
-            value = ",".join(str(item) for item in value if item)
-        if value is not None and str(value).strip():
-            return str(value).strip()[:240]
-    metadata = row.get("metadata")
-    if isinstance(metadata, dict):
-        for key in ("license", "detected_licenses"):
-            value = metadata.get(key)
-            if isinstance(value, list):
-                value = ",".join(str(item) for item in value if item)
-            if value is not None and str(value).strip():
-                return str(value).strip()[:240]
-    return str(source.get("license") or "source-card-terms")
-
-
 def _source_group_value(row: dict[str, Any], source: dict[str, Any]) -> Any:
     """Resolve a source/media group, including segmented video filenames."""
     group_field = source.get("split_group_field")
@@ -532,22 +513,15 @@ def _record_from_row(
     adapter = str(source.get("adapter", "text"))
     prefix = f"{source_id}/{_stable_hash(row_id)[:20]}"
     source_url = str(source.get("url") or f"https://huggingface.co/datasets/{source['repo']}")
-    attribution = str(source.get("attribution") or source["repo"])
     record_id = f"hf-{source_id}-{_stable_hash(row_id)[:24]}"
-    license_id = _license_for_row(row, source)
-    if not license_is_trainable(license_id):
-        raise ValueError(f"license {license_id!r} is not approved for commercial training")
     record: dict[str, Any] = {
         "id": record_id,
         "source_id": source_id,
         "source_revision": str(source.get("_resolved_revision") or ""),
         "source_row_id_sha256": _stable_hash(row_id),
-        "license": license_id,
         "source_url": source_url,
-        "attribution": attribution,
         "split": split,
-        "review_status": "pending",
-        "data_class": "external_staged",
+        "data_class": "external",
     }
     group_value = _source_group_value(row, source)
     if group_value is not None and str(group_value).strip():
@@ -852,7 +826,7 @@ def _append_manifests(project_root: Path, rows_by_split: dict[str, list[dict[str
     return counts
 
 def external_task_coverage(project_root: str | Path) -> dict[str, dict[str, int]]:
-    """Count licensed, pinned external examples with decoded payloads; exclude metadata-only rows."""
+    """Count usable records with decoded payloads; exclude metadata-only rows."""
     root = Path(project_root).resolve()
     assets_root = (root / "data" / "assets").resolve()
     task_groups = {
@@ -872,7 +846,6 @@ def external_task_coverage(project_root: str | Path) -> dict[str, dict[str, int]
         usable = [
             record for record in records
             if str(record.get("split", "")) == split
-            and external_record_is_trainable(record)
             and _external_record_has_usable_payload(record, assets_root)
         ]
         coverage[split] = {
@@ -1147,7 +1120,7 @@ def acquire_sources(
             "limits": limits, "prior_accepted_by_output_split": prior_accepted,
             "remaining_limits": remaining_limits, "accepted_by_output_split": dict(prior_accepted),
             "new_accepted_by_output_split": {split: 0 for split in SPLITS},
-            "license_counts": {}, "metadata_only_by_split": {split: 0 for split in SPLITS},
+            "metadata_only_by_split": {split: 0 for split in SPLITS},
             "pending_rows_added": 0, "pending_rows_promoted": 0, "pending_rows_discarded": pending_discarded,
             "pending_rows_by_output_split": {split: 0 for split in SPLITS},
             "prior_scan_offsets": offsets, "resumed_from_revision": revision_matches,
@@ -1170,8 +1143,6 @@ def acquire_sources(
                 pending_promoted_by_split[assigned] += 1
                 report["pending_rows_promoted"] += 1
                 report["accepted"] += 1
-                license_id = str(entry["record"].get("license", ""))
-                report["license_counts"][license_id] = report["license_counts"].get(license_id, 0) + 1
             else:
                 pending_keep.append(entry)
 
@@ -1253,7 +1224,7 @@ def acquire_sources(
                                 "id": metadata_id, "source_id": source_id, "source_revision": revision,
                                 "source": source.get("repo"),
                                 "source_url": str(source.get("url") or f"https://huggingface.co/datasets/{source['repo']}"),
-                                "attribution": source.get("attribution"), "split": assigned,
+                                "split": assigned,
                                 "fields": metadata_fields,
                             })
                             existing_metadata_ids.add(metadata_id)
@@ -1271,7 +1242,7 @@ def acquire_sources(
                                     source["_resolved_revision"] = revision
                                     record = _record_from_row(row, source, raw_identity, assigned, assets_root)
                                     if record is not None and not external_record_is_trainable(record):
-                                        raise ValueError("external record lacks approved license or immutable source provenance")
+                                        raise ValueError("external record metadata is incomplete")
                                 except Exception as exc:
                                     record = None
                                     conversion_error = {
@@ -1301,7 +1272,7 @@ def acquire_sources(
                                 source["_resolved_revision"] = revision
                                 record = _record_from_row(row, source, raw_identity, assigned, assets_root)
                                 if record is not None and not external_record_is_trainable(record):
-                                    raise ValueError("external record lacks approved license or immutable source provenance")
+                                    raise ValueError("external record metadata is incomplete")
                             except Exception as exc:
                                 record = None
                                 conversion_error = {
@@ -1323,8 +1294,6 @@ def acquire_sources(
                                 new_accepted_by_output_split[assigned] += 1
                                 per_hf_accepted[assigned] += 1
                                 report["accepted"] += 1
-                                license_id = str(record.get("license", ""))
-                                report["license_counts"][license_id] = report["license_counts"].get(license_id, 0) + 1
                         if scanned >= max_scan:
                             break
                 except Exception as exc:

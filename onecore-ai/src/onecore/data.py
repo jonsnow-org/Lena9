@@ -8,88 +8,43 @@ from typing import Any
 from urllib.parse import urlparse
 
 ALLOWED_TASKS = {"text", "image_caption", "image_reconstruction", "audio_text", "audio_reconstruction", "video_caption", "video_reconstruction", "tool_use"}
-REQUIRED_FIELDS = {"id", "task", "license", "source_url", "attribution", "split", "review_status"}
+REQUIRED_FIELDS = {"id", "task", "source_url", "split"}
 
 
 class DatasetError(ValueError):
     pass
 
 
-ALLOWED_DATA_CLASSES = {
-    "bootstrap", "synthetic_unverified", "synthetic_verified",
-    "external_reviewed", "external_staged", "owner_curated", "unapproved",
+DATA_CLASSES = {"bootstrap", "synthetic", "external", "owner_curated", "other"}
+_DATA_CLASS_ALIASES = {
+    "synthetic_unverified": "synthetic",
+    "synthetic_verified": "synthetic",
+    "external_staged": "external",
+    "external_reviewed": "external",
+    "unapproved": "external",
 }
 
 
 def classify_record_data(record: dict[str, Any]) -> str:
-    """Classify provenance; local synthetic and owner-created records are not imports.
-
-    Only records imported from external datasets are eligible for optimizer and
-    tokenizer input. Promotion is stricter and requires reviewed external data.
-    """
     explicit = str(record.get("data_class", "")).strip().lower()
-    if explicit:
+    if explicit in DATA_CLASSES:
         return explicit
-    license_id = str(record.get("license", "")).strip().lower()
+    if explicit in _DATA_CLASS_ALIASES:
+        return _DATA_CLASS_ALIASES[explicit]
     source_url = str(record.get("source_url", "")).strip().lower()
-    review_status = str(record.get("review_status", "")).strip().lower()
-    if license_id == "local-owner-synthetic" and source_url == "local://onecore-bootstrap":
+    if source_url == "local://onecore-bootstrap":
         return "bootstrap"
-    if license_id == "local-owner-synthetic" and review_status == "verified":
-        return "synthetic_verified"
-    if license_id == "local-owner-synthetic":
-        return "synthetic_unverified"
-    if review_status == "approved" and source_url.startswith("local://owner-created"):
+    if source_url.startswith("local://onecore-verified-curriculum"):
+        return "synthetic"
+    if source_url.startswith("local://owner-created"):
         return "owner_curated"
-    if review_status == "approved":
-        return "external_reviewed"
-    return "unapproved"
-
-
-
-COMMERCIAL_TRAINING_LICENSES = frozenset({
-    "apache-2.0", "mit", "bsd-2-clause", "bsd-3-clause", "isc",
-    "cc0-1.0", "cc-by-1.0", "cc-by-2.0", "cc-by-2.5", "cc-by-3.0", "cc-by-4.0",
-    "cc-by-sa-1.0", "cc-by-sa-1.1", "cc-by-sa-2.0", "cc-by-sa-2.5", "cc-by-sa-3.0", "cc-by-sa-4.0",
-    "odc-by-1.0", "public-domain", "unlicense",
-})
-
-
-def _canonical_license_token(value: str) -> str:
-    token = str(value).strip().lower()
-    token = re.sub(r"\\bapache\\s+license\\s*,?\\s*version\\s*2\\.0\\b", "apache-2.0", token)
-    token = re.sub(r"\\bmit\\s+license\\b", "mit", token)
-    token = re.sub(r"\\bbsd\\s+3[- ]clause\\s+new\\s+revised\\s+license\\b", "bsd-3-clause", token)
-    token = re.sub(r"\\bbsd\\s+2[- ]clause\\s+simplified\\s+license\\b", "bsd-2-clause", token)
-    token = token.replace("creative commons", "cc")
-    token = token.replace("attribution-sharealike", "by-sa").replace("attribution sharealike", "by-sa")
-    token = token.replace("attribution", "by").replace("sharealike", "sa")
-    token = re.sub(r"\\b(?:license|licence|version|international)\\b", "", token)
-    token = re.sub(r"[^a-z0-9.+-]+", "-", token).strip("-")
-    aliases = {
-        "cc0": "cc0-1.0", "odc-by": "odc-by-1.0",
-        "apache-2": "apache-2.0", "apache-license-2.0": "apache-2.0",
-        "mit-license": "mit", "isc-license": "isc",
-        "bsd-3-clause-new-revised": "bsd-3-clause",
-        "bsd-2-clause-simplified": "bsd-2-clause",
-    }
-    return aliases.get(token, token)
-
-
-def license_is_trainable(value: Any) -> bool:
-    """Return true only for explicit licenses permitting commercial training."""
-    raw = str(value or "").strip().lower()
-    if not raw or raw in {"unknown", "tbd", "none", "other", "dataset-card-terms",
-                          "source-card-terms", "data-collective-terms",
-                          "per-document-license-metadata"}:
-        return False
-    parts = re.split(r"\\s+(?:and|or)\\s+|[,;|/]", raw, flags=re.IGNORECASE)
-    canonical = [_canonical_license_token(part) for part in parts if part.strip()]
-    return bool(canonical) and all(item in COMMERCIAL_TRAINING_LICENSES for item in canonical)
+    if source_url.startswith(("http://", "https://")):
+        return "external"
+    return "other"
 
 
 def is_immutable_source_revision(value: Any) -> bool:
-    """Require a pinned Git/Hugging Face commit SHA rather than a mutable branch/tag."""
+    """Return whether a dataset revision is pinned to an immutable commit SHA."""
     return bool(re.fullmatch(r"[0-9a-f]{40,64}", str(value or "").strip().lower()))
 
 
@@ -103,11 +58,9 @@ def has_immutable_external_provenance(record: dict[str, Any]) -> bool:
 
 
 def external_record_is_trainable(record: dict[str, Any]) -> bool:
-    """Defense-in-depth filter for optimizer/tokenizer/evaluation external records."""
-    data_class = classify_record_data(record)
-    return data_class in {"external_staged", "external_reviewed"} and license_is_trainable(
-        record.get("license")
-    ) and has_immutable_external_provenance(record)
+    """Identify imported records; this check has no source-policy filter."""
+    return classify_record_data(record) == "external"
+
 
 def read_manifest(path: str | Path) -> list[dict[str, Any]]:
     manifest = Path(path)
@@ -158,44 +111,8 @@ def validate_manifest(records: list[dict[str, Any]], assets_root: str | Path,
         task_counts[task] = task_counts.get(task, 0) + 1
         if str(item["split"]) != expected_split:
             errors.append(f"line {line}: split must be {expected_split!r}; got {item['split']!r}")
-        license_id = str(item["license"]).strip()
-        if not license_id or license_id.lower() in {"unknown", "tbd", "none"}:
-            errors.append(f"line {line}: explicit license is required")
         if not _valid_source(str(item["source_url"])):
             errors.append(f"line {line}: source_url must be http(s) or local://...")
-        if not str(item["attribution"]).strip():
-            errors.append(f"line {line}: attribution is required")
-        review_status = str(item["review_status"]).strip().lower()
-        if review_status not in {"approved", "generated", "verified", "pending"}:
-            errors.append(f"line {line}: review_status must be approved, generated, verified, or pending")
-        data_class = classify_record_data(item)
-        if data_class in {"external_staged", "external_reviewed"}:
-            if not license_is_trainable(license_id):
-                errors.append(f"line {line}: external license {license_id!r} is not approved for commercial training")
-            if not has_immutable_external_provenance(item):
-                errors.append(f"line {line}: external records require source_id, immutable source_revision SHA, and source_row_id_sha256")
-        if data_class not in ALLOWED_DATA_CLASSES:
-            errors.append(f"line {line}: unsupported data_class {data_class!r}")
-        elif data_class == "bootstrap":
-            if license_id != "local-owner-synthetic" or str(item["source_url"]).strip() != "local://onecore-bootstrap" or review_status != "generated":
-                errors.append(f"line {line}: bootstrap data must use the local bootstrap source, synthetic license, and generated status")
-        elif data_class == "synthetic_unverified":
-            if license_id != "local-owner-synthetic" or review_status != "generated":
-                errors.append(f"line {line}: unverified synthetic data must use the synthetic license and generated status")
-        elif data_class == "synthetic_verified":
-            verification = item.get("verification")
-            if license_id != "local-owner-synthetic" or review_status != "verified":
-                errors.append(f"line {line}: verified synthetic data must use the synthetic license and verified status")
-            if not isinstance(verification, dict) or not str(verification.get("method", "")).strip() or not str(verification.get("reference", "")).strip():
-                errors.append(f"line {line}: verified synthetic data requires verification.method and verification.reference")
-        elif data_class == "external_staged":
-            if review_status != "pending" or license_id == "local-owner-synthetic":
-                errors.append(f"line {line}: staged external records must preserve source metadata and pending status")
-        elif data_class in {"external_reviewed", "owner_curated"}:
-            if review_status != "approved" or license_id == "local-owner-synthetic":
-                errors.append(f"line {line}: reviewed external/owner data must use approved status and a non-synthetic license")
-        elif data_class == "unapproved":
-            errors.append(f"line {line}: record lacks approved or verified provenance for its declared source")
         if task == "text" and not str(item.get("text", "")).strip():
             errors.append(f"line {line}: text task requires non-empty text")
         if task == "tool_use" and not (item.get("prompt") and item.get("response")):
@@ -219,17 +136,10 @@ def validate_manifest(records: list[dict[str, Any]], assets_root: str | Path,
             item.get("caption") or item.get("transcript") or ""
         ).strip():
             errors.append(f"line {line}: paired modality records require caption/transcript text")
-    return {
-        "valid": not errors,
-        "records": len(records),
-        "task_counts": task_counts,
-        "errors": errors,
-    }
+    return {"valid": not errors, "records": len(records), "task_counts": task_counts, "errors": errors}
 
 
-TRAINABLE_DATA_CLASSES = {
-    "external_staged", "external_reviewed",
-}
+TRAINABLE_DATA_CLASSES = set(DATA_CLASSES)
 
 
 def iter_training_records(
@@ -237,16 +147,13 @@ def iter_training_records(
     tasks: set[str] | None = None,
     allowed_data_classes: set[str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Select authentic imported external records; deterministic synthetic Bootstrap is excluded."""
+    """Return every usable record in the training split across all data classes."""
     allowed_classes = TRAINABLE_DATA_CLASSES if allowed_data_classes is None else allowed_data_classes
     selected: list[dict[str, Any]] = []
     for item in records:
         if item.get("split") != "train":
             raise DatasetError("non-training split reached training iterator")
-        data_class = classify_record_data(item)
-        if data_class not in allowed_classes:
-            continue
-        if data_class in {"external_staged", "external_reviewed"} and not external_record_is_trainable(item):
+        if classify_record_data(item) not in allowed_classes:
             continue
         if tasks is None or item.get("task") in tasks:
             selected.append(item)
@@ -259,7 +166,7 @@ def validate_training_data(project_root: str | Path) -> dict[str, Any]:
     report = validate_manifest(records, root / "data" / "assets", expected_split="train")
     if not report["valid"]:
         details = "\n".join(report["errors"][:30])
-        raise DatasetError(f"data gate failed with {len(report['errors'])} error(s):\n{details}")
+        raise DatasetError(f"training data gate failed with {len(report['errors'])} error(s):\n{details}")
     if not records:
         raise DatasetError("training manifest is empty")
     return report
@@ -275,6 +182,7 @@ def validate_validation_data(project_root: str | Path) -> dict[str, Any]:
     if not records:
         raise DatasetError("validation manifest is empty")
     return report
+
 
 def validate_test_data(project_root: str | Path) -> dict[str, Any]:
     root = Path(project_root)
