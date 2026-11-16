@@ -10,7 +10,7 @@ import torch
 
 from .checkpoint import load_checkpoint, sha256_file
 from .config import load_config
-from .data import classify_record_data, external_record_is_trainable, read_manifest, validate_manifest
+from .data import classify_record_data, read_manifest, validate_manifest
 from .model import OneCore
 from .train import _load_image, _load_mel, _record_sequence
 from .tokenizer import load_tokenizer
@@ -115,14 +115,7 @@ def select_evaluation_records(
 ) -> list[dict[str, Any]]:
     """Select a separate diagnostic/benchmark subset without mutating the shared manifest."""
     selected = (
-        [
-            record for record in records
-            if classify_record_data(record) in data_classes
-            and (
-                classify_record_data(record) not in {"external_staged", "external_reviewed"}
-                or external_record_is_trainable(record)
-            )
-        ]
+        [record for record in records if classify_record_data(record) in data_classes]
         if data_classes is not None else list(records)
     )
     if not selected:

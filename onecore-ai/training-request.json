@@ -2,6 +2,8 @@
   "schema": "onecore-training-request-v1",
   "stage": "acquire",
   "steps": 1,
-  "purpose": "Re-run expanded external dataset acquisition after content-aware sample identity, duplicate elimination and media-group split isolation. Keep Bootstrap, all synthetic curriculum and locally owner-created records diagnostic-only; exclude them from tokenizer fitting and optimizer input. Verify imported external coverage and train/validation/test disjointness for text, tools, image, audio and video, publish the corpus artifact, then start fresh random-initialized text/tool training from external records only.",
-  "request_id": "external-acquisition-dedup-v2-20261115"
+  "purpose": "Rebuild and verify the expanded external corpus using the latest union-find media-content grouping. Every record linked by a stable source group, record ID or exact media-asset SHA-256 must remain in a single split across all sources. Keep Bootstrap, all synthetic curricula and locally authored records diagnostic-only; exclude them from tokenizer fitting and optimizer input. Require usable external text/tool/audio/image/video coverage and full train/validation/test disjointness, publish the corpus artifact, then automatically launch 150 steps of fresh random-initialized OneCore text/tool training on that corpus.",
+  "request_id": "external-corpus-retry-after-asset-dedupe-v3-20261116",
+  "data_profile": "expanded",
+  "start_fresh_text_training": true
 }

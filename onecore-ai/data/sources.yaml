@@ -15,9 +15,7 @@ sources:
     adapter: text
     text_fields: [text]
     split_strategy: hash
-    limits: {train: 2000, validation: 100, test: 100}
-    profile_limits:
-      expanded: {train: 12000, validation: 400, test: 400}
+    limits: {train: 12000, validation: 400, test: 400}
     license: odc-by
     attribution: "FineWeb2-HQ-Plus — EPFL ML / FineWeb2 contributors"
     enabled: true
@@ -28,9 +26,7 @@ sources:
     adapter: text
     text_fields: [text]
     split_strategy: hash
-    limits: {train: 1500, validation: 75, test: 75}
-    profile_limits:
-      expanded: {train: 9000, validation: 300, test: 300}
+    limits: {train: 9000, validation: 300, test: 300}
     license: odc-by
     attribution: "FineWeb2-HQ-Plus — EPFL ML / FineWeb2 contributors"
     enabled: true
@@ -41,9 +37,7 @@ sources:
     adapter: text
     text_fields: [text]
     split_strategy: hash
-    limits: {train: 400, validation: 25, test: 25}
-    profile_limits:
-      expanded: {train: 2400, validation: 100, test: 100}
+    limits: {train: 2400, validation: 100, test: 100}
     license: odc-by
     attribution: "FineWeb2-HQ-Plus Arabic dialect subset"
     enabled: true
@@ -54,9 +48,7 @@ sources:
     adapter: text
     text_fields: [text]
     split_strategy: hash
-    limits: {train: 600, validation: 30, test: 30}
-    profile_limits:
-      expanded: {train: 3600, validation: 150, test: 150}
+    limits: {train: 3600, validation: 150, test: 150}
     license: odc-by
     attribution: "FineWeb2-HQ-Plus Arabic dialect subset"
     enabled: true
@@ -67,9 +59,7 @@ sources:
     adapter: text
     text_fields: [text]
     split_strategy: hash
-    limits: {train: 500, validation: 25, test: 25}
-    profile_limits:
-      expanded: {train: 3000, validation: 120, test: 120}
+    limits: {train: 3000, validation: 120, test: 120}
     license: odc-by
     attribution: "FineWeb2-HQ-Plus Arabic dialect subset"
     enabled: true
@@ -80,9 +70,7 @@ sources:
     adapter: text
     text_fields: [text]
     split_strategy: hash
-    limits: {train: 1500, validation: 75, test: 75}
-    profile_limits:
-      expanded: {train: 8000, validation: 300, test: 300}
+    limits: {train: 8000, validation: 300, test: 300}
     license: odc-by
     attribution: "FineWeb2 — Hugging Face"
     enabled: true
@@ -93,9 +81,7 @@ sources:
     adapter: text
     text_fields: [text]
     split_strategy: hash
-    limits: {train: 500, validation: 25, test: 25}
-    profile_limits:
-      expanded: {train: 3500, validation: 120, test: 120}
+    limits: {train: 3500, validation: 120, test: 120}
     license: odc-by-1.0
     attribution: "FineWeb-2 Arabic dialect subset"
     enabled: true
@@ -106,9 +92,7 @@ sources:
     adapter: text
     text_fields: [text]
     split_strategy: hash
-    limits: {train: 400, validation: 25, test: 25}
-    profile_limits:
-      expanded: {train: 2500, validation: 100, test: 100}
+    limits: {train: 2500, validation: 100, test: 100}
     license: odc-by-1.0
     attribution: "FineWeb-2 Arabic dialect subset"
     enabled: true
@@ -119,9 +103,7 @@ sources:
     adapter: text
     text_fields: [text]
     split_strategy: hash
-    limits: {train: 500, validation: 25, test: 25}
-    profile_limits:
-      expanded: {train: 3500, validation: 120, test: 120}
+    limits: {train: 3500, validation: 120, test: 120}
     license: odc-by-1.0
     attribution: "FineWeb-2 Arabic dialect subset"
     enabled: true
@@ -132,9 +114,7 @@ sources:
     adapter: text
     text_fields: [text]
     split_strategy: hash
-    limits: {train: 1000, validation: 50, test: 50}
-    profile_limits:
-      expanded: {train: 6000, validation: 250, test: 250}
+    limits: {train: 6000, validation: 250, test: 250}
     license: odc-by
     attribution: "FineWeb2 — Hugging Face"
     enabled: true
@@ -145,9 +125,7 @@ sources:
     adapter: text
     text_fields: [text]
     split_strategy: hash
-    limits: {train: 1000, validation: 50, test: 50}
-    profile_limits:
-      expanded: {train: 4000, validation: 200, test: 200}
+    limits: {train: 4000, validation: 200, test: 200}
     license: cc-by-sa-4.0
     attribution: "Wikimedia Foundation contributors"
     enabled: true
@@ -158,9 +136,7 @@ sources:
     adapter: text
     text_fields: [text]
     split_strategy: hash
-    limits: {train: 500, validation: 25, test: 25}
-    profile_limits:
-      expanded: {train: 2500, validation: 150, test: 150}
+    limits: {train: 2500, validation: 150, test: 150}
     license: cc-by-sa-4.0
     attribution: "Wikimedia Foundation contributors"
     enabled: true
@@ -171,10 +147,8 @@ sources:
     adapter: text
     text_fields: [text]
     split_strategy: hash
-    limits: {train: 500, validation: 25, test: 25}
-    profile_limits:
-      expanded: {train: 1000, validation: 30, test: 30}
-    license: odc-by
+    limits: {train: 1000, validation: 30, test: 30}
+    license: dataset-card-terms
     attribution: "Allen Institute for AI — C4"
     enabled: true
   - id: oscar_ar
@@ -187,7 +161,7 @@ sources:
     limits: {train: 1000, validation: 30, test: 30}
     license: dataset-card-terms
     attribution: "OSCAR corpus contributors"
-    enabled: false
+    enabled: true
 
   # Mathematics, proofs, algorithms and software
   - id: open_web_math_pro
@@ -197,9 +171,7 @@ sources:
     adapter: text
     text_fields: [text, content]
     split_strategy: hash
-    limits: {train: 800, validation: 25, test: 25}
-    profile_limits:
-      expanded: {train: 2200, validation: 50, test: 50}
+    limits: {train: 2200, validation: 50, test: 50}
     license: odc-by-1.0
     attribution: "Open-Web-Math-Pro — GAIR ProX"
     enabled: true
@@ -213,7 +185,7 @@ sources:
     limits: {train: 1000, validation: 30, test: 30}
     license: dataset-card-terms
     attribution: "EleutherAI Proof-Pile-2 contributors"
-    enabled: false
+    enabled: true
   - id: stack_v2_edu
     repo: common-pile/stackv2_edu_filtered
     config: default
@@ -222,9 +194,7 @@ sources:
     text_fields: [text]
     license_field: metadata.license
     split_strategy: hash
-    limits: {train: 500, validation: 25, test: 25}
-    profile_limits:
-      expanded: {train: 1800, validation: 40, test: 40}
+    limits: {train: 1800, validation: 40, test: 40}
     license: per-document-license-metadata
     attribution: "Common Pile — Stack V2 Edu contributors"
     enabled: true
@@ -242,7 +212,7 @@ sources:
     limits: {train: 9000, validation: 250, test: 250}
     license: apache-2.0
     attribution: "Saxo function-calling dataset"
-    enabled: false
+    enabled: true
   - id: turkish_mobile_function_calling
     repo: BTX24/turkish-mobile-function-calling-dataset
     config: default
@@ -255,7 +225,7 @@ sources:
     limits: {train: 5000, validation: 150, test: 150}
     license: apache-2.0
     attribution: "Turkish mobile function-calling dataset"
-    enabled: false
+    enabled: true
   - id: fleurs_ar
     repo: google/fleurs
     config: ar_eg
@@ -264,9 +234,7 @@ sources:
     audio_field: audio
     text_fields: [transcription, raw_transcription]
     split_strategy: preserve
-    limits: {train: 200, validation: 50, test: 50}
-    profile_limits:
-      expanded: {train: 500, validation: 100, test: 100}
+    limits: {train: 500, validation: 100, test: 100}
     license: cc-by-4.0
     attribution: "FLEURS — Google Research and language contributors"
     enabled: true
@@ -278,9 +246,7 @@ sources:
     audio_field: audio
     text_fields: [orthographic, text]
     split_strategy: hash
-    limits: {train: 150, validation: 20, test: 30}
-    profile_limits:
-      expanded: {train: 350, validation: 40, test: 60}
+    limits: {train: 350, validation: 40, test: 60}
     license: cc-by-4.0
     attribution: "Arabic Speech Corpus — Nawar Halabi / University of Southampton"
     enabled: true
@@ -296,7 +262,7 @@ sources:
     license: other
     attribution: "GigaSpeech 3 — SpeechColab"
     requires_access: true
-    enabled: false
+    enabled: true
   - id: gigaspeech_english
     repo: speechcolab/gigaspeech
     config: xl
@@ -309,7 +275,7 @@ sources:
     license: apache-2.0
     attribution: "GigaSpeech — SpeechColab"
     requires_access: true
-    enabled: false
+    enabled: true
   - id: gigaspeech2_multilingual
     repo: speechcolab/gigaspeech2
     config: default
@@ -322,7 +288,7 @@ sources:
     license: apache-2.0
     attribution: "GigaSpeech 2 — SpeechColab"
     requires_access: true
-    enabled: false
+    enabled: true
   - id: wavcaps_audio_language
     repo: txya900619/wavcaps-10s-16k
     config: default
@@ -334,7 +300,7 @@ sources:
     limits: {train: 250, validation: 25, test: 25}
     license: source-card-terms
     attribution: "WavCaps source contributors"
-    enabled: false
+    enabled: true
   - id: common_voice_ar_17
     repo: mozilla-foundation/common_voice_17_0
     config: ar
@@ -360,7 +326,7 @@ sources:
     limits: {train: 250, validation: 40, test: 40}
     license: cc-by-2.0
     attribution: "Open Images — Google LLC and image contributors"
-    enabled: false
+    enabled: true
   - id: sard_arabic_documents
     repo: riotu-lab/SARD
     config: default
@@ -372,7 +338,7 @@ sources:
     limits: {train: 250, validation: 30, test: 30}
     license: cc-by-nc-nd-4.0
     attribution: "SARD — Nacar et al. (2025), dataset contributors"
-    enabled: false
+    enabled: true
   - id: flickr30k_visual_test
     repo: nlphuji/flickr30k
     config: TEST
@@ -385,7 +351,7 @@ sources:
     limits: {test: 250}
     license: dataset-card-terms
     attribution: "Flickr30k — Young et al. and image contributors"
-    enabled: false
+    enabled: true
 
   # Video, temporal understanding and paired audio-video
   - id: finevideo
@@ -400,7 +366,7 @@ sources:
     license: cc-by
     attribution: "FineVideo — Hugging Face Video dataset contributors"
     requires_access: true
-    enabled: false
+    enabled: true
   - id: laion_bvd_video_55m
     repo: laion/BVD-V-55M
     config: default
@@ -413,7 +379,7 @@ sources:
     license: dataset-card-terms
     attribution: "LAION BVD-V-55M contributors"
     requires_access: true
-    enabled: false
+    enabled: true
   - id: laion_bvd_audio_10m
     repo: laion/BVD-A-10M
     config: default
@@ -426,7 +392,7 @@ sources:
     license: dataset-card-terms
     attribution: "LAION BVD-A-10M contributors"
     requires_access: true
-    enabled: false
+    enabled: true
   - id: internvid_10m_flt
     repo: OpenGVLab/InternVid
     config: InternVid-10M-FLT
@@ -439,7 +405,7 @@ sources:
     license: cc-by-nc-sa-4.0
     attribution: "InternVid — OpenGVLab"
     requires_access: true
-    enabled: false
+    enabled: true
   - id: panda70m_video_manifest
     repo: multimodalart/panda-70m
     config: default
@@ -450,7 +416,7 @@ sources:
     limits: {train: 1000, validation: 50, test: 50}
     license: dataset-card-terms
     attribution: "Panda-70M — Snap Research and source-video contributors"
-    enabled: false
+    enabled: true
   - id: wavcaps_original
     repo: cvssp/WavCaps
     config: default
@@ -467,9 +433,7 @@ sources:
     hf_splits: [test]
     adapter: metadata_only
     split_strategy: preserve
-    limits: {test: 50}
-    profile_limits:
-      expanded: {test: 250}
+    limits: {test: 250}
     license: cc-by-4.0
     attribution: "GigaSpeechBench — SpeechColab"
     enabled: true
@@ -485,7 +449,7 @@ sources:
     license: dataset-card-terms
     attribution: "LAION BVD-I-300M contributors"
     requires_access: true
-    enabled: false
+    enabled: true
   # Large-scale image-text pairs
   - id: coyo_700m
     repo: kakaobrain/coyo-700m
@@ -498,7 +462,7 @@ sources:
     limits: {train: 500, validation: 50, test: 50}
     license: cc-by-4.0
     attribution: "COYO-700M — Kakao Brain and dataset contributors"
-    enabled: false
+    enabled: true
   - id: conceptual_captions_12m
     repo: laion/conceptual-captions-12m-webdataset
     config: default
@@ -510,7 +474,7 @@ sources:
     limits: {train: 300, validation: 30, test: 30}
     license: dataset-card-terms
     attribution: "Conceptual Captions 12M — LAION and source contributors"
-    enabled: false
+    enabled: true
   - id: sharegpt4v_images
     repo: Lin-Chen/ShareGPT4V
     config: ShareGPT4V
@@ -524,7 +488,7 @@ sources:
     limits: {train: 400, validation: 30, test: 30}
     license: dataset-card-terms
     attribution: "ShareGPT4V — Lin Chen and contributors"
-    enabled: false
+    enabled: true
 
   # Video catalogs and temporal annotations
   - id: sharegpt4video_temporal_manifest
@@ -537,7 +501,7 @@ sources:
     limits: {train: 2500, validation: 100, test: 100}
     license: dataset-card-terms
     attribution: "ShareGPT4Video — source-video and dataset contributors"
-    enabled: false
+    enabled: true
   - id: webvid_10m_video
     repo: TempoFunk/webvid-10M
     config: default
@@ -551,7 +515,7 @@ sources:
     limits: {train: 200, validation: 40}
     license: dataset-card-terms
     attribution: "WebVid-10M — source-video and dataset contributors"
-    enabled: false
+    enabled: true
   - id: hdvila_100m_manifest
     repo: TempoFunk/hdvila-100M
     config: default
@@ -562,7 +526,7 @@ sources:
     limits: {train: 2500, validation: 100, test: 100}
     license: dataset-card-terms
     attribution: "HD-VILA-100M — dataset contributors"
-    enabled: false
+    enabled: true
   - id: youcook2_temporal_manifest
     repo: lmms-eval/YouCook2
     config: default
@@ -573,7 +537,7 @@ sources:
     limits: {train: 1500, validation: 100, test: 100}
     license: dataset-card-terms
     attribution: "YouCook2 — dataset contributors"
-    enabled: false
+    enabled: true
   - id: msrvtt_video
     repo: NTQAI/MSR-VTT-Video-Captioning-Vi
     config: default
@@ -586,4 +550,4 @@ sources:
     limits: {train: 500, validation: 50, test: 50}
     license: dataset-card-terms
     attribution: "MSR-VTT — dataset contributors"
-    enabled: false
+    enabled: true

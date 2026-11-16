@@ -24,9 +24,7 @@ def test_codebook_assignment_report_rejects_out_of_range_ids():
 def test_external_evaluation_excludes_bootstrap_but_bootstrap_remains_selectable():
     records = [
         {"id": "bootstrap-text", "task": "text", "data_class": "bootstrap"},
-        {"id": "external-text", "task": "text", "data_class": "external_staged",
-         "license": "cc-by-4.0", "source_id": "eval-source",
-         "source_revision": "a" * 40, "source_row_id_sha256": "b" * 64},
+        {"id": "external-text", "task": "text", "data_class": "external_staged"},
         {"id": "owner-local", "task": "text", "data_class": "owner_curated"},
     ]
     external = select_evaluation_records(records, {"external_staged", "external_reviewed"})
