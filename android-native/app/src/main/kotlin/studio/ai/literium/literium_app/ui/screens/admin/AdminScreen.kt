@@ -220,7 +220,9 @@ fun AdminScreen(
                     "analytics" -> AnalyticsTab(
                         viewModel = viewModel, users = users, articles = articles,
                         campaigns = campaigns, depositRequests = depositRequests,
-                        payoutRequests = payoutRequests
+                        payoutRequests = payoutRequests,
+                        onOpenUser = { id -> navController.navigate(Screen.WriterProfile.of(id)) },
+                        onOpenArticle = { id -> navController.navigate(Screen.ArticleReader.of(id)) }
                     )
                     "money" -> FinanceTab(
                         viewModel = viewModel, users = users, campaigns = campaigns,
