@@ -2,8 +2,8 @@
   "schema": "onecore-training-request-v1",
   "stage": "acquire",
   "steps": 150,
-  "purpose": "Extend the previously validated external corpus from run 43811430834 with real Open Images V7 image payloads from the explicitly CC-BY-4.0 FineOpenimages package. Revalidate pinned source revisions, external-only provenance, source content hashes, exact asset disjointness across train/validation/test, and text+image+audio coverage. Then start 150 fresh random-initialized OneCore text-foundation optimizer steps in the same GitHub Actions CPU job using external text records only; tool-use and video training remain blocked until non-synthetic, commercially trainable external sources with actual usable payloads are verified. Bootstrap and all synthetic or owner-created records remain diagnostic-only and excluded from tokenizer and optimizer.",
-  "request_id": "external-openimages-incremental-inline-text-foundation-v6-20261116",
+  "purpose": "Continue from verified corpus run 43811430834, import usable external image payloads from FineOpenimages, and enforce train/validation/test disjointness with pinned source lineage. Require real external text, image and audio task coverage in all three partitions. After the data gates pass, run 150 optimizer steps from fresh random initialization in the same GitHub Actions CPU job, using external text records only; retain the image/audio corpus for later unified multimodal training. Do not train on tool-use/video until verified non-synthetic external sources with usable payloads are available. Bootstrap, synthetic and owner-created examples remain diagnostic-only and excluded from tokenizer and optimizer.",
+  "request_id": "external-corpus-incremental-image-after-ci-pass-v7-20261116",
   "data_profile": "expanded",
   "base_corpus_run_id": "43811430834",
   "start_fresh_text_training": true
