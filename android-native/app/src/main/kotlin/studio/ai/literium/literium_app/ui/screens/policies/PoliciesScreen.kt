@@ -1,5 +1,23 @@
 package studio.ai.literium.literium_app.ui.screens.policies
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import studio.ai.literium.literium_app.ui.theme.Lu
+import studio.ai.literium.literium_app.ui.theme.LuIcon
+import studio.ai.literium.literium_app.ui.theme.Tw
+import studio.ai.literium.literium_app.ui.theme.brand
+import studio.ai.literium.literium_app.ui.theme.isDark
+import studio.ai.literium.literium_app.ui.theme.twClickable
+import studio.ai.literium.literium_app.ui.theme.twText
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -63,43 +81,36 @@ private val PAGES = listOf(
     PolicyPage("contact", "اتصل بنا")
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
+@Composable private fun bodyColor() = if (isDark) Tw.slate300 else Tw.slate600
+@Composable private fun titleColor() = if (isDark) Tw.white else Tw.slate900
+
+/** السياسات — LegalPages.tsx: زر عودة، شرائح الأقسام (rounded-2xl)، ثم مقالة داخل بطاقة rounded-3xl (H2 18sp black، P 14sp سطر 1.9، قوائم). */
 @Composable
 fun PoliciesScreen(navController: NavController, page: String) {
     var section by remember { mutableStateOf(if (PAGES.any { it.key == page }) page else "privacy") }
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "رجوع")
-                    }
-                },
-                title = { Text(PAGES.first { it.key == section }.label) }
-            )
+    val dark = isDark
+    Column(Modifier.fillMaxSize().padding(horizontal = 12.dp).padding(top = 16.dp, bottom = 12.dp)) {
+        Row(Modifier.twClickable { navController.popBackStack() }.padding(bottom = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            LuIcon(Lu.ArrowRight, 16.dp, if (dark) Tw.slate400 else Tw.slate500)
+            Text("العودة إلى المنصة", style = twText(12, FontWeight.Bold, 16), color = if (dark) Tw.slate400 else Tw.slate500)
         }
-    ) { padding ->
-        Column(Modifier.padding(padding)) {
-            LazyRow(
-                modifier = Modifier.fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-            ) {
-                items(PAGES) { p ->
-                    FilterChip(
-                        selected = section == p.key,
-                        onClick = { section = p.key },
-                        label = { Text(p.label) },
-                        modifier = Modifier.padding(end = 6.dp)
-                    )
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            PAGES.forEach { pg ->
+                val active = section == pg.key
+                val icon = when (pg.key) { "privacy" -> Lu.Shield; "terms" -> Lu.FileText; "about" -> Lu.Info; else -> Lu.Mail }
+                Row(
+                    Modifier.clip(RoundedCornerShape(16.dp)).background(if (active) brand.s600 else (if (dark) Tw.slate800 else Tw.slate100)).twClickable { section = pg.key }.padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    LuIcon(icon, 16.dp, if (active) Tw.white else (if (dark) Tw.slate300 else Tw.slate600))
+                    Text(pg.label, style = twText(12, FontWeight.Bold, 16), color = if (active) Tw.white else (if (dark) Tw.slate300 else Tw.slate600), maxLines = 1)
                 }
             }
-
-            LazyColumn(
-                modifier = Modifier.fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
+        }
+        Box(Modifier.fillMaxWidth().height(1.dp).background(if (dark) Tw.slate800 else Tw.slate200))
+        val card = RoundedCornerShape(24.dp)
+        Box(Modifier.padding(top = 16.dp).weight(1f).fillMaxWidth().clip(card).background(if (dark) Tw.slate900 else Tw.white).border(1.dp, if (dark) Tw.slate800 else Tw.slate200, card)) {
+            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 when (section) {
                     "privacy" -> privacyContent(this)
                     "terms" -> termsContent(this)
@@ -112,31 +123,24 @@ fun PoliciesScreen(navController: NavController, page: String) {
 }
 
 private fun h2(scope: androidx.compose.foundation.lazy.LazyListScope, text: String) {
-    scope.item {
-        Text(
-            text,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Black,
-            modifier = Modifier.padding(top = 16.dp, bottom = 4.dp)
-        )
-    }
+    scope.item { Text(text, Modifier.padding(top = 28.dp, bottom = 10.dp), style = twText(18, FontWeight.Black, 26), color = titleColor()) }
 }
 
 private fun p(scope: androidx.compose.foundation.lazy.LazyListScope, text: String) {
-    scope.item { Text(text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(bottom = 6.dp)) }
+    scope.item { Text(text, Modifier.padding(bottom = 12.dp), style = twText(14, FontWeight.Normal, 27), color = bodyColor()) }
 }
 
 private fun ul(scope: androidx.compose.foundation.lazy.LazyListScope, items: List<String>) {
     scope.items(items) { line ->
-        Text("• $line", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(bottom = 4.dp))
+        Text("• $line", Modifier.padding(bottom = 6.dp, start = 0.dp, end = 16.dp), style = twText(14, FontWeight.Normal, 27), color = bodyColor())
     }
 }
 
 private fun privacyContent(scope: androidx.compose.foundation.lazy.LazyListScope) {
     scope.item {
         Column {
-            Text("سياسة الخصوصية", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
-            Text("آخر تحديث: $LAST_UPDATED", style = MaterialTheme.typography.labelSmall)
+            Text("سياسة الخصوصية", style = twText(22, FontWeight.Black, 30), color = titleColor())
+            Text("آخر تحديث: $LAST_UPDATED", style = twText(11, FontWeight.Normal, 16), color = Tw.slate500)
         }
     }
 
@@ -249,8 +253,8 @@ private fun privacyContent(scope: androidx.compose.foundation.lazy.LazyListScope
 private fun termsContent(scope: androidx.compose.foundation.lazy.LazyListScope) {
     scope.item {
         Column {
-            Text("شروط الاستخدام", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
-            Text("آخر تحديث: $LAST_UPDATED", style = MaterialTheme.typography.labelSmall)
+            Text("شروط الاستخدام", style = twText(22, FontWeight.Black, 30), color = titleColor())
+            Text("آخر تحديث: $LAST_UPDATED", style = twText(11, FontWeight.Normal, 16), color = Tw.slate500)
         }
     }
 
@@ -356,7 +360,7 @@ private fun termsContent(scope: androidx.compose.foundation.lazy.LazyListScope) 
 }
 
 private fun aboutContent(scope: androidx.compose.foundation.lazy.LazyListScope) {
-    scope.item { Text("من نحن", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black) }
+    scope.item { Text("من نحن", style = twText(22, FontWeight.Black, 30), color = titleColor()) }
     p(scope, "ليتيريوم منصة عربية للأدب والمعرفة، تجمع بين القرّاء والكتّاب في مساحة واحدة تحتفي بالكلمة المكتوبة.")
 
     h2(scope, "رؤيتنا")
@@ -372,7 +376,7 @@ private fun aboutContent(scope: androidx.compose.foundation.lazy.LazyListScope) 
 }
 
 private fun contactContent(scope: androidx.compose.foundation.lazy.LazyListScope) {
-    scope.item { Text("اتصل بنا", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black) }
+    scope.item { Text("اتصل بنا", style = twText(22, FontWeight.Black, 30), color = titleColor()) }
     p(scope, "يسعدنا تواصلك معنا.")
     listOf(
         "للاستفسارات العامة",
@@ -382,8 +386,8 @@ private fun contactContent(scope: androidx.compose.foundation.lazy.LazyListScope
     ).forEach { label ->
         scope.item {
             Column(Modifier.padding(bottom = 8.dp)) {
-                Text(label, style = MaterialTheme.typography.labelSmall)
-                Text(CONTACT_EMAIL, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                Text(label, style = twText(11, FontWeight.Normal, 16), color = Tw.slate500)
+                Text(CONTACT_EMAIL, style = twText(14, FontWeight.Normal, 27), color = bodyColor(), fontWeight = FontWeight.Bold)
             }
         }
     }
