@@ -677,39 +677,39 @@ def test_acquisition_resume_promotes_pending_rows_and_skips_processed_source_row
     assert expanded_source["pending_rows_by_output_split"] == {"train": 0, "validation": 0, "test": 0}
     assert expanded_source["accepted_by_output_split"] == {"train": 3, "validation": 1, "test": 1}
     assert expanded_source["new_accepted_by_output_split"] == {"train": 2, "validation": 0, "test": 0}
-    assert expanded["external_task_counts"] == {
+    assert expanded["task_counts"] == {
         "train": {"text": 3, "tool": 0, "image": 0, "audio": 0, "video": 0},
         "validation": {"text": 1, "tool": 0, "image": 0, "audio": 0, "video": 0},
         "test": {"text": 1, "tool": 0, "image": 0, "audio": 0, "video": 0},
     }
 
-def test_bootstrap_is_excluded_from_real_training_sampler() -> None:
+def test_every_available_data_class_reaches_training_sampler() -> None:
     import random
     from onecore.data import TRAINABLE_DATA_CLASSES, iter_training_records
     from onecore.train import _weighted_record
 
-    assert "bootstrap" not in TRAINABLE_DATA_CLASSES
-    assert "synthetic_unverified" not in TRAINABLE_DATA_CLASSES
-    assert "synthetic_verified" not in TRAINABLE_DATA_CLASSES
-    assert "external" in TRAINABLE_DATA_CLASSES
+    assert {"bootstrap", "synthetic", "external", "owner_curated", "other"} <= TRAINABLE_DATA_CLASSES
     rows = [
-        {"id": "bootstrap-1", "task": "text", "split": "train", "data_class": "bootstrap"},
+        {"id": "bootstrap-1", "task": "text", "split": "train", "data_class": "bootstrap", "text": "bootstrap"},
+        {"id": "synthetic-1", "task": "text", "split": "train", "data_class": "synthetic", "text": "synthetic"},
         {**_external_metadata("sampler-text-source", "external-1"),
-         "id": "external-1", "task": "text", "split": "train",
-         "text": "A sufficiently long authentic imported external text sample."},
+         "id": "external-1", "task": "text", "split": "train", "text": "Imported text sample."},
         {**_external_metadata("sampler-tool-source", "external-2"),
          "id": "external-2", "task": "tool_use", "split": "train",
          "prompt": "Please call the lookup tool with this query.",
          "response": '{"name":"lookup","arguments":{"query":"sample"}}'},
     ]
     selected = iter_training_records(rows, {"text", "tool_use"})
-    assert [item["id"] for item in selected] == ["external-1", "external-2"]
-    sampled = [_weighted_record({"text": [selected[0]], "tool_use": [selected[1]]}, "text", random.Random(i))
+    assert {item["id"] for item in selected} == {"bootstrap-1", "synthetic-1", "external-1", "external-2"}
+    text_rows = [item for item in selected if item["task"] == "text"]
+    tool_rows = [item for item in selected if item["task"] == "tool_use"]
+    sampled = [_weighted_record({"text": text_rows, "tool_use": tool_rows}, "text", random.Random(i))
                for i in range(100)]
-    assert all(item["data_class"] == "external" for item in sampled)
+    assert {item["data_class"] for item in sampled} <= {"bootstrap", "synthetic", "external"}
 
-def test_external_coverage_gate_counts_imported_records_not_bootstrap(tmp_path: Path) -> None:
-    from onecore.acquire import assert_external_task_coverage
+
+def test_task_coverage_gate_counts_all_usable_records(tmp_path: Path) -> None:
+    from onecore.acquire import assert_task_coverage
 
     data = tmp_path / "data"
     assets = data / "assets" / "acquired"
@@ -758,7 +758,7 @@ def test_external_coverage_gate_counts_imported_records_not_bootstrap(tmp_path: 
         (data / f"{split}.jsonl").write_text(
             "\n".join(json.dumps(item) for item in records) + "\n", encoding="utf-8"
         )
-    coverage = assert_external_task_coverage(
+    coverage = assert_task_coverage(
         tmp_path, set(task_ids), minimum_train=1, minimum_holdout=1
     )
     for split in ("train", "validation", "test"):
@@ -863,7 +863,7 @@ def test_external_asset_report_counts_only_real_source policyd_media_files(tmp_p
     assert report["missing_asset_files"] == 0
 
 def test_external_coverage_gate_counts_only_source policyd_pinned_records(tmp_path: Path) -> None:
-    from onecore.acquire import assert_external_task_coverage
+    from onecore.acquire import assert_task_coverage
     groups = {"text": "text", "tool": "tool_use", "image": "image_reconstruction",
               "audio": "audio_reconstruction", "video": "video_reconstruction"}
     data = tmp_path / "data"
@@ -905,6 +905,6 @@ def test_external_coverage_gate_counts_only_source policyd_pinned_records(tmp_pa
         (data / f"{split}.jsonl").write_text(
             "\n".join(json.dumps(item) for item in records) + "\n", encoding="utf-8"
         )
-    coverage = assert_external_task_coverage(tmp_path, set(groups), minimum_train=1, minimum_holdout=1)
+    coverage = assert_task_coverage(tmp_path, set(groups), minimum_train=1, minimum_holdout=1)
     for split in ("train", "validation", "test"):
         assert coverage[split] == {group: 1 for group in groups}

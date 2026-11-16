@@ -20,7 +20,7 @@ The manual `OneCore — staged training` workflow remains available for operator
 
 ## Initial pipeline baseline
 
-The earlier 10-step and 100-step runs used only synthetic engineering curricula. They are retained as historical pipeline diagnostics, not accepted external-data pretraining, not model-readiness evidence, and not promotion candidates. Real pretraining begins only after the imported external corpus passes the modality coverage gate.
+The earlier 10-step and 100-step runs used only synthetic engineering curricula. They remain historical diagnostics. The current all-data experiment starts from random initialization and includes every usable data class after the task-family and split-integrity gates pass.
 
 ## Architecture and expansion
 
@@ -30,7 +30,7 @@ The first architecture experiment must remain within 50–70M trainable paramete
 
 ## Dataset stages and isolation
 
-The deterministic engineering bootstrap currently yields 360 training records, 87 validation records, and 87 test records. All are tagged as `bootstrap` synthetic data. This corpus exercises the pipeline; it is not a large verified knowledge curriculum and cannot qualify for promotion.
+The deterministic engineering bootstrap currently yields 360 training records, 87 validation records, and 87 test records. All are tagged as `bootstrap` data. They exercise the pipeline and now participate in tokenizer fitting and optimizer updates alongside every other usable data class.
 
 Only `train.jsonl` is read by the training iterator. Validation and test manifests are separate, have disjoint record IDs and asset paths, and are checked for identical asset-content hashes across splits. The bootstrap generator adds a missing test manifest without rewriting existing train/validation manifests. Training checkpoint lineage includes both the training-manifest SHA-256 and a fingerprint of the referenced training assets.
 
@@ -44,4 +44,4 @@ Artifacts are retained for 90 days and remain the immediate resume source. Durab
 
 ## Promotion
 
-Training completion or a lower loss is not readiness. Promotion requires an independently hashed validation and test bundle from the same checkpoint, full modality coverage, reviewed external records only in both splits, approved numeric thresholds for both splits, and no unacceptable regression. Evaluation reports per-codebook usage, perplexity, normalized entropy, dead codes, and max-code concentration for vision/audio/motion on both held-out splits. Collapse thresholds remain uncalibrated.
+Training completion or a lower loss is not readiness. Promotion requires an independently hashed validation and test bundle from the same checkpoint, full modality coverage, calibrated numeric thresholds for both splits, and no unacceptable regression. Evaluation reports per-codebook usage, perplexity, normalized entropy, dead codes, and max-code concentration for vision/audio/motion on both held-out splits. Collapse thresholds remain uncalibrated.

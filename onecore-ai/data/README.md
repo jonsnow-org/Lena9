@@ -44,10 +44,9 @@ Audio features are normalized to mono 16 kHz and 80-bin log-mel arrays. Video in
 
 The waveform decoder remains approximate (mel pseudoinverse plus Griffin–Lim), not a trained production vocoder.
 
-## Bootstrap and synthetic diagnostics
+## All available data
 
-The deterministic Bootstrap corpus is retained as a local engineering fixture for checking preprocessing, asset integrity, checkpoint save/restore, and modality code paths. It is not external training data and never enters tokenizer fitting, optimizer updates, validation/test generalization scores, or promotion.
+The training iterator includes every usable record in the train split: imported datasets, the deterministic Bootstrap curriculum, verified or unverified synthetic curricula, and locally owner-created examples. Nothing is excluded solely because of its source category. Each class is counted in training reports.
 
-Any verified or unverified synthetic curriculum is treated the same way: diagnostic-only. Locally owner-created data is also excluded from the external-import training pipeline. There is no synthetic-data percentage, synthetic fallback, or synthetic route into the training sampler.
+Every data record must still be structurally usable for its task. Image, audio and video examples need readable payloads; text and tool examples need their corresponding content. Metadata-only catalogue entries remain indexed separately until their actual payload is available. Validation and test retain all available data classes but never enter optimizer updates.
 
-Only records imported from the registered external datasets are eligible for training. Imported records are initially classified as `external_staged`; promotion is stricter and requires the validation and test evaluation subsets to contain reviewed external records only. Bootstrap diagnostic reports are kept separate from external generalization metrics.

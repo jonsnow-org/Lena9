@@ -100,7 +100,6 @@ def test_workflows_use_stage_specific_all_data_gates():
     assert "stage == 'acquire' && 'text,tool,image,audio,video'" in bootstrap
     assert "stage == 'multimodal' && 'text,tool,image,audio,video'" in bootstrap
     assert "inputs.stage == 'multimodal' && 'text,tool,image,audio,video'" in training
-    assert "Enforce commercial license and immutable provenance before corpus artifact upload" not in bootstrap
     assert "ONECORE_DATA_PROFILE:" in bootstrap
     assert "start_fresh_joint_training = request.get" in bootstrap
     assert "steps.request.outputs.start_fresh_joint_training == 'true'" in bootstrap

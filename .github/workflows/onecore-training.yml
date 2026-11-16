@@ -205,7 +205,7 @@ jobs:
               --ExecutePreprocessor.timeout=-1
           done
 
-      - name: Verify imported external corpus before optimizer training
+      - name: Verify all available data before optimizer training
         if: ${{ inputs.stage != 'smoke' }}
         env:
           ONECORE_SKIP_ACQUISITION: "1"

@@ -100,7 +100,7 @@ jobs:
           print(f"start_fresh_joint_training={str(start_fresh_joint_training).lower()}")
           PY
 
-      - name: Generate deterministic bootstrap data or validate existing reviewed manifests
+      - name: Generate deterministic bootstrap data and validate source manifests
         run: python -m onecore.bootstrap --root onecore-ai
 
       - name: Restore prior verified corpus as the base for incremental acquisition

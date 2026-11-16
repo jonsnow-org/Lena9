@@ -55,6 +55,6 @@ Artifacts are retained for 90 days. Durable GitHub Release upload currently rece
 
 ## Current research status
 
-The earlier 10-step engineering run and 100-step synthetic-curriculum experiment are historical pipeline diagnostics only; they are not accepted as real-data pretraining and do not establish general language, science, coding, or multimodal capability. The current data run starts from fresh random initialization and records all data sources and lineage in its reports. Evaluation measures held-out codebook usage, entropy, perplexity, dead codes, and max-code concentration, but thresholds remain uncalibrated. Promotion remains blocked until reviewed external validation/test coverage and approved numeric thresholds are in place.
+The earlier 10-step engineering run and 100-step synthetic-curriculum experiment are historical pipeline diagnostics only. The current data run starts from fresh random initialization and includes all usable records regardless of data class. Evaluation measures held-out codebook usage, entropy, perplexity, dead codes, and max-code concentration; promotion remains blocked until independent modality coverage and calibrated numeric quality thresholds are in place.
 
 See `docs/training-operations.md`, `data/README.md`, and `notebooks/README.md` for operational details.
