@@ -661,6 +661,10 @@ class AdminViewModel(
         viewModelScope.launch { articleRepository.setArticleStatus(articleId, status) }
     }
 
+    fun deleteArticleAsAdmin(articleId: String) {
+        viewModelScope.launch { articleRepository.deleteArticle(articleId) }
+    }
+
     // ---- Fraud ----
 
     fun resolveFraudFlag(flagId: String, action: String) {
