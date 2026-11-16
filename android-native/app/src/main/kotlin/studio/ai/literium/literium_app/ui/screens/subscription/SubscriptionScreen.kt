@@ -1,212 +1,200 @@
 package studio.ai.literium.literium_app.ui.screens.subscription
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.AccountBalanceWallet
-import studio.ai.literium.literium_app.ui.theme.Button
-import studio.ai.literium.literium_app.ui.theme.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Snackbar
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import studio.ai.literium.literium_app.ui.theme.TopAppBar
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import studio.ai.literium.literium_app.ui.theme.Lu
+import studio.ai.literium.literium_app.ui.theme.LuIcon
+import studio.ai.literium.literium_app.ui.theme.Tw
+import studio.ai.literium.literium_app.ui.theme.TwError
+import studio.ai.literium.literium_app.ui.theme.TwLoading
+import studio.ai.literium.literium_app.ui.theme.isDark
+import studio.ai.literium.literium_app.ui.theme.twClickable
+import studio.ai.literium.literium_app.ui.theme.twText
 
+private val Mono = FontFamily.Monospace
+
+/**
+ * باقات الذكاء الاصطناعي — SubscriptionModal.tsx: ترويسة slate-950→teal-950→slate-900 مع أيقونة بتدرّج، بطاقة حالة الحساب،
+ * بطاقات الباقات (حدّ teal عند الاختيار)، ملخّص الطلب، طرق الدفع، ثم إيصال «تم استلام الطلب».
+ */
 @Composable
-@OptIn(ExperimentalMaterial3Api::class)
 fun SubscriptionScreen(navController: NavController, viewModel: SubscriptionViewModel = viewModel()) {
     val state by viewModel.state.collectAsState()
-    val snackbarHostState = remember { SnackbarHostState() }
+    val dark = isDark
+    val shell = RoundedCornerShape(24.dp)
+    val line = if (dark) Tw.slate800 else Tw.slate200
+    val teal = Color(0xFF0D9488)
 
-    LaunchedEffect(state.error) {
-        state.error?.let {
-            snackbarHostState.showSnackbar(it)
-            viewModel.clearError()
-        }
-    }
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("باقات الذكاء الاصطناعي Pro") },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "عودة")
+    Box(Modifier.fillMaxSize().padding(8.dp)) {
+        Column(Modifier.fillMaxSize().shadow(16.dp, shell, clip = false).clip(shell).background(if (dark) Tw.slate900 else Tw.white).border(1.dp, line, shell)) {
+            Row(Modifier.fillMaxWidth().background(Brush.horizontalGradient(listOf(Tw.slate950, Color(0xFF042F2E), Tw.slate900))).padding(horizontal = 20.dp, vertical = 16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
+                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Box(Modifier.size(44.dp).clip(RoundedCornerShape(16.dp)).background(Brush.linearGradient(listOf(Color(0xFF14B8A6), Color(0xFF22D3EE), Tw.amber400))), contentAlignment = Alignment.Center) { LuIcon(Lu.Crown, 22.dp, Tw.slate950) }
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("باقات الذكاء الاصطناعي Pro", style = twText(16, FontWeight.Black, 24), color = Tw.white)
+                            Box(Modifier.clip(CircleShape).background(Brush.horizontalGradient(listOf(Tw.amber400, Tw.amber500))).padding(horizontal = 10.dp, vertical = 2.dp)) { Text("PRO", style = twText(10, FontWeight.Black, 14), color = Tw.slate950) }
+                        }
+                        Text("ارتقِ بقدراتك في الكتابة والتدقيق والتأليف الأدبي بأحدث نماذج الذكاء الاصطناعي", style = twText(11, FontWeight.Normal, 16), color = Color(0xFF99F6E4))
                     }
                 }
-            )
-        },
-        snackbarHost = { SnackbarHost(snackbarHostState) { Snackbar(it) } }
-    ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(20.dp)) {
-            if (state.successReferenceId != null) {
-                SuccessState(referenceId = state.successReferenceId!!, onDone = {
-                    viewModel.reset()
-                    navController.popBackStack()
-                })
-                return@Column
+                Box(Modifier.twClickable { navController.popBackStack() }.padding(6.dp)) { LuIcon(Lu.X, 20.dp, Tw.slate300) }
             }
+            Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFF134E4A).copy(alpha = 0.50f)))
 
-            if (!state.isLoading) {
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), modifier = Modifier.fillMaxWidth()) {
+            when {
+                state.isLoading -> TwLoading()
+                state.successReferenceId != null -> Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    val plan = state.selectedPlan
+                    Box(Modifier.size(64.dp).clip(RoundedCornerShape(24.dp)).background(if (dark) Color(0xFF451A03).copy(alpha = 0.80f) else Tw.amber100), contentAlignment = Alignment.Center) { LuIcon(Lu.Clock, 32.dp, Tw.amber600) }
+                    Text("تم استلام طلب اشتراكك ✅", style = twText(18, FontWeight.Black, 28), color = if (dark) Tw.white else Tw.slate900)
                     Text(
-                        "وضع حسابك الحالي: ${state.currentPlanLabel}",
-                        modifier = Modifier.padding(14.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.Bold
+                        if (state.paymentMethod == SubscriptionPaymentMethod.WALLET) "سيُخصم المبلغ من محفظتك ويُفعَّل اشتراكك في ${plan.name} خلال 24 إلى 48 ساعة بعد مراجعة الإدارة."
+                        else "تتم مراجعة إثبات الدفع يدوياً خلال 24 إلى 48 ساعة، وسيُفعَّل اشتراكك في ${plan.name} بعد التحقق.",
+                        style = twText(12, FontWeight.Normal, 20).copy(textAlign = TextAlign.Center), color = if (dark) Tw.slate400 else Tw.slate600
                     )
+                    val rs = RoundedCornerShape(24.dp)
+                    Column(Modifier.fillMaxWidth().clip(rs).background(if (dark) Tw.slate800.copy(alpha = 0.80f) else Tw.slate50).border(1.dp, if (dark) Tw.slate700 else Tw.slate200, rs).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text("إيصال طلب الاشتراك", style = twText(12, FontWeight.Black, 16), color = if (dark) Tw.white else Tw.slate900)
+                            Text(state.successReferenceId.orEmpty(), style = twText(11, FontWeight.Bold, 16).copy(fontFamily = Mono), color = Tw.slate500)
+                        }
+                        Info("الباقة المطلوبة:", plan.name, dark)
+                        Info("حد الاستخدام بعد التفعيل:", plan.aiLimitLabel, dark)
+                        Info("حالة الطلب:", "قيد المراجعة اليدوية", dark, if (dark) Tw.amber400 else Tw.amber600)
+                    }
+                    Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(teal).twClickable(pressScale = 0.95f) { viewModel.reset(); navController.popBackStack() }.padding(vertical = 12.dp), contentAlignment = Alignment.Center) { Text("حسناً، فهمت", style = twText(14, FontWeight.Bold, 20), color = Tw.white) }
                 }
-                Spacer(Modifier.height(16.dp))
-            }
+                else -> {
+                    Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                        // حالة الحساب
+                        val cs = RoundedCornerShape(16.dp)
+                        Row(Modifier.fillMaxWidth().clip(cs).background(if (dark) Tw.slate800.copy(alpha = 0.60f) else Tw.slate50).border(1.dp, if (dark) Tw.slate700 else Tw.slate200, cs).padding(14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            LuIcon(if (state.isCurrentlySubscribed) Lu.Crown else Lu.Zap, 16.dp, if (state.isCurrentlySubscribed) Tw.amber500 else teal)
+                            Text("وضع حسابك الحالي: ${state.currentPlanLabel}", style = twText(12, FontWeight.Bold, 18), color = if (dark) Tw.slate200 else Tw.slate800)
+                        }
+                        state.error?.let { TwError(it) }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-                SUBSCRIPTION_PLANS.forEach { plan ->
-                    val selected = state.selectedPlanId == plan.id
-                    Card(
-                        modifier = Modifier.weight(1f).clickable { viewModel.selectPlan(plan.id) },
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
-                        ),
-                        border = if (selected) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
-                    ) {
-                        Column(Modifier.padding(14.dp)) {
-                            if (plan.popular) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Filled.Star, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(14.dp))
-                                    Spacer(Modifier.width(4.dp))
-                                    Text(plan.badge ?: "", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                        // الباقات
+                        studio.ai.literium.literium_app.ui.screens.subscription.SUBSCRIPTION_PLANS.forEach { plan ->
+                            val sel = state.selectedPlanId == plan.id
+                            val ps = RoundedCornerShape(24.dp)
+                            Column(
+                                Modifier.fillMaxWidth().clip(ps).background(if (sel) teal.copy(alpha = 0.06f) else Color.Transparent)
+                                    .border(if (sel) 2.dp else 1.dp, if (sel) teal else line, ps).twClickable { viewModel.selectPlan(plan.id) }.padding(20.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                plan.badge?.let { b ->
+                                    Row(Modifier.clip(CircleShape).background(if (plan.popular) Brush.horizontalGradient(listOf(Tw.amber500, Color(0xFFF97316))) else Brush.horizontalGradient(listOf(teal, teal))).padding(horizontal = 10.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        if (plan.popular) LuIcon(Lu.Crown, 14.dp, Tw.amber100)
+                                        Text(b, style = twText(11, FontWeight.Black, 16), color = Tw.white)
+                                    }
                                 }
-                                Spacer(Modifier.height(4.dp))
-                            } else if (plan.badge != null) {
-                                Text(plan.badge, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Spacer(Modifier.height(4.dp))
+                                Column {
+                                    Text(plan.name, style = twText(16, FontWeight.Black, 24), color = if (dark) Tw.white else Tw.slate900)
+                                    Text(plan.nameEn, style = twText(11, FontWeight.Normal, 16), color = Tw.slate500)
+                                }
+                                Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text("${plan.price}$", style = twText(30, FontWeight.Black, 36), color = if (dark) Tw.white else Tw.slate900)
+                                    Text("/ ${plan.periodLabel}", Modifier.padding(bottom = 4.dp), style = twText(11, FontWeight.Normal, 16), color = Tw.slate500)
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    LuIcon(Lu.Sparkles, 14.dp, teal)
+                                    Text(plan.aiLimitLabel, style = twText(12, FontWeight.Bold, 16), color = if (dark) Tw.teal300 else Tw.teal700)
+                                }
+                                Box(Modifier.fillMaxWidth().height(1.dp).background(line))
+                                Text("المميزات المضمنة في الباقة:", style = twText(11, FontWeight.Bold, 16), color = Tw.slate500)
+                                plan.features.forEach { f ->
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        LuIcon(Lu.CheckCircle2, 14.dp, Tw.emerald500, Modifier.padding(top = 2.dp))
+                                        Text(f, style = twText(12, FontWeight.Normal, 18), color = if (dark) Tw.slate300 else Tw.slate700)
+                                    }
+                                }
+                                Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(if (sel) teal else (if (dark) Tw.slate800 else Tw.slate100)).padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
+                                    Text(if (sel) "الباقة المحددة للمتابعة" else "اختيار هذه الباقة", style = twText(12, FontWeight.Bold, 16), color = if (sel) Tw.white else (if (dark) Tw.slate300 else Tw.slate700))
+                                }
                             }
-                            Text(plan.name, fontWeight = FontWeight.Black, style = MaterialTheme.typography.bodyMedium)
-                            Spacer(Modifier.height(4.dp))
-                            Row(verticalAlignment = Alignment.Bottom) {
-                                Text("${plan.price}$", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
+                        }
+
+                        // ملخص + طرق الدفع
+                        val plan = state.selectedPlan
+                        val sm = RoundedCornerShape(24.dp)
+                        Row(Modifier.fillMaxWidth().clip(sm).background(if (dark) Color(0xFF042F2E).copy(alpha = 0.40f) else Color(0xFFF0FDFA)).border(1.dp, if (dark) Color(0xFF115E59) else Color(0xFF99F6E4), sm).padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text("ملخص الطلب: ${plan.name}", Modifier.weight(1f), style = twText(12, FontWeight.Bold, 16), color = if (dark) Tw.white else Tw.slate900)
+                            Text("${plan.price}$", style = twText(20, FontWeight.Black, 28), color = if (dark) Tw.teal300 else Tw.teal700)
+                        }
+                        Text("اختر طريقة الدفع المعتمدة:", style = twText(12, FontWeight.Bold, 16), color = if (dark) Tw.slate300 else Tw.slate700)
+                        SubscriptionPaymentMethod.values().toList().chunked(2).forEach { row ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                row.forEach { m ->
+                                    val sel = state.paymentMethod == m
+                                    Box(Modifier.weight(1f).clip(RoundedCornerShape(16.dp)).background(if (sel) teal.copy(alpha = 0.08f) else Color.Transparent).border(if (sel) 2.dp else 1.dp, if (sel) teal else line, RoundedCornerShape(16.dp)).twClickable { viewModel.selectPaymentMethod(m) }.padding(12.dp), contentAlignment = Alignment.Center) {
+                                        Text(m.label, style = twText(12, FontWeight.Bold, 16).copy(textAlign = TextAlign.Center), color = if (sel) (if (dark) Tw.teal300 else Tw.teal700) else (if (dark) Tw.slate400 else Tw.slate600))
+                                    }
+                                }
+                                if (row.size == 1) Box(Modifier.weight(1f)) {}
                             }
-                            Text(plan.periodLabel, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Spacer(Modifier.height(8.dp))
-                            Text(plan.aiLimitLabel, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                        }
+                        if (state.paymentMethod == SubscriptionPaymentMethod.WALLET) {
+                            Column(Modifier.fillMaxWidth().clip(sm).background(if (dark) Tw.slate800.copy(alpha = 0.60f) else Tw.slate50).border(1.dp, if (dark) Tw.slate700 else Tw.slate200, sm).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("الرصيد المتاح في محفظتك:", style = twText(12, FontWeight.Normal, 16), color = Tw.slate500); Text("${"%.2f".format(state.walletBalance)}$", style = twText(12, FontWeight.Bold, 16).copy(fontFamily = Mono), color = if (dark) Tw.white else Tw.slate900) }
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("قيمة الاشتراك المطلوب:", style = twText(12, FontWeight.Normal, 16), color = Tw.slate500); Text("-${plan.price}$", style = twText(12, FontWeight.Bold, 16).copy(fontFamily = Mono), color = Tw.rose500) }
+                                Box(Modifier.fillMaxWidth().height(1.dp).background(line))
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("الرصيد المتبقي بعد الخصم:", style = twText(12, FontWeight.Bold, 16), color = if (dark) Tw.slate200 else Tw.slate800); Text("${"%.2f".format(state.walletBalance - plan.price)}$", style = twText(12, FontWeight.Black, 16).copy(fontFamily = Mono), color = if (state.hasEnoughWalletBalance) Tw.emerald600 else Tw.rose500) }
+                                if (!state.hasEnoughWalletBalance) Text("رصيد محفظتك غير كافٍ. يرجى اختيار طريقة دفع أخرى لإتمام الاشتراك.", style = twText(11, FontWeight.Bold, 16), color = Tw.rose500)
+                            }
+                        }
+                        val busy = state.isSubmitting
+                        Row(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Brush.horizontalGradient(listOf(Color(0xFF0D9488), Color(0xFF0891B2), Color(0xFF0F766E)))).then(if (busy) Modifier.alpha(0.6f) else Modifier)
+                                .twClickable(enabled = !busy, pressScale = 0.97f) { viewModel.confirmPurchase() }.padding(vertical = 14.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (busy) CircularProgressIndicator(Modifier.size(16.dp), color = Tw.white, strokeWidth = 2.dp)
+                            Text(if (busy) "جاري إرسال طلب الاشتراك..." else "إرسال طلب الاشتراك (${plan.price}$)", style = twText(14, FontWeight.Black, 20), color = Tw.white)
                         }
                     }
                 }
             }
-
-            Spacer(Modifier.height(16.dp))
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
-                    Text("مزايا ${state.selectedPlan.name}:", fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(8.dp))
-                    state.selectedPlan.features.forEach { feature ->
-                        Row(Modifier.padding(vertical = 3.dp)) {
-                            Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text(feature, style = MaterialTheme.typography.bodySmall)
-                        }
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(20.dp))
-            Text("طريقة الدفع:", fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                SubscriptionPaymentMethod.entries.forEach { method ->
-                    FilterChip(
-                        selected = state.paymentMethod == method,
-                        onClick = { viewModel.selectPaymentMethod(method) },
-                        label = { Text(method.label) }
-                    )
-                }
-            }
-
-            if (state.paymentMethod == SubscriptionPaymentMethod.WALLET && !state.isLoading) {
-                Spacer(Modifier.height(10.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.AccountBalanceWallet, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        "رصيد محفظتك: ${"%.2f".format(state.walletBalance)}$",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (state.hasEnoughWalletBalance) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(10.dp))
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-                Text(
-                    "سيتم إرسال طلب اشتراكك بقيمة ${state.selectedPlan.price}$ لمراجعة إدارة المنصة وتفعيله يدوياً خلال 24 إلى 48 ساعة.",
-                    modifier = Modifier.padding(12.dp),
-                    style = MaterialTheme.typography.labelSmall
-                )
-            }
-
-            Spacer(Modifier.height(18.dp))
-            Button(onClick = viewModel::confirmPurchase, enabled = !state.isSubmitting, modifier = Modifier.fillMaxWidth()) {
-                if (state.isSubmitting) {
-                    CircularProgressIndicator(Modifier.size(18.dp), color = MaterialTheme.colorScheme.onPrimary)
-                    Spacer(Modifier.width(8.dp))
-                }
-                Text("إرسال طلب الاشتراك (${state.selectedPlan.price}$)")
-            }
-            Spacer(Modifier.height(24.dp))
         }
     }
 }
 
 @Composable
-private fun SuccessState(referenceId: String, onDone: () -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(vertical = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(52.dp))
-        Spacer(Modifier.height(12.dp))
-        Text("تم استلام طلب اشتراكك", fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
-        Spacer(Modifier.height(6.dp))
-        Text(
-            "رقم المرجع: $referenceId — سيراجع فريق ليتيريوم إثبات الدفع ويفعّل اشتراكك يدوياً خلال 24 إلى 48 ساعة.",
-            style = MaterialTheme.typography.bodyMedium,
-            textAlign = TextAlign.Center
-        )
-        Spacer(Modifier.height(16.dp))
-        Button(onClick = onDone) { Text("حسناً") }
+private fun Info(label: String, value: String, dark: Boolean, tone: Color? = null) {
+    Column {
+        Text(label, style = twText(11, FontWeight.Normal, 16), color = Tw.slate400)
+        Text(value, style = twText(12, FontWeight.Bold, 18), color = tone ?: (if (dark) Tw.white else Tw.slate900))
     }
 }
