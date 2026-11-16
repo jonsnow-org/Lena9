@@ -100,7 +100,7 @@ def test_workflows_use_stage_specific_external_data_gates_and_license_guard():
     assert "ONECORE_REQUIRED_TASKS:" in bootstrap
     assert "ONECORE_REQUIRED_TASKS:" in training
     assert "text,tool,image,audio,video" in bootstrap
-    assert "text,image,audio,video" in training
+    assert "text,tool,image,audio,video" in training
     assert "stage == 'acquire' && 'text,image,audio'" in bootstrap
     assert "stage == 'multimodal' && 'text,tool,image,audio,video'" in bootstrap
     assert "inputs.stage == 'multimodal' && 'text,tool,image,audio,video'" in training
