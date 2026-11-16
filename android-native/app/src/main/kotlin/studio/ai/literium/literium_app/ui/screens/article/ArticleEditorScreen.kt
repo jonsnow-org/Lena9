@@ -1,5 +1,9 @@
 package studio.ai.literium.literium_app.ui.screens.article
 
+import androidx.compose.foundation.border
+import studio.ai.literium.literium_app.ui.theme.Tw
+import studio.ai.literium.literium_app.ui.theme.isDark
+import studio.ai.literium.literium_app.ui.theme.twText
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -111,6 +115,7 @@ fun ArticleEditorScreen(
     }
 
     Scaffold(
+        containerColor = if (isDark) Tw.slate900 else Tw.white,
         topBar = {
             TopAppBar(
                 title = { Text(if (state.isEditingExisting) "تعديل المقال" else "استوديو كتابة ونشر المقالات", fontSize = 14.sp, fontWeight = FontWeight.Bold) },
@@ -129,7 +134,7 @@ fun ArticleEditorScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
-                Text("${state.wordCount} كلمة", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("${state.wordCount} كلمة", style = twText(11, FontWeight.Normal, 16), color = Tw.slate400)
             }
 
             if (state.submitError != null) {
@@ -153,7 +158,7 @@ fun ArticleEditorScreen(
             // ---- Title ----
             item {
                 Column {
-                    Text("عنوان المقال *", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("عنوان المقال *", Modifier.padding(bottom = 6.dp), style = twText(12, FontWeight.Bold, 16), color = if (isDark) Tw.slate300 else Tw.slate700)
                     OutlinedTextField(
                         value = state.title,
                         onValueChange = viewModel::setTitle,
@@ -172,7 +177,7 @@ fun ArticleEditorScreen(
             // ---- Description ----
             item {
                 Column {
-                    Text("الوصف القصير والمقدمة", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("الوصف القصير والمقدمة", Modifier.padding(bottom = 6.dp), style = twText(12, FontWeight.Bold, 16), color = if (isDark) Tw.slate300 else Tw.slate700)
                     OutlinedTextField(
                         value = state.description,
                         onValueChange = viewModel::setDescription,
@@ -186,7 +191,7 @@ fun ArticleEditorScreen(
             // ---- Body + formatting toolbar ----
             item {
                 Column {
-                    Text("محتوى المقال الكامل *", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("محتوى المقال الكامل *", Modifier.padding(bottom = 6.dp), style = twText(12, FontWeight.Bold, 16), color = if (isDark) Tw.slate300 else Tw.slate700)
                     FormattingToolbar(viewModel)
                     OutlinedTextField(
                         value = state.content,
@@ -203,12 +208,13 @@ fun ArticleEditorScreen(
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Icon(Icons.Filled.Visibility, contentDescription = null, tint = BrandTeal, modifier = Modifier.size(15.dp))
-                        Text("معاينة حية", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("معاينة حية", style = twText(12, FontWeight.Bold, 16), color = if (isDark) Tw.slate300 else Tw.slate700)
                     }
                     Spacer(Modifier.height(6.dp))
                     Surface(
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                        shape = RoundedCornerShape(16.dp)
+                        color = if (isDark) Tw.slate800.copy(alpha = 0.50f) else Tw.slate50,
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.border(1.dp, if (isDark) Tw.slate800 else Tw.slate200, RoundedCornerShape(16.dp))
                     ) {
                         Box(modifier = Modifier.padding(14.dp)) {
                             if (state.content.text.isBlank()) {
@@ -226,30 +232,13 @@ fun ArticleEditorScreen(
 
             // ---- Footer actions ----
             item {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    TextButton(
-                        onClick = { viewModel.save(ArticleStatus.DRAFT) },
-                        enabled = !state.isSubmitting,
-                        modifier = Modifier.weight(1f)
-                    ) { Text("حفظ كمسودة") }
-
-                    Surface(
-                        modifier = Modifier.weight(1f).clickable(enabled = !state.isSubmitting) { viewModel.save(ArticleStatus.PUBLISHED) },
-                        color = BrandTeal,
-                        contentColor = Color.White,
-                        shape = RoundedCornerShape(14.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            if (state.isSubmitting) {
-                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
-                                Spacer(Modifier.width(8.dp))
-                            }
-                            Text(if (state.isEditingExisting) "حفظ التعديلات" else "نشر المقال للجمهور", fontWeight = FontWeight.Black, fontSize = 13.sp)
-                        }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    studio.ai.literium.literium_app.ui.theme.TwSecondaryButton("حفظ كمسودة", { viewModel.save(ArticleStatus.DRAFT) }, Modifier.weight(0.8f), enabled = !state.isSubmitting)
+                    Box(Modifier.weight(1.2f)) {
+                        studio.ai.literium.literium_app.ui.theme.TwButton(
+                            if (state.isEditingExisting) "حفظ التعديلات" else "نشر المقال للجمهور",
+                            { viewModel.save(ArticleStatus.PUBLISHED) }, enabled = !state.isSubmitting, loading = state.isSubmitting, container = Tw.teal600
+                        )
                     }
                 }
             }
