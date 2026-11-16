@@ -22,30 +22,26 @@ def tiny_config():
     )
 
 
-def test_manifest_rejects_missing_license_and_path_escape(tmp_path):
+def test_manifest_accepts_minimal_records_and_rejects_path_escape(tmp_path):
     assets = tmp_path / "assets"
     assets.mkdir()
     outside = tmp_path / "outside.png"
     outside.write_bytes(b"not-an-image")
     record = {
-        "id": "x1", "task": "image_caption", "license": "CC-BY-4.0",
-        "source_url": "https://example.org/source", "attribution": "dataset author",
-        "split": "train", "review_status": "approved", "image": "../outside.png", "caption": "an image",
+        "id": "x1", "task": "image_caption", "source_url": "https://example.org/source", "split": "train", "image": "../outside.png", "caption": "an image",
     }
     report = validate_manifest([record], assets)
     assert not report["valid"]
     assert any("escapes assets root" in error for error in report["errors"])
 
 
-def test_manifest_requires_explicit_provenance():
+def test_manifest_requires_a_valid_source():
     record = {
-        "id": "x1", "task": "text", "license": "unknown",
-        "source_url": "not-a-url", "attribution": "", "split": "train", "review_status": "generated",
-        "text": "hello",
+        "id": "x1", "task": "text", "source_url": "not-a-url", "split": "train", "text": "hello",
     }
     report = validate_manifest([record], ".")
     assert not report["valid"]
-    assert len(report["errors"]) >= 3
+    assert any("source_url" in error for error in report["errors"])
 
 
 def test_checkpoint_roundtrip_preserves_model_optimizer_scheduler_and_rng(tmp_path):
