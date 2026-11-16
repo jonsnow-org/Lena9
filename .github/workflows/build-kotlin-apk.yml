@@ -21,9 +21,9 @@ on:
   workflow_dispatch:
     inputs:
       native_ui:
-        description: 'بناء تجريبي بواجهات Compose الأصلية بدل WebView (يُنشر باسم Literium-native.apk)'
+        description: 'واجهات Compose الأصلية (الافتراضي والمعتمد). أوقفه فقط لبناء نسخة WebView قديمة للمقارنة — تُنشر باسم Literium-webview.apk ولا تمس Literium.apk'
         type: boolean
-        default: false
+        default: true
   push:
     branches: [main, claude/project-error-analysis-zhu2ux]
     paths:
@@ -115,7 +115,7 @@ jobs:
         run: |
           set -o pipefail
           # يُحذف ضجيج stack-trace الخاص بـGradle (أسطر "at ...") ليبقى سجل الفشل مقروءاً (أخطاء Kotlin "e: ...")
-          gradle :app:assembleRelease :app:bundleRelease -PversionCode=${{ github.run_number }} -PnativeUi=${{ inputs.native_ui == true }} --stacktrace 2>&1 | grep -v -E '^[0-9TZ:.-]*\s+at |^\s+at |^\s*\.\.\. [0-9]+ more'
+          gradle :app:assembleRelease :app:bundleRelease -PversionCode=${{ github.run_number }} -PnativeUi=${{ (github.event_name == 'workflow_dispatch' && inputs.native_ui == false) && 'false' || 'true' }} --stacktrace 2>&1 | grep -v -E '^[0-9TZ:.-]*\s+at |^\s+at |^\s*\.\.\. [0-9]+ more'
 
 
       - name: Verify built APK's actual versionCode
@@ -151,8 +151,11 @@ jobs:
       # الفرع، لا عبر main مباشرة.
       - name: Sync in-app download button with this build
         run: |
-          if [ "${{ inputs.native_ui }}" = "true" ]; then
-            TARGET=public/downloads/Literium-native.apk
+          # النسخة المعتمدة = Kotlin/Compose الأصلية، تُنشر دائماً باسم Literium.apk
+          # (الرابط الوحيد الذي يستخدمه زر التحميل في الموقع وصفحة إصدارات GitHub
+          # ونظام الترويج في مستودع Ttbik). نسخة WebView القديمة (للمقارنة فقط) باسم مستقل.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.native_ui }}" = "false" ]; then
+            TARGET=public/downloads/Literium-webview.apk
           else
             TARGET=public/downloads/Literium.apk
           fi
@@ -180,11 +183,11 @@ jobs:
       # قناة توزيع رسمية بلا أي حساب متجر: صفحة إصدارات GitHub للمستودع نفسه —
       # رابط ثابت لكل نسخة، وتطبيق Obtainium يتابعها ويحدّث التطبيق تلقائياً.
       - name: Prepare release asset
-        if: github.ref_name == 'main' && inputs.native_ui != true
+        if: github.ref_name == 'main' && !(github.event_name == 'workflow_dispatch' && inputs.native_ui == false)
         run: cp android-native/app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/Literium.apk"
 
       - name: Publish GitHub Release
-        if: github.ref_name == 'main' && inputs.native_ui != true
+        if: github.ref_name == 'main' && !(github.event_name == 'workflow_dispatch' && inputs.native_ui == false)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}

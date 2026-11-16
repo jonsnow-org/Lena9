@@ -28,11 +28,11 @@ android {
         versionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 1
         versionName = "1.0"
         vectorDrawables.useSupportLibrary = true
-        // -PnativeUi=true → يعرض التطبيق شاشات Compose الأصلية (ui/screens) بدل WebView.
-        // الافتراضي false: بناء الإنتاج المعتاد يبقى WebView كما هو.
+        // الافتراضي (المعتمد منذ 2026-11-16): شاشات Compose الأصلية (ui/screens).
+        // -PnativeUi=false فقط لبناء نسخة WebView القديمة للمقارنة.
         buildConfigField(
             "boolean", "NATIVE_UI",
-            ((project.findProperty("nativeUi") as String?) == "true").toString()
+            ((project.findProperty("nativeUi") as String?) != "false").toString()
         )
     }
 

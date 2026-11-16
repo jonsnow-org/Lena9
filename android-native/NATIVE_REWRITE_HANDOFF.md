@@ -80,3 +80,11 @@
 
 ## 7) ما يخصّ المالك (لا تفعله أنت)
 نشر `firestore.rules` من Firebase Console، ضغط «Publish» في AI Studio، رفع الـAPK للمتاجر، وإدخال أي أسرار.
+
+## 5) النسخة المعتمدة (2026-11-16)
+- Kotlin/Compose الأصلية هي **الافتراضية والمعتمدة**: `build-kotlin-apk.yml` يبنيها دائماً (push أو يدوي) وينشرها باسم واحد
+  `public/downloads/Literium.apk` — وهو الرابط الوحيد المستخدم في: زر «تحميل التطبيق» (`AppUpdateWidget`, `DrawerMenu`)،
+  `manifest.json`، صفحة إصدارات GitHub (Obtainium، على main)، ونظام الترويج في `jonsnow-org/Ttbik`
+  (`channelPool.ts` → `<site>/downloads/Literium.apk`).
+- نسخة WebView القديمة للمقارنة فقط: تشغيل يدوي بـ `native_ui=false` → `Literium-webview.apk` (لا تمس `Literium.apk`).
+- حزمة AI Studio يجب أن تتضمن `public/downloads/Literium.apk` الحالي (وإلا يبقى الموقع يوزّع ما رُفع سابقاً).
