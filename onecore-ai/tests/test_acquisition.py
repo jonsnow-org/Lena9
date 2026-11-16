@@ -65,6 +65,9 @@ def test_source_registry_covers_all_shared_modalities() -> None:
             "finevideo", "laion_bvd_video_55m", "coyo_700m", "conceptual_captions_12m",
             "sharegpt4v_images", "webvid_10m_video", "msrvtt_video",
             "saxo_function_calling", "turkish_mobile_function_calling"} <= ids
+    enabled = {item["id"] for item in sources if item.get("enabled", True)}
+    assert {"saxo_function_calling", "turkish_mobile_function_calling",
+            "open_images_v7", "coyo_700m"} <= enabled
 
 
 def test_split_assignment_is_stable_and_preserves_published_holdouts() -> None:

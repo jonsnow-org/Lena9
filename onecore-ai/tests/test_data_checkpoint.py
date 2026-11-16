@@ -9,7 +9,7 @@ from onecore.checkpoint import load_checkpoint, save_checkpoint
 from onecore.config import ModelConfig
 from onecore.data import validate_manifest
 from onecore.model import OneCore
-from onecore.train import run_training
+from onecore.train import _joint_micro_batches, run_training
 
 
 def tiny_config():
@@ -95,3 +95,43 @@ def test_smoke_training_segment_saves_checkpoint_and_empty_data_class_counts(tmp
     assert report["optimizer_data_class_counts"] == {}
     assert report["excluded_data_class_counts"] == {}
     assert (tmp_path / "run-state" / "checkpoint.pt").is_file()
+
+
+
+def test_joint_sampler_picks_one_record_from_each_of_five_families():
+    import random
+
+    records_by_task = {
+        "text": [{"id": "text-1", "task": "text"}],
+        "tool_use": [{"id": "tool-1", "task": "tool_use"}],
+        "image_caption": [{"id": "image-1", "task": "image_caption"}],
+        "image_reconstruction": [{"id": "image-2", "task": "image_reconstruction"}],
+        "audio_text": [{"id": "audio-1", "task": "audio_text"}],
+        "audio_reconstruction": [{"id": "audio-2", "task": "audio_reconstruction"}],
+        "video_caption": [{"id": "video-1", "task": "video_caption"}],
+        "video_reconstruction": [{"id": "video-2", "task": "video_reconstruction"}],
+    }
+    batch = _joint_micro_batches(records_by_task, random.Random(17))
+    assert len(batch) == 5
+    assert {family for family, _ in batch} == {"text", "tool", "image", "audio", "video"}
+    allowed_tasks = {
+        "text": {"text"}, "tool": {"tool_use"},
+        "image": {"image_caption", "image_reconstruction"},
+        "audio": {"audio_text", "audio_reconstruction"},
+        "video": {"video_caption", "video_reconstruction"},
+    }
+    for family, record in batch:
+        assert record["task"] in allowed_tasks[family]
+
+
+def test_joint_sampler_rejects_missing_external_family_before_any_update():
+    import random
+
+    records_by_task = {
+        "text": [{"id": "text-1", "task": "text"}],
+        "tool_use": [{"id": "tool-1", "task": "tool_use"}],
+        "image_caption": [{"id": "image-1", "task": "image_caption"}],
+        "audio_text": [{"id": "audio-1", "task": "audio_text"}],
+    }
+    with pytest.raises(ValueError, match="all five families"):
+        _joint_micro_batches(records_by_task, random.Random(3))

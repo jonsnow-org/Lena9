@@ -242,7 +242,7 @@ sources:
     limits: {train: 9000, validation: 250, test: 250}
     license: apache-2.0
     attribution: "Saxo function-calling dataset"
-    enabled: false
+    enabled: true
   - id: turkish_mobile_function_calling
     repo: BTX24/turkish-mobile-function-calling-dataset
     config: default
@@ -255,7 +255,7 @@ sources:
     limits: {train: 5000, validation: 150, test: 150}
     license: apache-2.0
     attribution: "Turkish mobile function-calling dataset"
-    enabled: false
+    enabled: true
   - id: fleurs_ar
     repo: google/fleurs
     config: ar_eg
@@ -373,7 +373,7 @@ sources:
     limits: {train: 250, validation: 40, test: 40}
     license: cc-by-2.0
     attribution: "Open Images — Google LLC and image contributors"
-    enabled: false
+    enabled: true
   - id: sard_arabic_documents
     repo: riotu-lab/SARD
     config: default
@@ -511,7 +511,7 @@ sources:
     limits: {train: 500, validation: 50, test: 50}
     license: cc-by-4.0
     attribution: "COYO-700M — Kakao Brain and dataset contributors"
-    enabled: false
+    enabled: true
   - id: conceptual_captions_12m
     repo: laion/conceptual-captions-12m-webdataset
     config: default

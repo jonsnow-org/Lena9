@@ -282,6 +282,44 @@ def _weighted_record(records_by_task: dict[str, list[dict[str, Any]]],
     return rng.choice(records_by_task[selected_task])
 
 
+JOINT_FAMILY_TASKS: dict[str, tuple[str, ...]] = {
+    "text": ("text",),
+    "tool": ("tool_use",),
+    "image": ("image_caption", "image_reconstruction"),
+    "audio": ("audio_text", "audio_reconstruction"),
+    "video": ("video_caption", "video_reconstruction"),
+}
+
+
+def _joint_micro_batches(
+    records_by_task: dict[str, list[dict[str, Any]]],
+    rng: random.Random,
+) -> list[tuple[str, dict[str, Any]]]:
+    """Pick one external record from each family for the same optimizer update."""
+    missing = [
+        family for family, tasks in JOINT_FAMILY_TASKS.items()
+        if not any(records_by_task.get(task) for task in tasks)
+    ]
+    if missing:
+        raise ValueError(
+            "joint training requires external samples from all five families: "
+            + ", ".join(missing)
+        )
+    family_order = list(JOINT_FAMILY_TASKS)
+    rng.shuffle(family_order)
+    selected: list[tuple[str, dict[str, Any]]] = []
+    for family in family_order:
+        candidates = [
+            item
+            for task in JOINT_FAMILY_TASKS[family]
+            for item in records_by_task.get(task, [])
+        ]
+        selected.append((family, rng.choice(candidates)))
+    if {family for family, _ in selected} != set(JOINT_FAMILY_TASKS):
+        raise RuntimeError("joint micro-batch does not contain all five task families")
+    return selected
+
+
 def _asset_manifest_sha256(project_root: Path, records: list[dict[str, Any]]) -> str:
     assets_root = (project_root / "data" / "assets").resolve()
     paths: set[str] = set()
@@ -320,10 +358,12 @@ def run_training(
     cfg, train_cfg, raw_cfg = load_config(config_path)
     if not 1 <= steps <= train_cfg.max_steps_per_job:
         raise ValueError(f"steps must be between 1 and {train_cfg.max_steps_per_job} per GitHub job")
-    if stage not in {"smoke", "text", "multimodal"}:
+    if stage not in {"smoke", "text", "joint", "multimodal"}:
         raise ValueError(f"unsupported training stage: {stage}")
+    if stage == "joint" and resume:
+        raise ValueError("the initial joint foundation stage must start from random initialization")
     if stage == "multimodal" and not resume:
-        raise ValueError("multimodal stage must resume the same model checkpoint from text/tool pretraining")
+        raise ValueError("multimodal continuation must resume the same joint OneCore checkpoint")
 
     seed = int(seed_override if seed_override is not None else raw_cfg.get("seed", 20261115))
     random.seed(seed)
@@ -354,6 +394,14 @@ def run_training(
         seed = int(saved_metadata.get("seed", seed))
         # load_checkpoint has restored Python/NumPy/Torch RNG states exactly.
         # Do not reseed here: this preserves deterministic continuation.
+    sampled_family_counts: dict[str, int] = {
+        str(key): int(value) for key, value in (saved_metadata.get("sampled_family_counts") or {}).items()
+    }
+    sampled_task_counts: dict[str, int] = {
+        str(key): int(value) for key, value in (saved_metadata.get("sampled_task_counts") or {}).items()
+    }
+    job_sampled_family_counts = {family: 0 for family in JOINT_FAMILY_TASKS}
+    job_sampled_task_counts: dict[str, int] = {}
     lineage_id = saved_metadata.get("lineage_id")
     if not lineage_id:
         lineage_id = (
@@ -389,22 +437,18 @@ def run_training(
         for record in records:
             records_by_task.setdefault(record["task"], []).append(record)
         required = {"text"}
-        missing = required - set(records_by_task)
-        if stage == "multimodal":
-            modality_groups = {
-                "image": {"image_caption", "image_reconstruction"},
-                "audio": {"audio_text", "audio_reconstruction"},
-                "video": {"video_caption", "video_reconstruction"},
-            }
-            missing_modalities = [
-                name for name, options in modality_groups.items()
-                if not (options & set(records_by_task))
+        if stage in {"joint", "multimodal"}:
+            missing_families = [
+                family for family, tasks in JOINT_FAMILY_TASKS.items()
+                if not any(records_by_task.get(task) for task in tasks)
             ]
-            if missing_modalities:
+            if missing_families:
                 raise ValueError(
-                    "multimodal data is missing one or more shared-model modalities: "
-                    + ", ".join(missing_modalities)
+                    "joint OneCore training is blocked until external data exists for all five families: "
+                    + ", ".join(missing_families)
                 )
+            required = {"text", "tool_use"}
+        missing = required - set(records_by_task)
         if missing:
             raise ValueError(f"training data is missing required task categories: {sorted(missing)}")
         all_manifest_records = read_manifest(root / "data" / "train.jsonl")
@@ -481,7 +525,7 @@ def run_training(
             # A smoke checkpoint has no tokenizer and is safe to continue from:
             # no text IDs were trained in that phase. Any checkpoint that already
             # records a tokenizer SHA must restore the exact tokenizer artifact.
-            if stage != "text" or (resume and saved_metadata.get("tokenizer_sha256")):
+            if stage not in {"text", "joint"} or (resume and saved_metadata.get("tokenizer_sha256")):
                 raise FileNotFoundError("from-scratch tokenizer is missing for this checkpoint lineage")
             corpus_files = _manifest_corpus(
                 read_manifest(root / "data" / "train.jsonl"), out / "tokenizer-corpus.txt"
@@ -495,7 +539,7 @@ def run_training(
         if stage == "multimodal" and saved_tokenizer_sha != tokenizer_sha:
             raise ValueError("multimodal stage requires the exact tokenizer saved with the text checkpoint")
 
-        if stage == "multimodal" and not codebook_initialized:
+        if stage in {"joint", "multimodal"} and not codebook_initialized:
             codebook_report = _initialize_multimodal_codebooks(model, records, root, seed)
             codebook_initialized = True
     else:
@@ -515,12 +559,27 @@ def run_training(
     for local_step in range(steps):
         optimizer.zero_grad(set_to_none=True)
         micro_losses: list[float] = []
-        for micro_step in range(train_cfg.gradient_accumulation):
+        if stage in {"joint", "multimodal"}:
+            micro_batch = _joint_micro_batches(records_by_task, rng)
+        elif stage == "smoke":
+            micro_batch = [(None, None)] * train_cfg.gradient_accumulation
+        else:
+            micro_batch = [
+                (None, _weighted_record(records_by_task, stage, rng))
+                for _ in range(train_cfg.gradient_accumulation)
+            ]
+        accumulation = len(micro_batch)
+        for micro_step, (family, record) in enumerate(micro_batch):
             if stage == "smoke":
                 sequence, aux_loss = _smoke_sample(model, step + local_step + micro_step)
             else:
-                record = _weighted_record(records_by_task, stage, rng)
-                sequence, aux_loss, _ = _record_sequence(record, model, tokenizer, root)
+                assert record is not None
+                sequence, aux_loss, task = _record_sequence(record, model, tokenizer, root)
+                if family is not None:
+                    sampled_family_counts[family] = sampled_family_counts.get(family, 0) + 1
+                    job_sampled_family_counts[family] = job_sampled_family_counts.get(family, 0) + 1
+                    sampled_task_counts[task] = sampled_task_counts.get(task, 0) + 1
+                    job_sampled_task_counts[task] = job_sampled_task_counts.get(task, 0) + 1
             logits = model(sequence[:, :-1], causal=True)
             targets = sequence[:, 1:]
             language_loss = torch.nn.functional.cross_entropy(
@@ -529,7 +588,7 @@ def run_training(
             loss = language_loss + aux_loss
             if not torch.isfinite(loss):
                 raise FloatingPointError(f"non-finite loss at optimizer step {step + 1}")
-            (loss / train_cfg.gradient_accumulation).backward()
+            (loss / accumulation).backward()
             micro_losses.append(float(loss.detach()))
 
         torch.nn.utils.clip_grad_norm_(model.parameters(), train_cfg.max_grad_norm)
@@ -554,6 +613,8 @@ def run_training(
                 "parent_run_id": parent_run_id,
                 "codebooks_initialized": codebook_initialized,
                 "codebook_report": codebook_report,
+                "sampled_family_counts": sampled_family_counts,
+                "sampled_task_counts": sampled_task_counts,
                 "last_loss": losses[-1],
                 "scheduler_step": scheduler.last_epoch,
             }
@@ -579,9 +640,18 @@ def run_training(
         "parent_run_id": parent_run_id,
         "codebooks_initialized": codebook_initialized,
         "codebook_report": codebook_report,
+        "sampled_family_counts": sampled_family_counts,
+        "sampled_task_counts": sampled_task_counts,
         "last_loss": losses[-1] if losses else None,
         "scheduler_step": scheduler.last_epoch,
     }
+    if stage == "joint":
+        expected_family_counts = {family: steps for family in JOINT_FAMILY_TASKS}
+        if job_sampled_family_counts != expected_family_counts:
+            raise RuntimeError(
+                f"joint run must sample each family exactly once per optimizer step: "
+                f"expected={expected_family_counts}, actual={job_sampled_family_counts}"
+            )
     checkpoint_report = save_checkpoint(
         checkpoint_path, model, optimizer, scheduler, step,
         {"model": cfg.to_dict(), "training": raw_cfg.get("training", {})}, metadata,
@@ -617,6 +687,15 @@ def run_training(
         "codebook_report": codebook_report,
         "checkpoint": checkpoint_report,
         "task_counts": task_counts,
+        "sampling_policy": (
+            "one external sample from each of text/tool/image/audio/video per optimizer step"
+            if stage in {"joint", "multimodal"} else "legacy weighted task sampler"
+        ),
+        "sampled_family_counts": sampled_family_counts,
+        "sampled_family_counts_in_this_job": job_sampled_family_counts,
+        "sampled_task_counts": sampled_task_counts,
+        "sampled_task_counts_in_this_job": job_sampled_task_counts,
+        "micro_batches_per_optimizer_step": 5 if stage in {"joint", "multimodal"} else train_cfg.gradient_accumulation,
         "external_data_counts": external_data_counts,
         "optimizer_data_class_counts": optimizer_data_class_counts,
         "excluded_data_class_counts": excluded_data_class_counts,
@@ -632,7 +711,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="OneCore bounded, resumable GitHub CPU training runner")
     parser.add_argument("--root", default=".")
     parser.add_argument("--config", default="configs/phone-research.yaml")
-    parser.add_argument("--stage", choices=["smoke", "text", "multimodal"], required=True)
+    parser.add_argument("--stage", choices=["smoke", "text", "joint", "multimodal"], required=True)
     parser.add_argument("--steps", type=int, default=1)
     parser.add_argument("--output-dir", default="run-state")
     parser.add_argument("--resume", action="store_true")
