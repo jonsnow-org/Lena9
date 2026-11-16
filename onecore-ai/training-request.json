@@ -1,9 +1,10 @@
 {
   "schema": "onecore-training-request-v1",
   "stage": "acquire",
-  "steps": 1,
-  "purpose": "Retry the expanded external corpus acquisition with corrected notebook source-line serialization and mandatory Python compilation of all notebook code cells in CI and before acquisition. Use union-find media-content grouping across all sources so every record linked by source group, record identity or exact media asset SHA-256 remains in one split. Keep Bootstrap, all synthetic curricula and locally authored records diagnostic-only and excluded from tokenizer and optimizer. Require usable, licensed, pinned external text/tool/image/audio/video records plus full train/validation/test disjointness, upload the corpus artifact, then automatically run 150 fresh random-initialized OneCore text/tool optimizer steps.",
-  "request_id": "external-corpus-retry-after-notebook-compile-guard-v5-20261116",
+  "steps": 150,
+  "purpose": "Extend the previously validated external corpus from run 43811430834 with real Open Images V7 image payloads from the explicitly CC-BY-4.0 FineOpenimages package. Revalidate pinned source revisions, external-only provenance, source content hashes, exact asset disjointness across train/validation/test, and text+image+audio coverage. Then start 150 fresh random-initialized OneCore text-foundation optimizer steps in the same GitHub Actions CPU job using external text records only; tool-use and video training remain blocked until non-synthetic, commercially trainable external sources with actual usable payloads are verified. Bootstrap and all synthetic or owner-created records remain diagnostic-only and excluded from tokenizer and optimizer.",
+  "request_id": "external-openimages-incremental-inline-text-foundation-v6-20261116",
   "data_profile": "expanded",
+  "base_corpus_run_id": "43811430834",
   "start_fresh_text_training": true
 }

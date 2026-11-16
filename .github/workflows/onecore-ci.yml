@@ -78,5 +78,13 @@ jobs:
               text = (Path(".github/workflows") / name).read_text()
               assert "group: onecore-training" in text
               assert "research/onecore-foundation" in text
-          print("OneCore workflows are isolated and serialized.")
+          bootstrap = (Path(".github/workflows") / "onecore-bootstrap.yml").read_text(encoding="utf-8")
+          assert "gh workflow run onecore-training.yml" not in bootstrap, "training must not dispatch a workflow absent from the default branch"
+          assert "Start fresh random-initialized OneCore text foundation training in the same CPU job" in bootstrap
+          import yaml
+          registry = yaml.safe_load(Path("onecore-ai/data/sources.yaml").read_text(encoding="utf-8"))
+          image_sources = [item for item in registry["sources"] if item.get("id") == "openimages_finedet_v1"]
+          assert len(image_sources) == 1 and image_sources[0].get("enabled") is True
+          assert image_sources[0].get("adapter") == "image" and image_sources[0].get("license") == "cc-by-4.0"
+          print("OneCore workflows are isolated, serialized, same-job training is enforced, and the external image source is configured.")
           PY

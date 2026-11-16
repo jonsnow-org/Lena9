@@ -55,6 +55,7 @@ jobs:
           resume_run_id = str(request.get("resume_run_id", "")).strip()
           parent_run_id = str(request.get("parent_run_id", resume_run_id)).strip()
           data_run_id = str(request.get("data_run_id", "")).strip()
+          base_corpus_run_id = str(request.get("base_corpus_run_id", "")).strip()
           data_profile = str(request.get("data_profile", "initial"))
           start_fresh_text_training = request.get("start_fresh_text_training", False)
           if not isinstance(start_fresh_text_training, bool):
@@ -65,6 +66,10 @@ jobs:
               raise ValueError("fresh random initialization cannot resume a prior checkpoint")
           if start_fresh_text_training and data_run_id:
               raise ValueError("fresh random initialization must use the corpus artifact created by this acquisition")
+          if base_corpus_run_id and stage != "acquire":
+              raise ValueError("base_corpus_run_id is only valid for incremental acquisition")
+          if base_corpus_run_id and data_run_id:
+              raise ValueError("use either base_corpus_run_id or data_run_id, not both")
           if data_profile not in {"initial", "expanded"}:
               raise ValueError("data_profile must be initial or expanded")
           if stage not in {"acquire", "text", "multimodal", "evaluate"}:
@@ -77,6 +82,8 @@ jobs:
               raise ValueError("text/multimodal/evaluate require an imported onecore-corpus artifact data_run_id")
           if data_run_id and not re.fullmatch(r"[0-9]+", data_run_id):
               raise ValueError("data_run_id must contain digits only")
+          if base_corpus_run_id and not re.fullmatch(r"[0-9]+", base_corpus_run_id):
+              raise ValueError("base_corpus_run_id must contain digits only")
           if resume_run_id and not re.fullmatch(r"[0-9]+", resume_run_id):
               raise ValueError("resume_run_id must contain digits only")
           if parent_run_id and not re.fullmatch(r"[0-9]+", parent_run_id):
@@ -88,12 +95,22 @@ jobs:
           print(f"resume_run_id={resume_run_id}")
           print(f"parent_run_id={parent_run_id}")
           print(f"data_run_id={data_run_id}")
+          print(f"base_corpus_run_id={base_corpus_run_id}")
           print(f"data_profile={data_profile}")
           print(f"start_fresh_text_training={str(start_fresh_text_training).lower()}")
           PY
 
       - name: Generate deterministic bootstrap data or validate existing reviewed manifests
         run: python -m onecore.bootstrap --root onecore-ai
+
+      - name: Restore prior verified corpus as the base for incremental acquisition
+        if: ${{ steps.request.outputs.stage == 'acquire' && steps.request.outputs.base_corpus_run_id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: onecore-corpus-${{ steps.request.outputs.base_corpus_run_id }}
+          run-id: ${{ steps.request.outputs.base_corpus_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: onecore-ai/data
 
       - name: Restore imported shared corpus for acquisition or training continuation
         if: ${{ steps.request.outputs.data_run_id != '' }}
@@ -209,7 +226,7 @@ jobs:
       - name: Execute contract, architecture and verified external-corpus gate
         env:
           ONECORE_SKIP_ACQUISITION: ${{ steps.request.outputs.stage != 'acquire' && steps.request.outputs.data_run_id != '' && '1' || '0' }}
-          ONECORE_REQUIRED_TASKS: ${{ steps.request.outputs.stage == 'evaluate' && 'text,tool,image,audio,video' || steps.request.outputs.stage == 'multimodal' && 'text,image,audio,video' || steps.request.outputs.stage == 'acquire' && 'text,audio' || 'text' }}
+          ONECORE_REQUIRED_TASKS: ${{ steps.request.outputs.stage == 'evaluate' && 'text,tool,image,audio,video' || steps.request.outputs.stage == 'multimodal' && 'text,tool,image,audio,video' || steps.request.outputs.stage == 'acquire' && 'text,image,audio' || 'text' }}
           ONECORE_DATA_PROFILE: ${{ steps.request.outputs.data_profile }}
           ONECORE_MIN_TRAIN_RECORDS: '25'
           ONECORE_MIN_HOLDOUT_RECORDS: '5'
@@ -265,14 +282,18 @@ jobs:
           retention-days: 90
           compression-level: 1
 
-      - name: Start fresh random-initialized OneCore text training on the imported corpus
+      - name: Start fresh random-initialized OneCore text foundation training in the same CPU job
         if: ${{ success() && steps.request.outputs.stage == 'acquire' && steps.request.outputs.start_fresh_text_training == 'true' }}
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
+          ONECORE_STAGE: text
+          ONECORE_STEPS: ${{ steps.request.outputs.steps }}
+          ONECORE_RESUME: "false"
+          ONECORE_PARENT_RUN_ID: ""
         run: |
-          gh workflow run onecore-training.yml --ref research/onecore-foundation \
-            -f stage=text -f steps=150 -f data_run_id=${GITHUB_RUN_ID}
+          jupyter nbconvert --to notebook --execute onecore-ai/notebooks/03_text_pretraining.ipynb \
+            --output 03_text_pretraining.executed.ipynb \
+            --output-dir onecore-ai/run-state/executed-notebooks \
+            --ExecutePreprocessor.timeout=-1
 
       - name: Execute smoke or text/tool foundation segment
         if: ${{ steps.request.outputs.stage == 'text' }}
@@ -301,7 +322,7 @@ jobs:
             --ExecutePreprocessor.timeout=-1
 
       - name: Execute held-out evaluation and promotion gate
-        if: ${{ always() && steps.request.outputs.stage != '' && steps.request.outputs.stage != 'acquire' && hashFiles('onecore-ai/run-state/checkpoint.pt') != '' }}
+        if: ${{ success() && steps.request.outputs.stage != '' && (steps.request.outputs.stage != 'acquire' || steps.request.outputs.start_fresh_text_training == 'true') && hashFiles('onecore-ai/run-state/checkpoint.pt') != '' }}
         run: |
           jupyter nbconvert --to notebook --execute onecore-ai/notebooks/05_evaluation_and_promotion.ipynb \
             --output 05_evaluation_and_promotion.executed.ipynb \
@@ -313,7 +334,7 @@ jobs:
         run: cp onecore-ai/data/acquisition-report.json onecore-ai/run-state/acquisition-report.json
 
       - name: Upload resumable checkpoint and scientific reports
-        if: ${{ always() && steps.request.outputs.stage != 'acquire' && hashFiles('onecore-ai/run-state/checkpoint.pt') != '' }}
+        if: ${{ always() && (steps.request.outputs.stage != 'acquire' || steps.request.outputs.start_fresh_text_training == 'true') && hashFiles('onecore-ai/run-state/checkpoint.pt') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: onecore-state-${{ github.run_id }}
@@ -332,7 +353,7 @@ jobs:
 
       - name: Check durable release write token
         id: release_auth
-        if: ${{ success() && steps.request.outputs.stage != 'evaluate' && steps.request.outputs.stage != 'acquire' && hashFiles('onecore-ai/run-state/checkpoint.pt') != '' }}
+        if: ${{ success() && steps.request.outputs.stage != 'evaluate' && (steps.request.outputs.stage != 'acquire' || steps.request.outputs.start_fresh_text_training == 'true') && hashFiles('onecore-ai/run-state/checkpoint.pt') != '' }}
         env:
           ONECORE_RELEASE_TOKEN: ${{ secrets.ONECORE_RELEASE_TOKEN }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -344,7 +365,7 @@ jobs:
           fi
       - name: Create durable versioned GitHub Release checkpoint
         id: release
-        if: ${{ success() && steps.request.outputs.stage != 'evaluate' && steps.request.outputs.stage != 'acquire' && steps.release_auth.outputs.enabled == 'true' && hashFiles('onecore-ai/run-state/checkpoint.pt') != '' }}
+        if: ${{ success() && steps.request.outputs.stage != 'evaluate' && (steps.request.outputs.stage != 'acquire' || steps.request.outputs.start_fresh_text_training == 'true') && steps.release_auth.outputs.enabled == 'true' && hashFiles('onecore-ai/run-state/checkpoint.pt') != '' }}
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.ONECORE_RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
@@ -381,7 +402,7 @@ jobs:
           echo "- Parent run ID: ${{ steps.request.outputs.parent_run_id }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- Run ID: ${GITHUB_RUN_ID}" >> "$GITHUB_STEP_SUMMARY"
           echo "- Branch: research/onecore-foundation" >> "$GITHUB_STEP_SUMMARY"
-          if [[ "${{ steps.request.outputs.stage }}" == "acquire" ]]; then
+          if [[ "${{ steps.request.outputs.stage }}" == "acquire" && "${{ steps.request.outputs.start_fresh_text_training }}" != "true" ]]; then
             echo "- Checkpoint artifact/release: skipped (acquisition-only stage; no checkpoint alias created)" >> "$GITHUB_STEP_SUMMARY"
             echo "- Durable release token configured: not applicable" >> "$GITHUB_STEP_SUMMARY"
             echo "- Durable release step outcome: skipped" >> "$GITHUB_STEP_SUMMARY"

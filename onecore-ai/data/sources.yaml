@@ -33,7 +33,7 @@ sources:
       expanded: {train: 9000, validation: 300, test: 300}
     license: odc-by
     attribution: "FineWeb2-HQ-Plus — EPFL ML / FineWeb2 contributors"
-    enabled: true
+    enabled: false  # English config is not published by this repo; avoid repeatable source failure
   - id: fineweb2_hq_ar_saudi
     repo: epfml/FineWeb2-HQ-Plus
     config: ars_Arab
@@ -350,6 +350,19 @@ sources:
     enabled: false
 
   # Still images and Arabic document understanding
+  - id: openimages_finedet_v1
+    repo: finedet/openimages
+    config: default
+    hf_splits: [train, validation, test]
+    adapter: image
+    image_field: image
+    split_strategy: preserve
+    limits: {train: 250, validation: 40, test: 40}
+    profile_limits:
+      expanded: {train: 900, validation: 120, test: 120}
+    license: cc-by-4.0
+    attribution: "FineOpenimages / Open Images V7 — image contributors"
+    enabled: true
   - id: open_images_v7
     repo: bitmind/open-images-v7
     config: default
@@ -472,7 +485,7 @@ sources:
       expanded: {test: 250}
     license: cc-by-4.0
     attribution: "GigaSpeechBench — SpeechColab"
-    enabled: true
+    enabled: false  # Metadata-only; repo requires language-specific configs and is not optimizer input
   - id: laion_bvd_image_300m
     repo: laion/BVD-I-300M
     config: default
