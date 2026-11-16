@@ -30,9 +30,28 @@ data class ThemePresetDefinition(
     val shades: ThemeShadeScale
 )
 
-const val DEFAULT_THEME_PRESET: String = "purple"
+const val DEFAULT_THEME_PRESET: String = "teal"
 
 val THEME_PRESETS: Map<String, ThemePresetDefinition> = mapOf(
+    "teal" to ThemePresetDefinition(
+        key = "teal",
+        label = "فيروزي ليتيريوم (افتراضي)",
+        labelEn = "Literium Teal (Default)",
+        swatch = Color(0xFF0D9488),
+        shades = ThemeShadeScale(
+            shade50 = Color(0xFFF0FDFA),
+            shade100 = Color(0xFFCBFBF1),
+            shade200 = Color(0xFF96F7E4),
+            shade300 = Color(0xFF46ECD5),
+            shade400 = Color(0xFF00D5BE),
+            shade500 = Color(0xFF00BBA7),
+            shade600 = Color(0xFF009689),
+            shade700 = Color(0xFF00786F),
+            shade800 = Color(0xFF005F5A),
+            shade900 = Color(0xFF0B4F4A),
+            shade950 = Color(0xFF022F2E),
+        )
+    ),
     "purple" to ThemePresetDefinition(
         key = "purple",
         label = "بنفسجي (افتراضي)",

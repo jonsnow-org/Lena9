@@ -15,6 +15,8 @@ data class Tweet(
     var content: String = "",
     /** Optional attached image URL (Cloudinary, purpose="tweet") — mirrors web's Tweet.imageUrl. */
     var imageUrl: String? = null,
+    /** "image" | "video" — يطابق Tweet.mediaType في الويب (الفيديو يُعرض بمشغّل). */
+    var mediaType: String? = null,
     var likesCount: Long = 0,
     var commentsCount: Long = 0,
     var sharesCount: Long = 0,

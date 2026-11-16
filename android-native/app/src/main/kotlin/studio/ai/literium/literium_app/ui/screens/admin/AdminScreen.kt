@@ -1,5 +1,21 @@
 package studio.ai.literium.literium_app.ui.screens.admin
 
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import studio.ai.literium.literium_app.ui.theme.Lu
+import studio.ai.literium.literium_app.ui.theme.LuIcon
+import studio.ai.literium.literium_app.ui.theme.Tw
+import studio.ai.literium.literium_app.ui.theme.arNum
+import studio.ai.literium.literium_app.ui.theme.brand
+import studio.ai.literium.literium_app.ui.theme.twClickable
+import studio.ai.literium.literium_app.ui.theme.twText
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,7 +36,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
+import studio.ai.literium.literium_app.ui.theme.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -63,19 +79,19 @@ import studio.ai.literium.literium_app.ui.screens.admin.tabs.UsersTab
  * the real product, not their own top-level tabs — ported the same way
  * here rather than inventing tabs the source doesn't have.
  */
-private data class AdminTabDef(val key: String, val label: String)
+private data class AdminTabDef(val key: String, val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector)
 
-private val ADMIN_TABS = listOf(
-    AdminTabDef("overview", "نظرة عامة"),
-    AdminTabDef("analytics", "التحليلات"),
-    AdminTabDef("money", "المالية"),
-    AdminTabDef("campaigns", "الإعلانات"),
-    AdminTabDef("moderation", "المحتوى"),
-    AdminTabDef("chats", "المحادثات"),
-    AdminTabDef("users", "المستخدمون"),
-    AdminTabDef("fraud", "مكافحة الاحتيال"),
-    AdminTabDef("bots", "البوتات"),
-    AdminTabDef("settings", "الإعدادات")
+private val ADMIN_TABS get() = listOf(
+    AdminTabDef("overview", "نظرة عامة", Lu.TrendingUp),
+    AdminTabDef("analytics", "الإحصائيات والزوار", Lu.Activity),
+    AdminTabDef("money", "العمليات المالية", Lu.DollarSign),
+    AdminTabDef("campaigns", "الإعلانات والترويج", Lu.Megaphone),
+    AdminTabDef("moderation", "المحتوى والمقالات", Lu.FileText),
+    AdminTabDef("chats", "مراقبة المحادثات", Lu.Eye),
+    AdminTabDef("users", "المستخدمون وKYC", Lu.Users),
+    AdminTabDef("fraud", "مكافحة الاحتيال", Lu.ShieldAlert),
+    AdminTabDef("bots", "بوتات النشر والتفاعل", Lu.Bot),
+    AdminTabDef("settings", "إعدادات المنظومة", Lu.Settings)
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -108,6 +124,7 @@ fun AdminScreen(
         currentUser?.email?.equals(PlatformConstants.OWNER_ADMIN_EMAIL, ignoreCase = true) == true
 
     Scaffold(
+        containerColor = Tw.slate900,
         topBar = {
             TopAppBar(
                 navigationIcon = {
@@ -142,23 +159,55 @@ fun AdminScreen(
         }
 
         Column(Modifier.fillMaxSize().padding(padding)) {
-            LazyRow(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surface),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+            val badges = mapOf(
+                "money" to (depositRequests.count { it.status == "pending" } + payoutRequests.count { it.status == "pending" } + purchaseRequests.count { it.status == "pending" }),
+                "campaigns" to (campaigns.count { it.status == "pending" } + promotions.count { it.status == "pending" }),
+                "users" to users.count { it.kycDetails?.status == "pending" },
+                "fraud" to fraudFlags.size
+            )
+            Text(
+                "أقسام الإدارة والتحكم المتخصصة:",
+                Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                style = twText(12, FontWeight.Bold, 16), color = Tw.slate400
+            )
+            Box(
+                Modifier.padding(horizontal = 12.dp).fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp)).background(Tw.slate900)
+                    .border(1.dp, Tw.slate800, RoundedCornerShape(16.dp))
             ) {
-                items(ADMIN_TABS) { tab ->
-                    FilterChip(
-                        selected = activeTab == tab.key,
-                        onClick = { activeTab = tab.key },
-                        label = { Text(tab.label) },
-                        modifier = Modifier.padding(end = 6.dp)
-                    )
+                LazyRow(contentPadding = PaddingValues(4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(ADMIN_TABS) { tab ->
+                        val active = activeTab == tab.key
+                        val badge = badges[tab.key] ?: 0
+                        Row(
+                            Modifier.clip(RoundedCornerShape(12.dp))
+                                .background(if (active) brand.s600 else Color.Transparent)
+                                .twClickable(pressScale = 1f) { activeTab = tab.key }
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            LuIcon(tab.icon, 14.dp, if (active) Color.White else Tw.slate400)
+                            Text(tab.label, style = twText(11, FontWeight.Bold, 16), color = if (active) Color.White else Tw.slate400, maxLines = 1)
+                            if (badge > 0) {
+                                Box(
+                                    Modifier.clip(RoundedCornerShape(50)).background(if (active) Color.White.copy(alpha = 0.2f) else Tw.amber500)
+                                        .padding(horizontal = 6.dp, vertical = 1.dp)
+                                ) {
+                                    Text(arNum(badge.toLong()), style = twText(10, FontWeight.Black, 14), color = if (active) Color.White else Tw.slate950)
+                                }
+                            }
+                        }
+                    }
                 }
             }
+            Spacer(Modifier.height(12.dp))
 
-            Box(Modifier.weight(1f).fillMaxSize()) {
+            Box(
+                Modifier.weight(1f).fillMaxSize().padding(horizontal = 12.dp, vertical = 0.dp)
+                    .clip(RoundedCornerShape(24.dp)).background(Tw.slate950)
+                    .border(1.dp, Tw.slate800, RoundedCornerShape(24.dp))
+            ) {
                 when (activeTab) {
                     "overview" -> OverviewTab(
                         viewModel = viewModel,
@@ -171,7 +220,9 @@ fun AdminScreen(
                     "analytics" -> AnalyticsTab(
                         viewModel = viewModel, users = users, articles = articles,
                         campaigns = campaigns, depositRequests = depositRequests,
-                        payoutRequests = payoutRequests
+                        payoutRequests = payoutRequests,
+                        onOpenUser = { id -> navController.navigate(Screen.WriterProfile.of(id)) },
+                        onOpenArticle = { id -> navController.navigate(Screen.ArticleReader.of(id)) }
                     )
                     "money" -> FinanceTab(
                         viewModel = viewModel, users = users, campaigns = campaigns,

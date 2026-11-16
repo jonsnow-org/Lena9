@@ -1,6 +1,7 @@
 package studio.ai.literium.literium_app.ui.components
 
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.DrawerValue
@@ -14,6 +15,7 @@ import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -66,34 +68,23 @@ fun MainScaffold(
         }
     }
 
-    LiveBackgroundLayer { ModalNavigationDrawer(
-        drawerState = drawerState,
-        drawerContent = {
-            ModalDrawerSheet {
-                DrawerMenuContent(
-                    currentUser = uiState.currentUser,
-                    isGuestOrSignedOut = uiState.isGuestOrSignedOut,
-                    isAdmin = isAdmin,
-                    onClose = { coroutineScope.launch { drawerState.close() } },
-                    onNavigate = { route -> navController.navigate(route) },
-                    onOpenProfile = { navigateToTab(Screen.Profile.route) },
-                    onLogin = { navController.navigate(Screen.Login.route) },
-                    onLogout = { viewModel.logOut() }
-                )
-            }
-        }
-    ) {
+    var drawerOpen by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    androidx.activity.compose.BackHandler(enabled = drawerOpen) { drawerOpen = false }
+
+    LiveBackgroundLayer { androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize()) {
         Scaffold(
             // شفاف عمداً — [LiveBackgroundLayer] (خلفية القالب الجمالي الحيّة المختارة إدارياً) يُرسم
             // خلفه هنا؛ يبقى مرئياً فقط في هوامش/فراغات كل تبويب (مثل الموقع تماماً، حيث تبقى البطاقات
             // نفسها بخلفية معتمة bg-white/dark:bg-slate-900).
             containerColor = Color.Transparent,
+            // الرأس والشريط السفلي يعالجان حشوة شريطي النظام بأنفسهما (statusBarsPadding/navigationBarsPadding)
+            contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
             topBar = {
                 TopHeaderBar(
                     isAdmin = isAdmin,
                     isGuestOrSignedOut = uiState.isGuestOrSignedOut,
                     unreadNotifications = uiState.unreadNotifications,
-                    onOpenDrawer = { coroutineScope.launch { drawerState.open() } },
+                    onOpenDrawer = { drawerOpen = true },
                     onOpenNotifications = { navigateToTab(Screen.Notifications.route) },
                     onOpenLogin = { navController.navigate(Screen.Login.route) },
                     onBrandClick = { navigateToTab(Screen.Feed.route) }
@@ -112,34 +103,18 @@ fun MainScaffold(
                     onOpenProfile = { navigateToTab(Screen.Profile.route) }
                 )
             },
-            floatingActionButton = {
-                // "بدء الكتابة" FAB (spec §2.1) — hidden for guests, matching source's write-gated-
-                // behind-auth behavior (spec §2.2). The web's second FAB ("scroll to top") is
-                // intentionally not ported here: it needs the scroll state of whatever LazyColumn/
-                // ScrollState lives inside `content`, which this shell does not own — each screen
-                // that scrolls is the right place for its own scroll-to-top affordance.
-                if (!uiState.isGuestOrSignedOut) {
-                    // صفر ارتفاع تماماً (بلا أي ظل) — تجربة سابقة خفّضت الارتفاع فقط (2dp) بدل
-                    // إلغائه، وبقي البلاغ الحقيقي على الجهاز قائماً: ظل RenderNode الدائري لهذا
-                    // الزر يُرسَّم أحياناً كمستطيل أبيض حاد الحواف بدل التدرّج الدائري الناعم
-                    // المقصود، فوق محتوى معقّد/متحرّك أسفله (خلل معروف في Compose/Android). صفر
-                    // ارتفاع يمنع هذا الرسم من الأساس بدل محاولة تصغيره فقط. مطابق أيضاً لشكل الويب
-                    // (`shadow-teal-600/30` — ظل ملوّن ناعم، وليس ظل Material الافتراضي الثقيل).
-                    FloatingActionButton(
-                        onClick = fabAction ?: { navController.navigate(Screen.ArticleEditor.new()) },
-                        containerColor = BrandTeal,
-                        contentColor = Color.White,
-                        elevation = FloatingActionButtonDefaults.elevation(
-                            defaultElevation = 0.dp,
-                            pressedElevation = 0.dp,
-                            focusedElevation = 0.dp,
-                            hoveredElevation = 0.dp
-                        )
-                    ) {
-                        Icon(Icons.Filled.Edit, contentDescription = "بدء الكتابة")
-                    }
-                }
-            }
         ) { padding -> content(padding) }
+
+        DrawerOverlay(
+            open = drawerOpen,
+            currentUser = uiState.currentUser,
+            isGuestOrSignedOut = uiState.isGuestOrSignedOut,
+            isAdmin = isAdmin,
+            onClose = { drawerOpen = false },
+            onNavigate = { route -> navController.navigate(route) },
+            onOpenProfile = { navigateToTab(Screen.Profile.route) },
+            onLogin = { navController.navigate(Screen.Login.route) },
+            onLogout = { viewModel.logOut() }
+        )
     } }
 }

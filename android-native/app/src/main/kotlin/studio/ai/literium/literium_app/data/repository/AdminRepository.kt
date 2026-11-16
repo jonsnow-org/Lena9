@@ -101,6 +101,22 @@ class AdminRepository(
 
     // ---- Platform-wide ads on/off switch (settings/platformAds — public read, admin write) ----
 
+    fun observeAppPublishedOnStores(): Flow<Boolean> = callbackFlow {
+        val registration = settingsCol.document("appDistribution").addSnapshotListener { snap, error ->
+            if (error != null) { close(error); return@addSnapshotListener }
+            trySend(snap?.getBoolean("publishedOnStores") ?: false)
+        }
+        awaitClose { registration.remove() }
+    }
+
+    suspend fun setAppPublishedOnStores(published: Boolean, updatedByUserId: String): Result<Unit> = safeCall {
+        settingsCol.document("appDistribution").set(
+            mapOf("publishedOnStores" to published, "updatedAt" to Instant.now().toString(), "updatedBy" to updatedByUserId),
+            com.google.firebase.firestore.SetOptions.merge()
+        ).await()
+        Unit
+    }
+
     fun observePlatformAdsEnabled(): Flow<Boolean> = callbackFlow {
         val registration = settingsCol.document(FirestoreCollections.Settings.PLATFORM_ADS_DOC).addSnapshotListener { snap, error ->
             if (error != null) { close(error); return@addSnapshotListener }

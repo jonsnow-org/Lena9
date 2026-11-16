@@ -171,6 +171,8 @@ class AdminViewModel(
 
     val themeSettings: StateFlow<ThemeSettingsData> =
         adminRepository.observeThemeSettings().asState(ThemeSettingsData())
+    val appPublishedOnStores: StateFlow<Boolean> =
+        adminRepository.observeAppPublishedOnStores().asState(false)
     val platformAdsEnabled: StateFlow<Boolean> =
         adminRepository.observePlatformAdsEnabled().asState(false)
     val externalAdsConfig: StateFlow<Map<String, Any?>> =
@@ -661,6 +663,10 @@ class AdminViewModel(
         viewModelScope.launch { articleRepository.setArticleStatus(articleId, status) }
     }
 
+    fun deleteArticleAsAdmin(articleId: String) {
+        viewModelScope.launch { articleRepository.deleteArticle(articleId) }
+    }
+
     // ---- Fraud ----
 
     fun resolveFraudFlag(flagId: String, action: String) {
@@ -697,6 +703,11 @@ class AdminViewModel(
     }
 
     // ---- Theme ----
+
+    fun setAppPublishedOnStores(published: Boolean) {
+        val admin = currentUserId ?: return
+        viewModelScope.launch { adminRepository.setAppPublishedOnStores(published, admin) }
+    }
 
     fun setThemePreset(preset: String) {
         val admin = currentUserId ?: return
