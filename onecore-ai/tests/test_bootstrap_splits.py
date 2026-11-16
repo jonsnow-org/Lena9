@@ -61,7 +61,7 @@ def test_training_iterator_rejects_held_out_splits(split):
 
 
 
-def test_training_iterator_admits_external_records_and_excludes_every_synthetic_class():
+def test_training_iterator_admits_every_available_data_class():
     records = [
         {"id": "bootstrap", "task": "text", "split": "train",
          "source_url": "local://onecore-bootstrap",
@@ -80,7 +80,7 @@ def test_training_iterator_admits_external_records_and_excludes_every_synthetic_
          "data_class": "owner_curated", "text": "local owner-created sample"},
     ]
     selected = iter_training_records(records)
-    assert [item["id"] for item in selected] == ["pending-external", "verified-synthetic", "local-owner", "bootstrap"]
+    assert [item["id"] for item in selected] == ["bootstrap", "pending-external", "verified-synthetic", "local-owner"]
 
 
 def test_both_onecore_training_workflows_use_builtin_release_token_fallback():

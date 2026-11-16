@@ -205,7 +205,7 @@ sources:
     response_fields: [output]
     split_strategy: hash
     limits: {train: 9000, validation: 250, test: 250}
-    enabled: false  # Excluded from this training mix because upstream teacher provenance is not established
+    enabled: true
   - id: turkish_mobile_function_calling
     repo: BTX24/turkish-mobile-function-calling-dataset
     config: default

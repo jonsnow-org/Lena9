@@ -21,23 +21,23 @@ def test_codebook_assignment_report_rejects_out_of_range_ids():
         codebook_assignment_report(torch.tensor([0, 4]), codebook_size=4)
 
 
-def test_external_evaluation_excludes_bootstrap_but_bootstrap_remains_selectable():
+def test_evaluation_can_select_any_available_data_class():
     records = [
         {"id": "bootstrap-text", "task": "text", "data_class": "bootstrap"},
-        {"id": "external-text", "task": "text", "data_class": "external_staged",
-         "license": "cc-by-4.0", "source_id": "eval-source",
-         "source_revision": "a" * 40, "source_row_id_sha256": "b" * 64},
+        {"id": "external-text", "task": "text", "data_class": "external"},
         {"id": "owner-local", "task": "text", "data_class": "owner_curated"},
     ]
-    external = select_evaluation_records(records, {"external_staged", "external_reviewed"})
+    external = select_evaluation_records(records, {"external"})
     bootstrap = select_evaluation_records(records, {"bootstrap"})
+    owner = select_evaluation_records(records, {"owner_curated"})
     assert [item["id"] for item in external] == ["external-text"]
     assert [item["id"] for item in bootstrap] == ["bootstrap-text"]
+    assert [item["id"] for item in owner] == ["owner-local"]
 
 
 def test_evaluation_filter_rejects_empty_subsets():
     with pytest.raises(ValueError, match="contains no records"):
         select_evaluation_records(
             [{"id": "bootstrap", "task": "text", "data_class": "bootstrap"}],
-            {"external_staged"},
+            {"external"},
         )

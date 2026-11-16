@@ -3,7 +3,7 @@ from pathlib import Path
 from onecore.train import _manifest_corpus
 
 
-def test_tokenizer_corpus_excludes_bootstrap_and_all_synthetic_records(tmp_path: Path) -> None:
+def test_tokenizer_corpus_includes_every_available_data_class(tmp_path: Path) -> None:
     records = [
         {
             "id": "bootstrap-1",
@@ -53,6 +53,6 @@ def test_tokenizer_corpus_excludes_bootstrap_and_all_synthetic_records(tmp_path:
     assert "authentic imported external text" in corpus
     assert "external tool prompt" in corpus
     assert "external tool response" in corpus
-    assert "synthetic bootstrap sentinel" not in corpus
-    assert "verified synthetic sentinel" not in corpus
-    assert "locally authored owner data sentinel" not in corpus
+    assert "synthetic bootstrap sentinel" in corpus
+    assert "verified synthetic sentinel" in corpus
+    assert "locally authored owner data sentinel" in corpus

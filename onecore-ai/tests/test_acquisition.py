@@ -855,7 +855,7 @@ def test_asset_report_counts_all_usable_media_files(tmp_path: Path) -> None:
         "image_reconstruction": 1, "audio_reconstruction": 1, "video_reconstruction": 1,
     }
     assert report["metadata_only_records"] == 1
-    assert report["unusable_records"] == 1
+    assert report["unusable_external_records"] == 1
     assert report["image_files"] == 1
     assert report["audio_feature_files"] == 1
     assert report["video_frame_files"] == 2
