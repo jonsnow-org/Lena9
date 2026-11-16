@@ -1,466 +1,257 @@
 package studio.ai.literium.literium_app.ui.screens.wallet
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.ArrowDownward
-import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.CreditCard
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.OpenInNew
-import studio.ai.literium.literium_app.ui.theme.Button
-import studio.ai.literium.literium_app.ui.theme.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import studio.ai.literium.literium_app.ui.theme.OutlinedButton
-import studio.ai.literium.literium_app.ui.theme.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Snackbar
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
-import studio.ai.literium.literium_app.ui.theme.TopAppBar
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
+import studio.ai.literium.literium_app.data.model.Transaction
+import studio.ai.literium.literium_app.data.model.TransactionType
 import studio.ai.literium.literium_app.navigation.Screen
-import studio.ai.literium.literium_app.util.PayoutRules
-import studio.ai.literium.literium_app.util.RevenueShares
-import java.util.Locale
+import studio.ai.literium.literium_app.ui.theme.Lu
+import studio.ai.literium.literium_app.ui.theme.LuIcon
+import studio.ai.literium.literium_app.ui.theme.Tw
+import studio.ai.literium.literium_app.ui.theme.TwError
+import studio.ai.literium.literium_app.ui.theme.TwInput
+import studio.ai.literium.literium_app.ui.theme.TwLabeled
+import studio.ai.literium.literium_app.ui.theme.TwLoading
+import studio.ai.literium.literium_app.ui.theme.TwPage
+import studio.ai.literium.literium_app.ui.theme.brand
+import studio.ai.literium.literium_app.ui.theme.isDark
+import studio.ai.literium.literium_app.ui.theme.twClickable
+import studio.ai.literium.literium_app.ui.theme.twText
+import studio.ai.literium.literium_app.util.DateFormatAr
 
+private val Mono = FontFamily.Monospace
+
+/** المحفظة — WalletModal.tsx: تبويبات (نظرة عامة/إيداع/سحب/سجل) بخط سفلي teal، بطاقة الرصيد بتدرّج slate-950→teal-950→slate-900. */
 @Composable
-@OptIn(ExperimentalMaterial3Api::class)
 fun WalletScreen(navController: NavController, viewModel: WalletViewModel = viewModel()) {
     val state by viewModel.state.collectAsState()
-    val snackbarHostState = remember { SnackbarHostState() }
     val uriHandler = LocalUriHandler.current
+    val clipboard = LocalClipboardManager.current
+    val dark = isDark
+    val line = if (dark) Tw.slate800 else Tw.slate200
+    val box = RoundedCornerShape(16.dp)
+    LaunchedEffect(Unit) { viewModel.openUrl.collect { url -> uriHandler.openUri(url) } }
 
-    LaunchedEffect(Unit) {
-        viewModel.openUrl.collect { url -> uriHandler.openUri(url) }
-    }
-    LaunchedEffect(state.stripeDepositError, state.cryptoDepositError, state.cardBridgeError, state.withdrawError) {
-        val msg = state.stripeDepositError ?: state.cryptoDepositError ?: state.cardBridgeError ?: state.withdrawError
-        if (msg != null) {
-            snackbarHostState.showSnackbar(msg)
-            viewModel.clearDepositErrors()
-            viewModel.clearWithdrawError()
+    val user = state.user
+    val spendable = user?.walletBalance ?: 0.0
+    val available = user?.availableBalance ?: 0.0
+    val pending = user?.pendingEarnings ?: 0.0
+    val isKyc = user?.isKycVerified == true
+
+    TwPage(title = "محفظة ليتيريوم المالية", onClose = { navController.popBackStack() }, scroll = false, bodyPadding = 0) {
+        // التبويبات
+        Row(Modifier.fillMaxWidth().background(if (dark) Tw.slate900.copy(alpha = 0.40f) else Tw.slate50.copy(alpha = 0.40f)).padding(horizontal = 12.dp)) {
+            listOf(WalletTab.OVERVIEW to "نظرة عامة", WalletTab.DEPOSIT to "إيداع +", WalletTab.WITHDRAW to "سحب ↑", WalletTab.HISTORY to "السجل").forEach { (tab, label) ->
+                val a = state.activeTab == tab
+                Column(Modifier.weight(1f).twClickable { viewModel.selectTab(tab) }, horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(label, Modifier.padding(vertical = 12.dp), style = twText(12, FontWeight.Bold, 16), color = if (a) (if (dark) Tw.teal300 else Tw.teal600) else Tw.slate500, maxLines = 1)
+                    Box(Modifier.fillMaxWidth().height(2.dp).background(if (a) Tw.teal600 else Color.Transparent))
+                }
+            }
         }
-    }
+        Box(Modifier.fillMaxWidth().height(1.dp).background(line))
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("محفظة ليتيريوم المالية") },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "عودة")
+        if (state.isLoading) { TwLoading(); return@TwPage }
+        androidx.compose.foundation.layout.Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+            when (state.activeTab) {
+                WalletTab.OVERVIEW -> {
+                    val g = RoundedCornerShape(24.dp)
+                    Column(Modifier.fillMaxWidth().clip(g).background(Brush.linearGradient(listOf(Tw.slate950, Color(0xFF042F2E), Tw.slate900))).border(1.dp, Color(0xFF115E59).copy(alpha = 0.50f), g).padding(24.dp)) {
+                        Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text("رصيد الإنفاق (للحملات، المقالات، الاشتراكات)", Modifier.weight(1f), style = twText(12, FontWeight.Bold, 16), color = Color(0xFF99F6E4))
+                            LuIcon(Lu.ShieldCheck, 20.dp, Tw.emerald400)
+                        }
+                        Row(Modifier.padding(bottom = 16.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("%.2f".format(spendable), style = twText(30, FontWeight.Black, 36), color = Tw.white)
+                            Text("USD", Modifier.padding(bottom = 4.dp), style = twText(18, FontWeight.Bold, 24), color = Color(0xFF5EEAD4))
+                        }
+                        Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFF115E59).copy(alpha = 0.60f)))
+                        Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Mini("قابل للسحب", "$${"%.2f".format(available)}", Modifier.weight(1f))
+                            Mini("معلّق (30 يوماً)", "$${"%.2f".format(pending)}", Modifier.weight(1f))
+                            Mini("الحد الأدنى للسحب", "$${studio.ai.literium.literium_app.util.PayoutRules.MIN_PAYOUT_USD.toLong()}", Modifier.weight(1f))
+                        }
                     }
-                }
-            )
-        },
-        snackbarHost = { SnackbarHost(snackbarHostState) { Snackbar(it) } }
-    ) { padding ->
-        if (state.isLoading || state.user == null) {
-            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            return@Scaffold
-        }
-        val user = state.user!!
-
-        Column(Modifier.fillMaxSize().padding(padding)) {
-            TabRow(selectedTabIndex = state.activeTab.ordinal) {
-                listOf(
-                    WalletTab.OVERVIEW to "نظرة عامة",
-                    WalletTab.DEPOSIT to "إيداع رصيد +",
-                    WalletTab.WITHDRAW to "سحب الأرباح ↑",
-                    WalletTab.HISTORY to "سجل العمليات"
-                ).forEach { (tab, label) ->
-                    Tab(selected = state.activeTab == tab, onClick = { viewModel.selectTab(tab) }, text = { Text(label) })
-                }
-            }
-
-            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
-                when (state.activeTab) {
-                    WalletTab.OVERVIEW -> OverviewTab(
-                        spendable = user.walletBalance ?: 0.0,
-                        withdrawable = user.availableBalance ?: 0.0,
-                        pending = user.pendingEarnings ?: 0.0,
-                        onDeposit = { viewModel.selectTab(WalletTab.DEPOSIT) },
-                        onWithdraw = { viewModel.selectTab(WalletTab.WITHDRAW) }
-                    )
-                    WalletTab.DEPOSIT -> DepositTab(state, viewModel)
-                    WalletTab.WITHDRAW -> WithdrawTab(state, viewModel, navController)
-                    WalletTab.HISTORY -> HistoryTab(state)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun OverviewTab(spendable: Double, withdrawable: Double, pending: Double, onDeposit: () -> Unit, onWithdraw: () -> Unit) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary),
-        shape = RoundedCornerShape(24.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(Modifier.padding(20.dp)) {
-            Text("رصيد الإنفاق (للحملات، المقالات، الاشتراكات)", color = MaterialTheme.colorScheme.onPrimary, style = MaterialTheme.typography.labelMedium)
-            Spacer(Modifier.height(6.dp))
-            Text(
-                String.format(Locale.US, "%.2f USD", spendable),
-                color = MaterialTheme.colorScheme.onPrimary,
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Black
-            )
-            Spacer(Modifier.height(14.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                MiniStat("قابل للسحب", String.format(Locale.US, "%.2f$", withdrawable))
-                MiniStat("معلّق (30 يوماً)", String.format(Locale.US, "%.2f$", pending))
-                MiniStat("الحد الأدنى للسحب", String.format(Locale.US, "%.2f$", PayoutRules.MIN_PAYOUT_USD))
-            }
-        }
-    }
-
-    Spacer(Modifier.height(16.dp))
-    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-        OutlinedButton(onClick = onDeposit, modifier = Modifier.weight(1f)) {
-            Icon(Icons.Filled.ArrowDownward, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text("إيداع رصيد")
-        }
-        Button(onClick = onWithdraw, modifier = Modifier.weight(1f)) {
-            Icon(Icons.Filled.ArrowUpward, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text("طلب سحب")
-        }
-    }
-
-    Spacer(Modifier.height(16.dp))
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(14.dp)) {
-            Text("قواعد توزيع وتقاسم العوائد المالية:", fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(6.dp))
-            Text("• إعلانات داخل مقالات الكاتب: ${RevenueShares.IN_ARTICLE_ADS.label}.", style = MaterialTheme.typography.bodySmall)
-            Text("• إعلانات صفحة الكاتب الشخصية: ${RevenueShares.WRITER_PROFILE_ADS.label}.", style = MaterialTheme.typography.bodySmall)
-            Text("• المقالات المقفولة الحصرية: ${RevenueShares.LOCKED_ARTICLES.label}.", style = MaterialTheme.typography.bodySmall)
-        }
-    }
-}
-
-@Composable
-private fun MiniStat(label: String, value: String) {
-    Column {
-        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.75f))
-        Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
-    }
-}
-
-@Composable
-private fun DepositTab(state: WalletUiState, viewModel: WalletViewModel) {
-    Text("حدد المبلغ المراد إيداعه ($):", fontWeight = FontWeight.Bold)
-    Spacer(Modifier.height(8.dp))
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        listOf(PayoutRules.MIN_DEPOSIT_USD, 25.0, 50.0, 100.0, 250.0).forEach { amt ->
-            FilterChip(
-                selected = state.depositAmount == amt,
-                onClick = { viewModel.onDepositAmountChange(amt) },
-                label = { Text("${amt.toInt()}$") }
-            )
-        }
-    }
-    Spacer(Modifier.height(10.dp))
-    OutlinedTextField(
-        value = if (state.depositAmount == 0.0) "" else state.depositAmount.toInt().toString(),
-        onValueChange = { it.toDoubleOrNull()?.let(viewModel::onDepositAmountChange) },
-        label = { Text("المبلغ ($)") },
-        modifier = Modifier.fillMaxWidth()
-    )
-
-    if (state.stripeAutomated) {
-        Spacer(Modifier.height(16.dp))
-        PaymentOptionCard(
-            title = "دفع فوري بالبطاقة — يُضاف الرصيد تلقائياً خلال ثوانٍ",
-            containerColor = MaterialTheme.colorScheme.primaryContainer
-        ) {
-            Button(onClick = viewModel::automatedStripeDeposit, enabled = !state.isStripeDepositBusy, modifier = Modifier.fillMaxWidth()) {
-                if (state.isStripeDepositBusy) CircularProgressIndicator(Modifier.size(16.dp)) else Icon(Icons.Filled.CreditCard, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("ادفع ${state.depositAmount.toInt()}$ الآن ببطاقتك")
-            }
-        }
-    }
-
-    if (state.cryptoAutomated) {
-        Spacer(Modifier.height(12.dp))
-        PaymentOptionCard(
-            title = "دفع فوري بعملة رقمية — يُضاف الرصيد تلقائياً فور تأكيد الشبكة",
-            containerColor = MaterialTheme.colorScheme.tertiaryContainer
-        ) {
-            Button(onClick = viewModel::automatedCryptoDeposit, enabled = !state.isCryptoDepositBusy, modifier = Modifier.fillMaxWidth()) {
-                if (state.isCryptoDepositBusy) CircularProgressIndicator(Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("ادفع ${state.depositAmount.toInt()}$ الآن بعملة رقمية")
-            }
-        }
-
-        Spacer(Modifier.height(12.dp))
-        PaymentOptionCard(
-            title = "الدفع بالفيزا/ماستركارد عبر وسيط خارجي",
-            containerColor = MaterialTheme.colorScheme.secondaryContainer
-        ) {
-            Text(
-                "أنشئ عنوان استلام أدناه، انسخه، ثم افتح موقع الوسيط (Guardarian) والصق العنوان هناك يدوياً، واختر USDT على شبكة TRC20/TRON. قد يطلب منك الوسيط تأكيد هويتك (KYC) الخاص قبل إتمام أول عملية.",
-                style = MaterialTheme.typography.bodySmall
-            )
-            Spacer(Modifier.height(8.dp))
-            if (state.cardBridgeAddress.isEmpty()) {
-                Button(onClick = viewModel::generateCardBridgeAddress, enabled = !state.isCardBridgeBusy, modifier = Modifier.fillMaxWidth()) {
-                    if (state.isCardBridgeBusy) CircularProgressIndicator(Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("أنشئ عنوان استلام لدفع ${state.depositAmount.toInt()}$ بالبطاقة")
-                }
-            } else {
-                val clipboard = LocalClipboardManager.current
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-                    Column(Modifier.padding(10.dp)) {
-                        Text("عنوان الاستلام (USDT - شبكة TRC20):", style = MaterialTheme.typography.labelSmall)
-                        Text(state.cardBridgeAddress, style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                OutlinedButton(onClick = { clipboard.setText(AnnotatedString(state.cardBridgeAddress)) }, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("انسخ العنوان")
-                }
-                Spacer(Modifier.height(8.dp))
-                Button(onClick = viewModel::openGuardarian, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("افتح موقع الوسيط (Guardarian)")
-                }
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    "إنشاء عنوان جديد",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.clickable(onClick = viewModel::resetCardBridgeAddress).padding(4.dp)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun PaymentOptionCard(title: String, containerColor: Color, content: @Composable ColumnScope.() -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = containerColor)) {
-        Column(Modifier.padding(14.dp)) {
-            Text(title, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(8.dp))
-            content()
-        }
-    }
-}
-
-@Composable
-private fun WithdrawTab(state: WalletUiState, viewModel: WalletViewModel, navController: NavController) {
-    val user = state.user!!
-    val isKycVerified = user.isKycVerified == true || user.kycDetails?.status == "verified"
-    val availableBalance = user.availableBalance ?: 0.0
-
-    if (!isKycVerified) {
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer), modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(Icons.Filled.Lock, contentDescription = null, modifier = Modifier.size(36.dp))
-                Spacer(Modifier.height(8.dp))
-                Text("التحقق من الهوية مطلوب قبل السحب", fontWeight = FontWeight.Black)
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    "لحماية أرباحك ومنع الاحتيال، يجب إتمام التحقق من الهوية (KYC) قبل تقديم أي طلب سحب.",
-                    style = MaterialTheme.typography.bodySmall
-                )
-                Spacer(Modifier.height(12.dp))
-                Button(onClick = { navController.navigate(Screen.Kyc.route) }) { Text("إتمام التحقق من الهوية الآن") }
-            }
-        }
-        return
-    }
-
-    if (state.withdrawSuccessMessage != null) {
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer), modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(Icons.Filled.CheckCircle, contentDescription = null, modifier = Modifier.size(40.dp))
-                Spacer(Modifier.height(8.dp))
-                Text(state.withdrawSuccessMessage!!, fontWeight = FontWeight.Black)
-                Spacer(Modifier.height(10.dp))
-                Button(onClick = viewModel::dismissWithdrawSuccess) { Text("حسناً") }
-            }
-        }
-        return
-    }
-
-    if (state.stripeAutomated) {
-        PaymentOptionCard(title = "سحب فوري تلقائي", containerColor = MaterialTheme.colorScheme.primaryContainer) {
-            if (state.payoutAccountStatus?.payoutsEnabled == true) {
-                Button(
-                    onClick = viewModel::automatedWithdraw,
-                    enabled = !state.isAutomatedWithdrawBusy && state.withdrawAmount in PayoutRules.MIN_PAYOUT_USD..availableBalance,
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("اسحب ${state.withdrawAmount.toInt()}$ الآن تلقائياً") }
-            } else {
-                Text("اربط حساب استلام الأموال مرة واحدة لتفعيل السحب الفوري لاحقاً.", style = MaterialTheme.typography.bodySmall)
-                Spacer(Modifier.height(8.dp))
-                OutlinedButton(onClick = viewModel::connectPayoutAccount, enabled = !state.isConnectPayoutBusy, modifier = Modifier.fillMaxWidth()) {
-                    Text("ربط حساب استلام الأموال")
-                }
-            }
-        }
-        Spacer(Modifier.height(14.dp))
-        Text("أو أرسل طلب سحب يدوي بطريقة أخرى — الحد الأدنى ${PayoutRules.MIN_PAYOUT_USD.toInt()}$:", fontWeight = FontWeight.Bold)
-    } else {
-        Text("طريقة استلام الأرباح:", fontWeight = FontWeight.Bold)
-    }
-
-    Spacer(Modifier.height(8.dp))
-    Column {
-        WITHDRAW_METHODS.chunked(2).forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                row.forEach { (id, labelDesc) ->
-                    val (label, desc) = labelDesc
-                    Card(
-                        modifier = Modifier.weight(1f).clickable { viewModel.onWithdrawMethodChange(id) },
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (state.withdrawMethod == id) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
-                        )
-                    ) {
-                        Column(Modifier.padding(10.dp)) {
-                            Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                            Text(desc, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(Modifier.weight(1f).clip(box).background(if (dark) Color(0xFF042F2E).copy(alpha = 0.40f) else Color(0xFFF0FDFA)).border(1.dp, if (dark) Color(0xFF115E59) else Color(0xFF99F6E4), box).twClickable { viewModel.selectTab(WalletTab.DEPOSIT) }.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
+                            LuIcon(Lu.ArrowDownToLine, 16.dp, if (dark) Tw.teal300 else Tw.teal700); Text("إيداع رصيد للمحفظة", style = twText(12, FontWeight.Bold, 16), color = if (dark) Tw.teal300 else Tw.teal700, maxLines = 1)
+                        }
+                        Row(Modifier.weight(1f).clip(box).background(if (dark) Tw.slate800 else Tw.slate900).twClickable { viewModel.selectTab(WalletTab.WITHDRAW) }.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
+                            LuIcon(Lu.ArrowUpFromLine, 16.dp, Tw.white); Text("طلب سحب الرصيد", style = twText(12, FontWeight.Bold, 16), color = Tw.white, maxLines = 1)
                         }
                     }
                 }
-            }
-            Spacer(Modifier.height(8.dp))
-        }
-    }
-
-    OutlinedTextField(
-        value = if (state.withdrawAmount == 0.0) "" else state.withdrawAmount.toInt().toString(),
-        onValueChange = { it.toDoubleOrNull()?.let(viewModel::onWithdrawAmountChange) },
-        label = { Text("مبلغ السحب (المتاح: ${String.format(Locale.US, "%.2f", availableBalance)}$، الحد الأدنى ${PayoutRules.MIN_PAYOUT_USD.toInt()}$)") },
-        modifier = Modifier.fillMaxWidth()
-    )
-    Spacer(Modifier.height(10.dp))
-    OutlinedTextField(
-        value = state.withdrawAccount,
-        onValueChange = viewModel::onWithdrawAccountChange,
-        label = {
-            Text(
-                when (state.withdrawMethod) {
-                    "usdt_crypto" -> "عنوان محفظة USDT (TRC20 / BEP20)"
-                    "bank_wire" -> "رقم الآيبان البنكي الكامل (IBAN) واسم البنك"
-                    else -> "البريد الإلكتروني المسجل في الحساب"
+                WalletTab.DEPOSIT -> {
+                    TwLabeled("حدد المبلغ المراد إيداعه ($):") {
+                        TwInput(if (state.depositAmount % 1.0 == 0.0) state.depositAmount.toLong().toString() else state.depositAmount.toString(), { viewModel.onDepositAmountChange(it.toDoubleOrNull() ?: 0.0) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(10, 25, 50, 100).forEach { v ->
+                            val sel = state.depositAmount == v.toDouble()
+                            Box(Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).background(if (sel) Tw.teal600 else (if (dark) Tw.slate800 else Tw.slate100)).twClickable { viewModel.onDepositAmountChange(v.toDouble()) }.padding(vertical = 8.dp), contentAlignment = Alignment.Center) { Text("$v$", style = twText(12, FontWeight.Bold, 16), color = if (sel) Tw.white else Tw.slate500) }
+                        }
+                    }
+                    state.stripeDepositError?.let { TwError(it) }; state.cryptoDepositError?.let { TwError(it) }; state.cardBridgeError?.let { TwError(it) }
+                    if (state.stripeAutomated) Rail(Color(0xFF0D9488), dark, "دفع فوري بالبطاقة — يُضاف الرصيد تلقائياً خلال ثوانٍ", "ادفع ${"%.0f".format(state.depositAmount)}$ الآن ببطاقتك", state.isStripeDepositBusy) { viewModel.automatedStripeDeposit() }
+                    if (state.cryptoAutomated) Rail(Color(0xFFD97706), dark, "دفع فوري بعملة رقمية — يُضاف الرصيد تلقائياً فور تأكيد الشبكة", "ادفع ${"%.0f".format(state.depositAmount)}$ الآن بعملة رقمية", state.isCryptoDepositBusy) { viewModel.automatedCryptoDeposit() }
+                    if (state.cryptoAutomated) {
+                        val sky = Color(0xFF0284C7)
+                        Column(Modifier.fillMaxWidth().clip(box).background(sky.copy(alpha = 0.08f)).border(1.dp, sky.copy(alpha = 0.30f), box).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text("الدفع بالفيزا/ماستركارد عبر وسيط خارجي", style = twText(12, FontWeight.Bold, 16), color = sky)
+                            Text("أنشئ عنوان استلام أدناه، انسخه، ثم افتح موقع الوسيط والصق العنوان هناك يدوياً، واختر USDT على شبكة TRC20/TRON.", style = twText(11, FontWeight.Normal, 18), color = if (dark) Tw.slate300 else Tw.slate600)
+                            if (state.cardBridgeAddress.isBlank()) Btn("أنشئ عنوان استلام لدفع ${"%.0f".format(state.depositAmount)}$ بالبطاقة", sky, state.isCardBridgeBusy) { viewModel.generateCardBridgeAddress() }
+                            else {
+                                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(if (dark) Tw.slate900 else Tw.white).border(1.dp, sky.copy(alpha = 0.40f), RoundedCornerShape(12.dp)).padding(12.dp)) {
+                                    Text("عنوان الاستلام (USDT - شبكة TRC20):", Modifier.padding(bottom = 4.dp), style = twText(10, FontWeight.Bold, 15), color = Tw.slate500)
+                                    Text(state.cardBridgeAddress, style = twText(11, FontWeight.Normal, 16).copy(fontFamily = Mono), color = if (dark) Tw.white else Tw.slate900)
+                                }
+                                Btn("انسخ العنوان", if (dark) Tw.slate700 else Tw.slate800, false) { clipboard.setText(AnnotatedString(state.cardBridgeAddress)) }
+                                Btn("افتح موقع الوسيط (Guardarian)", sky, false) { viewModel.openGuardarian() }
+                                Box(Modifier.fillMaxWidth().twClickable { viewModel.resetCardBridgeAddress() }.padding(4.dp), contentAlignment = Alignment.Center) { Text("إنشاء عنوان جديد", style = twText(11, FontWeight.Bold, 16), color = sky) }
+                            }
+                        }
+                    }
+                    Row(Modifier.fillMaxWidth().clip(box).background(if (dark) Tw.slate800.copy(alpha = 0.60f) else Tw.slate100).twClickable { navController.navigate(Screen.MoneyRequest.of(isDeposit = true)) }.padding(14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        LuIcon(Lu.Info, 16.dp, Tw.slate500)
+                        Text("تفضّل التحويل اليدوي (بنك/PayPal/Payoneer)؟ أرسل طلب إيداع وستراجعه الإدارة.", Modifier.weight(1f), style = twText(11, FontWeight.Medium, 18), color = if (dark) Tw.slate400 else Tw.slate600)
+                    }
                 }
-            )
-        },
-        modifier = Modifier.fillMaxWidth()
-    )
-
-    if (state.pendingLargeWithdrawConfirm) {
-        Spacer(Modifier.height(10.dp))
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)) {
-            Column(Modifier.padding(12.dp)) {
-                Text(
-                    "هذا مبلغ كبير (≥ ${LARGE_WITHDRAW_CONFIRM_THRESHOLD.toInt()}$). تأكد من صحة بيانات الاستلام قبل المتابعة.",
-                    fontWeight = FontWeight.Bold,
-                    style = MaterialTheme.typography.bodySmall
-                )
-                Text(
-                    "إلغاء والتعديل",
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.clickable(onClick = viewModel::cancelLargeWithdrawConfirm).padding(top = 6.dp)
-                )
+                WalletTab.WITHDRAW -> {
+                    if (!isKyc) {
+                        val am = Color(0xFFD97706)
+                        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Tw.amber500.copy(alpha = 0.10f)).border(1.dp, Tw.amber500.copy(alpha = 0.30f), RoundedCornerShape(24.dp)).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            LuIcon(Lu.ShieldCheck, 32.dp, am)
+                            Text("التحقق من الهوية مطلوب قبل السحب", style = twText(16, FontWeight.Bold, 24), color = if (dark) Tw.white else Tw.slate900)
+                            Text("لحماية أرباحك ومنع الاحتيال، يجب إتمام التحقق من الهوية (KYC) قبل تقديم طلب السحب.", style = twText(12, FontWeight.Normal, 20).copy(textAlign = TextAlign.Center), color = if (dark) Tw.slate400 else Tw.slate600)
+                            Box(Modifier.clip(RoundedCornerShape(12.dp)).background(am).twClickable { navController.navigate(Screen.Kyc.route) }.padding(horizontal = 24.dp, vertical = 10.dp)) { Text("إتمام التحقق من الهوية الآن", style = twText(12, FontWeight.Bold, 16), color = Tw.white) }
+                        }
+                    } else if (state.withdrawSuccessMessage != null) {
+                        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Tw.emerald500.copy(alpha = 0.10f)).border(1.dp, Tw.emerald500.copy(alpha = 0.30f), RoundedCornerShape(24.dp)).padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            LuIcon(Lu.CheckCircle2, 40.dp, Tw.emerald600)
+                            Text(state.withdrawSuccessMessage.orEmpty(), style = twText(14, FontWeight.Bold, 20).copy(textAlign = TextAlign.Center), color = if (dark) Tw.white else Tw.slate900)
+                            Box(Modifier.clip(RoundedCornerShape(12.dp)).background(Tw.slate800).twClickable { viewModel.dismissWithdrawSuccess() }.padding(horizontal = 16.dp, vertical = 6.dp)) { Text("إغلاق", style = twText(12, FontWeight.Bold, 16), color = Tw.white) }
+                        }
+                    } else {
+                        state.withdrawError?.let { TwError(it) }
+                        TwLabeled("مبلغ السحب (المتاح: ${"%.2f".format(available)}$):") {
+                            TwInput(if (state.withdrawAmount % 1.0 == 0.0) state.withdrawAmount.toLong().toString() else state.withdrawAmount.toString(), { viewModel.onWithdrawAmountChange(it.toDoubleOrNull() ?: 0.0) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                        }
+                        if (state.stripeAutomated) {
+                            val connected = state.payoutAccountStatus?.payoutsEnabled == true
+                            Column(Modifier.fillMaxWidth().clip(box).background(Color(0xFF0D9488).copy(alpha = 0.08f)).border(1.dp, Color(0xFF0D9488).copy(alpha = 0.30f), box).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text("سحب فوري تلقائي", style = twText(12, FontWeight.Bold, 16), color = if (dark) Tw.teal300 else Tw.teal700)
+                                if (connected) Btn("اسحب ${"%.0f".format(state.withdrawAmount)}$ الآن تلقائياً", Color(0xFF0D9488), state.isAutomatedWithdrawBusy) { viewModel.automatedWithdraw() }
+                                else {
+                                    Text("اربط حساب استلام الأموال مرة واحدة (يستغرق دقائق عبر صفحة آمنة) لتفعيل السحب الفوري.", style = twText(11, FontWeight.Normal, 18), color = if (dark) Tw.slate300 else Tw.slate600)
+                                    Btn("ربط حساب استلام الأموال", Color(0xFF0D9488), state.isConnectPayoutBusy) { viewModel.connectPayoutAccount() }
+                                }
+                            }
+                        }
+                        Text(if (state.stripeAutomated) "أو أرسل طلب سحب يدوي بطريقة أخرى" else "اختر طريقة الاستلام", style = twText(12, FontWeight.Bold, 16), color = if (dark) Tw.slate300 else Tw.slate700)
+                        listOf(listOf("usdt_crypto" to "USDT TRC20 / BEP20", "bank_wire" to "تحويل بنكي IBAN"), listOf("paypal" to "حساب PayPal", "payoneer" to "حساب Payoneer")).forEach { row ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                row.forEach { (id, label) ->
+                                    val sel = state.withdrawMethod == id
+                                    Box(Modifier.weight(1f).clip(box).background(if (sel) brand.s500.copy(alpha = 0.10f) else Color.Transparent).border(1.dp, if (sel) brand.s500 else line, box).twClickable { viewModel.onWithdrawMethodChange(id) }.padding(12.dp), contentAlignment = Alignment.Center) {
+                                        Text(label, style = twText(12, FontWeight.Bold, 16), color = if (sel) brand.s600 else (if (dark) Tw.slate400 else Tw.slate600))
+                                    }
+                                }
+                            }
+                        }
+                        TwLabeled(when (state.withdrawMethod) { "usdt_crypto" -> "عنوان محفظة USDT (TRC20 / BEP20)"; "bank_wire" -> "رقم الآيبان البنكي الكامل (IBAN) واسم البنك"; else -> "البريد الإلكتروني المسجل في الحساب" }) {
+                            TwInput(state.withdrawAccount, viewModel::onWithdrawAccountChange, ltr = true)
+                        }
+                        if (state.pendingLargeWithdrawConfirm) {
+                            Column(Modifier.fillMaxWidth().clip(box).background(Tw.amber500.copy(alpha = 0.10f)).border(1.dp, Tw.amber500.copy(alpha = 0.30f), box).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("تأكيد سحب مبلغ كبير: ${"%.0f".format(state.withdrawAmount)}$ — هل أنت متأكد من بيانات الاستلام؟", style = twText(12, FontWeight.Bold, 18), color = if (dark) Tw.amber400 else Color(0xFF92400E))
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Box(Modifier.clip(RoundedCornerShape(12.dp)).background(Tw.slate200).twClickable { viewModel.cancelLargeWithdrawConfirm() }.padding(horizontal = 16.dp, vertical = 6.dp)) { Text("إلغاء", style = twText(12, FontWeight.Bold, 16), color = Tw.slate700) }
+                                }
+                            }
+                        }
+                        Btn("إرسال طلب السحب", brand.s600, state.isManualWithdrawSubmitting) { viewModel.submitManualWithdraw() }
+                    }
+                }
+                WalletTab.HISTORY -> {
+                    if (state.transactions.isEmpty()) Column(Modifier.fillMaxWidth().padding(vertical = 40.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        LuIcon(Lu.Wallet, 40.dp, Tw.slate400)
+                        Text("لا توجد عمليات مالية بعد", Modifier.padding(top = 8.dp), style = twText(12, FontWeight.Normal, 16), color = Tw.slate400)
+                    } else Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        state.transactions.forEach { t -> TxRow(t, dark) }
+                    }
+                }
             }
         }
-    }
-
-    Spacer(Modifier.height(14.dp))
-    Button(
-        onClick = viewModel::submitManualWithdraw,
-        enabled = availableBalance >= PayoutRules.MIN_PAYOUT_USD && !state.isManualWithdrawSubmitting,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        if (state.isManualWithdrawSubmitting) CircularProgressIndicator(Modifier.size(16.dp))
-        Text(
-            if (state.pendingLargeWithdrawConfirm) "تأكيد نهائي: سحب ${state.withdrawAmount.toInt()}$"
-            else "تأكيد طلب سحب ${state.withdrawAmount.toInt()}$"
-        )
     }
 }
 
 @Composable
-private fun HistoryTab(state: WalletUiState) {
-    if (state.transactions.isEmpty()) {
-        Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-            Text("لا توجد عمليات سابقة", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        return
+private fun Mini(label: String, value: String, modifier: Modifier) {
+    Column(modifier) {
+        Text(label, Modifier.padding(bottom = 2.dp), style = twText(11, FontWeight.Normal, 16), color = Color(0xFF5EEAD4))
+        Text(value, style = twText(12, FontWeight.Bold, 16).copy(fontFamily = Mono), color = Tw.white)
     }
-    state.transactions.forEach { tx ->
-        val isCredit = tx.type == "deposit" || tx.type.startsWith("earning")
-        Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-            Row(
-                Modifier.padding(12.dp).fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text(tx.description, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
-                    Text("${tx.createdAt} • ${tx.paymentMethod}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Text(
-                    "${if (isCredit) "+" else "-"}${String.format(Locale.US, "%.2f", tx.amount)}$",
-                    fontWeight = FontWeight.Black,
-                    color = if (isCredit) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-                )
-            }
+}
+
+@Composable
+private fun Rail(tone: Color, dark: Boolean, title: String, cta: String, busy: Boolean, onClick: () -> Unit) {
+    val s = RoundedCornerShape(16.dp)
+    Column(Modifier.fillMaxWidth().clip(s).background(tone.copy(alpha = 0.08f)).border(1.dp, tone.copy(alpha = 0.30f), s).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(title, style = twText(12, FontWeight.Bold, 18), color = tone)
+        Btn(cta, tone, busy, onClick)
+    }
+}
+
+@Composable
+private fun Btn(text: String, container: Color, busy: Boolean, onClick: () -> Unit) {
+    studio.ai.literium.literium_app.ui.theme.TwButton(text, onClick, loading = busy, container = container)
+}
+
+@Composable
+private fun TxRow(t: Transaction, dark: Boolean) {
+    val credit = t.type == TransactionType.DEPOSIT || t.type.startsWith("earning") || t.type == TransactionType.MANUAL_ADJUSTMENT && t.amount >= 0
+    val s = RoundedCornerShape(16.dp)
+    Row(Modifier.fillMaxWidth().clip(s).background(if (dark) Tw.slate800.copy(alpha = 0.40f) else Tw.slate50).padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(32.dp).clip(RoundedCornerShape(12.dp)).background(if (credit) Tw.emerald500.copy(alpha = 0.15f) else Tw.rose500.copy(alpha = 0.15f)), contentAlignment = Alignment.Center) {
+            LuIcon(if (credit) Lu.ArrowDownToLine else Lu.ArrowUpFromLine, 16.dp, if (credit) Tw.emerald600 else Tw.rose500)
         }
+        Column(Modifier.weight(1f)) {
+            Text(t.description.ifBlank { t.type }, style = twText(12, FontWeight.Bold, 16), color = if (dark) Tw.white else Tw.slate900, maxLines = 1)
+            Text(DateFormatAr.formatDateTimeAr(t.createdAt), style = twText(10, FontWeight.Normal, 15), color = Tw.slate400)
+        }
+        Text((if (credit) "+" else "-") + "$${"%.2f".format(kotlin.math.abs(t.amount))}", style = twText(12, FontWeight.Black, 16).copy(fontFamily = Mono), color = if (credit) Tw.emerald600 else Tw.rose500)
     }
 }
