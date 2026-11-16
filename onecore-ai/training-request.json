@@ -2,8 +2,8 @@
   "schema": "onecore-training-request-v1",
   "stage": "acquire",
   "steps": 1,
-  "purpose": "Rebuild and verify the expanded external corpus using the latest union-find media-content grouping. Every record linked by a stable source group, record ID or exact media-asset SHA-256 must remain in a single split across all sources. Keep Bootstrap, all synthetic curricula and locally authored records diagnostic-only; exclude them from tokenizer fitting and optimizer input. Require usable external text/tool/audio/image/video coverage and full train/validation/test disjointness, publish the corpus artifact, then automatically launch 150 steps of fresh random-initialized OneCore text/tool training on that corpus.",
-  "request_id": "external-corpus-retry-after-asset-dedupe-v3-20261116",
+  "purpose": "Rebuild and verify the expanded external corpus on the restored latest source tree. Use union-find media-content grouping across all sources so every record linked by source group, record identity or exact media asset SHA-256 remains in one split. Bootstrap, all synthetic curricula and locally authored records remain diagnostic-only and excluded from tokenizer and optimizer. Require usable, licensed, pinned external text/tool/image/audio/video records plus full train/validation/test disjointness, upload the corpus artifact, then automatically run 150 fresh random-initialized OneCore text/tool optimizer steps.",
+  "request_id": "external-corpus-retry-after-asset-dedupe-v4-20261116",
   "data_profile": "expanded",
   "start_fresh_text_training": true
 }
