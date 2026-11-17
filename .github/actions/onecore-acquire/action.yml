@@ -95,17 +95,18 @@ runs:
         echo "Acquisition session: ${{ inputs.session_label }}"
         total_budget="${{ inputs.budget_seconds }}"
         notebook_budget=0
+        source_budget=150
         if [[ "$total_budget" =~ ^[0-9]+$ ]] && (( total_budget > 0 )); then
           notebook_budget=$((total_budget / 2))
           (( notebook_budget > 0 )) || notebook_budget=1
         fi
-        echo "Each notebook receives ${notebook_budget}s of source-specific crawler time."
-        ONECORE_ACQUIRE_ONLY=1 ONECORE_ACQUIRE_BUDGET_SECONDS="$notebook_budget" \
+        echo "Each notebook receives ${notebook_budget}s; each source receives up to ${source_budget}s per session."
+        ONECORE_ACQUIRE_ONLY=1 ONECORE_ACQUIRE_BUDGET_SECONDS="$notebook_budget" ONECORE_ACQUIRE_SOURCE_BUDGET_SECONDS="$source_budget" \
           jupyter nbconvert --to notebook --execute onecore-ai/notebooks/03_text_pretraining.ipynb \
             --output "03_text_pretraining.${{ inputs.session_label }}.acquisition.ipynb" \
             --output-dir onecore-ai/run-state/executed-notebooks \
             --ExecutePreprocessor.timeout=-1
-        ONECORE_ACQUIRE_ONLY=1 ONECORE_ACQUIRE_BUDGET_SECONDS="$notebook_budget" \
+        ONECORE_ACQUIRE_ONLY=1 ONECORE_ACQUIRE_BUDGET_SECONDS="$notebook_budget" ONECORE_ACQUIRE_SOURCE_BUDGET_SECONDS="$source_budget" \
           jupyter nbconvert --to notebook --execute onecore-ai/notebooks/04_multimodal_curriculum.ipynb \
             --output "04_multimodal_curriculum.${{ inputs.session_label }}.acquisition.ipynb" \
             --output-dir onecore-ai/run-state/executed-notebooks \
