@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  HF_TOKEN: ${${ secrets.HF_TOKEN }}
+  HF_TOKEN: ${{ secrets.HF_TOKEN }}
 
 jobs:
   prepare:
@@ -22,11 +22,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     outputs:
-      base_corpus_run_id: ${${ steps.request.outputs.base_corpus_run_id }}
+      base_corpus_run_id: ${{ steps.request.outputs.base_corpus_run_id }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${${ github.sha }}
+          ref: ${{ github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -90,16 +90,16 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 330
     outputs:
-      complete: ${${ steps.session.outputs.complete }}
+      complete: ${{ steps.session.outputs.complete }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${${ github.sha }}
+          ref: ${{ github.sha }}
       - id: session
         uses: ./.github/actions/onecore-acquire
         with:
-          prior_artifact_name: onecore-corpus-${${ needs.prepare.outputs.base_corpus_run_id }}
-          prior_run_id: ${${ needs.prepare.outputs.base_corpus_run_id }}
+          prior_artifact_name: onecore-corpus-${{ needs.prepare.outputs.base_corpus_run_id }}
+          prior_run_id: ${{ needs.prepare.outputs.base_corpus_run_id }}
           output_artifact_name: onecore-corpus-acq-1
           budget_seconds: "9000"
           session_label: "01"
@@ -216,24 +216,24 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
-      artifact_name: ${${ steps.select.outputs.artifact_name }}
+      artifact_name: ${{ steps.select.outputs.artifact_name }}
     steps:
       - name: Select newest successful complete acquisition artifact
         id: select
         shell: bash
         env:
-          A1_COMPLETE: ${${ needs.acquire_1.outputs.complete }}
-          A1_RESULT: ${${ needs.acquire_1.result }}
-          A2_COMPLETE: ${${ needs.acquire_2.outputs.complete }}
-          A2_RESULT: ${${ needs.acquire_2.result }}
-          A3_COMPLETE: ${${ needs.acquire_3.outputs.complete }}
-          A3_RESULT: ${${ needs.acquire_3.result }}
-          A4_COMPLETE: ${${ needs.acquire_4.outputs.complete }}
-          A4_RESULT: ${${ needs.acquire_4.result }}
-          A5_COMPLETE: ${${ needs.acquire_5.outputs.complete }}
-          A5_RESULT: ${${ needs.acquire_5.result }}
-          A6_COMPLETE: ${${ needs.acquire_6.outputs.complete }}
-          A6_RESULT: ${${ needs.acquire_6.result }}
+          A1_COMPLETE: ${{ needs.acquire_1.outputs.complete }}
+          A1_RESULT: ${{ needs.acquire_1.result }}
+          A2_COMPLETE: ${{ needs.acquire_2.outputs.complete }}
+          A2_RESULT: ${{ needs.acquire_2.result }}
+          A3_COMPLETE: ${{ needs.acquire_3.outputs.complete }}
+          A3_RESULT: ${{ needs.acquire_3.result }}
+          A4_COMPLETE: ${{ needs.acquire_4.outputs.complete }}
+          A4_RESULT: ${{ needs.acquire_4.result }}
+          A5_COMPLETE: ${{ needs.acquire_5.outputs.complete }}
+          A5_RESULT: ${{ needs.acquire_5.result }}
+          A6_COMPLETE: ${{ needs.acquire_6.outputs.complete }}
+          A6_RESULT: ${{ needs.acquire_6.result }}
         run: |
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import os
@@ -252,7 +252,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${${ github.sha }}
+          ref: ${{ github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -266,7 +266,7 @@ jobs:
       - name: Restore the latest complete acquisition snapshot
         uses: actions/download-artifact@v4
         with:
-          name: ${${ needs.finalize_acquisition.outputs.artifact_name }}
+          name: ${{ needs.finalize_acquisition.outputs.artifact_name }}
           path: onecore-ai/data
       - name: Require all enabled sources to be terminal
         run: |
@@ -316,8 +316,8 @@ jobs:
       - name: Remove intermediate corpus after validated replacement is uploaded
         shell: bash
         env:
-          GH_TOKEN: ${${ github.token }}
-          SOURCE_ARTIFACT: ${${ needs.finalize_acquisition.outputs.artifact_name }}
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_ARTIFACT: ${{ needs.finalize_acquisition.outputs.artifact_name }}
         run: |
           previous_id=$(gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts" \
             --paginate --jq '.artifacts[] | select(.name == "'"$SOURCE_ARTIFACT"'") | .id' | head -1)
@@ -563,7 +563,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${${ github.sha }}
+          ref: ${{ github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -622,7 +622,7 @@ jobs:
       - name: Upload scientific evaluation results
         uses: actions/upload-artifact@v4
         with:
-          name: onecore-evaluation-${${ github.run_id }}
+          name: onecore-evaluation-${{ github.run_id }}
           path: |
             onecore-ai/run-state/evaluation.json
             onecore-ai/run-state/evaluation.validation.json
@@ -634,7 +634,7 @@ jobs:
           compression-level: 1
       - name: Create durable versioned checkpoint release
         env:
-          GH_TOKEN: ${${ github.token }}
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           mkdir -p onecore-ai/run-state/release
