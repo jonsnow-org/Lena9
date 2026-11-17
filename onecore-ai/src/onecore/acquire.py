@@ -1276,7 +1276,7 @@ def acquire_sources(
                             break
                         scanned += 1
                         report["read"] += 1
-                        if cursor is not None and cursor_checkpoint_due(scanned):
+                        if cursor is not None and cursor_checkpoint_due(scanned, int(defaults.get("stream_checkpoint_rows", 64))):
                             report["crawler_cursors"][str(hf_split)] = cursor.save(dataset, start_offset + scanned)
                         if not isinstance(row, dict):
                             continue
@@ -1498,6 +1498,14 @@ def acquire_sources(
         source_report["new_accepted_by_output_split"] = new_counts
         source_report["total_accepted"] = sum(cumulative.values())
         source_report["accepted"] = sum(new_counts.values())
+        required_minimum = int(source_specs.get(source_id, {}).get("minimum_accepted_records", 0))
+        if required_minimum:
+            source_report["required_minimum_accepted_records"] = required_minimum
+            source_report["required_minimum_met"] = sum(cumulative.values()) >= required_minimum
+            if source_report.get("required_for_training") and not source_report["required_minimum_met"]:
+                if source_report.get("status") == "completed":
+                    source_report["status"] = "no_compatible_rows"
+                source_report["partial"] = True
         if adapter in {"metadata_only", "video_manifest"}:
             source_report["metadata_only_by_split"] = cumulative
             source_report["metadata_only"] = sum(new_counts.values())
@@ -1534,7 +1542,8 @@ def acquire_sources(
         "access_required_sources": sum(1 for item in source_reports if item.get("status") == "access_required"),
         "metadata_only_sources": sum(1 for item in source_reports if item.get("metadata_only", 0) > 0),
         "metadata_only_rows": sum(int(item.get("metadata_only", 0)) for item in source_reports),
-        "sources_with_access_required": sum(1 for item in source_reports if item.get("status") == "access_token_unavailable"),
+        "sources_with_access_required": sum(1 for item in source_reports if item.get("status") in {"access_token_unavailable", "access_required"}),
+        "sources_with_missing_usable_payloads": sum(1 for item in source_reports if item.get("required_for_training") and item.get("status") == "no_compatible_rows"),
     }
     report_path = root / "data" / "acquisition-report.json"
     report_path.write_text(json.dumps(output, ensure_ascii=False, indent=2), encoding="utf-8")
