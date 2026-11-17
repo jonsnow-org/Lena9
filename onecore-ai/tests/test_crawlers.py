@@ -227,3 +227,18 @@ def test_stack_v2_filters_before_fetching_swh_blobs(tmp_path, monkeypatch):
         row.update(changes)
         assert acquire._record_from_row(row, dict(source), "rejected-row", "train", assets) is None
     assert calls == ["f" * 40], "rejected files must not trigger Software Heritage content requests"
+
+
+def test_source_registry_routes_text_code_and_multimodal_crawlers_to_their_own_notebooks():
+    from pathlib import Path
+    from onecore.crawlers import source_ids_for_notebook
+
+    root = Path(__file__).resolve().parents[1]
+    text_sources = source_ids_for_notebook(root, "03_text_pretraining")
+    media_sources = source_ids_for_notebook(root, "04_multimodal_curriculum")
+    assert "fineweb2_full_ar" in text_sources
+    assert "stack_v2_code" in text_sources
+    assert "fleurs_ar" in media_sources
+    assert "openimages_finedet_v1" in media_sources
+    assert set(text_sources).isdisjoint(media_sources)
+    assert source_ids_for_notebook(root, "not-a-notebook") == []
