@@ -139,7 +139,7 @@ def test_fineweb2_and_stack_v2_are_real_streaming_sources_with_notebook_ownershi
     assert stack["adapter"] == "stack_v2_code"
     assert stack["crawler"] == "hf_state_dict_plus_swh_content"
     assert stack["notebook_id"] == "03_text_pretraining"
-    assert stack["required_for_training"] is True
+    assert stack["required_for_training"] is False
     assert stack["minimum_accepted_records"] >= 10_000
     assert "MIT" in stack["license_allowlist"]
     assert "GPL-3.0-only" not in stack["license_allowlist"]
