@@ -268,3 +268,19 @@ def test_source_registry_routes_text_code_and_multimodal_crawlers_to_their_own_n
     assert "openimages_finedet_v1" in media_sources
     assert set(text_sources).isdisjoint(media_sources)
     assert source_ids_for_notebook(root, "not-a-notebook") == []
+
+
+def test_stack_v2_rejects_exposed_secrets_and_redacts_email_addresses():
+    from onecore.stack_v2 import contains_exposed_secret, redact_personal_contacts
+
+    assert contains_exposed_secret("-----BEGIN PRIVATE KEY-----\nFAKE\n-----END PRIVATE KEY-----")
+    assert contains_exposed_secret("AWS_ACCESS_KEY_ID=AKIA" + "1234567890ABCDEF")
+    assert contains_exposed_secret('api_key = "sk' + "_live_" + "1234567890abcdefghijklmnop" + '"')
+    assert contains_exposed_secret("ordinary code", ".env.production")
+    assert contains_exposed_secret("ordinary code", "config/credentials")
+    assert not contains_exposed_secret('api_key = "YOUR_API_KEY_PLACEHOLDER"')
+    assert not contains_exposed_secret("password = '<YOUR_PASSWORD>'")
+    source = 'contact = "maintainer@example.com"\nprint("safe example")'
+    sanitized = redact_personal_contacts(source)
+    assert "maintainer@example.com" not in sanitized
+    assert "[REDACTED_EMAIL]" in sanitized
