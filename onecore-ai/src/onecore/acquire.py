@@ -1436,7 +1436,7 @@ def acquire_sources(
         "pending_sources": pending_sources,
         "session_budget_exhausted": session_budget_exhausted,
         "external_media_assets": ({split: _external_asset_report(root, split) for split in SPLITS}
-                                   if acquisition_complete else {}),
+                                   if acquisition_complete and time_budget_seconds is None else {}),
         "completed_sources": sum(1 for item in source_reports if item.get("status") == "completed"),
         "unavailable_sources": sum(1 for item in source_reports if item.get("status") in {"unavailable", "access_token_unavailable"}),
         "metadata_only_sources": sum(1 for item in source_reports if item.get("metadata_only", 0) > 0),
