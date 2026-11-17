@@ -25,10 +25,10 @@ jobs:
       base_corpus_run_id: ${{ steps.request.outputs.base_corpus_run_id }}
       base_corpus_artifact_name: ${{ steps.request.outputs.base_corpus_artifact_name }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ github.sha }}
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
           cache: pip
@@ -97,7 +97,7 @@ jobs:
     outputs:
       complete: ${{ steps.session.outputs.complete }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ github.sha }}
       - id: session
@@ -118,7 +118,7 @@ jobs:
     outputs:
       complete: ${{ steps.session.outputs.complete }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ github.sha }}
       - id: session
@@ -139,7 +139,7 @@ jobs:
     outputs:
       complete: ${{ steps.session.outputs.complete }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ github.sha }}
       - id: session
@@ -160,7 +160,7 @@ jobs:
     outputs:
       complete: ${{ steps.session.outputs.complete }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ github.sha }}
       - id: session
@@ -181,7 +181,7 @@ jobs:
     outputs:
       complete: ${{ steps.session.outputs.complete }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ github.sha }}
       - id: session
@@ -202,7 +202,7 @@ jobs:
     outputs:
       complete: ${{ steps.session.outputs.complete }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ github.sha }}
       - id: session
@@ -265,10 +265,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 330
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ github.sha }}
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
           cache: pip
@@ -279,7 +279,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e "onecore-ai[dev]"
       - name: Restore the latest complete acquisition snapshot
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: ${{ needs.finalize_acquisition.outputs.artifact_name }}
           path: onecore-ai/data
@@ -313,7 +313,7 @@ jobs:
             --output-dir onecore-ai/run-state/executed-notebooks \
             --ExecutePreprocessor.timeout=-1
       - name: Upload complete validated corpus and resume state
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: onecore-corpus-final
           path: |
@@ -369,7 +369,7 @@ jobs:
       optimizer_step: ${{ steps.train.outputs.optimizer_step }}
       checkpoint_sha256: ${{ steps.train.outputs.checkpoint_sha256 }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ github.sha }}
       - id: train
@@ -392,7 +392,7 @@ jobs:
       optimizer_step: ${{ steps.train.outputs.optimizer_step }}
       checkpoint_sha256: ${{ steps.train.outputs.checkpoint_sha256 }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ github.sha }}
       - id: train
@@ -415,7 +415,7 @@ jobs:
       optimizer_step: ${{ steps.train.outputs.optimizer_step }}
       checkpoint_sha256: ${{ steps.train.outputs.checkpoint_sha256 }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ github.sha }}
       - id: train
@@ -438,7 +438,7 @@ jobs:
       optimizer_step: ${{ steps.train.outputs.optimizer_step }}
       checkpoint_sha256: ${{ steps.train.outputs.checkpoint_sha256 }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ github.sha }}
       - id: train
@@ -461,7 +461,7 @@ jobs:
       optimizer_step: ${{ steps.train.outputs.optimizer_step }}
       checkpoint_sha256: ${{ steps.train.outputs.checkpoint_sha256 }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ github.sha }}
       - id: train
@@ -484,7 +484,7 @@ jobs:
       optimizer_step: ${{ steps.train.outputs.optimizer_step }}
       checkpoint_sha256: ${{ steps.train.outputs.checkpoint_sha256 }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ github.sha }}
       - id: train
@@ -507,7 +507,7 @@ jobs:
       optimizer_step: ${{ steps.train.outputs.optimizer_step }}
       checkpoint_sha256: ${{ steps.train.outputs.checkpoint_sha256 }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ github.sha }}
       - id: train
@@ -530,7 +530,7 @@ jobs:
       optimizer_step: ${{ steps.train.outputs.optimizer_step }}
       checkpoint_sha256: ${{ steps.train.outputs.checkpoint_sha256 }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ github.sha }}
       - id: train
@@ -553,7 +553,7 @@ jobs:
       optimizer_step: ${{ steps.train.outputs.optimizer_step }}
       checkpoint_sha256: ${{ steps.train.outputs.checkpoint_sha256 }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ github.sha }}
       - id: train
@@ -576,7 +576,7 @@ jobs:
       optimizer_step: ${{ steps.train.outputs.optimizer_step }}
       checkpoint_sha256: ${{ steps.train.outputs.checkpoint_sha256 }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ github.sha }}
       - id: train
@@ -596,10 +596,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 330
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ github.sha }}
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
           cache: pip
@@ -610,12 +610,12 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e "onecore-ai[dev]"
       - name: Restore final corpus and final model checkpoint
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: onecore-corpus-final
           path: onecore-ai/data
       - name: Restore the tenth session checkpoint
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: onecore-state-train-10
           path: onecore-ai/run-state
@@ -655,7 +655,7 @@ jobs:
             --output-dir onecore-ai/run-state/executed-notebooks \
             --ExecutePreprocessor.timeout=-1
       - name: Upload scientific evaluation results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: onecore-evaluation-${{ github.run_id }}
           path: |
