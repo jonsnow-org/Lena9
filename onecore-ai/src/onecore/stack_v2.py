@@ -52,7 +52,13 @@ def has_allowed_stack_license(
     return bool(detected) and detected.issubset(permitted)
 
 
+_S3_CLIENT = None
+
+
 def _client():
+    global _S3_CLIENT
+    if _S3_CLIENT is not None:
+        return _S3_CLIENT
     if not stack_credentials_present():
         raise StackAccessRequired(
             "The Stack v2 requires HF dataset approval plus Software Heritage/INRIA AWS credentials"
@@ -72,7 +78,8 @@ def _client():
         aws_session_token=session_token,
         region_name=region,
     )
-    return session.client("s3", region_name=region)
+    _S3_CLIENT = session.client("s3", region_name=region)
+    return _S3_CLIENT
 
 
 def fetch_stack_content(
