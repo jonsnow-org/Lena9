@@ -23,7 +23,8 @@ from .audio import log_mel_spectrogram
 from .data import external_record_is_trainable, is_immutable_source_revision
 from .crawlers import StatefulStreamCursor, notebook_for_source
 from .stack_v2 import (
-    StackAccessRequired, fetch_stack_content, has_allowed_stack_license, stack_credentials_present,
+    StackAccessRequired, contains_exposed_secret, fetch_stack_content, has_allowed_stack_license,
+    redact_personal_contacts, stack_credentials_present,
 )
 
 
@@ -569,12 +570,13 @@ def _record_from_row(
         language = str(row.get("language") or "").strip()
         if allowed_languages and language.casefold() not in allowed_languages:
             return None
+        code_path = str(row.get("path") or "").strip()
         code = fetch_stack_content(
             row, max_bytes=int(source.get("max_content_bytes", 524_288))
         )
-        if not code:
+        if not code or contains_exposed_secret(code, code_path):
             return None
-        code_path = str(row.get("path") or "").strip()
+        code = redact_personal_contacts(code)
         text = f"# Language: {language or 'unknown'} | File: {code_path or 'unknown'}\n{code}"
         detected = row.get("detected_licenses") or []
         if isinstance(detected, str):
