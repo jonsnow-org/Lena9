@@ -55,7 +55,7 @@ The Stack v2 dataset is gated. The Hugging Face token in GitHub Actions must hav
 - `STACK_V2_AWS_SECRET_ACCESS_KEY`
 - `STACK_V2_AWS_SESSION_TOKEN` — only for temporary credentials.
 
-Until both gates are satisfied, the source is explicitly reported as `access_required` and keeps the data gate closed. Do not substitute metadata-only rows or claim that The Stack code has been ingested. The current connected Hugging Face account did not have access to the gated dataset at the time of this change; the crawler is prepared but cannot be declared live against Stack v2 content until the repository secrets and dataset approval are present.
+Until both gates are satisfied, the source is reported as `optional_access_required`: it stays enabled and resumable, but it does not block the initial joint run when public sources independently pass the five-family coverage gate. If access is granted, the crawler fetches real licensed file content; no metadata-only rows are accepted and no Stack code is claimed as ingested before payload verification. The source can later be incorporated through the existing append-only data-lineage path. The connected Hugging Face account currently does not have access to the gated dataset, so Stack v2 is a deferred corpus expansion rather than a current training dependency.
 
 ## Checkpoint integrity and retention
 
