@@ -56,7 +56,9 @@ def _iter_data_entries(data_root: Path) -> Iterable[tuple[Path, str]]:
                 yield path, path.relative_to(data_root).as_posix()
             for filename in filenames:
                 path = current_path / filename
-                if path.is_symlink() or not path.is_file():
+                if path.is_symlink():
+                    raise ValueError(f"corpus symlinks are not supported: {path}")
+                if not path.is_file():
                     raise ValueError(f"unsupported corpus file entry: {path}")
                 yield path, path.relative_to(data_root).as_posix()
 
