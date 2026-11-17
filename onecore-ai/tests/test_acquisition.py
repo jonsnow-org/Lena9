@@ -57,6 +57,10 @@ def test_source_registry_covers_all_shared_modalities() -> None:
     enabled = {item["id"] for item in sources if item.get("enabled", True)}
     assert {"turkish_mobile_function_calling", "open_images_v7", "coyo_700m", "videos4camera_bench"} <= enabled
     assert {"oscar_ar", "proof_pile_2", "stack_v2_edu", "sard_arabic_documents", "finevideo", "internvid_10m_flt", "webvid_10m_video", "msrvtt_video"} <= enabled
+    stack = next(item for item in sources if item["id"] == "stack_v2_code")
+    assert stack["enabled"] is True
+    assert stack["required_for_training"] is False
+    assert stack["minimum_accepted_records"] == 10000
 
 
 def test_split_assignment_is_stable_and_preserves_published_holdouts() -> None:
@@ -908,3 +912,11 @@ def test_task_coverage_gate_counts_all_usable_records(tmp_path: Path) -> None:
     coverage = assert_task_coverage(tmp_path, set(groups), minimum_train=1, minimum_holdout=1)
     for split in ("train", "validation", "test"):
         assert coverage[split] == {group: (2 if group == "text" else 1) for group in groups}
+
+
+
+def test_optional_gated_source_access_does_not_block_bootstrap() -> None:
+    from onecore.acquire import _source_access_status
+
+    assert _source_access_status({"required_for_training": False}) == "optional_access_required"
+    assert _source_access_status({"required_for_training": True}) == "access_required"
