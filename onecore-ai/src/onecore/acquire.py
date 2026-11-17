@@ -31,6 +31,11 @@ from .stack_v2 import (
 SPLITS = ("train", "validation", "test")
 
 
+def _source_access_status(source: dict[str, Any]) -> str:
+    """Return a terminal deferral state for optional gated sources."""
+    return "access_required" if bool(source.get("required_for_training")) else "optional_access_required"
+
+
 
 def _source_limits(source: dict[str, Any], profile: str) -> dict[str, int]:
     base = {str(key): int(value) for key, value in (source.get("limits") or {}).items()}
@@ -1117,9 +1122,11 @@ def acquire_sources(
             if not stack_credentials_present():
                 missing_credentials.append("Software Heritage/INRIA AWS credentials")
             if missing_credentials:
+                required_for_training = bool(source.get("required_for_training"))
                 source_reports.append({
                     "source": source_id, "repo": source.get("repo"), "adapter": adapter,
-                    "status": "access_required", "required_for_training": True,
+                    "status": _source_access_status(source),
+                    "required_for_training": required_for_training,
                     "read": 0, "accepted": 0, "failed_rows": 0,
                     "errors": [{"type": "StackV2AccessRequired", "message": "; ".join(missing_credentials)}],
                 })
@@ -1147,7 +1154,7 @@ def acquire_sources(
             required_for_training = bool(source.get("required_for_training"))
             source_reports.append({
                 "source": source_id, "repo": source.get("repo"), "adapter": adapter, "revision": revision,
-                "status": "access_required" if lookup_requires_access or required_for_training else "unavailable",
+                "status": _source_access_status(source) if lookup_requires_access or required_for_training else "unavailable",
                 "required_for_training": required_for_training,
                 "read": 0, "accepted": 0, "failed_rows": 0,
                 "errors": [{"type": "ImmutableRevisionRequired",
@@ -1437,8 +1444,9 @@ def acquire_sources(
                 except StackAccessRequired as exc:
                     split_had_error = True
                     source_access_blocked = True
-                    report["status"] = "access_required"
-                    report["required_for_training"] = True
+                    required_for_training = bool(source.get("required_for_training"))
+                    report["status"] = _source_access_status(source)
+                    report["required_for_training"] = required_for_training
                     report.setdefault("errors", []).append({
                         "split": str(hf_split), "type": type(exc).__name__, "message": str(exc)[:500],
                     })
@@ -1496,8 +1504,8 @@ def acquire_sources(
             new_accepted_by_output_split[split] >= remaining_limits[split] for split in SPLITS
         )
         all_source_splits_exhausted = set(str(value) for value in source.get("hf_splits", ["train"])) <= source_splits_exhausted
-        if report.get("status") == "access_required":
-            report["partial"] = True
+        if report.get("status") in {"access_required", "optional_access_required"}:
+            report["partial"] = report.get("status") == "access_required"
         elif session_budget_exhausted or source_budget_exhausted:
             report["partial"] = True
             report["status"] = "partial"
@@ -1592,7 +1600,10 @@ def acquire_sources(
         if item.get("enabled", True)
     }
     source_status = {str(item.get("source", "")): str(item.get("status", "")) for item in source_reports}
-    terminal_statuses = {"completed", "unavailable", "access_token_unavailable", "no_compatible_rows"}
+    terminal_statuses = {
+        "completed", "unavailable", "access_token_unavailable",
+        "optional_access_required", "no_compatible_rows",
+    }
     source_specs = {
         str(item.get("id", "")): item for item in registry.get("sources", [])
         if item.get("enabled", True)
@@ -1616,9 +1627,10 @@ def acquire_sources(
         "completed_sources": sum(1 for item in source_reports if item.get("status") == "completed"),
         "unavailable_sources": sum(1 for item in source_reports if item.get("status") in {"unavailable", "access_token_unavailable"}),
         "access_required_sources": sum(1 for item in source_reports if item.get("status") == "access_required"),
+        "optional_access_sources": sum(1 for item in source_reports if item.get("status") == "optional_access_required"),
         "metadata_only_sources": sum(1 for item in source_reports if item.get("metadata_only", 0) > 0),
         "metadata_only_rows": sum(int(item.get("metadata_only", 0)) for item in source_reports),
-        "sources_with_access_required": sum(1 for item in source_reports if item.get("status") in {"access_token_unavailable", "access_required"}),
+        "sources_with_access_required": sum(1 for item in source_reports if item.get("status") in {"access_token_unavailable", "access_required", "optional_access_required"}),
         "sources_with_missing_usable_payloads": sum(1 for item in source_reports if item.get("required_for_training") and item.get("status") == "no_compatible_rows"),
     }
     report_path = root / "data" / "acquisition-report.json"
