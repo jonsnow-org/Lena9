@@ -185,3 +185,22 @@ def notebook_cursor_summary(project_root: str | Path, notebook_id: str) -> dict[
         "cursor_files": len(files),
         "sources": sources,
     }
+
+
+def source_ids_for_notebook(project_root: str | Path, notebook_id: str) -> list[str]:
+    """Return enabled registry sources owned by one training notebook, in registry order."""
+    import yaml
+
+    root = Path(project_root).resolve()
+    registry_path = root / "data" / "sources.yaml"
+    registry = yaml.safe_load(registry_path.read_text(encoding="utf-8")) or {}
+    sources = registry.get("sources") or []
+    notebook_id = str(notebook_id)
+    return [
+        str(source["id"])
+        for source in sources
+        if isinstance(source, dict)
+        and source.get("enabled", True)
+        and source.get("id")
+        and notebook_for_source(source) == notebook_id
+    ]
