@@ -139,15 +139,17 @@ runs:
       shell: bash
       env:
         PYTHONPATH: onecore-ai/src
+        SESSION_LABEL: ${{ inputs.session_label }}
       run: |
         python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
         import json
+        import os
         from pathlib import Path
         from onecore.crawlers import notebook_cursor_summary
         report = json.loads(Path("onecore-ai/data/acquisition-report.json").read_text(encoding="utf-8"))
         print("### OneCore streaming crawler checkpoint")
         print()
-        print(f"- Session: {{}{} inputs.session_label }}")
+        print("- Session: " + os.environ.get("SESSION_LABEL", "unknown"))
         print(f"- Acquisition complete: **{report.get('acquisition_complete', False)}**")
         print(f"- New optimizer records: **{report.get('total_new_records', 0)}**")
         print(f"- Pending sources: **{len(report.get('pending_sources', []))}**")
