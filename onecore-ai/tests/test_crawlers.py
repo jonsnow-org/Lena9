@@ -3,7 +3,6 @@ import io
 
 from onecore.crawlers import (
     StatefulStreamCursor,
-    cursor_checkpoint_due,
     notebook_cursor_summary,
     notebook_for_source,
 )
@@ -89,12 +88,13 @@ def test_cursor_resets_when_source_revision_changes(tmp_path):
     assert list(stream) == list(range(5))
 
 
-def test_notebook_assignment_and_checkpoint_interval():
+def test_notebook_assignment_for_each_data_family():
     assert notebook_for_source({"adapter": "text"}) == "03_text_pretraining"
+    assert notebook_for_source({"adapter": "tool_use"}) == "03_text_pretraining"
     assert notebook_for_source({"adapter": "stack_v2_code"}) == "03_text_pretraining"
     assert notebook_for_source({"adapter": "image"}) == "04_multimodal_curriculum"
-    assert cursor_checkpoint_due(64, 64)
-    assert not cursor_checkpoint_due(63, 64)
+    assert notebook_for_source({"adapter": "audio"}) == "04_multimodal_curriculum"
+    assert notebook_for_source({"adapter": "video"}) == "04_multimodal_curriculum"
 
 
 def test_stack_v2_license_allowlist_and_streaming_swh_content():
@@ -185,7 +185,10 @@ def test_required_source_minimums_and_crawler_credentials_are_wired_into_each_se
     assert "onecore-ai/notebooks/03_text_pretraining.ipynb" in action
     assert "onecore-ai/notebooks/04_multimodal_curriculum.ipynb" in action
     assert "ONECORE_SKIP_ACQUISITION=1" in action
-    assert "cursor_checkpoint_due" in (root / "src" / "onecore" / "acquire.py").read_text(encoding="utf-8")
+    acquire_source = (root / "src" / "onecore" / "acquire.py").read_text(encoding="utf-8")
+    assert "cursor_snapshots.append" in acquire_source
+    assert "saved_cursor = cursor.save(dataset, rows_read)" in acquire_source
+    assert acquire_source.index("added_counts = _append_manifests(root, rows_by_split)") < acquire_source.index("saved_cursor = cursor.save(dataset, rows_read)")
 
 
 def test_stack_v2_filters_before_fetching_swh_blobs(tmp_path, monkeypatch):
