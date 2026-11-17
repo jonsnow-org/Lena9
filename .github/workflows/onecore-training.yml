@@ -286,7 +286,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: onecore-corpus-${{ github.run_id }}
-          path: $RUNNER_TEMP/onecore-corpus.tar
+          path: ${{ runner.temp }}/onecore-corpus.tar
           if-no-files-found: error
           retention-days: 90
           compression-level: 0
