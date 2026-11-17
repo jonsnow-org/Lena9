@@ -22,10 +22,10 @@ inputs:
 outputs:
   complete:
     description: Whether every enabled source reached a terminal acquisition state
-    value: ${${ steps.report.outputs.complete }}
+    value: ${{ steps.report.outputs.complete }}
   pending_sources:
     description: Number of enabled sources that still need acquisition
-    value: ${${ steps.report.outputs.pending_sources }}
+    value: ${{ steps.report.outputs.pending_sources }}
 
 runs:
   using: composite
@@ -47,9 +47,9 @@ runs:
     - name: Restore the previous corpus and all resume caches
       uses: actions/download-artifact@v4
       with:
-        name: ${${ inputs.prior_artifact_name }}
-        run-id: ${${ inputs.prior_run_id }}
-        github-token: ${${ github.token }}
+        name: ${{ inputs.prior_artifact_name }}
+        run-id: ${{ inputs.prior_run_id }}
+        github-token: ${{ github.token }}
         path: onecore-ai/data
 
     - name: Ensure deterministic bootstrap records are present without replacing the restored corpus
@@ -62,18 +62,18 @@ runs:
       shell: bash
       env:
         PYTHONPATH: onecore-ai/src
-        HF_TOKEN: ${${ env.HF_TOKEN }}
+        HF_TOKEN: ${{ env.HF_TOKEN }}
         ONECORE_SKIP_ACQUISITION: "0"
-        ONECORE_ACQUIRE_BUDGET_SECONDS: ${${ inputs.budget_seconds }}
+        ONECORE_ACQUIRE_BUDGET_SECONDS: ${{ inputs.budget_seconds }}
         ONECORE_FINALIZE_DATA_GATE: "0"
         ONECORE_REQUIRED_TASKS: "text,tool,image,audio,video"
         ONECORE_DATA_PROFILE: "expanded"
         ONECORE_MIN_TRAIN_RECORDS: "25"
         ONECORE_MIN_HOLDOUT_RECORDS: "5"
       run: |
-        echo "Acquisition session: ${${ inputs.session_label }}"
+        echo "Acquisition session: ${{ inputs.session_label }}"
         jupyter nbconvert --to notebook --execute onecore-ai/notebooks/02_data_gate.ipynb \
-          --output "02_data_gate.${${ inputs.session_label }}.executed.ipynb" \
+          --output "02_data_gate.${{ inputs.session_label }}.executed.ipynb" \
           --output-dir onecore-ai/run-state/executed-notebooks \
           --ExecutePreprocessor.timeout=-1
 
@@ -107,7 +107,7 @@ runs:
     - name: Upload the updated corpus, media assets, metadata and resume state
       uses: actions/upload-artifact@v4
       with:
-        name: ${${ inputs.output_artifact_name }}
+        name: ${{ inputs.output_artifact_name }}
         path: |
           onecore-ai/data/train.jsonl
           onecore-ai/data/validation.jsonl
@@ -122,14 +122,14 @@ runs:
         compression-level: 1
 
     - name: Remove superseded in-workflow corpus artifact after the replacement is uploaded
-      if: ${${ inputs.prior_run_id == github.run_id && inputs.prior_artifact_name != inputs.output_artifact_name }}
+      if: ${{ inputs.prior_run_id == github.run_id && inputs.prior_artifact_name != inputs.output_artifact_name }}
       shell: bash
       env:
-        GH_TOKEN: ${${ github.token }}
+        GH_TOKEN: ${{ github.token }}
       run: |
         previous_id=$(gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts" \
-          --paginate --jq '.artifacts[] | select(.name == "${${ inputs.prior_artifact_name }}") | .id' | head -1)
+          --paginate --jq '.artifacts[] | select(.name == "${{ inputs.prior_artifact_name }}") | .id' | head -1)
         if [[ -n "$previous_id" ]]; then
           gh api -X DELETE "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${previous_id}"
-          echo "Removed superseded corpus artifact ${${ inputs.prior_artifact_name }}"
+          echo "Removed superseded corpus artifact ${{ inputs.prior_artifact_name }}"
         fi
