@@ -181,3 +181,49 @@ def test_required_source_minimums_and_crawler_credentials_are_wired_into_each_se
     assert workflow.count("secrets.STACK_V2_AWS_SECRET_ACCESS_KEY") == 6
     assert "Publish per-notebook crawler progress" in action
     assert "cursor_checkpoint_due" in (root / "src" / "onecore" / "acquire.py").read_text(encoding="utf-8")
+
+
+def test_stack_v2_filters_before_fetching_swh_blobs(tmp_path, monkeypatch):
+    from onecore import acquire
+
+    calls = []
+    monkeypatch.setattr(
+        acquire,
+        "fetch_stack_content",
+        lambda row, max_bytes=524_288: calls.append(row["blob_id"]) or "def safe_code():\n    return 1\n",
+    )
+    source = {
+        "id": "stack_v2_python",
+        "repo": "bigcode/the-stack-v2",
+        "adapter": "stack_v2_code",
+        "license_allowlist": ["MIT", "Apache-2.0"],
+        "allowed_languages": ["Python"],
+        "_resolved_revision": "a" * 40,
+    }
+    base = {
+        "blob_id": "f" * 40,
+        "src_encoding": "utf-8",
+        "language": "Python",
+        "path": "src/example.py",
+        "detected_licenses": ["MIT"],
+        "license_type": "permissive",
+        "is_vendor": False,
+        "is_generated": False,
+    }
+    assets = tmp_path / "assets"
+    good = acquire._record_from_row(dict(base), dict(source), "good-row", "train", assets)
+    assert good is not None and good["task"] == "text"
+    assert good["code_blob_id"] == "f" * 40
+    assert calls == ["f" * 40]
+
+    for changes in (
+        {"license_type": "no_license"},
+        {"detected_licenses": ["GPL-3.0-only"]},
+        {"is_vendor": True},
+        {"is_generated": True},
+        {"language": "Brainfuck"},
+    ):
+        row = dict(base)
+        row.update(changes)
+        assert acquire._record_from_row(row, dict(source), "rejected-row", "train", assets) is None
+    assert calls == ["f" * 40], "rejected files must not trigger Software Heritage content requests"
