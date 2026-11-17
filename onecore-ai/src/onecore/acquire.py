@@ -20,6 +20,10 @@ from PIL import Image
 
 from .audio import log_mel_spectrogram
 from .data import external_record_is_trainable, is_immutable_source_revision
+from .crawlers import StatefulStreamCursor, cursor_checkpoint_due, notebook_for_source
+from .stack_v2 import (
+    StackAccessRequired, fetch_stack_content, has_allowed_stack_license, stack_credentials_present,
+)
 
 
 SPLITS = ("train", "validation", "test")
@@ -288,7 +292,7 @@ def _identity_value(value: Any) -> Any:
 def _row_identity(row: dict[str, Any], source_id: str, index: int) -> str:
     """Include the complete row payload so reused dataset IDs cannot collide."""
     primary = ""
-    for key in ("id", "sample_id", "__key__", "image_name", "filename", "file", "url", "path",
+    for key in ("id", "sample_id", "__key__", "blob_id", "content_id", "image_name", "filename", "file", "url", "path",
                 "video_id", "videoid", "clip_id", "img_id"):
         value = row.get(key)
         if value is not None and str(value).strip():
@@ -549,7 +553,27 @@ def _record_from_row(
             ), "")
             if answer:
                 text = f"Question: {question}\nAnswer: {answer}" if question else answer
-    if adapter == "text":
+    if adapter == "stack_v2_code":
+        allowlist = {str(value) for value in (source.get("license_allowlist") or [])}
+        if not has_allowed_stack_license(row, allowlist):
+            return None
+        allowed_languages = {str(value).strip().casefold() for value in (source.get("allowed_languages") or [])}
+        language = str(row.get("language") or "").strip()
+        if allowed_languages and language.casefold() not in allowed_languages:
+            return None
+        code = fetch_stack_content(
+            row, max_bytes=int(source.get("max_content_bytes", 524_288))
+        )
+        if not code:
+            return None
+        code_path = str(row.get("path") or "").strip()
+        text = f"# Language: {language or 'unknown'} | File: {code_path or 'unknown'}\n{code}"
+        record.update({
+            "task": "text", "text": text[:2200], "code_language": language,
+            "code_path": code_path, "code_blob_id": str(row.get("blob_id") or ""),
+            "code_detected_licenses": sorted({str(value) for value in (row.get("detected_licenses") or [])}),
+        })
+    elif adapter == "text":
         if len(text) < 24:
             return None
         record.update({"task": "text", "text": text[:2200]})
@@ -1042,7 +1066,21 @@ def acquire_sources(
                 if cache_path.exists():
                     cache_path.unlink()
             continue
-        if source.get("requires_access") and not token:
+        if adapter == "stack_v2_code":
+            missing_credentials = []
+            if not token:
+                missing_credentials.append("HF_TOKEN with approved access to bigcode/the-stack-v2")
+            if not stack_credentials_present():
+                missing_credentials.append("Software Heritage/INRIA AWS credentials")
+            if missing_credentials:
+                source_reports.append({
+                    "source": source_id, "repo": source.get("repo"), "adapter": adapter,
+                    "status": "access_required", "required_for_training": True,
+                    "read": 0, "accepted": 0, "failed_rows": 0,
+                    "errors": [{"type": "StackV2AccessRequired", "message": "; ".join(missing_credentials)}],
+                })
+                continue
+        elif source.get("requires_access") and not token:
             source_reports.append({
                 "source": source_id, "repo": source.get("repo"), "adapter": adapter,
                 "status": "access_token_unavailable",
@@ -1058,9 +1096,16 @@ def acquire_sources(
                 revision_error = f"{type(exc).__name__}: {str(exc)[:240]}"
                 revision = None
         if not is_immutable_source_revision(revision):
+            access_markers = ("gatedrepoerror", "access denied", "not authorized", "403", "401", "restricted")
+            lookup_requires_access = bool(revision_error and any(
+                marker in revision_error.casefold() for marker in access_markers
+            ))
+            required_for_training = bool(source.get("required_for_training"))
             source_reports.append({
                 "source": source_id, "repo": source.get("repo"), "adapter": adapter, "revision": revision,
-                "status": "unavailable", "read": 0, "accepted": 0, "failed_rows": 0,
+                "status": "access_required" if lookup_requires_access or required_for_training else "unavailable",
+                "required_for_training": required_for_training,
+                "read": 0, "accepted": 0, "failed_rows": 0,
                 "errors": [{"type": "ImmutableRevisionRequired",
                             "message": "source revision must be a pinned 40-64 character commit SHA"}],
                 **({"revision_lookup_warning": revision_error} if revision_error else {}),
@@ -1142,6 +1187,8 @@ def acquire_sources(
         report: dict[str, Any] = {
             "source": source_id, "repo": source.get("repo"), "adapter": adapter, "revision": revision,
             "status": "started", "read": 0, "accepted": 0, "failed_rows": 0, "by_split": {},
+            "required_for_training": bool(source.get("required_for_training")),
+            "crawler_notebook": notebook_for_source(source), "crawler_cursors": {},
             "limits": limits, "prior_accepted_by_output_split": prior_accepted,
             "remaining_limits": remaining_limits, "accepted_by_output_split": dict(prior_accepted),
             "new_accepted_by_output_split": {split: 0 for split in SPLITS},
@@ -1177,6 +1224,7 @@ def acquire_sources(
         else:
             metadata_new_by_split = None
 
+        source_splits_exhausted: set[str] = set()
         if all(new_accepted_by_output_split[split] >= remaining_limits[split] for split in SPLITS):
             report["already_satisfied"] = True
             for hf_split in source.get("hf_splits", ["train"]):
@@ -1191,11 +1239,17 @@ def acquire_sources(
                 per_hf_accepted = {split: 0 for split in SPLITS}
                 per_hf_pending = {split: 0 for split in SPLITS}
                 scanned = 0
+                split_exhausted = False
+                source_access_blocked = False
+                cursor = None
+                dataset = None
                 try:
                     load_kwargs = {
-                        "path": str(source["repo"]), "name": str(source.get("config") or "default"),
+                        "path": str(source["repo"]),
                         "split": str(hf_split), "streaming": True, "token": token,
                     }
+                    if source.get("config"):
+                        load_kwargs["name"] = str(source["config"])
                     load_kwargs["revision"] = revision
                     dataset = load_dataset(**load_kwargs)
                     if adapter == "audio":
@@ -1204,18 +1258,14 @@ def acquire_sources(
                         audio_feature = features.get(audio_field) if hasattr(features, "get") else None
                         if audio_feature is not None and audio_feature.__class__.__name__ == "Audio":
                             dataset = dataset.cast_column(audio_field, Audio(decode=False))
-                    if start_offset:
-                        skip_method = getattr(dataset, "skip", None)
-                        if callable(skip_method):
-                            dataset = skip_method(start_offset)
-                        else:
-                            iterator = iter(dataset)
-                            for _ in range(start_offset):
-                                try:
-                                    next(iterator)
-                                except StopIteration:
-                                    break
-                            dataset = iterator
+                    cursor = StatefulStreamCursor(
+                        root, notebook_for_source(source), source_id, str(source["repo"]),
+                        str(source.get("config") or ""), str(hf_split), revision,
+                    )
+                    dataset, start_offset, cursor_mode = cursor.restore(dataset, start_offset)
+                    report["crawler_cursors"][str(hf_split)] = {
+                        "mode": cursor_mode, "start_rows_read": start_offset,
+                    }
                     target_count = sum(remaining_limits.values()) or 1
                     max_scan = max(target_count * int(defaults.get("max_scan_multiplier", 12)), target_count + 200)
                     for row in dataset:
@@ -1226,6 +1276,8 @@ def acquire_sources(
                             break
                         scanned += 1
                         report["read"] += 1
+                        if cursor is not None and cursor_checkpoint_due(scanned):
+                            report["crawler_cursors"][str(hf_split)] = cursor.save(dataset, start_offset + scanned)
                         if not isinstance(row, dict):
                             continue
                         absolute_index = start_offset + scanned
@@ -1271,6 +1323,8 @@ def acquire_sources(
                                     record = _record_from_row(row, source, raw_identity, assigned, assets_root)
                                     if record is not None and not external_record_is_trainable(record):
                                         raise ValueError("external record metadata is incomplete")
+                                except StackAccessRequired:
+                                    raise
                                 except Exception as exc:
                                     record = None
                                     conversion_error = {
@@ -1301,6 +1355,8 @@ def acquire_sources(
                                 record = _record_from_row(row, source, raw_identity, assigned, assets_root)
                                 if record is not None and not external_record_is_trainable(record):
                                     raise ValueError("external record metadata is incomplete")
+                            except StackAccessRequired:
+                                raise
                             except Exception as exc:
                                 record = None
                                 conversion_error = {
@@ -1324,16 +1380,37 @@ def acquire_sources(
                                 report["accepted"] += 1
                         if scanned >= max_scan:
                             break
-                except Exception as exc:
+                    else:
+                        split_exhausted = True
+                    if split_exhausted:
+                        source_splits_exhausted.add(str(hf_split))
+                except StackAccessRequired as exc:
+                    source_access_blocked = True
+                    report["status"] = "access_required"
+                    report["required_for_training"] = True
                     report.setdefault("errors", []).append({
                         "split": str(hf_split), "type": type(exc).__name__, "message": str(exc)[:500],
                     })
+                except Exception as exc:
+                    message = str(exc)
+                    access_markers = ("gatedrepoerror", "access denied", "not authorized", "403", "401", "restricted")
+                    if source.get("required_for_training") and any(
+                        marker in (type(exc).__name__ + " " + message).casefold() for marker in access_markers
+                    ):
+                        source_access_blocked = True
+                        report["status"] = "access_required"
+                    report.setdefault("errors", []).append({
+                        "split": str(hf_split), "type": type(exc).__name__, "message": message[:500],
+                    })
+                if cursor is not None and dataset is not None:
+                    report["crawler_cursors"][str(hf_split)] = cursor.save(dataset, start_offset + scanned)
                 report["by_split"][str(hf_split)] = {
                     "start_offset": start_offset, "scanned": scanned,
                     "total_scanned": start_offset + scanned,
                     "accepted": per_hf_accepted, "pending": per_hf_pending,
+                    "source_split_exhausted": split_exhausted,
                 }
-                if session_budget_exhausted:
+                if session_budget_exhausted or source_access_blocked:
                     break
 
         pending_final = pending_keep
@@ -1350,13 +1427,23 @@ def acquire_sources(
         _write_jsonl_atomic(pending_paths[0], pending_final)
         _write_jsonl_atomic(pending_paths[1], pending_final)
         report["total_read"] = sum(int(item.get("total_scanned", 0)) for item in report["by_split"].values())
-        if session_budget_exhausted:
+        targets_reached = all(
+            new_accepted_by_output_split[split] >= remaining_limits[split] for split in SPLITS
+        )
+        all_source_splits_exhausted = set(str(value) for value in source.get("hf_splits", ["train"])) <= source_splits_exhausted
+        if report.get("status") == "access_required":
+            report["partial"] = True
+        elif session_budget_exhausted:
             report["partial"] = True
             report["status"] = "partial"
+        elif targets_reached or all_source_splits_exhausted or report.get("already_satisfied"):
+            report["status"] = "completed"
+        elif report.get("errors") and not report["read"]:
+            report["status"] = "unavailable"
         else:
-            report["status"] = "completed" if report["accepted"] or report.get("already_satisfied") else (
-                "unavailable" if report.get("errors") else "no_compatible_rows"
-            )
+            # A scan cap is not the same as exhausting a multi-terabyte dataset.
+            report["partial"] = True
+            report["status"] = "partial"
         source_reports.append(report)
         if session_budget_exhausted:
             break
@@ -1422,9 +1509,14 @@ def acquire_sources(
     }
     source_status = {str(item.get("source", "")): str(item.get("status", "")) for item in source_reports}
     terminal_statuses = {"completed", "unavailable", "access_token_unavailable", "no_compatible_rows"}
+    source_specs = {
+        str(item.get("id", "")): item for item in registry.get("sources", [])
+        if item.get("enabled", True)
+    }
     pending_sources = sorted(
         source_id for source_id in enabled_ids
         if source_status.get(source_id) not in terminal_statuses
+        or (source_specs.get(source_id, {}).get("required_for_training") and source_status.get(source_id) != "completed")
     )
     acquisition_complete = not pending_sources
     output = {
@@ -1439,6 +1531,7 @@ def acquire_sources(
                                    if acquisition_complete and time_budget_seconds is None else {}),
         "completed_sources": sum(1 for item in source_reports if item.get("status") == "completed"),
         "unavailable_sources": sum(1 for item in source_reports if item.get("status") in {"unavailable", "access_token_unavailable"}),
+        "access_required_sources": sum(1 for item in source_reports if item.get("status") == "access_required"),
         "metadata_only_sources": sum(1 for item in source_reports if item.get("metadata_only", 0) > 0),
         "metadata_only_rows": sum(int(item.get("metadata_only", 0)) for item in source_reports),
         "sources_with_access_required": sum(1 for item in source_reports if item.get("status") == "access_token_unavailable"),
