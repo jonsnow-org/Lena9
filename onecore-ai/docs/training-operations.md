@@ -36,6 +36,27 @@ Only `train.jsonl` is read by the training iterator. Validation and test manifes
 
 All available data classes enter tokenizer fitting and optimizer input when their payloads are usable. Validation and test preserve every available data class and remain isolated from gradient updates.
 
+## Multi-terabyte streaming crawlers and notebook resume
+
+The acquisition path reads upstream datasets incrementally; it does **not** download the FineWeb-2 or The Stack v2 archives in full.
+
+- FineWeb-2 is read through Hugging Face `IterableDataset` streaming from verified language shards. Enabled shards currently include Arabic dialects plus Turkish, German, French, Spanish, Portuguese, Indonesian, Japanese, and Russian. The English `eng_Latn` directory was checked and is not published in this repository, so it remains disabled rather than generating repeatable source failures.
+- The Stack v2 source streams its metadata rows from the gated `bigcode/the-stack-v2` repository. For each row that passes the explicit SPDX permissive-license and language filters, the crawler fetches only that blob from Software Heritage S3, decompresses it in memory, rejects binary/oversized payloads, and writes a text/code training record. It never mirrors the complete S3 bucket.
+- Each stream has an independent cursor at `data/resume-cache/crawlers/<notebook>/<source>/<split>.json`. The cursor is bound to the dataset repository, config, split, and pinned revision. Hugging Face `state_dict/load_state_dict` resumes at the shard/row position; the monotonic raw-row offset is retained as a fallback. The cursor is saved every 64 raw rows and again at session exit. Manifest IDs and the pending-row ledger make replay after a sudden runner stop idempotent.
+- Text/code cursors belong to `03_text_pretraining`; image/audio/video cursors belong to `04_multimodal_curriculum`. Notebook 02 runs the bounded collection pass and writes the shared manifests/assets; notebooks 03 and 04 display their own saved crawler ledgers before training from the same unified corpus.
+- A scan limit or session timeout is reported as `partial`, never as source exhaustion. A required source cannot be reported as complete unless its configured minimum number of usable records has reached the manifest. A record containing only a Stack SWH/blob identifier is not a training example.
+
+### Stack v2 access prerequisites
+
+The Stack v2 dataset is gated. The Hugging Face token in GitHub Actions must have accepted access to `bigcode/the-stack-v2`. Fetching actual file contents also requires the Software Heritage/INRIA-approved AWS credentials. Configure these repository Actions secrets; values are never committed or printed:
+
+- `HF_TOKEN` — an approved Hugging Face read token.
+- `STACK_V2_AWS_ACCESS_KEY_ID`
+- `STACK_V2_AWS_SECRET_ACCESS_KEY`
+- `STACK_V2_AWS_SESSION_TOKEN` — only for temporary credentials.
+
+Until both gates are satisfied, the source is explicitly reported as `access_required` and keeps the data gate closed. Do not substitute metadata-only rows or claim that The Stack code has been ingested. The current connected Hugging Face account did not have access to the gated dataset at the time of this change; the crawler is prepared but cannot be declared live against Stack v2 content until the repository secrets and dataset approval are present.
+
 ## Checkpoint integrity and retention
 
 Checkpoint verification checks the internal SHA-256 against `train_result.json`, optimizer step and state, scheduler state, exact parameter count, tokenizer hash, manifest hash, asset hash, and parent checkpoint/run metadata. The initial legacy checkpoint did not record an asset fingerprint; the first continuation established one while preserving the old manifest hash.
