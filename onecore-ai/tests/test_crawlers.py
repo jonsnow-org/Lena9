@@ -182,10 +182,17 @@ def test_required_source_minimums_and_crawler_credentials_are_wired_into_each_se
     assert "Publish per-notebook crawler progress" in action
     assert "Execute one bounded acquisition session in each owning notebook" in action
     assert "ONECORE_ACQUIRE_ONLY=1" in action
+    assert "ONECORE_ACQUIRE_SOURCE_BUDGET_SECONDS" in action
+    assert "source_budget=150" in action
     assert "onecore-ai/notebooks/03_text_pretraining.ipynb" in action
     assert "onecore-ai/notebooks/04_multimodal_curriculum.ipynb" in action
     assert "ONECORE_SKIP_ACQUISITION=1" in action
+    ci = (root.parent / ".github" / "workflows" / "onecore-ci.yml").read_text(encoding="utf-8")
+    assert "os._exit(0)" in ci
     acquire_source = (root / "src" / "onecore" / "acquire.py").read_text(encoding="utf-8")
+    assert "source_budget_seconds" in acquire_source
+    assert "source_deadline" in acquire_source
+    assert "registry_sources.sort(key=lambda item: not bool(item.get(\"required_for_training\")))" in acquire_source
     assert "cursor_snapshots.append" in acquire_source
     assert "saved_cursor = cursor.save(dataset, rows_read)" in acquire_source
     assert "and not split_had_error" in acquire_source
