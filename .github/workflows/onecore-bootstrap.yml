@@ -108,6 +108,10 @@ jobs:
           output_artifact_name: onecore-corpus-acq-1
           budget_seconds: "9000"
           session_label: "01"
+          stack_v2_aws_access_key_id: ${{ secrets.STACK_V2_AWS_ACCESS_KEY_ID }}
+          stack_v2_aws_secret_access_key: ${{ secrets.STACK_V2_AWS_SECRET_ACCESS_KEY }}
+          stack_v2_aws_session_token: ${{ secrets.STACK_V2_AWS_SESSION_TOKEN }}
+          stack_v2_aws_region: us-east-1
 
   acquire_2:
     name: Acquisition session 2 of 6
@@ -129,6 +133,10 @@ jobs:
           output_artifact_name: onecore-corpus-acq-2
           budget_seconds: "9000"
           session_label: "02"
+          stack_v2_aws_access_key_id: ${{ secrets.STACK_V2_AWS_ACCESS_KEY_ID }}
+          stack_v2_aws_secret_access_key: ${{ secrets.STACK_V2_AWS_SECRET_ACCESS_KEY }}
+          stack_v2_aws_session_token: ${{ secrets.STACK_V2_AWS_SESSION_TOKEN }}
+          stack_v2_aws_region: us-east-1
 
   acquire_3:
     name: Acquisition session 3 of 6
@@ -150,6 +158,10 @@ jobs:
           output_artifact_name: onecore-corpus-acq-3
           budget_seconds: "9000"
           session_label: "03"
+          stack_v2_aws_access_key_id: ${{ secrets.STACK_V2_AWS_ACCESS_KEY_ID }}
+          stack_v2_aws_secret_access_key: ${{ secrets.STACK_V2_AWS_SECRET_ACCESS_KEY }}
+          stack_v2_aws_session_token: ${{ secrets.STACK_V2_AWS_SESSION_TOKEN }}
+          stack_v2_aws_region: us-east-1
 
   acquire_4:
     name: Acquisition session 4 of 6
@@ -171,6 +183,10 @@ jobs:
           output_artifact_name: onecore-corpus-acq-4
           budget_seconds: "9000"
           session_label: "04"
+          stack_v2_aws_access_key_id: ${{ secrets.STACK_V2_AWS_ACCESS_KEY_ID }}
+          stack_v2_aws_secret_access_key: ${{ secrets.STACK_V2_AWS_SECRET_ACCESS_KEY }}
+          stack_v2_aws_session_token: ${{ secrets.STACK_V2_AWS_SESSION_TOKEN }}
+          stack_v2_aws_region: us-east-1
 
   acquire_5:
     name: Acquisition session 5 of 6
@@ -192,6 +208,10 @@ jobs:
           output_artifact_name: onecore-corpus-acq-5
           budget_seconds: "9000"
           session_label: "05"
+          stack_v2_aws_access_key_id: ${{ secrets.STACK_V2_AWS_ACCESS_KEY_ID }}
+          stack_v2_aws_secret_access_key: ${{ secrets.STACK_V2_AWS_SECRET_ACCESS_KEY }}
+          stack_v2_aws_session_token: ${{ secrets.STACK_V2_AWS_SESSION_TOKEN }}
+          stack_v2_aws_region: us-east-1
 
   acquire_6:
     name: Acquisition session 6 of 6
@@ -213,6 +233,10 @@ jobs:
           output_artifact_name: onecore-corpus-acq-6
           budget_seconds: "9000"
           session_label: "06"
+          stack_v2_aws_access_key_id: ${{ secrets.STACK_V2_AWS_ACCESS_KEY_ID }}
+          stack_v2_aws_secret_access_key: ${{ secrets.STACK_V2_AWS_SECRET_ACCESS_KEY }}
+          stack_v2_aws_session_token: ${{ secrets.STACK_V2_AWS_SESSION_TOKEN }}
+          stack_v2_aws_region: us-east-1
 
   finalize_acquisition:
     name: Select the latest complete corpus snapshot
