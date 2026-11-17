@@ -23,6 +23,7 @@ jobs:
     timeout-minutes: 60
     outputs:
       base_corpus_run_id: ${{ steps.request.outputs.base_corpus_run_id }}
+      base_corpus_artifact_name: ${{ steps.request.outputs.base_corpus_artifact_name }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -52,7 +53,11 @@ jobs:
           corpus = str(request.get("base_corpus_run_id", "")).strip()
           if not re.fullmatch(r"[0-9]+", corpus):
               raise ValueError("A preserved base corpus artifact run ID is required")
+          artifact = str(request.get("base_corpus_artifact_name") or f"onecore-corpus-{corpus}").strip()
+          if not re.fullmatch(r"[A-Za-z0-9_.-]+", artifact):
+              raise ValueError("The base corpus artifact name contains unsupported characters")
           print(f"base_corpus_run_id={corpus}")
+          print(f"base_corpus_artifact_name={artifact}")
           PY
       - name: Compile package and run all tests
         run: |
@@ -98,7 +103,7 @@ jobs:
       - id: session
         uses: ./.github/actions/onecore-acquire
         with:
-          prior_artifact_name: onecore-corpus-${{ needs.prepare.outputs.base_corpus_run_id }}
+          prior_artifact_name: ${{ needs.prepare.outputs.base_corpus_artifact_name }}
           prior_run_id: ${{ needs.prepare.outputs.base_corpus_run_id }}
           output_artifact_name: onecore-corpus-acq-1
           budget_seconds: "9000"
@@ -217,6 +222,7 @@ jobs:
     timeout-minutes: 10
     outputs:
       artifact_name: ${{ steps.select.outputs.artifact_name }}
+      complete: ${{ steps.select.outputs.complete }}
     steps:
       - name: Select newest successful complete acquisition artifact
         id: select
@@ -238,15 +244,24 @@ jobs:
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import os
           for index in range(6, 0, -1):
-              if os.environ.get(f"A{index}_RESULT") == "success" and os.environ.get(f"A{index}_COMPLETE") == "true":
+              if os.environ.get(f"A{index}_RESULT") == "success":
+                  complete = os.environ.get(f"A{index}_COMPLETE") == "true"
                   print(f"artifact_name=onecore-corpus-acq-{index}")
+                  print(f"complete={str(complete).lower()}")
+                  if not complete:
+                      with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+                          summary.write("## Acquisition needs another bounded continuation\n")
+                          summary.write(f"- Current run ID: {os.environ['GITHUB_RUN_ID']}\n")
+                          summary.write(f"- Latest saved corpus artifact: onecore-corpus-acq-{index}\n")
+                          summary.write("- Set these values in training-request.json as base_corpus_run_id and base_corpus_artifact_name, then trigger the request again.\n")
                   raise SystemExit(0)
-          raise SystemExit("The six bounded acquisition sessions did not complete all enabled sources; resume from the latest uploaded corpus.")
+          raise SystemExit("No acquisition session produced a new corpus artifact; the original base artifact remains intact.")
           PY
 
   dataset_gate:
     name: Final multimodal coverage and split-integrity gate
     needs: finalize_acquisition
+    if: ${{ needs.finalize_acquisition.outputs.complete == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 330
     steps:
@@ -324,6 +339,26 @@ jobs:
           if [[ -n "$previous_id" ]]; then
             gh api -X DELETE "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${previous_id}"
           fi
+
+  resume_notice:
+    name: Preserve acquisition progress for the next bounded run
+    needs: finalize_acquisition
+    if: ${{ needs.finalize_acquisition.outputs.complete != 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Publish exact continuation inputs
+        shell: bash
+        env:
+          BASE_ARTIFACT: ${{ needs.finalize_acquisition.outputs.artifact_name }}
+        run: |
+          {
+            echo "## OneCore acquisition continuation"
+            echo "- base_corpus_run_id: ${GITHUB_RUN_ID}"
+            echo "- base_corpus_artifact_name: ${BASE_ARTIFACT}"
+            echo "- Continue by updating these two fields in onecore-ai/training-request.json."
+            echo "- No training was started because acquisition is not complete."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   train_01:
     name: Training session 1 of 10 — joint — 03_text_pretraining.ipynb
