@@ -593,6 +593,7 @@ def _record_from_row(
             "code_revision_id": str(row.get("revision_id") or ""),
             "code_snapshot_id": str(row.get("snapshot_id") or ""),
             "code_license_type": str(row.get("license_type") or ""),
+            "code_gha_license_id": str(row.get("gha_license_id") or ""),
             "code_detected_licenses": sorted({str(value) for value in detected}),
         })
     elif adapter == "text":
