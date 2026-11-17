@@ -103,7 +103,7 @@ runs:
         ONECORE_STAGE: ${{ inputs.stage }}
         ONECORE_STEPS: ${{ inputs.steps }}
         ONECORE_RESUME: ${{ inputs.stage == 'multimodal' && 'true' || 'false' }}
-        ONECORE_PARENT_RUN_ID: ${{ github.run_id }}
+        ONECORE_PARENT_RUN_ID: ${{ inputs.stage == 'multimodal' && github.run_id || '' }}
       run: |
         mkdir -p onecore-ai/run-state/executed-notebooks
         echo "Notebook: ${{ inputs.notebook }} | stage: ${{ inputs.stage }} | optimizer steps: ${{ inputs.steps }}"
@@ -129,6 +129,10 @@ runs:
         print(f"steps_in_this_job={int(report['steps_in_this_job'])}")
         print(f"lineage_id={report.get('lineage_id', '')}")
         PY
+
+    - name: Preserve the validated corpus acquisition report with this checkpoint
+      shell: bash
+      run: cp onecore-ai/data/acquisition-report.json onecore-ai/run-state/acquisition-report.json
 
     - name: Upload resumable model, optimizer, scheduler, RNG and tokenizer state
       uses: actions/upload-artifact@v4
