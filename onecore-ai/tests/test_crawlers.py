@@ -114,3 +114,70 @@ def test_stack_v2_license_allowlist_and_streaming_swh_content():
 
     row = {"blob_id": "f" * 40, "src_encoding": "utf-8"}
     assert fetch_stack_content(row, client=FakeS3()) == code.decode("utf-8")
+
+
+def test_fineweb2_and_stack_v2_are_real_streaming_sources_with_notebook_ownership():
+    import yaml
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    registry = yaml.safe_load((root / "data" / "sources.yaml").read_text(encoding="utf-8"))
+    sources = {item["id"]: item for item in registry["sources"]}
+
+    fineweb = sources["fineweb2_full_ar"]
+    assert fineweb["repo"] == "HuggingFaceFW/fineweb-2"
+    assert fineweb["config"] == "arb_Arab"
+    assert fineweb["crawler"] == "hf_state_dict"
+    assert fineweb["notebook_id"] == "03_text_pretraining"
+    assert fineweb["required_for_training"] is True
+    assert fineweb["profile_limits"]["expanded"]["train"] >= 100_000
+
+    stack = sources["stack_v2_code"]
+    assert stack["repo"] == "bigcode/the-stack-v2"
+    assert stack["adapter"] == "stack_v2_code"
+    assert stack["crawler"] == "hf_state_dict_plus_swh_content"
+    assert stack["notebook_id"] == "03_text_pretraining"
+    assert stack["required_for_training"] is True
+    assert stack["minimum_accepted_records"] >= 10_000
+    assert "MIT" in stack["license_allowlist"]
+    assert "GPL-3.0-only" not in stack["license_allowlist"]
+    assert stack["split_group_field"] == "directory_id"
+    assert stack["max_content_bytes"] <= 1_048_576
+
+    assert sources["fineweb2_full_tr"]["config"] == "tur_Latn"
+    assert sources["fineweb2_full_fr"]["config"] == "fra_Latn"
+    assert sources["fineweb2_full_ja"]["config"] == "jpn_Jpan"
+    assert sources["fineweb2_full_en"]["enabled"] is False
+
+
+def test_stack_credentials_are_required_before_declaring_stack_access(monkeypatch):
+    from onecore.stack_v2 import stack_credentials_present
+
+    monkeypatch.delenv("STACK_V2_AWS_ACCESS_KEY_ID", raising=False)
+    monkeypatch.delenv("STACK_V2_AWS_SECRET_ACCESS_KEY", raising=False)
+    monkeypatch.delenv("AWS_ACCESS_KEY_ID", raising=False)
+    monkeypatch.delenv("AWS_SECRET_ACCESS_KEY", raising=False)
+    assert stack_credentials_present() is False
+
+    monkeypatch.setenv("STACK_V2_AWS_ACCESS_KEY_ID", "test-access")
+    monkeypatch.setenv("STACK_V2_AWS_SECRET_ACCESS_KEY", "test-secret")
+    assert stack_credentials_present() is True
+
+
+def test_required_source_minimums_and_crawler_credentials_are_wired_into_each_session():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    action = (root.parent / ".github" / "actions" / "onecore-acquire" / "action.yml").read_text(encoding="utf-8")
+    workflow = (root.parent / ".github" / "workflows" / "onecore-bootstrap.yml").read_text(encoding="utf-8")
+    for key in (
+        "stack_v2_aws_access_key_id",
+        "stack_v2_aws_secret_access_key",
+        "STACK_V2_AWS_ACCESS_KEY_ID",
+        "STACK_V2_AWS_SECRET_ACCESS_KEY",
+    ):
+        assert key in action or key in workflow
+    assert workflow.count("secrets.STACK_V2_AWS_ACCESS_KEY_ID") == 6
+    assert workflow.count("secrets.STACK_V2_AWS_SECRET_ACCESS_KEY") == 6
+    assert "Publish per-notebook crawler progress" in action
+    assert "cursor_checkpoint_due" in (root / "src" / "onecore" / "acquire.py").read_text(encoding="utf-8")
