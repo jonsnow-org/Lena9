@@ -219,11 +219,20 @@ def test_stack_v2_filters_before_fetching_swh_blobs(tmp_path, monkeypatch):
         "license_type": "permissive",
         "is_vendor": False,
         "is_generated": False,
+        "repo_name": "alice/example-project",
+        "directory_id": "d" * 40,
+        "revision_id": "r" * 40,
+        "snapshot_id": "s" * 40,
+        "content_id": "c" * 40,
     }
     assets = tmp_path / "assets"
     good = acquire._record_from_row(dict(base), dict(source), "good-row", "train", assets)
     assert good is not None and good["task"] == "text"
     assert good["code_blob_id"] == "f" * 40
+    assert good["code_repository"] == "alice/example-project"
+    assert good["code_repository_url"] == "https://github.com/alice/example-project"
+    assert good["code_revision_id"] == "r" * 40
+    assert good["code_license_type"] == "permissive"
     assert calls == ["f" * 40]
 
     for changes in (
