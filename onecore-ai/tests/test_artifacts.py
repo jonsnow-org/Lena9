@@ -27,25 +27,21 @@ def test_pack_and_restore_round_trip_all_corpus_state(tmp_path: Path) -> None:
     source = tmp_path / "source"
     _write_corpus(source)
     archive_path = tmp_path / "onecore-corpus.tar"
-
     packed = pack_corpus(source, archive_path)
-    restored = tmp_path / "restored"
-    result = restore_corpus(restored, tmp_path / "artifact")
-    assert result["layout"] == "legacy-directory"  # no archive exists yet
-    assert packed["bytes"] > 0
 
-    artifact_dir = tmp_path / "artifact-tar"
+    artifact_dir = tmp_path / "artifact"
     artifact_dir.mkdir()
     (artifact_dir / "onecore-corpus.tar").write_bytes(archive_path.read_bytes())
-    restored_tar = tmp_path / "restored-tar"
-    result = restore_corpus(restored_tar, artifact_dir)
+    restored = tmp_path / "restored"
+    result = restore_corpus(restored, artifact_dir)
 
+    assert packed["bytes"] > 0
     assert result["layout"] == "tar"
-    assert (restored_tar / "data" / "train.jsonl").is_file()
-    assert (restored_tar / "data" / "assets" / "image.bin").read_bytes() == b"image-payload"
-    assert (restored_tar / "data" / "metadata" / "source.jsonl").is_file()
-    assert (restored_tar / "data" / "pending" / "deferred.jsonl").is_file()
-    assert (restored_tar / "data" / "resume-cache" / "source-progress.json").is_file()
+    assert (restored / "data" / "train.jsonl").is_file()
+    assert (restored / "data" / "assets" / "image.bin").read_bytes() == b"image-payload"
+    assert (restored / "data" / "metadata" / "source.jsonl").is_file()
+    assert (restored / "data" / "pending" / "deferred.jsonl").is_file()
+    assert (restored / "data" / "resume-cache" / "source-progress.json").is_file()
 
 
 def test_restore_accepts_legacy_directory_shaped_artifact(tmp_path: Path) -> None:
