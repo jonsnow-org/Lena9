@@ -2,6 +2,7 @@ import hashlib
 from pathlib import Path
 
 import pytest
+import yaml
 
 from onecore.bootstrap import generate_bootstrap
 from onecore.data import (
@@ -97,6 +98,16 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
     acquire_action = (repo_root / ".github" / "actions" / "onecore-acquire" / "action.yml").read_text(encoding="utf-8")
     train_action = (repo_root / ".github" / "actions" / "onecore-train" / "action.yml").read_text(encoding="utf-8")
     training = (repo_root / ".github" / "workflows" / "onecore-training.yml").read_text(encoding="utf-8")
+    bootstrap_doc = yaml.safe_load(bootstrap)
+    acquire_doc = yaml.safe_load(acquire_action)
+    train_doc = yaml.safe_load(train_action)
+    assert acquire_doc["runs"]["using"] == "composite"
+    assert train_doc["runs"]["using"] == "composite"
+    assert bootstrap_doc["jobs"]["finalize_acquisition"]["outputs"]["complete"].startswith("${{")
+    assert bootstrap_doc["jobs"]["dataset_gate"]["if"].startswith("${{")
+    assert "base_corpus_artifact_name" in bootstrap
+    assert "onecore-corpus-acq-6" in bootstrap
+    assert "resume_notice" in bootstrap_doc["jobs"]
     assert "cancel-in-progress: false" in bootstrap
     assert "timeout-minutes: 330" in bootstrap
     assert "onecore-corpus-" in bootstrap
