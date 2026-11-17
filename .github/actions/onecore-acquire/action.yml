@@ -167,20 +167,32 @@ runs:
         print()
         print("- Session: " + os.environ.get("SESSION_LABEL", "unknown"))
         print(f"- Acquisition complete: **{report.get('acquisition_complete', False)}**")
-        print(f"- New optimizer records: **{report.get('total_new_records', 0)}**")
         print(f"- Pending sources: **{len(report.get('pending_sources', []))}**")
         print(f"- Sources requiring access: **{report.get('sources_with_access_required', 0)}**")
         print()
-        print("| Notebook | Source | Status | Raw rows scanned | Usable records total | Cursor mode |")
-        print("|---|---|---:|---:|---:|---|")
+        print("| Notebook | Source | Status | Raw rows scanned (this session) | Usable records in corpus | New accepted now | Cursor mode |")
+        print("|---|---|---:|---:|---:|---:|---|")
         for item in report.get("sources", []):
             cursors = item.get("crawler_cursors", {}) or {}
             modes = ",".join(sorted({str(v.get("mode", "saved")) for v in cursors.values() if isinstance(v, dict)}))
-            print(f"| {item.get('crawler_notebook', '—')} | {item.get('source', '—')} | {item.get('status', '—')} | {item.get('total_read', item.get('read', 0))} | {item.get('total_accepted', item.get('accepted', 0))} | {modes or 'not started'} |")
+            new_counts = item.get("new_accepted_by_output_split", {}) or {}
+            new_accepted = sum(int(value) for value in new_counts.values())
+            print(f"| {item.get('crawler_notebook', '—')} | {item.get('source', '—')} | {item.get('status', '—')} | {item.get('total_read', item.get('read', 0))} | {item.get('total_accepted', item.get('accepted', 0))} | {new_accepted} | {modes or 'not started'} |")
         print()
         for notebook in ("03_text_pretraining", "04_multimodal_curriculum"):
             summary = notebook_cursor_summary("onecore-ai", notebook)
-            print(f"**{notebook}:** {summary.get('cursor_files', 0)} saved source/split cursors")
+            accepted = sum(
+                int(item.get("total_accepted", item.get("accepted", 0)))
+                for item in report.get("sources", [])
+                if item.get("crawler_notebook") == notebook
+            )
+            new_accepted = sum(
+                int(value)
+                for item in report.get("sources", [])
+                if item.get("crawler_notebook") == notebook
+                for value in (item.get("new_accepted_by_output_split", {}) or {}).values()
+            )
+            print(f"**{notebook}:** {summary.get('cursor_files', 0)} cursors; {accepted} usable corpus records; {new_accepted} newly accepted in its latest pass")
         PY
 
     - name: Upload the updated corpus and resume state as a single file
