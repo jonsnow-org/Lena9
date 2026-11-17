@@ -116,8 +116,11 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
     assert "ONECORE_REQUIRED_TASKS: \"text,tool,image,audio,video\"" in acquire_action
     assert "ONECORE_ACQUIRE_BUDGET_SECONDS" in acquire_action
     assert "persist_acquisition_progress" in acquire_action
-    assert "data/resume-cache/" in acquire_action
-    assert "data/pending/" in acquire_action
+    assert "onecore.artifacts pack" in acquire_action
+    assert "onecore.artifacts restore" in acquire_action
+    assert "onecore-corpus.tar" in acquire_action
+    artifact_source = (repo_root / "onecore-ai" / "src" / "onecore" / "artifacts.py").read_text(encoding="utf-8")
+    assert '"assets", "metadata", "pending", "resume-cache"' in artifact_source
     assert "ONECORE_FINALIZE_DATA_GATE: \"1\"" in bootstrap
     assert "start_fresh_joint_training" in bootstrap
     assert "./.github/actions/onecore-acquire" in bootstrap
