@@ -53,7 +53,7 @@ jobs:
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
     steps:
       - name: Checkout isolated research branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: research/onecore-foundation
 
@@ -81,7 +81,7 @@ jobs:
           fi
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
           cache: pip
@@ -98,7 +98,7 @@ jobs:
 
       - name: Restore imported external dataset corpus
         if: ${{ inputs.data_run_id != '' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: onecore-corpus-${{ inputs.data_run_id }}
           run-id: ${{ inputs.data_run_id }}
@@ -108,7 +108,7 @@ jobs:
       - name: Restore previous checkpoint artifact
         if: ${{ inputs.resume_run_id != '' }}
         continue-on-error: true
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: onecore-state-${{ inputs.resume_run_id }}
           run-id: ${{ inputs.resume_run_id }}
@@ -267,7 +267,7 @@ jobs:
 
       - name: Upload acquired corpus for exact resume on the next segment
         if: ${{ success() && inputs.stage != 'smoke' && inputs.stage != 'evaluate' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: onecore-corpus-${{ github.run_id }}
           path: |
@@ -283,7 +283,7 @@ jobs:
 
       - name: Upload resumable checkpoint and reports, including failed-run recovery
         if: ${{ always() && hashFiles('onecore-ai/run-state/checkpoint.pt') != '' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: onecore-state-${{ github.run_id }}
           path: |
