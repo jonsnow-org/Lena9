@@ -216,18 +216,22 @@ jobs:
 
   finalize_acquisition:
     name: Select the latest complete corpus snapshot
-    needs: [acquire_1, acquire_2, acquire_3, acquire_4, acquire_5, acquire_6]
+    needs: [prepare, acquire_1, acquire_2, acquire_3, acquire_4, acquire_5, acquire_6]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
       artifact_name: ${{ steps.select.outputs.artifact_name }}
+      artifact_run_id: ${{ steps.select.outputs.artifact_run_id }}
       complete: ${{ steps.select.outputs.complete }}
     steps:
-      - name: Select newest successful complete acquisition artifact
+      - name: Select newest successful acquisition snapshot or preserve the base snapshot
         id: select
         shell: bash
         env:
+          PREPARE_RESULT: ${{ needs.prepare.result }}
+          BASE_RUN_ID: ${{ needs.prepare.outputs.base_corpus_run_id }}
+          BASE_ARTIFACT_NAME: ${{ needs.prepare.outputs.base_corpus_artifact_name }}
           A1_COMPLETE: ${{ needs.acquire_1.outputs.complete }}
           A1_RESULT: ${{ needs.acquire_1.result }}
           A2_COMPLETE: ${{ needs.acquire_2.outputs.complete }}
@@ -243,19 +247,32 @@ jobs:
         run: |
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import os
+          if os.environ.get("PREPARE_RESULT") != "success":
+              raise SystemExit("The prepare job failed; no validated base corpus was selected.")
           for index in range(6, 0, -1):
               if os.environ.get(f"A{index}_RESULT") == "success":
                   complete = os.environ.get(f"A{index}_COMPLETE") == "true"
                   print(f"artifact_name=onecore-corpus-acq-{index}")
+                  print(f"artifact_run_id={os.environ['GITHUB_RUN_ID']}")
                   print(f"complete={str(complete).lower()}")
                   if not complete:
                       with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
-                          summary.write("## Acquisition needs another bounded continuation\n")
-                          summary.write(f"- Current run ID: {os.environ['GITHUB_RUN_ID']}\n")
-                          summary.write(f"- Latest saved corpus artifact: onecore-corpus-acq-{index}\n")
-                          summary.write("- Set these values in training-request.json as base_corpus_run_id and base_corpus_artifact_name, then trigger the request again.\n")
+                          summary.write("## Acquisition needs another bounded continuation\\n")
+                          summary.write(f"- Current run ID: {os.environ['GITHUB_RUN_ID']}\\n")
+                          summary.write(f"- Latest saved corpus artifact: onecore-corpus-acq-{index}\\n")
+                          summary.write("- Set these values in training-request.json as base_corpus_run_id and base_corpus_artifact_name, then trigger the request again.\\n")
                   raise SystemExit(0)
-          raise SystemExit("No acquisition session produced a new corpus artifact; the original base artifact remains intact.")
+          # The source scan can finish before artifact upload fails. Keep the last
+          # known-good corpus addressable; never point the next run at a missing
+          # artifact from this failed attempt.
+          print(f"artifact_name={os.environ['BASE_ARTIFACT_NAME']}")
+          print(f"artifact_run_id={os.environ['BASE_RUN_ID']}")
+          print("complete=false")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("## Acquisition upload failed; base corpus preserved\\n")
+              summary.write(f"- Reusable run ID: {os.environ['BASE_RUN_ID']}\\n")
+              summary.write(f"- Reusable artifact: {os.environ['BASE_ARTIFACT_NAME']}\\n")
+              summary.write("- This attempt's unuploaded additions were not preserved. Resume only after fixing artifact transport.\\n")
           PY
 
   dataset_gate:
@@ -282,7 +299,12 @@ jobs:
         uses: actions/download-artifact@v7
         with:
           name: ${{ needs.finalize_acquisition.outputs.artifact_name }}
-          path: onecore-ai/data
+          path: onecore-ai/run-state/corpus-artifact
+      - name: Expand the validated corpus archive
+        shell: bash
+        env:
+          PYTHONPATH: onecore-ai/src
+        run: python -m onecore.artifacts restore --root onecore-ai --artifact-dir onecore-ai/run-state/corpus-artifact
       - name: Require all enabled sources to be terminal
         run: |
           python - <<'PY'
@@ -312,22 +334,21 @@ jobs:
             --output 02_data_gate.final.executed.ipynb \
             --output-dir onecore-ai/run-state/executed-notebooks \
             --ExecutePreprocessor.timeout=-1
+      - name: Package the validated corpus as one stack-safe archive
+        shell: bash
+        env:
+          PYTHONPATH: onecore-ai/src
+        run: |
+          python -m onecore.artifacts pack --root onecore-ai --output "$RUNNER_TEMP/onecore-corpus.tar"
+          test -s "$RUNNER_TEMP/onecore-corpus.tar"
       - name: Upload complete validated corpus and resume state
         uses: actions/upload-artifact@v6
         with:
           name: onecore-corpus-final
-          path: |
-            onecore-ai/data/train.jsonl
-            onecore-ai/data/validation.jsonl
-            onecore-ai/data/test.jsonl
-            onecore-ai/data/acquisition-report.json
-            onecore-ai/data/assets/
-            onecore-ai/data/metadata/
-            onecore-ai/data/pending/
-            onecore-ai/data/resume-cache/
+          path: $RUNNER_TEMP/onecore-corpus.tar
           if-no-files-found: error
           retention-days: 90
-          compression-level: 1
+          compression-level: 0
       - name: Remove intermediate corpus after validated replacement is uploaded
         shell: bash
         env:
@@ -351,10 +372,11 @@ jobs:
         shell: bash
         env:
           BASE_ARTIFACT: ${{ needs.finalize_acquisition.outputs.artifact_name }}
+          BASE_RUN_ID: ${{ needs.finalize_acquisition.outputs.artifact_run_id }}
         run: |
           {
             echo "## OneCore acquisition continuation"
-            echo "- base_corpus_run_id: ${GITHUB_RUN_ID}"
+            echo "- base_corpus_run_id: ${BASE_RUN_ID}"
             echo "- base_corpus_artifact_name: ${BASE_ARTIFACT}"
             echo "- Continue by updating these two fields in onecore-ai/training-request.json."
             echo "- No training was started because acquisition is not complete."
