@@ -377,10 +377,14 @@ class OneCore(nn.Module):
     @torch.no_grad()
     def generate_tool_payload(self, prompt_ids: torch.Tensor, max_new_tokens: int = 96,
                               temperature: float = 0.5, top_k: int = 20) -> torch.Tensor:
-        """Generate a text-encoded JSON tool payload; caller must validate with ToolRuntime."""
+        """Generate a bounded JSON tool payload and stop at the trained tool terminator."""
+        allowed = list(range(self.cfg.text_vocab_size)) + [
+            self.cfg.special_id(TOOL_END), self.cfg.special_id(EOS),
+        ]
         return self.generate(
             prompt_ids, max_new_tokens=max_new_tokens,
-            allowed_range=(0, self.cfg.text_vocab_size),
+            allowed_token_ids=allowed,
+            stop_token_ids=[self.cfg.special_id(TOOL_END), self.cfg.special_id(EOS)],
             temperature=temperature, top_k=top_k,
         )
 

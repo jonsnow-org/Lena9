@@ -103,3 +103,28 @@ def test_phone_research_config_exact_trainable_parameter_budget():
     assert model.parameter_report()["parameters"] == actual
     assert model.lm_head.weight is model.token_embedding.weight
     assert 50_000_000 <= actual <= 70_000_000
+
+
+
+def test_tool_payload_generation_stops_at_trained_terminator(monkeypatch):
+    from onecore.model import EOS, TOOL_END
+
+    cfg = tiny_config()
+    model = OneCore(cfg).eval()
+    prompt = torch.tensor([[cfg.special_id(0), 7, cfg.special_id(10)]])
+    captured = {}
+
+    def fake_generate(prompt_ids, **kwargs):
+        captured.update(kwargs)
+        return prompt_ids
+
+    monkeypatch.setattr(model, "generate", fake_generate)
+    model.generate_tool_payload(prompt, max_new_tokens=24, temperature=0.4, top_k=8)
+    allowed = captured["allowed_token_ids"]
+    assert set(range(cfg.text_vocab_size)).issubset(set(allowed))
+    assert cfg.special_id(TOOL_END) in allowed
+    assert cfg.special_id(EOS) in allowed
+    assert captured["stop_token_ids"] == [cfg.special_id(TOOL_END), cfg.special_id(EOS)]
+    assert captured["max_new_tokens"] == 24
+    assert captured["temperature"] == 0.4
+    assert captured["top_k"] == 8

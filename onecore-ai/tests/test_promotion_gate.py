@@ -22,6 +22,19 @@ def _metrics(data_verified=True, data_kind="external"):
     for key in REQUIRED_METRICS:
         thresholds[key] = 2.0
         thresholds[f"test_{key}"] = 2.0
+    thresholds["min_tool_execution_success_rate"] = 0.25
+    thresholds["test_min_tool_execution_success_rate"] = 0.25
+    tool_behavior = {
+        "sample_count": 32,
+        "execution_success_rate": 0.5,
+        "valid_payload_rate": 0.75,
+        "allowlisted_dispatch_rate": 0.65,
+        "exact_payload_match_rate": 0.5,
+        "per_step": {
+            "1": {"sample_count": 8, "execution_success_rate": 0.5},
+            "2": {"sample_count": 8, "execution_success_rate": 0.5},
+        },
+    }
     for modality in REQUIRED_CODEBOOKS:
         thresholds[f"min_{modality}_usage_fraction"] = 0.1
         thresholds[f"max_{modality}_max_code_fraction"] = 0.2
@@ -36,7 +49,7 @@ def _metrics(data_verified=True, data_kind="external"):
         "data_classes": ["external"] if data_kind == "external" else [data_kind],
         "data_verified_for_promotion": data_verified,
         "modalities_tested": list(REQUIRED_METRICS), "split_manifest_sha256": test_hash,
-        "codebook_usage": codebook_usage}
+        "codebook_usage": codebook_usage, "tool_behavior": tool_behavior}
     return {**values, "split": "validation", "checkpoint_sha256": checkpoint_sha,
         "parameter_count": 57_579_201, "real_data": data_kind == "external",
         "data_kind": data_kind,
@@ -44,7 +57,8 @@ def _metrics(data_verified=True, data_kind="external"):
         "data_verified_for_promotion": data_verified,
         "modalities_tested": list(REQUIRED_METRICS), "quality_thresholds": thresholds,
         "split_manifest_sha256": validation_hash, "test_manifest_sha256": test_hash,
-        "codebook_usage": codebook_usage, "test_metrics": test_metrics}
+        "codebook_usage": codebook_usage, "tool_behavior": tool_behavior,
+        "test_metrics": test_metrics}
 
 
 def test_all_data_classes_can_pass_gate_when_quality_evidence_passes():
@@ -87,3 +101,17 @@ def test_verified_synthetic_manifest_requires_reference_verification_evidence(tm
     report = validate_manifest([record], tmp_path, expected_split="train")
     assert report["valid"]
     assert classify_record_data(record) == "synthetic"
+
+
+
+def test_gate_rejects_poor_executed_tool_performance_even_when_loss_passes():
+    metrics = _metrics(data_verified=True)
+    metrics["tool_behavior"]["execution_success_rate"] = 0.0
+    metrics["tool_behavior"]["per_step"]["2"]["execution_success_rate"] = 0.0
+    metrics["test_metrics"]["tool_behavior"]["execution_success_rate"] = 0.0
+    metrics["test_metrics"]["tool_behavior"]["per_step"]["2"]["execution_success_rate"] = 0.0
+    passed, failures = promotion_gate(metrics)
+    assert not passed
+    assert any("validation tool execution success rate" in failure for failure in failures)
+    assert any("validation tool workflow step 2 success rate" in failure for failure in failures)
+    assert any("test tool execution success rate" in failure for failure in failures)

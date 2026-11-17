@@ -50,3 +50,68 @@ def test_exact_division_and_audio_scene_caption_cover_both_objects():
     })
     assert "أحمر دائرة" in caption
     assert "أزرق مربع" in caption
+
+
+
+def test_two_step_tool_workflow_replays_prior_execution_and_rejects_forged_history():
+    import json
+    from onecore.curriculum_reference import canonical_json, render_tool_history
+    from onecore.tool_runtime import ToolRuntime
+
+    episode_id = "test-discount-episode"
+    price = 1200
+    percent = 25
+    task = f"احسب السعر النهائي لمنتج سعره {price} بعد خصم {percent}%."
+    first_payload = {
+        "name": "calculator",
+        "arguments": {"expression": f"{price} * {percent} / 100"},
+    }
+    first_result = ToolRuntime().dispatch(first_payload)
+    discount = float(first_result["result"]["result"])
+    second_payload = {
+        "name": "calculator",
+        "arguments": {"expression": f"{price} - {format(discount, '.10g')}"},
+    }
+
+    history = []
+    for step, payload in ((1, first_payload), (2, second_payload)):
+        trace = render_tool_history(history)
+        problem = {
+            "episode_id": episode_id, "price": price, "discount_percent": percent,
+            "step_index": step, "history": list(history), "payload": payload,
+        }
+        expected = solve("tool.discount_workflow_step.v1", problem)
+        prompt = (
+            f"{task}\nسجل التنفيذ السابق: لا توجد خطوات سابقة.\nالخطوة 1/2."
+            if step == 1 else f"{task}\nسجل التنفيذ السابق:\n{trace}\nالخطوة 2/2."
+        )
+        record = {
+            "task": "tool_use", "problem": problem, "answer": render_answer(
+                "tool.discount_workflow_step.v1", expected
+            ),
+            "verification": make_verification(
+                "tool.discount_workflow_step.v1", problem, expected
+            ),
+            "prompt": prompt,
+            "response": canonical_json(payload),
+            "expected_tool_result": expected,
+            "episode_id": episode_id, "episode_task": task,
+            "episode_step_index": step, "episode_step_count": 2,
+            "history_trace": trace,
+        }
+        assert verify_record(record)
+        if step == 2:
+            forged = dict(record)
+            forged["problem"] = dict(problem)
+            forged["problem"]["history"] = [{
+                "payload": first_payload,
+                "result": {"name": "calculator", "ok": True, "result": {"result": 999}},
+            }]
+            forged["verification"] = make_verification(
+                "tool.discount_workflow_step.v1", forged["problem"]
+            )
+            assert not verify_record(forged)
+            missing_trace = dict(record)
+            missing_trace["prompt"] = task + "\nنفّذ الخطوة التالية."
+            assert not verify_record(missing_trace)
+        history.append({"payload": payload, "result": expected})

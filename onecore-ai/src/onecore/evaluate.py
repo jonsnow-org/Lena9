@@ -12,6 +12,8 @@ from .checkpoint import load_checkpoint, sha256_file
 from .config import load_config
 from .data import classify_record_data, external_record_is_trainable, read_manifest, validate_manifest
 from .model import OneCore
+from .inference import InferenceSession
+from .tool_eval import evaluate_tool_behavior
 from .train import _load_image, _load_mel, _record_sequence
 from .tokenizer import load_tokenizer
 
@@ -160,6 +162,20 @@ def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
     if expected_tokenizer_sha and expected_tokenizer_sha != tokenizer_sha:
         raise ValueError("validation tokenizer fingerprint does not match checkpoint lineage")
     tokenizer = load_tokenizer(tokenizer_file)
+    tool_session = InferenceSession(model, tokenizer)
+
+    def generate_verified_tool_call(record: dict[str, Any]) -> dict[str, Any]:
+        record_id = str(record.get("id", ""))
+        seed = int(hashlib.sha256(record_id.encode("utf-8")).hexdigest()[:8], 16)
+        with torch.random.fork_rng(devices=[]):
+            torch.manual_seed(seed)
+            return tool_session.generate_tool_call(
+                str(record.get("prompt", "")), max_new_tokens=96
+            )
+
+    tool_behavior = evaluate_tool_behavior(
+        records, generate_verified_tool_call, max_examples=32
+    )
 
     loss_sum: dict[str, float] = {}
     aux_sum: dict[str, float] = {}
@@ -226,6 +242,7 @@ def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
         "parameter_count": model.count_parameters(),
         "text_loss": mean(loss_sum, "text"),
         "tool_use": mean(loss_sum, "tool_use"),
+        "tool_behavior": tool_behavior,
         "image_reconstruction": combined_mean(aux_sum, {"image_caption", "image_reconstruction"}),
         "audio_reconstruction": combined_mean(aux_sum, {"audio_text", "audio_reconstruction"}),
         "video_sequence": (
@@ -256,6 +273,50 @@ def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
     out.write_text(json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
     return metrics
 
+
+
+def _check_tool_behavior(
+    prefix: str,
+    report: dict[str, Any] | None,
+    thresholds: dict[str, Any],
+    threshold_key: str,
+    failures: list[str],
+) -> None:
+    if not isinstance(report, dict):
+        failures.append(f"{prefix} verified tool-execution report is missing")
+        return
+    sample_count = report.get("sample_count")
+    if not isinstance(sample_count, int) or sample_count < 16:
+        failures.append(f"{prefix} tool behaviour has fewer than 16 held-out examples")
+    rate = report.get("execution_success_rate")
+    if not isinstance(rate, (int, float)) or not math.isfinite(rate) or not 0 <= rate <= 1:
+        failures.append(f"{prefix} tool execution success rate is missing or invalid")
+    limit = thresholds.get(threshold_key)
+    if not isinstance(limit, (int, float)) or not math.isfinite(limit) or not 0 <= limit <= 1:
+        failures.append(f"approved {threshold_key} in [0,1] is missing")
+    elif isinstance(rate, (int, float)) and math.isfinite(rate) and 0 <= rate <= 1 and rate < limit:
+        failures.append(
+            f"{prefix} tool execution success rate {rate:.4g} is below approved minimum {limit:.4g}"
+        )
+    per_step = report.get("per_step")
+    if not isinstance(per_step, dict):
+        failures.append(f"{prefix} per-step tool execution evidence is missing")
+        return
+    for step in ("1", "2"):
+        step_report = per_step.get(step)
+        if not isinstance(step_report, dict):
+            failures.append(f"{prefix} tool workflow step {step} was not evaluated")
+            continue
+        step_count = step_report.get("sample_count")
+        if not isinstance(step_count, int) or step_count < 4:
+            failures.append(f"{prefix} tool workflow step {step} has fewer than 4 held-out examples")
+        step_rate = step_report.get("execution_success_rate")
+        if not isinstance(step_rate, (int, float)) or not math.isfinite(step_rate) or not 0 <= step_rate <= 1:
+            failures.append(f"{prefix} tool workflow step {step} success rate is missing or invalid")
+        elif isinstance(limit, (int, float)) and math.isfinite(limit) and 0 <= limit <= 1 and step_rate < limit:
+            failures.append(
+                f"{prefix} tool workflow step {step} success rate {step_rate:.4g} is below approved minimum {limit:.4g}"
+            )
 
 
 def _check_codebook_thresholds(prefix: str, usage: dict[str, Any],
@@ -330,6 +391,10 @@ def promotion_gate(metrics: dict[str, Any], baseline: dict[str, Any] | None = No
         elif isinstance(value, (int, float)) and math.isfinite(value) and value > limit:
             failures.append(f"validation {key}={value:.6g} exceeds approved threshold {limit:.6g}")
     _check_codebook_thresholds("validation", metrics.get("codebook_usage"), thresholds, failures)
+    _check_tool_behavior(
+        "validation", metrics.get("tool_behavior"), thresholds,
+        "min_tool_execution_success_rate", failures,
+    )
 
     test_metrics = metrics.get("test_metrics")
     if not isinstance(test_metrics, dict):
@@ -359,6 +424,10 @@ def promotion_gate(metrics: dict[str, Any], baseline: dict[str, Any] | None = No
             elif isinstance(value, (int, float)) and math.isfinite(value) and value > limit:
                 failures.append(f"test {key}={value:.6g} exceeds approved threshold {limit:.6g}")
         _check_codebook_thresholds("test", test_metrics.get("codebook_usage"), thresholds, failures, test_split=True)
+        _check_tool_behavior(
+            "test", test_metrics.get("tool_behavior"), thresholds,
+            "test_min_tool_execution_success_rate", failures,
+        )
 
     if baseline:
         old = baseline.get("text_loss")

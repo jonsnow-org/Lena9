@@ -1,7 +1,7 @@
 {
   "schema": "onecore-quality-thresholds-v1",
   "status": "not-approved",
-  "note": "Do not fill these with arbitrary values. Run a reviewed benchmark, agree on measurable thresholds, then set each required key. Loss limits are upper bounds; codebook usage and normalized entropy are lower bounds; max-code concentration is an upper bound. Validation and test thresholds must be calibrated separately.",
+  "note": "Do not fill these with arbitrary values. Run a reviewed benchmark, agree on measurable thresholds, then set each required key. Loss limits are upper bounds; codebook usage and normalized entropy are lower bounds; max-code concentration is an upper bound. Validation and test thresholds must be calibrated separately. Promotion also requires executed tool-behaviour metrics with separately calibrated validation and held-out test success-rate thresholds, including both steps of a two-step workflow.",
   "required_keys": {
     "validation_loss_metrics": [
       "text_loss",
@@ -38,6 +38,12 @@
       "test_min_motion_usage_fraction",
       "test_max_motion_max_code_fraction",
       "test_min_motion_normalized_entropy"
+    ],
+    "validation_tool_behavior": [
+      "min_tool_execution_success_rate"
+    ],
+    "test_tool_behavior": [
+      "test_min_tool_execution_success_rate"
     ]
   },
   "thresholds": {}

@@ -327,6 +327,21 @@ def canonical_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
+def render_tool_history(history: list[dict[str, Any]]) -> str:
+    """Render a deterministic, auditable tool trace for the next model decision."""
+    if not isinstance(history, list):
+        raise TypeError("tool history must be a list")
+    lines: list[str] = []
+    for index, item in enumerate(history, 1):
+        if not isinstance(item, dict) or set(item) != {"payload", "result"}:
+            raise ValueError("each tool-history item must contain exactly payload and result")
+        lines.append(
+            f"الخطوة السابقة {index}: الاستدعاء {canonical_json(item['payload'])}؛ "
+            f"النتيجة {canonical_json(item['result'])}"
+        )
+    return "\n".join(lines)
+
+
 def solve(reference: str, problem: dict[str, Any]) -> Any:
     if reference == "math.integer_arithmetic.v1":
         a, b, op = int(problem["a"]), int(problem["b"]), str(problem["op"])
@@ -434,6 +449,40 @@ def solve(reference: str, problem: dict[str, Any]) -> Any:
             raise ValueError(f"tool payload name must be {expected_name}")
         return ToolRuntime().dispatch(payload)
 
+    if reference == "tool.discount_workflow_step.v1":
+        price = problem.get("price")
+        percent = problem.get("discount_percent")
+        step = problem.get("step_index")
+        if isinstance(price, bool) or not isinstance(price, int) or price <= 0:
+            raise ValueError("discount workflow price must be a positive integer")
+        if isinstance(percent, bool) or not isinstance(percent, int) or percent not in {5, 10, 12, 15, 20, 25, 30, 40, 50}:
+            raise ValueError("discount workflow percent is outside the curriculum range")
+        if isinstance(step, bool) or not isinstance(step, int) or step not in {1, 2}:
+            raise ValueError("discount workflow step must be 1 or 2")
+
+        runtime = ToolRuntime()
+        first_payload = {
+            "name": "calculator",
+            "arguments": {"expression": f"{price} * {percent} / 100"},
+        }
+        first_result = runtime.dispatch(first_payload)
+        discount = float(first_result["result"]["result"])
+        if not discount.is_integer():
+            raise ValueError("discount workflow requires an exact whole-number discount")
+        second_payload = {
+            "name": "calculator",
+            "arguments": {"expression": f"{price} - {format(discount, '.10g')}"},
+        }
+        expected_history = [] if step == 1 else [
+            {"payload": first_payload, "result": first_result}
+        ]
+        if canonical_json(problem.get("history", [])) != canonical_json(expected_history):
+            raise ValueError("tool history does not match the replayed previous step")
+        expected_payload = first_payload if step == 1 else second_payload
+        if canonical_json(problem.get("payload")) != canonical_json(expected_payload):
+            raise ValueError("tool payload does not match the expected workflow action")
+        return runtime.dispatch(expected_payload)
+
     if reference == "media.image_caption.v1":
         return (
             f"خلفية {problem['background']}، {problem['color1']} {problem['shape1']} "
@@ -539,7 +588,33 @@ def verify_record(record: dict[str, Any]) -> bool:
     if task == "tool_use":
         try:
             payload = json.loads(str(record.get("response", "")))
-        except json.JSONDecodeError:
+            if canonical_json(payload) != canonical_json(problem.get("payload")):
+                return False
+            if reference == "tool.discount_workflow_step.v1":
+                step = problem.get("step_index")
+                prompt = str(record.get("prompt", ""))
+                history = problem.get("history", [])
+                trace = render_tool_history(history)
+                expected_task = (
+                    f"احسب السعر النهائي لمنتج سعره {problem['price']} "
+                    f"بعد خصم {problem['discount_percent']}%."
+                )
+                if (
+                    record.get("episode_id") != problem.get("episode_id")
+                    or record.get("episode_step_index") != step
+                    or record.get("episode_step_count") != 2
+                    or record.get("episode_task") != expected_task
+                    or expected_task not in prompt
+                    or record.get("history_trace") != trace
+                ):
+                    return False
+                if trace and trace not in prompt:
+                    return False
+                if step == 1 and "لا توجد خطوات سابقة" not in prompt:
+                    return False
+                if step == 2 and not trace:
+                    return False
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError):
             return False
         actual_tool_result = ToolRuntime().dispatch(payload)
         return (

@@ -66,3 +66,12 @@ Artifacts are retained for 90 days and remain the immediate resume source. Durab
 ## Promotion
 
 Training completion or a lower loss is not readiness. Promotion requires an independently hashed validation and test bundle from the same checkpoint, full modality coverage, calibrated numeric thresholds for both splits, and no unacceptable regression. Evaluation reports per-codebook usage, perplexity, normalized entropy, dead codes, and max-code concentration for vision/audio/motion on both held-out splits. Collapse thresholds remain uncalibrated.
+
+
+## Verified multi-step tool curriculum and behaviour evaluation
+
+The final data-gate notebook appends a small, deterministic two-step calculator workflow to the train, validation, and test manifests, after external-source coverage has already been measured. Step two receives the exact result produced by the allowlisted calculator in step one. The reference solver independently reconstructs the expected calls, replays prior actions, checks the exact JSON payload, and verifies that the recorded prompt contains the matching execution trace. Writes are atomic and idempotent; split-specific price ranges and seeds prevent episode overlap. These examples are labelled `synthetic_verified` and cannot satisfy external-source requirements.
+
+Checkpoint evaluation now executes generated tool calls through the safe allowlisted runtime on a deterministic sample of held-out verified records. It reports valid-JSON, allowlisted-dispatch, exact-payload, and correct-execution rates, including separate statistics for steps one and two. The promotion gate requires at least 16 behavioural examples, at least four examples for each workflow step, and separately approved validation/test minima for executed tool success. Numeric thresholds remain deliberately unapproved until measured on a real trained checkpoint.
+
+Tool inference now permits the trained `TOOL_END` and `EOS` markers and stops generation at either marker. Previously, generation was restricted to text-vocabulary IDs and could not emit the end marker used in tool-call training sequences, so output could run to the token cap and append invalid JSON. This is a runtime alignment fix, not a parameter-count or architecture change.
