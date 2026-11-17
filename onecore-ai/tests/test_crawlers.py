@@ -188,6 +188,8 @@ def test_required_source_minimums_and_crawler_credentials_are_wired_into_each_se
     acquire_source = (root / "src" / "onecore" / "acquire.py").read_text(encoding="utf-8")
     assert "cursor_snapshots.append" in acquire_source
     assert "saved_cursor = cursor.save(dataset, rows_read)" in acquire_source
+    assert "and not split_had_error" in acquire_source
+    assert "\"mode\": \"previous_checkpoint_preserved\"" in acquire_source
     assert acquire_source.index("added_counts = _append_manifests(root, rows_by_split)") < acquire_source.index("saved_cursor = cursor.save(dataset, rows_read)")
 
 
