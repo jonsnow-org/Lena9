@@ -99,8 +99,10 @@ def test_notebook_assignment_for_each_data_family():
 
 def test_stack_v2_license_allowlist_and_streaming_swh_content():
     assert has_allowed_stack_license({"detected_licenses": ["MIT", "Apache-2.0"]})
+    assert has_allowed_stack_license({"detected_licenses": [], "gha_license_id": "MIT"})
     assert not has_allowed_stack_license({"detected_licenses": ["GPL-3.0-only"]})
-    assert not has_allowed_stack_license({"detected_licenses": []})
+    assert not has_allowed_stack_license({"detected_licenses": [], "gha_license_id": "GPL-3.0-only"})
+    assert not has_allowed_stack_license({"detected_licenses": [], "gha_license_id": ""})
 
     code = b"def useful_function(value):\n    return value + 1\n"
     class Body(io.BytesIO):
@@ -223,6 +225,7 @@ def test_stack_v2_filters_before_fetching_swh_blobs(tmp_path, monkeypatch):
         "language": "Python",
         "path": "src/example.py",
         "detected_licenses": ["MIT"],
+        "gha_license_id": "MIT",
         "license_type": "permissive",
         "is_vendor": False,
         "is_generated": False,
