@@ -53,6 +53,54 @@ jobs:
       - name: Run unit and regression tests
         run: pytest -q onecore-ai/tests
 
+      - name: Smoke-test FineWeb-2 streaming and exact cursor resume
+        env:
+          HF_HUB_DISABLE_TELEMETRY: "1"
+        run: |
+          python - <<'PY'
+          import tempfile
+          from huggingface_hub import HfApi
+          from datasets import load_dataset
+          from onecore.crawlers import StatefulStreamCursor
+
+          repo = "HuggingFaceFW/fineweb-2"
+          revision = HfApi().dataset_info(repo).sha
+          kwargs = {
+              "path": repo,
+              "name": "arb_Arab",
+              "split": "train",
+              "streaming": True,
+              "revision": revision,
+          }
+          dataset = load_dataset(**kwargs)
+          with tempfile.TemporaryDirectory(prefix="onecore-fineweb-cursor-") as tmp:
+              cursor = StatefulStreamCursor(
+                  tmp, "03_text_pretraining", "fineweb2_full_ar",
+                  repo, "arb_Arab", "train", revision,
+              )
+              stream, offset, mode = cursor.restore(dataset)
+              assert (offset, mode) == (0, "fresh")
+              iterator = iter(stream)
+              first = next(iterator)
+              assert isinstance(first.get("text"), str) and len(first["text"].strip()) >= 24
+              saved = cursor.save(stream, 1)
+              assert saved["cursor_mode"] == "state_dict", saved
+              expected_next = next(iterator)
+              resumed_dataset = load_dataset(**kwargs)
+              resumed, offset, mode = cursor.restore(resumed_dataset)
+              actual_next = next(iter(resumed))
+              assert offset == 1 and mode == "state_dict", (offset, mode)
+              assert actual_next == expected_next, "FineWeb-2 cursor did not resume at the exact next record"
+              print({
+                  "source": repo,
+                  "config": "arb_Arab",
+                  "revision": revision,
+                  "first_record_chars": len(first["text"]),
+                  "resume_mode": mode,
+                  "resume_exact": True,
+              })
+          PY
+
       - name: Validate every notebook
         run: |
           python - <<'PY'
