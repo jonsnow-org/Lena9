@@ -46,10 +46,13 @@ def _license_set(row: dict[str, Any]) -> set[str]:
 def has_allowed_stack_license(
     row: dict[str, Any], allowlist: set[str] | None = None
 ) -> bool:
-    """Require every detected SPDX license to be in the explicit permissive allowlist."""
-    detected = _license_set(row)
+    """Require an explicit detected or repository SPDX license within the allowlist."""
     permitted = DEFAULT_PERMISSIVE_LICENSES if allowlist is None else allowlist
-    return bool(detected) and detected.issubset(permitted)
+    detected = _license_set(row)
+    if detected:
+        return detected.issubset(permitted)
+    repository_license = str(row.get("gha_license_id") or "").strip()
+    return bool(repository_license) and repository_license in permitted
 
 
 _S3_CLIENT = None
