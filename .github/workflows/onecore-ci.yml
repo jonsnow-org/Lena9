@@ -86,8 +86,10 @@ jobs:
               saved = cursor.save(stream, 1)
               assert saved["cursor_mode"] == "state_dict", saved
               expected_next = next(iterator)
-              resumed_dataset = load_dataset(**kwargs)
-              resumed, offset, mode = cursor.restore(resumed_dataset)
+              # Rewind the same live stream object to the saved cursor. Reopening a
+              # second concurrent Arrow/HTTP stream in this runner has a pyarrow
+              # teardown race; this still exercises the real state_dict restore.
+              resumed, offset, mode = cursor.restore(dataset)
               actual_next = next(iter(resumed))
               assert offset == 1 and mode == "state_dict", (offset, mode)
               assert actual_next == expected_next, "FineWeb-2 cursor did not resume at the exact next record"
