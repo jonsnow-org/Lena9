@@ -319,6 +319,70 @@ def _check_tool_behavior(
             )
 
 
+def _check_tool_behavior_regression(
+    prefix: str,
+    current: dict[str, Any] | None,
+    baseline: dict[str, Any] | None,
+    regression_floor: Any,
+    failures: list[str],
+) -> None:
+    """Keep tool behaviour within 10% of a prior run on the exact same held-out cases."""
+    if not isinstance(current, dict) or not isinstance(baseline, dict):
+        failures.append(f"{prefix} baseline/current tool-behaviour evidence is missing")
+        return
+    floor = regression_floor
+    if not isinstance(floor, (int, float)) or not math.isfinite(floor) or not 0 < floor <= 1:
+        failures.append("tool_behavior_regression_floor must be a finite number in (0,1]")
+        return
+    if current.get("protocol") != baseline.get("protocol"):
+        failures.append(f"{prefix} tool-behaviour protocol differs from the baseline")
+        return
+    if current.get("sample_ids_sha256") != baseline.get("sample_ids_sha256"):
+        failures.append(f"{prefix} tool evaluation does not use the same fixed held-out cases as the baseline")
+        return
+    if current.get("sample_count") != baseline.get("sample_count"):
+        failures.append(f"{prefix} tool evaluation sample count differs from the baseline")
+        return
+
+    def compare_rate(label: str, now: Any, before: Any) -> None:
+        if not isinstance(now, (int, float)) or not math.isfinite(now) or not 0 <= now <= 1:
+            failures.append(f"{prefix} current {label} is missing or invalid")
+            return
+        if not isinstance(before, (int, float)) or not math.isfinite(before) or not 0 <= before <= 1:
+            failures.append(f"{prefix} baseline {label} is missing or invalid")
+            return
+        if before > 0 and now + 1e-12 < before * float(floor):
+            failures.append(
+                f"{prefix} {label} regressed from {before:.4g} to {now:.4g}; "
+                f"minimum retained fraction is {float(floor):.3g}"
+            )
+
+    compare_rate(
+        "tool execution success rate",
+        current.get("execution_success_rate"),
+        baseline.get("execution_success_rate"),
+    )
+    current_steps = current.get("per_step")
+    baseline_steps = baseline.get("per_step")
+    if not isinstance(current_steps, dict) or not isinstance(baseline_steps, dict):
+        failures.append(f"{prefix} per-step baseline/current tool evidence is missing")
+        return
+    for step in ("1", "2"):
+        now = current_steps.get(step)
+        before = baseline_steps.get(step)
+        if not isinstance(now, dict) or not isinstance(before, dict):
+            failures.append(f"{prefix} tool workflow step {step} baseline/current evidence is missing")
+            continue
+        if now.get("sample_count") != before.get("sample_count"):
+            failures.append(f"{prefix} tool workflow step {step} sample count differs from the baseline")
+            continue
+        compare_rate(
+            f"tool workflow step {step} execution success rate",
+            now.get("execution_success_rate"),
+            before.get("execution_success_rate"),
+        )
+
+
 def _check_codebook_thresholds(prefix: str, usage: dict[str, Any],
                                thresholds: dict[str, Any], failures: list[str],
                                test_split: bool = False) -> None:
@@ -438,6 +502,17 @@ def promotion_gate(metrics: dict[str, Any], baseline: dict[str, Any] | None = No
         current_test = test_metrics.get("text_loss") if isinstance(test_metrics, dict) else None
         if isinstance(old_test, (int, float)) and isinstance(current_test, (int, float)) and current_test > old_test * 1.02:
             failures.append("test text loss regressed by more than 2% against the supplied baseline")
+        baseline_test = baseline.get("test_metrics") if isinstance(baseline.get("test_metrics"), dict) else {}
+        regression_floor = thresholds.get("tool_behavior_regression_floor")
+        _check_tool_behavior_regression(
+            "validation", metrics.get("tool_behavior"), baseline.get("tool_behavior"),
+            regression_floor, failures,
+        )
+        _check_tool_behavior_regression(
+            "test",
+            test_metrics.get("tool_behavior") if isinstance(test_metrics, dict) else None,
+            baseline_test.get("tool_behavior"), regression_floor, failures,
+        )
     return not failures, failures
 
 

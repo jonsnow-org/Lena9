@@ -75,3 +75,8 @@ The final data-gate notebook appends a small, deterministic two-step calculator 
 Checkpoint evaluation now executes generated tool calls through the safe allowlisted runtime on a deterministic sample of held-out verified records. It reports valid-JSON, allowlisted-dispatch, exact-payload, and correct-execution rates, including separate statistics for steps one and two. The promotion gate requires at least 16 behavioural examples, at least four examples for each workflow step, and separately approved validation/test minima for executed tool success. Numeric thresholds remain deliberately unapproved until measured on a real trained checkpoint.
 
 Tool inference now permits the trained `TOOL_END` and `EOS` markers and stops generation at either marker. Previously, generation was restricted to text-vocabulary IDs and could not emit the end marker used in tool-call training sequences, so output could run to the token cap and append invalid JSON. This is a runtime alignment fix, not a parameter-count or architecture change.
+
+
+### Fixed-case regression gate for tool training
+
+When a prior full evaluation is preserved as `run-state/evaluation.baseline.json`, promotion compares the candidate and baseline on the exact same deterministic held-out tool examples. The sample-set fingerprint, protocol, sample count, and per-step sample counts must match. Overall execution success and each step's success rate must retain at least 90% of the baseline; otherwise promotion is blocked even when language loss passes. The first from-scratch run can be evaluated without a baseline, but later candidate checkpoints should carry the previous approved evaluation into this path.

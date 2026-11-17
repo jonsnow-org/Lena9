@@ -30,6 +30,8 @@ def _metrics(data_verified=True, data_kind="external"):
         "valid_payload_rate": 0.75,
         "allowlisted_dispatch_rate": 0.65,
         "exact_payload_match_rate": 0.5,
+        "protocol": "verified-tool-action-execution-v1",
+        "sample_ids_sha256": "d" * 64,
         "per_step": {
             "1": {"sample_count": 8, "execution_success_rate": 0.5},
             "2": {"sample_count": 8, "execution_success_rate": 0.5},
@@ -115,3 +117,30 @@ def test_gate_rejects_poor_executed_tool_performance_even_when_loss_passes():
     assert any("validation tool execution success rate" in failure for failure in failures)
     assert any("validation tool workflow step 2 success rate" in failure for failure in failures)
     assert any("test tool execution success rate" in failure for failure in failures)
+
+
+
+def test_gate_rejects_tool_regression_against_same_fixed_heldout_cases():
+    metrics = _metrics(data_verified=True)
+    baseline = _metrics(data_verified=True)
+    baseline["tool_behavior"]["execution_success_rate"] = 0.8
+    baseline["tool_behavior"]["per_step"]["1"]["execution_success_rate"] = 0.8
+    baseline["tool_behavior"]["per_step"]["2"]["execution_success_rate"] = 0.8
+    baseline["test_metrics"]["tool_behavior"]["execution_success_rate"] = 0.8
+    baseline["test_metrics"]["tool_behavior"]["per_step"]["1"]["execution_success_rate"] = 0.8
+    baseline["test_metrics"]["tool_behavior"]["per_step"]["2"]["execution_success_rate"] = 0.8
+
+    passed, failures = promotion_gate(metrics, baseline=baseline)
+    assert not passed
+    assert any("validation tool execution success rate regressed" in item for item in failures)
+    assert any("validation tool workflow step 2 execution success rate regressed" in item for item in failures)
+    assert any("test tool execution success rate regressed" in item for item in failures)
+
+
+def test_gate_requires_identical_tool_cases_before_comparing_baseline():
+    metrics = _metrics(data_verified=True)
+    baseline = _metrics(data_verified=True)
+    baseline["tool_behavior"]["sample_ids_sha256"] = "e" * 64
+    passed, failures = promotion_gate(metrics, baseline=baseline)
+    assert not passed
+    assert any("validation tool evaluation does not use the same fixed held-out cases" in item for item in failures)
