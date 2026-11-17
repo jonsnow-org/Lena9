@@ -29,10 +29,10 @@ inputs:
 outputs:
   optimizer_step:
     description: Total optimizer step recorded in the saved checkpoint
-    value: ${${ steps.report.outputs.optimizer_step }}
+    value: ${{ steps.report.outputs.optimizer_step }}
   checkpoint_sha256:
     description: SHA-256 of the saved checkpoint
-    value: ${${ steps.report.outputs.checkpoint_sha256 }}
+    value: ${{ steps.report.outputs.checkpoint_sha256 }}
 
 runs:
   using: composite
@@ -54,18 +54,18 @@ runs:
     - name: Restore the validated corpus
       uses: actions/download-artifact@v4
       with:
-        name: ${${ inputs.corpus_artifact_name }}
+        name: ${{ inputs.corpus_artifact_name }}
         path: onecore-ai/data
 
     - name: Restore the exact previous model and optimizer state
-      if: ${${ inputs.checkpoint_artifact_name != '' }}
+      if: ${{ inputs.checkpoint_artifact_name != '' }}
       uses: actions/download-artifact@v4
       with:
-        name: ${${ inputs.checkpoint_artifact_name }}
+        name: ${{ inputs.checkpoint_artifact_name }}
         path: onecore-ai/run-state
 
     - name: Verify resumed checkpoint lineage before execution
-      if: ${${ inputs.checkpoint_artifact_name != '' }}
+      if: ${{ inputs.checkpoint_artifact_name != '' }}
       shell: bash
       env:
         PYTHONPATH: onecore-ai/src
@@ -100,15 +100,15 @@ runs:
       shell: bash
       env:
         PYTHONPATH: onecore-ai/src
-        ONECORE_STAGE: ${${ inputs.stage }}
-        ONECORE_STEPS: ${${ inputs.steps }}
-        ONECORE_RESUME: ${${ inputs.stage == 'multimodal' && 'true' || 'false' }}
-        ONECORE_PARENT_RUN_ID: ${${ github.run_id }}
+        ONECORE_STAGE: ${{ inputs.stage }}
+        ONECORE_STEPS: ${{ inputs.steps }}
+        ONECORE_RESUME: ${{ inputs.stage == 'multimodal' && 'true' || 'false' }}
+        ONECORE_PARENT_RUN_ID: ${{ github.run_id }}
       run: |
         mkdir -p onecore-ai/run-state/executed-notebooks
-        echo "Notebook: ${${ inputs.notebook }} | stage: ${${ inputs.stage }} | optimizer steps: ${${ inputs.steps }}"
-        jupyter nbconvert --to notebook --execute "onecore-ai/notebooks/${${ inputs.notebook }}" \
-          --output "${${ inputs.notebook }}.executed.ipynb" \
+        echo "Notebook: ${{ inputs.notebook }} | stage: ${{ inputs.stage }} | optimizer steps: ${{ inputs.steps }}"
+        jupyter nbconvert --to notebook --execute "onecore-ai/notebooks/${{ inputs.notebook }}" \
+          --output "${{ inputs.notebook }}.executed.ipynb" \
           --output-dir onecore-ai/run-state/executed-notebooks \
           --ExecutePreprocessor.timeout=-1
 
@@ -133,7 +133,7 @@ runs:
     - name: Upload resumable model, optimizer, scheduler, RNG and tokenizer state
       uses: actions/upload-artifact@v4
       with:
-        name: ${${ inputs.output_artifact_name }}
+        name: ${{ inputs.output_artifact_name }}
         path: |
           onecore-ai/run-state/checkpoint.pt
           onecore-ai/run-state/tokenizer.json
@@ -144,14 +144,14 @@ runs:
         compression-level: 1
 
     - name: Remove superseded checkpoint after the new checkpoint is safely uploaded
-      if: ${${ inputs.previous_checkpoint_artifact_name != '' }}
+      if: ${{ inputs.previous_checkpoint_artifact_name != '' }}
       shell: bash
       env:
-        GH_TOKEN: ${${ github.token }}
+        GH_TOKEN: ${{ github.token }}
       run: |
         previous_id=$(gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts" \
-          --paginate --jq '.artifacts[] | select(.name == "${${ inputs.previous_checkpoint_artifact_name }}") | .id' | head -1)
+          --paginate --jq '.artifacts[] | select(.name == "${{ inputs.previous_checkpoint_artifact_name }}") | .id' | head -1)
         if [[ -n "$previous_id" ]]; then
           gh api -X DELETE "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${previous_id}"
-          echo "Removed superseded checkpoint artifact ${${ inputs.previous_checkpoint_artifact_name }}"
+          echo "Removed superseded checkpoint artifact ${{ inputs.previous_checkpoint_artifact_name }}"
         fi
