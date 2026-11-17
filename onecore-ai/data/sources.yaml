@@ -6,6 +6,7 @@ defaults:
   max_scan_multiplier: 12
   image_size: 64
   max_video_frames: 4
+  stream_checkpoint_rows: 64
 sources:
   # Broad general-language pretraining
   - id: fineweb2_hq_ar
@@ -70,9 +71,13 @@ sources:
     adapter: text
     text_fields: [text]
     split_strategy: hash
-    limits: {train: 1500, validation: 75, test: 75}
+    crawler: hf_state_dict
+    notebook_id: 03_text_pretraining
+    required_for_training: true
+    minimum_accepted_records: 10000
+    limits: {train: 20000, validation: 1000, test: 1000}
     profile_limits:
-      expanded: {train: 8000, validation: 300, test: 300}
+      expanded: {train: 250000, validation: 10000, test: 10000}
     enabled: true
   - id: fineweb2_full_ar_egyptian
     repo: HuggingFaceFW/fineweb-2
@@ -81,9 +86,11 @@ sources:
     adapter: text
     text_fields: [text]
     split_strategy: hash
-    limits: {train: 500, validation: 25, test: 25}
+    crawler: hf_state_dict
+    notebook_id: 03_text_pretraining
+    limits: {train: 10000, validation: 500, test: 500}
     profile_limits:
-      expanded: {train: 3500, validation: 120, test: 120}
+      expanded: {train: 100000, validation: 5000, test: 5000}
     enabled: true
   - id: fineweb2_full_ar_saudi
     repo: HuggingFaceFW/fineweb-2
@@ -92,9 +99,11 @@ sources:
     adapter: text
     text_fields: [text]
     split_strategy: hash
-    limits: {train: 400, validation: 25, test: 25}
+    crawler: hf_state_dict
+    notebook_id: 03_text_pretraining
+    limits: {train: 10000, validation: 500, test: 500}
     profile_limits:
-      expanded: {train: 2500, validation: 100, test: 100}
+      expanded: {train: 100000, validation: 5000, test: 5000}
     enabled: true
   - id: fineweb2_full_ar_moroccan
     repo: HuggingFaceFW/fineweb-2
@@ -103,10 +112,196 @@ sources:
     adapter: text
     text_fields: [text]
     split_strategy: hash
-    limits: {train: 500, validation: 25, test: 25}
+    crawler: hf_state_dict
+    notebook_id: 03_text_pretraining
+    limits: {train: 10000, validation: 500, test: 500}
     profile_limits:
-      expanded: {train: 3500, validation: 120, test: 120}
+      expanded: {train: 100000, validation: 5000, test: 5000}
     enabled: true
+  - id: fineweb2_full_ar_iraqi
+    repo: HuggingFaceFW/fineweb-2
+    config: acm_Arab
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    crawler: hf_state_dict
+    notebook_id: 03_text_pretraining
+    limits: {train: 8000, validation: 400, test: 400}
+    profile_limits:
+      expanded: {train: 80000, validation: 4000, test: 4000}
+    enabled: true
+  - id: fineweb2_full_ar_algerian
+    repo: HuggingFaceFW/fineweb-2
+    config: arq_Arab
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    crawler: hf_state_dict
+    notebook_id: 03_text_pretraining
+    limits: {train: 8000, validation: 400, test: 400}
+    profile_limits:
+      expanded: {train: 80000, validation: 4000, test: 4000}
+    enabled: true
+  # FineWeb-2 has no eng_Latn shard; use verified multilingual shards rather than a broken English config.
+  - id: fineweb2_full_tr
+    repo: HuggingFaceFW/fineweb-2
+    config: tur_Latn
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    crawler: hf_state_dict
+    notebook_id: 03_text_pretraining
+    limits: {train: 5000, validation: 250, test: 250}
+    profile_limits:
+      expanded: {train: 50000, validation: 2500, test: 2500}
+    enabled: true
+  - id: fineweb2_full_de
+    repo: HuggingFaceFW/fineweb-2
+    config: deu_Latn
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    crawler: hf_state_dict
+    notebook_id: 03_text_pretraining
+    limits: {train: 5000, validation: 250, test: 250}
+    profile_limits:
+      expanded: {train: 50000, validation: 2500, test: 2500}
+    enabled: true
+  - id: fineweb2_full_fr
+    repo: HuggingFaceFW/fineweb-2
+    config: fra_Latn
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    crawler: hf_state_dict
+    notebook_id: 03_text_pretraining
+    limits: {train: 5000, validation: 250, test: 250}
+    profile_limits:
+      expanded: {train: 50000, validation: 2500, test: 2500}
+    enabled: true
+  - id: fineweb2_full_es
+    repo: HuggingFaceFW/fineweb-2
+    config: spa_Latn
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    crawler: hf_state_dict
+    notebook_id: 03_text_pretraining
+    limits: {train: 5000, validation: 250, test: 250}
+    profile_limits:
+      expanded: {train: 50000, validation: 2500, test: 2500}
+    enabled: true
+  - id: fineweb2_full_pt
+    repo: HuggingFaceFW/fineweb-2
+    config: por_Latn
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    crawler: hf_state_dict
+    notebook_id: 03_text_pretraining
+    limits: {train: 5000, validation: 250, test: 250}
+    profile_limits:
+      expanded: {train: 50000, validation: 2500, test: 2500}
+    enabled: true
+  - id: fineweb2_full_id
+    repo: HuggingFaceFW/fineweb-2
+    config: ind_Latn
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    crawler: hf_state_dict
+    notebook_id: 03_text_pretraining
+    limits: {train: 5000, validation: 250, test: 250}
+    profile_limits:
+      expanded: {train: 50000, validation: 2500, test: 2500}
+    enabled: true
+  - id: fineweb2_full_ja
+    repo: HuggingFaceFW/fineweb-2
+    config: jpn_Jpan
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    crawler: hf_state_dict
+    notebook_id: 03_text_pretraining
+    limits: {train: 5000, validation: 250, test: 250}
+    profile_limits:
+      expanded: {train: 50000, validation: 2500, test: 2500}
+    enabled: true
+  - id: fineweb2_full_ru
+    repo: HuggingFaceFW/fineweb-2
+    config: rus_Cyrl
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    crawler: hf_state_dict
+    notebook_id: 03_text_pretraining
+    limits: {train: 5000, validation: 250, test: 250}
+    profile_limits:
+      expanded: {train: 50000, validation: 2500, test: 2500}
+    enabled: true
+  - id: stack_v2_code
+    repo: bigcode/the-stack-v2
+    hf_splits: [train]
+    adapter: stack_v2_code
+    split_strategy: hash
+    split_group_field: directory_id
+    crawler: hf_state_dict_plus_swh_content
+    notebook_id: 03_text_pretraining
+    requires_access: true
+    required_for_training: true
+    minimum_accepted_records: 10000
+    limits: {train: 10000, validation: 500, test: 500}
+    profile_limits:
+      expanded: {train: 200000, validation: 5000, test: 5000}
+    max_content_bytes: 524288
+    allowed_languages:
+      - Python
+      - JavaScript
+      - TypeScript
+      - Java
+      - C
+      - C++
+      - C#
+      - Go
+      - Rust
+      - SQL
+      - Shell
+      - Bash
+      - HTML
+      - CSS
+      - PHP
+      - Ruby
+      - Kotlin
+      - Swift
+      - Dart
+      - Scala
+      - R
+      - Julia
+      - Lua
+      - Markdown
+    license_allowlist:
+      - 0BSD
+      - Apache-2.0
+      - BSD-2-Clause
+      - BSD-3-Clause
+      - CC0-1.0
+      - ISC
+      - MIT
+      - MPL-2.0
+      - Unlicense
+      - Zlib
+    enabled: true
+
   - id: fineweb2_full_en
     repo: HuggingFaceFW/fineweb-2
     config: eng_Latn
