@@ -65,7 +65,7 @@ _SECRET_PATTERNS = (
     re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b"),
     re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b"),
     re.compile(
-        r"""(?ix)\b(?:api[_-]?key|access[_-]?token|client[_-]?secret|secret[_-]?key|password|passwd)\b\s*[:=]\s*["'](?!<|\\$\\{|your[_-]|example|changeme|placeholder)[A-Za-z0-9_./+=-]{16,}["']"""
+        r"""(?ix)\b(?:api[_-]?key|access[_-]?token|client[_-]?secret|secret[_-]?key|password|passwd)\b\s*[:=]\s*["'](?!<|\$\{|your[_-]|example|changeme|placeholder)[A-Za-z0-9_./+=-]{16,}["']"""
     ),
 )
 _SENSITIVE_BASENAMES = {
