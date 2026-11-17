@@ -14,7 +14,6 @@ DEFAULT_PERMISSIVE_LICENSES = {
     "CC0-1.0",
     "ISC",
     "MIT",
-    "MPL-2.0",
     "Unlicense",
     "Zlib",
 }
