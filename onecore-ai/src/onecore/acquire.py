@@ -1049,6 +1049,9 @@ def acquire_sources(
     source_revisions: dict[str, str] = dict(prior_revisions)
     hub_api = HfApi(token=token)
     metadata_rows: dict[str, list[dict[str, Any]]] = {}
+    source_specs = {
+        str(item.get("id", "")): item for item in registry.get("sources", [])
+    }
 
     for source in registry.get("sources", []):
         source_id = str(source.get("id", ""))
