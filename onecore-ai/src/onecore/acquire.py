@@ -1257,6 +1257,7 @@ def acquire_sources(
                 scanned = 0
                 split_exhausted = False
                 source_access_blocked = False
+                split_had_error = False
                 cursor = None
                 dataset = None
                 try:
@@ -1340,6 +1341,8 @@ def acquire_sources(
                                 except StackAccessRequired:
                                     raise
                                 except Exception as exc:
+                                    if adapter == "stack_v2_code":
+                                        raise
                                     record = None
                                     conversion_error = {
                                         "split": str(hf_split), "row_id_sha256": _stable_hash(raw_identity)[:16],
@@ -1372,6 +1375,8 @@ def acquire_sources(
                             except StackAccessRequired:
                                 raise
                             except Exception as exc:
+                                if adapter == "stack_v2_code":
+                                    raise
                                 record = None
                                 conversion_error = {
                                     "split": str(hf_split), "row_id_sha256": _stable_hash(raw_identity)[:16],
@@ -1399,6 +1404,7 @@ def acquire_sources(
                     if split_exhausted:
                         source_splits_exhausted.add(str(hf_split))
                 except StackAccessRequired as exc:
+                    split_had_error = True
                     source_access_blocked = True
                     report["status"] = "access_required"
                     report["required_for_training"] = True
@@ -1406,6 +1412,7 @@ def acquire_sources(
                         "split": str(hf_split), "type": type(exc).__name__, "message": str(exc)[:500],
                     })
                 except Exception as exc:
+                    split_had_error = True
                     message = str(exc)
                     access_markers = ("gatedrepoerror", "access denied", "not authorized", "403", "401", "restricted")
                     if source.get("required_for_training") and any(
@@ -1416,16 +1423,23 @@ def acquire_sources(
                     report.setdefault("errors", []).append({
                         "split": str(hf_split), "type": type(exc).__name__, "message": message[:500],
                     })
-                if cursor is not None and dataset is not None:
-                    cursor_snapshots.append((source_id, str(hf_split), cursor, dataset, start_offset + scanned))
+                checkpointed_total = start_offset + scanned if not split_had_error else start_offset
+                if cursor is not None and dataset is not None and not split_had_error:
+                    cursor_snapshots.append((source_id, str(hf_split), cursor, dataset, checkpointed_total))
                     report["crawler_cursors"][str(hf_split)] = {
-                        "mode": "awaiting_manifest_commit", "rows_read": start_offset + scanned,
+                        "mode": "awaiting_manifest_commit", "rows_read": checkpointed_total,
+                    }
+                elif split_had_error:
+                    report["crawler_cursors"][str(hf_split)] = {
+                        "mode": "previous_checkpoint_preserved", "rows_read": start_offset,
                     }
                 report["by_split"][str(hf_split)] = {
                     "start_offset": start_offset, "scanned": scanned,
-                    "total_scanned": start_offset + scanned,
+                    "total_scanned": checkpointed_total,
+                    "attempted_total_scanned": start_offset + scanned,
                     "accepted": per_hf_accepted, "pending": per_hf_pending,
                     "source_split_exhausted": split_exhausted,
+                    "cursor_committed": not split_had_error,
                 }
                 if session_budget_exhausted or source_access_blocked:
                     break
@@ -1443,7 +1457,10 @@ def acquire_sources(
         report["pending_rows_by_output_split"] = pending_counts
         _write_jsonl_atomic(pending_paths[0], pending_final)
         _write_jsonl_atomic(pending_paths[1], pending_final)
-        report["total_read"] = sum(int(item.get("total_scanned", 0)) for item in report["by_split"].values())
+        report["total_read"] = sum(
+            int(item.get("attempted_total_scanned", item.get("total_scanned", 0)))
+            for item in report["by_split"].values()
+        )
         targets_reached = all(
             new_accepted_by_output_split[split] >= remaining_limits[split] for split in SPLITS
         )
