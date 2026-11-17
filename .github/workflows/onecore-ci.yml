@@ -80,7 +80,24 @@ jobs:
               assert "research/onecore-foundation" in text
           bootstrap = (Path(".github/workflows") / "onecore-bootstrap.yml").read_text(encoding="utf-8")
           assert "gh workflow run onecore-training.yml" not in bootstrap, "training must not dispatch a workflow absent from the default branch"
-          assert "Start fresh random-initialized OneCore joint multimodal training in the same CPU job" in bootstrap
+          assert "Start fresh random-initialized OneCore joint multimodal training in the same CPU job" not in bootstrap
+          assert "cancel-in-progress: false" in bootstrap
+          assert "timeout-minutes: 330" in bootstrap
+          assert "./.github/actions/onecore-acquire" in bootstrap
+          assert "./.github/actions/onecore-train" in bootstrap
+          assert "onecore-corpus-final" in bootstrap
+          assert "onecore-state-train-10" in bootstrap
+          assert "Notebook order: 03, 04, 03, 04, 03, 04, 03, 04, 03, 04" in bootstrap
+          import yaml
+          workflow = yaml.safe_load(bootstrap)
+          jobs = workflow["jobs"]
+          assert all(f"acquire_{i}" in jobs for i in range(1, 7))
+          assert all(f"train_{i:02d}" in jobs for i in range(1, 11))
+          assert jobs["train_01"]["needs"] == "dataset_gate"
+          for index in range(2, 11):
+              assert jobs[f"train_{index:02d}"]["needs"] == f"train_{index-1:02d}"
+          assert jobs["train_01"]["timeout-minutes"] == 330
+          assert jobs["train_10"]["timeout-minutes"] == 330
           import yaml
           registry = yaml.safe_load(Path("onecore-ai/data/sources.yaml").read_text(encoding="utf-8"))
           video_sources = [item for item in registry["sources"] if item.get("id") == "videos4camera_bench"]
