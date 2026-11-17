@@ -257,7 +257,9 @@ sources:
     crawler: hf_state_dict_plus_swh_content
     notebook_id: 03_text_pretraining
     requires_access: true
-    required_for_training: true
+    # Keep the gated code corpus enabled, but do not block the first joint run
+    # while HF/SWH approvals are pending. Only verified file payloads count.
+    required_for_training: false
     minimum_accepted_records: 10000
     limits: {train: 10000, validation: 500, test: 500}
     profile_limits:
