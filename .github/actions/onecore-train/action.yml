@@ -55,7 +55,13 @@ runs:
       uses: actions/download-artifact@v7
       with:
         name: ${{ inputs.corpus_artifact_name }}
-        path: onecore-ai/data
+        path: onecore-ai/run-state/corpus-artifact
+
+    - name: Restore the validated corpus snapshot (tar or legacy layout)
+      shell: bash
+      env:
+        PYTHONPATH: onecore-ai/src
+      run: python -m onecore.artifacts restore --root onecore-ai --artifact-dir onecore-ai/run-state/corpus-artifact
 
     - name: Restore the exact previous model and optimizer state
       if: ${{ inputs.checkpoint_artifact_name != '' }}
