@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any
 
 CURSOR_SCHEMA = "onecore-stream-cursor-v1"
-DEFAULT_CHECKPOINT_ROWS = 64
 
 
 def notebook_for_source(source: dict[str, Any]) -> str:
@@ -162,10 +161,6 @@ class StatefulStreamCursor:
             "rows_read": payload["rows_read"],
             "cursor_path": str(self.path),
         }
-
-
-def cursor_checkpoint_due(rows_since_start: int, interval: int = DEFAULT_CHECKPOINT_ROWS) -> bool:
-    return int(rows_since_start) > 0 and int(rows_since_start) % max(1, int(interval)) == 0
 
 
 def notebook_cursor_summary(project_root: str | Path, notebook_id: str) -> dict[str, Any]:
