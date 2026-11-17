@@ -50,7 +50,13 @@ runs:
         name: ${{ inputs.prior_artifact_name }}
         run-id: ${{ inputs.prior_run_id }}
         github-token: ${{ github.token }}
-        path: onecore-ai/data
+        path: onecore-ai/run-state/corpus-artifact
+
+    - name: Restore the previous corpus snapshot (tar or legacy layout)
+      shell: bash
+      env:
+        PYTHONPATH: onecore-ai/src
+      run: python -m onecore.artifacts restore --root onecore-ai --artifact-dir onecore-ai/run-state/corpus-artifact
 
     - name: Ensure deterministic bootstrap records are present without replacing the restored corpus
       shell: bash
@@ -87,6 +93,14 @@ runs:
         print(persist_acquisition_progress("onecore-ai"))
         PY
 
+    - name: Package the corpus and resume state as one stack-safe archive
+      shell: bash
+      env:
+        PYTHONPATH: onecore-ai/src
+      run: |
+        python -m onecore.artifacts pack --root onecore-ai --output "$RUNNER_TEMP/onecore-corpus.tar"
+        test -s "$RUNNER_TEMP/onecore-corpus.tar"
+
     - name: Read acquisition completion state
       id: report
       shell: bash
@@ -104,22 +118,14 @@ runs:
         print(f"new_records={report.get('total_new_records', 0)}")
         PY
 
-    - name: Upload the updated corpus, media assets, metadata and resume state
+    - name: Upload the updated corpus and resume state as a single file
       uses: actions/upload-artifact@v6
       with:
         name: ${{ inputs.output_artifact_name }}
-        path: |
-          onecore-ai/data/train.jsonl
-          onecore-ai/data/validation.jsonl
-          onecore-ai/data/test.jsonl
-          onecore-ai/data/acquisition-report.json
-          onecore-ai/data/assets/
-          onecore-ai/data/metadata/
-          onecore-ai/data/pending/
-          onecore-ai/data/resume-cache/
+        path: $RUNNER_TEMP/onecore-corpus.tar
         if-no-files-found: error
         retention-days: 90
-        compression-level: 1
+        compression-level: 0
 
     - name: Remove superseded in-workflow corpus artifact after the replacement is uploaded
       if: ${{ inputs.prior_run_id == github.run_id && inputs.prior_artifact_name != inputs.output_artifact_name }}
