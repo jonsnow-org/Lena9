@@ -113,7 +113,7 @@ def fetch_stack_content(
         error = response.get("Error", {}) if isinstance(response, dict) else {}
         code = str(error.get("Code", ""))
         message = str(error.get("Message", exc))
-        if code in {"AccessDenied", "403", "InvalidAccessKeyId", "SignatureDoesNotMatch"}:
+        if code in {"AccessDenied", "403", "InvalidAccessKeyId", "SignatureDoesNotMatch", "ExpiredToken", "InvalidToken", "RequestExpired"}:
             raise StackAccessRequired(f"Software Heritage denied content access: {code} {message[:160]}") from exc
         raise
 
