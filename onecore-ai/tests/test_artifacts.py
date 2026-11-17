@@ -93,3 +93,24 @@ def test_pack_rejects_symlinked_corpus_assets(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="symlinks are not supported"):
         pack_corpus(source, tmp_path / "onecore-corpus.tar")
+
+
+
+def test_all_training_workflows_use_the_stack_safe_corpus_transport() -> None:
+    repository = Path(__file__).resolve().parents[2]
+    acquire_action = (repository / ".github/actions/onecore-acquire/action.yml").read_text(encoding="utf-8")
+    train_action = (repository / ".github/actions/onecore-train/action.yml").read_text(encoding="utf-8")
+    bootstrap_workflow = (repository / ".github/workflows/onecore-bootstrap.yml").read_text(encoding="utf-8")
+    staged_workflow = (repository / ".github/workflows/onecore-training.yml").read_text(encoding="utf-8")
+
+    assert "onecore.artifacts restore" in acquire_action
+    assert "onecore.artifacts pack" in acquire_action
+    assert "${{ runner.temp }}/onecore-corpus.tar" in acquire_action
+    assert "onecore.artifacts restore" in train_action
+    assert "onecore.artifacts restore" in bootstrap_workflow
+    assert "onecore.artifacts pack" in bootstrap_workflow
+    assert "${{ runner.temp }}/onecore-corpus.tar" in bootstrap_workflow
+    assert "onecore.artifacts restore" in staged_workflow
+    assert "onecore.artifacts pack" in staged_workflow
+    assert "${{ runner.temp }}/onecore-corpus.tar" in staged_workflow
+    assert "artifact_run_id: ${{ steps.select.outputs.artifact_run_id }}" in bootstrap_workflow
