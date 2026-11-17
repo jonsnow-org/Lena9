@@ -20,7 +20,7 @@ from PIL import Image
 
 from .audio import log_mel_spectrogram
 from .data import external_record_is_trainable, is_immutable_source_revision
-from .crawlers import StatefulStreamCursor, cursor_checkpoint_due, notebook_for_source
+from .crawlers import StatefulStreamCursor, notebook_for_source
 from .stack_v2 import (
     StackAccessRequired, fetch_stack_content, has_allowed_stack_license, stack_credentials_present,
 )
@@ -1059,6 +1059,9 @@ def acquire_sources(
     source_revisions: dict[str, str] = dict(prior_revisions)
     hub_api = HfApi(token=token)
     metadata_rows: dict[str, list[dict[str, Any]]] = {}
+    # Keep candidate cursor states in memory until their manifests/assets are durable.
+    # Never persist an advanced cursor ahead of the examples it represents.
+    cursor_snapshots: list[tuple[str, str, StatefulStreamCursor, Any, int]] = []
     source_specs = {
         str(item.get("id", "")): item for item in registry.get("sources", [])
     }
@@ -1289,8 +1292,6 @@ def acquire_sources(
                             break
                         scanned += 1
                         report["read"] += 1
-                        if cursor is not None and cursor_checkpoint_due(scanned, int(defaults.get("stream_checkpoint_rows", 64))):
-                            report["crawler_cursors"][str(hf_split)] = cursor.save(dataset, start_offset + scanned)
                         if not isinstance(row, dict):
                             continue
                         absolute_index = start_offset + scanned
@@ -1416,7 +1417,10 @@ def acquire_sources(
                         "split": str(hf_split), "type": type(exc).__name__, "message": message[:500],
                     })
                 if cursor is not None and dataset is not None:
-                    report["crawler_cursors"][str(hf_split)] = cursor.save(dataset, start_offset + scanned)
+                    cursor_snapshots.append((source_id, str(hf_split), cursor, dataset, start_offset + scanned))
+                    report["crawler_cursors"][str(hf_split)] = {
+                        "mode": "awaiting_manifest_commit", "rows_read": start_offset + scanned,
+                    }
                 report["by_split"][str(hf_split)] = {
                     "start_offset": start_offset, "scanned": scanned,
                     "total_scanned": start_offset + scanned,
@@ -1491,6 +1495,16 @@ def acquire_sources(
         merged = existing + [item for item in entries if item.get("id") not in known]
         _write_jsonl_atomic(target, merged)
         metadata_counts[source_id] = len(merged) - len(existing)
+
+    # The manifest/payload commit must happen before the matching stream cursor.
+    # If a runner dies before this point, the previous cursor causes a safe replay;
+    # if it dies after this point, manifests are already durable and replay is idempotent.
+    for source_id, hf_split, cursor, dataset, rows_read in cursor_snapshots:
+        saved_cursor = cursor.save(dataset, rows_read)
+        for source_report in source_reports:
+            if str(source_report.get("source", "")) == source_id:
+                source_report.setdefault("crawler_cursors", {})[hf_split] = saved_cursor
+                break
 
     # Recompute cumulative source counts from the final manifests/metadata files.
     for source_report in source_reports:
