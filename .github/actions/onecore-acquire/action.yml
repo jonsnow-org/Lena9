@@ -18,6 +18,19 @@ inputs:
   session_label:
     description: Human-readable acquisition session label
     required: true
+  stack_v2_aws_access_key_id:
+    description: Software Heritage/INRIA approved AWS access key for Stack v2 content
+    required: false
+  stack_v2_aws_secret_access_key:
+    description: Software Heritage/INRIA approved AWS secret for Stack v2 content
+    required: false
+  stack_v2_aws_session_token:
+    description: Optional temporary AWS session token for Stack v2 content
+    required: false
+  stack_v2_aws_region:
+    description: S3 region used for the Software Heritage content bucket
+    required: false
+    default: us-east-1
 
 outputs:
   complete:
@@ -69,6 +82,10 @@ runs:
       env:
         PYTHONPATH: onecore-ai/src
         HF_TOKEN: ${{ env.HF_TOKEN }}
+        STACK_V2_AWS_ACCESS_KEY_ID: ${{ inputs.stack_v2_aws_access_key_id }}
+        STACK_V2_AWS_SECRET_ACCESS_KEY: ${{ inputs.stack_v2_aws_secret_access_key }}
+        STACK_V2_AWS_SESSION_TOKEN: ${{ inputs.stack_v2_aws_session_token }}
+        STACK_V2_AWS_REGION: ${{ inputs.stack_v2_aws_region }}
         ONECORE_SKIP_ACQUISITION: "0"
         ONECORE_ACQUIRE_BUDGET_SECONDS: ${{ inputs.budget_seconds }}
         ONECORE_FINALIZE_DATA_GATE: "0"
@@ -116,6 +133,36 @@ runs:
         print(f"completed_sources={report.get('completed_sources', 0)}")
         print(f"total_sources={report.get('source_count', 0)}")
         print(f"new_records={report.get('total_new_records', 0)}")
+        PY
+
+    - name: Publish per-notebook crawler progress
+      shell: bash
+      env:
+        PYTHONPATH: onecore-ai/src
+      run: |
+        python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+        import json
+        from pathlib import Path
+        from onecore.crawlers import notebook_cursor_summary
+        report = json.loads(Path("onecore-ai/data/acquisition-report.json").read_text(encoding="utf-8"))
+        print("### OneCore streaming crawler checkpoint")
+        print()
+        print(f"- Session: {{}{} inputs.session_label }}")
+        print(f"- Acquisition complete: **{report.get('acquisition_complete', False)}**")
+        print(f"- New optimizer records: **{report.get('total_new_records', 0)}**")
+        print(f"- Pending sources: **{len(report.get('pending_sources', []))}**")
+        print(f"- Sources requiring access: **{report.get('sources_with_access_required', 0)}**")
+        print()
+        print("| Notebook | Source | Status | Raw rows scanned | Usable records total | Cursor mode |")
+        print("|---|---|---:|---:|---:|---|")
+        for item in report.get("sources", []):
+            cursors = item.get("crawler_cursors", {}) or {}
+            modes = ",".join(sorted({str(v.get("mode", "saved")) for v in cursors.values() if isinstance(v, dict)}))
+            print(f"| {item.get('crawler_notebook', '—')} | {item.get('source', '—')} | {item.get('status', '—')} | {item.get('total_read', item.get('read', 0))} | {item.get('total_accepted', item.get('accepted', 0))} | {modes or 'not started'} |")
+        print()
+        for notebook in ("03_text_pretraining", "04_multimodal_curriculum"):
+            summary = notebook_cursor_summary("onecore-ai", notebook)
+            print(f"**{notebook}:** {summary.get('cursor_files', 0)} saved source/split cursors")
         PY
 
     - name: Upload the updated corpus and resume state as a single file
