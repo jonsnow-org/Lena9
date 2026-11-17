@@ -107,9 +107,8 @@ def test_two_step_tool_workflow_replays_prior_execution_and_rejects_forged_histo
                 "payload": first_payload,
                 "result": {"name": "calculator", "ok": True, "result": {"result": 999}},
             }]
-            forged["verification"] = make_verification(
-                "tool.discount_workflow_step.v1", forged["problem"]
-            )
+            # A changed prior result cannot be made valid by replaying the reference.
+            # Keep the original expected digest and require the verifier to fail closed.
             assert not verify_record(forged)
             missing_trace = dict(record)
             missing_trace["prompt"] = task + "\nنفّذ الخطوة التالية."

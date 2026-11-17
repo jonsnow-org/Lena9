@@ -550,7 +550,10 @@ def verify_record(record: dict[str, Any]) -> bool:
     expected_digest = hashlib.sha256(canonical_json(expected).encode("utf-8")).hexdigest()
     if verification.get("reference_sha256") != expected_digest:
         return False
-    actual = solve(reference, problem)
+    try:
+        actual = solve(reference, problem)
+    except (KeyError, TypeError, ValueError, ZeroDivisionError, OverflowError):
+        return False
     if canonical_json(actual) != canonical_json(expected):
         return False
     answer = render_answer(reference, actual)
@@ -616,7 +619,10 @@ def verify_record(record: dict[str, Any]) -> bool:
                     return False
         except (json.JSONDecodeError, KeyError, TypeError, ValueError):
             return False
-        actual_tool_result = ToolRuntime().dispatch(payload)
+        try:
+            actual_tool_result = ToolRuntime().dispatch(payload)
+        except (KeyError, TypeError, ValueError, ZeroDivisionError, OverflowError):
+            return False
         return (
             canonical_json(actual_tool_result) == canonical_json(expected)
             and canonical_json(actual_tool_result) == canonical_json(record.get("expected_tool_result"))
