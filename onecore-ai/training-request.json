@@ -3,7 +3,7 @@
   "stage": "acquire",
   "steps": 150,
   "purpose": "Extend the preserved OneCore corpus with every usable record from the enabled data sources, regardless of data class or modality source. Include imported datasets, bootstrap examples, generated curricula and owner-created examples in the same from-scratch training mix. Require usable text, tool-use, image, audio and video examples in train, validation and test; preserve independent splits and source-group/asset separation. Initialize OneCore from random weights and run 150 joint optimizer steps on GitHub Actions CPU, sampling each of the five task families once per optimizer update. Record per-source and per-data-class counts in the training lineage.",
-  "request_id": "onecore-all-data-joint-150-alternating-sessions-v11-20261117",
+  "request_id": "onecore-all-data-joint-150-archive-transport-v12-20261117",
   "data_profile": "expanded",
   "base_corpus_run_id": "43811430834",
   "start_fresh_joint_training": true,
