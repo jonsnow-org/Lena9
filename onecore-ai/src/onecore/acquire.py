@@ -932,7 +932,7 @@ def _write_jsonl_atomic(path: Path, entries: list[dict[str, Any]]) -> None:
 
 
 def persist_acquisition_progress(project_root: str | Path) -> dict[str, Any]:
-    """Persist source cursors only after the corpus artifact has uploaded successfully."""
+    """Persist source cursors alongside the corpus for the next bounded session."""
     root = Path(project_root).resolve()
     report_path = root / "data" / "acquisition-report.json"
     if not report_path.is_file():
@@ -1097,6 +1097,12 @@ def acquire_sources(
 
         cache_name = f"source-{_stable_hash(source_id)[:16]}.jsonl"
         pending_paths = (pending_root / cache_name, resume_pending_root / cache_name)
+        if int(previous_source_report.get("pending_rows_added", 0)) > 0 and not any(
+            path.is_file() for path in pending_paths
+        ):
+            # Older corpus artifacts did not preserve this cache. Re-scan that source
+            # from its first row so quota overflow can be reconstructed without loss.
+            offsets = {}
         pending_by_id: dict[str, dict[str, Any]] = {}
         pending_discarded = 0
         existing_record_ids = {
