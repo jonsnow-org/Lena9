@@ -180,6 +180,11 @@ def test_required_source_minimums_and_crawler_credentials_are_wired_into_each_se
     assert workflow.count("secrets.STACK_V2_AWS_ACCESS_KEY_ID") == 6
     assert workflow.count("secrets.STACK_V2_AWS_SECRET_ACCESS_KEY") == 6
     assert "Publish per-notebook crawler progress" in action
+    assert "Execute one bounded acquisition session in each owning notebook" in action
+    assert "ONECORE_ACQUIRE_ONLY=1" in action
+    assert "onecore-ai/notebooks/03_text_pretraining.ipynb" in action
+    assert "onecore-ai/notebooks/04_multimodal_curriculum.ipynb" in action
+    assert "ONECORE_SKIP_ACQUISITION=1" in action
     assert "cursor_checkpoint_due" in (root / "src" / "onecore" / "acquire.py").read_text(encoding="utf-8")
 
 
