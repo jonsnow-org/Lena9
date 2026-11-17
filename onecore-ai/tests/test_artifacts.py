@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import shutil
 import tarfile
 from pathlib import Path
 
@@ -45,8 +46,18 @@ def test_pack_and_restore_round_trip_all_corpus_state(tmp_path: Path) -> None:
 
 
 def test_restore_accepts_legacy_directory_shaped_artifact(tmp_path: Path) -> None:
-    artifact = tmp_path / "legacy"
-    _write_corpus(artifact)
+    source = tmp_path / "legacy-source"
+    _write_corpus(source)
+    artifact = tmp_path / "legacy-artifact"
+    artifact.mkdir()
+    for item in ("train.jsonl", "validation.jsonl", "test.jsonl", "acquisition-report.json",
+                 "assets", "metadata", "pending", "resume-cache"):
+        origin = source / "data" / item
+        destination = artifact / item
+        if origin.is_dir():
+            shutil.copytree(origin, destination)
+        else:
+            shutil.copy2(origin, destination)
     restored = tmp_path / "restored"
 
     result = restore_corpus(restored, artifact)
