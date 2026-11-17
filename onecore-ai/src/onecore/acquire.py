@@ -7,6 +7,7 @@ import io
 import json
 import os
 import tempfile
+import time
 import urllib.request
 from urllib.parse import unquote, urlparse
 from pathlib import Path
@@ -963,6 +964,7 @@ def acquire_sources(
     profile: str = "initial",
     source_file: str | Path | None = None,
     only_sources: set[str] | None = None,
+    time_budget_seconds: int | None = None,
 ) -> dict[str, Any]:
     """Stream external datasets, resume immutable source cursors, and retain quota overflow.
 
@@ -981,8 +983,9 @@ def acquire_sources(
     resume_pending_root = resume_cache_root / "pending"
     rows_by_split: dict[str, list[dict[str, Any]]] = {split: [] for split in SPLITS}
     source_reports: list[dict[str, Any]] = []
-    base_fingerprints = _training_manifest_base(root)
     token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_HUB_TOKEN")
+    if time_budget_seconds is not None and int(time_budget_seconds) < 60:
+        raise ValueError("time_budget_seconds must be at least 60 when supplied")
     try:
         from datasets import Audio, load_dataset
         from huggingface_hub import HfApi
@@ -999,6 +1002,19 @@ def acquire_sources(
         if previous_report_path.is_file():
             previous_report = json.loads(previous_report_path.read_text(encoding="utf-8"))
             break
+    stored_base = {
+        key: previous_report.get(key)
+        for key in ("base_train_manifest_sha256", "base_asset_manifest_sha256", "base_train_records")
+    }
+    if stored_base.get("base_train_manifest_sha256") and stored_base.get("base_asset_manifest_sha256"):
+        base_fingerprints = stored_base
+    else:
+        base_fingerprints = _training_manifest_base(root)
+    acquisition_deadline = (
+        time.monotonic() + int(time_budget_seconds)
+        if time_budget_seconds is not None else None
+    )
+    session_budget_exhausted = False
     prior_revisions = previous_report.get("source_revisions", {})
     prior_source_reports = {
         str(item.get("source", "")): item for item in previous_report.get("sources", [])
@@ -1012,6 +1028,9 @@ def acquire_sources(
 
     for source in registry.get("sources", []):
         source_id = str(source.get("id", ""))
+        if acquisition_deadline is not None and time.monotonic() >= acquisition_deadline:
+            session_budget_exhausted = True
+            break
         if only_sources and source_id not in only_sources:
             continue
         adapter = str(source.get("adapter", "text"))
@@ -1194,6 +1213,9 @@ def acquire_sources(
                     target_count = sum(remaining_limits.values()) or 1
                     max_scan = max(target_count * int(defaults.get("max_scan_multiplier", 12)), target_count + 200)
                     for row in dataset:
+                        if acquisition_deadline is not None and time.monotonic() >= acquisition_deadline:
+                            session_budget_exhausted = True
+                            break
                         if all(new_accepted_by_output_split[split] >= remaining_limits[split] for split in SPLITS):
                             break
                         scanned += 1
@@ -1305,6 +1327,8 @@ def acquire_sources(
                     "total_scanned": start_offset + scanned,
                     "accepted": per_hf_accepted, "pending": per_hf_pending,
                 }
+                if session_budget_exhausted:
+                    break
 
         pending_final = pending_keep
         pending_dedup: dict[str, dict[str, Any]] = {}
@@ -1320,17 +1344,33 @@ def acquire_sources(
         _write_jsonl_atomic(pending_paths[0], pending_final)
         _write_jsonl_atomic(pending_paths[1], pending_final)
         report["total_read"] = sum(int(item.get("total_scanned", 0)) for item in report["by_split"].values())
-        report["status"] = "completed" if report["accepted"] or report.get("already_satisfied") else (
-            "unavailable" if report.get("errors") else "no_compatible_rows"
-        )
+        if session_budget_exhausted:
+            report["partial"] = True
+            report["status"] = "partial"
+        else:
+            report["status"] = "completed" if report["accepted"] or report.get("already_satisfied") else (
+                "unavailable" if report.get("errors") else "no_compatible_rows"
+            )
         source_reports.append(report)
+        if session_budget_exhausted:
+            break
 
-    # Preserve prior source reports when a caller explicitly acquires only a subset.
-    if only_sources:
+    # Keep a complete, resumable source ledger when a session ends on its time budget.
+    if only_sources or session_budget_exhausted:
         current_ids = {str(item.get("source", "")) for item in source_reports}
-        for source_id, prior_source_report in prior_source_reports.items():
-            if source_id not in only_sources and source_id not in current_ids:
-                source_reports.append(prior_source_report)
+        for source in registry.get("sources", []):
+            source_id = str(source.get("id", ""))
+            if source_id in current_ids:
+                continue
+            prior = prior_source_reports.get(source_id)
+            if prior is not None:
+                source_reports.append(prior)
+            elif session_budget_exhausted and source.get("enabled", True):
+                source_reports.append({
+                    "source": source_id, "repo": source.get("repo"),
+                    "adapter": source.get("adapter", "text"), "status": "pending",
+                    "read": 0, "accepted": 0, "failed_rows": 0,
+                })
 
     added_counts = _append_manifests(root, rows_by_split)
     metadata_counts: dict[str, int] = {}
@@ -1370,12 +1410,27 @@ def acquire_sources(
             source_report["metadata_only"] = sum(new_counts.values())
 
     task_counts = task_coverage(root)
+    enabled_ids = {
+        str(item.get("id", "")) for item in registry.get("sources", [])
+        if item.get("enabled", True)
+    }
+    source_status = {str(item.get("source", "")): str(item.get("status", "")) for item in source_reports}
+    terminal_statuses = {"completed", "unavailable", "access_token_unavailable", "no_compatible_rows"}
+    pending_sources = sorted(
+        source_id for source_id in enabled_ids
+        if source_status.get(source_id) not in terminal_statuses
+    )
+    acquisition_complete = not pending_sources
     output = {
         "profile": profile, "registry_version": registry.get("version"), **base_fingerprints,
         "source_revisions": source_revisions, "source_count": len(source_reports),
         "sources": source_reports, "new_records": added_counts, "new_metadata_rows": metadata_counts,
         "total_new_records": sum(added_counts.values()), "task_counts": task_counts,
-        "external_media_assets": {split: _external_asset_report(root, split) for split in SPLITS},
+        "acquisition_complete": acquisition_complete,
+        "pending_sources": pending_sources,
+        "session_budget_exhausted": session_budget_exhausted,
+        "external_media_assets": ({split: _external_asset_report(root, split) for split in SPLITS}
+                                   if acquisition_complete else {}),
         "completed_sources": sum(1 for item in source_reports if item.get("status") == "completed"),
         "unavailable_sources": sum(1 for item in source_reports if item.get("status") in {"unavailable", "access_token_unavailable"}),
         "metadata_only_sources": sum(1 for item in source_reports if item.get("metadata_only", 0) > 0),
@@ -1391,6 +1446,7 @@ def main() -> None:
     parser.add_argument("--root", default="onecore-ai")
     parser.add_argument("--profile", default="initial")
     parser.add_argument("--source", action="append", default=[])
+    parser.add_argument("--time-budget-seconds", type=int, default=0)
     parser.add_argument("--require-tasks", default="")
     parser.add_argument("--min-train-records", type=int, default=25)
     parser.add_argument("--min-holdout-records", type=int, default=5)
@@ -1399,6 +1455,7 @@ def main() -> None:
         args.root,
         profile=args.profile,
         only_sources=set(args.source) if args.source else None,
+        time_budget_seconds=args.time_budget_seconds or None,
     )
     required = {value.strip() for value in args.require_tasks.split(",") if value.strip()}
     if required:
