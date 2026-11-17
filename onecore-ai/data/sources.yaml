@@ -6,7 +6,6 @@ defaults:
   max_scan_multiplier: 12
   image_size: 64
   max_video_frames: 4
-  stream_checkpoint_rows: 64
 sources:
   # Broad general-language pretraining
   - id: fineweb2_hq_ar
