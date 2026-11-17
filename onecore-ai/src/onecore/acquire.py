@@ -578,9 +578,18 @@ def _record_from_row(
         detected = row.get("detected_licenses") or []
         if isinstance(detected, str):
             detected = [detected]
+        repo_name = str(row.get("repo_name") or "").strip()
+        repo_url = f"https://github.com/{repo_name}" if re.fullmatch(r"[^/\s]+/[^/\s]+", repo_name) else ""
         record.update({
-            "task": "text", "text": text[:2200], "code_language": language,
-            "code_path": code_path, "code_blob_id": str(row.get("blob_id") or ""),
+            "task": "text", "text": text[:int(source.get("max_record_chars", 8192))],
+            "code_language": language, "code_path": code_path,
+            "code_blob_id": str(row.get("blob_id") or ""),
+            "code_content_id": str(row.get("content_id") or ""),
+            "code_repository": repo_name, "code_repository_url": repo_url,
+            "code_directory_id": str(row.get("directory_id") or ""),
+            "code_revision_id": str(row.get("revision_id") or ""),
+            "code_snapshot_id": str(row.get("snapshot_id") or ""),
+            "code_license_type": str(row.get("license_type") or ""),
             "code_detected_licenses": sorted({str(value) for value in detected}),
         })
     elif adapter == "text":
