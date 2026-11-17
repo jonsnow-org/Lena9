@@ -81,9 +81,9 @@ def contains_exposed_secret(content: str, path: str = "") -> bool:
     normalized = str(path or "").replace("\\", "/")
     parts = [part.casefold() for part in PurePosixPath(normalized).parts]
     basename = parts[-1] if parts else ""
-    if basename in _SENSITIVE_BASENAMES or basename.endswith((".pem", ".p12", ".pfx", ".key")):
+    if basename in _SENSITIVE_BASENAMES or basename.startswith(".env.") or basename == ".env" or basename.endswith((".pem", ".p12", ".pfx", ".key")):
         return True
-    if any(part in {".ssh", "secrets", "credentials"} for part in parts[:-1]):
+    if any(part in {".ssh", ".aws", "secrets", "credentials"} for part in parts[:-1]):
         return True
     text = str(content or "")
     return any(pattern.search(text) for pattern in _SECRET_PATTERNS)
