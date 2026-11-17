@@ -85,27 +85,37 @@ def test_training_iterator_admits_every_available_data_class():
 
 def test_both_onecore_training_workflows_use_builtin_release_token_fallback():
     repo_root = Path(__file__).resolve().parents[2]
-    for name in ("onecore-bootstrap.yml", "onecore-training.yml"):
-        workflow = (repo_root / ".github" / "workflows" / name).read_text(encoding="utf-8")
-        assert "secrets.ONECORE_RELEASE_TOKEN || secrets.GITHUB_TOKEN" in workflow
-
-def test_workflows_use_stage_specific_all_data_gates():
-    repo_root = Path(__file__).resolve().parents[2]
     bootstrap = (repo_root / ".github" / "workflows" / "onecore-bootstrap.yml").read_text(encoding="utf-8")
     training = (repo_root / ".github" / "workflows" / "onecore-training.yml").read_text(encoding="utf-8")
-    assert "ONECORE_REQUIRED_TASKS:" in bootstrap
-    assert "ONECORE_REQUIRED_TASKS:" in training
-    assert "text,tool,image,audio,video" in bootstrap
+    assert "secrets.ONECORE_RELEASE_TOKEN || secrets.GITHUB_TOKEN" in bootstrap
+    assert "secrets.ONECORE_RELEASE_TOKEN || secrets.GITHUB_TOKEN" in training
+
+
+def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed_sessions():
+    repo_root = Path(__file__).resolve().parents[2]
+    bootstrap = (repo_root / ".github" / "workflows" / "onecore-bootstrap.yml").read_text(encoding="utf-8")
+    acquire_action = (repo_root / ".github" / "actions" / "onecore-acquire" / "action.yml").read_text(encoding="utf-8")
+    train_action = (repo_root / ".github" / "actions" / "onecore-train" / "action.yml").read_text(encoding="utf-8")
+    training = (repo_root / ".github" / "workflows" / "onecore-training.yml").read_text(encoding="utf-8")
+    assert "cancel-in-progress: false" in bootstrap
+    assert "timeout-minutes: 330" in bootstrap
+    assert "onecore-corpus-" in bootstrap
+    assert "onecore-corpus-final" in bootstrap
+    assert "ONECORE_REQUIRED_TASKS: \"text,tool,image,audio,video\"" in bootstrap
+    assert "ONECORE_REQUIRED_TASKS: \"text,tool,image,audio,video\"" in acquire_action
+    assert "ONECORE_ACQUIRE_BUDGET_SECONDS" in acquire_action
+    assert "persist_acquisition_progress" in acquire_action
+    assert "data/resume-cache/" in acquire_action
+    assert "data/pending/" in acquire_action
+    assert "ONECORE_FINALIZE_DATA_GATE: \"1\"" in bootstrap
+    assert "start_fresh_joint_training" in bootstrap
+    assert "./.github/actions/onecore-acquire" in bootstrap
+    assert "./.github/actions/onecore-train" in bootstrap
+    assert "steps: \"15\"" in bootstrap
+    assert "onecore-state-train-10" in bootstrap
+    assert "Notebook order: 03, 04, 03, 04, 03, 04, 03, 04, 03, 04" in bootstrap
+    assert "optimizer_step" in train_action and "checkpoint_sha256" in train_action
+    assert "optimizer, scheduler, RNG" in train_action
     assert "text,tool,image,audio,video" in training
-    assert "stage == 'acquire' && 'text,tool,image,audio,video'" in bootstrap
-    assert "stage == 'multimodal' && 'text,tool,image,audio,video'" in bootstrap
-    assert "inputs.stage == 'multimodal' && 'text,tool,image,audio,video'" in training
-    assert "ONECORE_DATA_PROFILE:" in bootstrap
-    assert "start_fresh_joint_training = request.get" in bootstrap
-    assert "steps.request.outputs.start_fresh_joint_training == 'true'" in bootstrap
-    assert "ONECORE_SKIP_ACQUISITION: ${{ steps.request.outputs.stage != 'acquire'" in bootstrap
-    assert "(steps.request.outputs.stage != 'acquire' || steps.request.outputs.start_fresh_joint_training == 'true')" in bootstrap
-    assert "Restore prior verified corpus as the base for incremental acquisition" in bootstrap
-    assert "Start fresh random-initialized OneCore joint multimodal training in the same CPU job" in bootstrap
+    assert "cancel-in-progress: false" in bootstrap
     assert "gh workflow run onecore-training.yml" not in bootstrap
-    assert "acquisition-only stage; no checkpoint alias created" in bootstrap
