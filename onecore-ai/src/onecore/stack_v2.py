@@ -4,6 +4,7 @@ import gzip
 import io
 import os
 import re
+from pathlib import PurePosixPath
 from typing import Any
 
 DEFAULT_PERMISSIVE_LICENSES = {
@@ -52,6 +53,45 @@ def has_allowed_stack_license(
 
 
 _S3_CLIENT = None
+
+
+_SECRET_PATTERNS = (
+    re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----", re.IGNORECASE),
+    re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"),
+    re.compile(r"\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}\b"),
+    re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}\b"),
+    re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{20,}\b"),
+    re.compile(r"\b(?:sk|rk)_live_[A-Za-z0-9]{16,}\b"),
+    re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b"),
+    re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b"),
+    re.compile(
+        r"""(?ix)\b(?:api[_-]?key|access[_-]?token|client[_-]?secret|secret[_-]?key|password|passwd)\b\s*[:=]\s*["'](?!<|\\$\\{|your[_-]|example|changeme|placeholder)[A-Za-z0-9_./+=-]{16,}["']"""
+    ),
+)
+_SENSITIVE_BASENAMES = {
+    ".env", ".env.local", ".env.production", ".env.development",
+    "id_rsa", "id_ed25519", "credentials", "secrets.json",
+    "service-account.json", "service_account.json",
+}
+_EMAIL_PATTERN = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
+
+
+def contains_exposed_secret(content: str, path: str = "") -> bool:
+    """Conservatively reject credential-bearing files before they enter training."""
+    normalized = str(path or "").replace("\\", "/")
+    parts = [part.casefold() for part in PurePosixPath(normalized).parts]
+    basename = parts[-1] if parts else ""
+    if basename in _SENSITIVE_BASENAMES or basename.endswith((".pem", ".p12", ".pfx", ".key")):
+        return True
+    if any(part in {".ssh", "secrets", "credentials"} for part in parts[:-1]):
+        return True
+    text = str(content or "")
+    return any(pattern.search(text) for pattern in _SECRET_PATTERNS)
+
+
+def redact_personal_contacts(content: str) -> str:
+    """Replace explicit email addresses in accepted public code with a neutral marker."""
+    return _EMAIL_PATTERN.sub("[REDACTED_EMAIL]", str(content or ""))
 
 
 def _client():
