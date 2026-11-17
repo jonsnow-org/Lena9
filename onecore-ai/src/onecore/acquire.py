@@ -554,6 +554,13 @@ def _record_from_row(
             if answer:
                 text = f"Question: {question}\nAnswer: {answer}" if question else answer
     if adapter == "stack_v2_code":
+        # Stack v2 exposes per-file provenance and an inferred license class.
+        # Do not request SWH bytes for non-permissive, vendor, generated, or
+        # out-of-scope languages; this saves crawler time and avoids needless GETs.
+        if str(row.get("license_type") or "").strip().casefold() != "permissive":
+            return None
+        if bool(row.get("is_vendor")) or bool(row.get("is_generated")):
+            return None
         allowlist = {str(value) for value in (source.get("license_allowlist") or [])}
         if not has_allowed_stack_license(row, allowlist):
             return None
@@ -568,10 +575,13 @@ def _record_from_row(
             return None
         code_path = str(row.get("path") or "").strip()
         text = f"# Language: {language or 'unknown'} | File: {code_path or 'unknown'}\n{code}"
+        detected = row.get("detected_licenses") or []
+        if isinstance(detected, str):
+            detected = [detected]
         record.update({
             "task": "text", "text": text[:2200], "code_language": language,
             "code_path": code_path, "code_blob_id": str(row.get("blob_id") or ""),
-            "code_detected_licenses": sorted({str(value) for value in (row.get("detected_licenses") or [])}),
+            "code_detected_licenses": sorted({str(value) for value in detected}),
         })
     elif adapter == "text":
         if len(text) < 24:
