@@ -77,7 +77,7 @@ runs:
         PYTHONPATH: onecore-ai/src
       run: python -m onecore.bootstrap --root onecore-ai
 
-    - name: Execute one bounded acquisition session
+    - name: Execute one bounded acquisition session in each owning notebook
       shell: bash
       env:
         PYTHONPATH: onecore-ai/src
@@ -86,8 +86,6 @@ runs:
         STACK_V2_AWS_SECRET_ACCESS_KEY: ${{ inputs.stack_v2_aws_secret_access_key }}
         STACK_V2_AWS_SESSION_TOKEN: ${{ inputs.stack_v2_aws_session_token }}
         STACK_V2_AWS_REGION: ${{ inputs.stack_v2_aws_region }}
-        ONECORE_SKIP_ACQUISITION: "0"
-        ONECORE_ACQUIRE_BUDGET_SECONDS: ${{ inputs.budget_seconds }}
         ONECORE_FINALIZE_DATA_GATE: "0"
         ONECORE_REQUIRED_TASKS: "text,tool,image,audio,video"
         ONECORE_DATA_PROFILE: "expanded"
@@ -95,10 +93,28 @@ runs:
         ONECORE_MIN_HOLDOUT_RECORDS: "5"
       run: |
         echo "Acquisition session: ${{ inputs.session_label }}"
-        jupyter nbconvert --to notebook --execute onecore-ai/notebooks/02_data_gate.ipynb \
-          --output "02_data_gate.${{ inputs.session_label }}.executed.ipynb" \
-          --output-dir onecore-ai/run-state/executed-notebooks \
-          --ExecutePreprocessor.timeout=-1
+        total_budget="${{ inputs.budget_seconds }}"
+        notebook_budget=0
+        if [[ "$total_budget" =~ ^[0-9]+$ ]] && (( total_budget > 0 )); then
+          notebook_budget=$((total_budget / 2))
+          (( notebook_budget > 0 )) || notebook_budget=1
+        fi
+        echo "Each notebook receives ${notebook_budget}s of source-specific crawler time."
+        ONECORE_ACQUIRE_ONLY=1 ONECORE_ACQUIRE_BUDGET_SECONDS="$notebook_budget" \
+          jupyter nbconvert --to notebook --execute onecore-ai/notebooks/03_text_pretraining.ipynb \
+            --output "03_text_pretraining.${{ inputs.session_label }}.acquisition.ipynb" \
+            --output-dir onecore-ai/run-state/executed-notebooks \
+            --ExecutePreprocessor.timeout=-1
+        ONECORE_ACQUIRE_ONLY=1 ONECORE_ACQUIRE_BUDGET_SECONDS="$notebook_budget" \
+          jupyter nbconvert --to notebook --execute onecore-ai/notebooks/04_multimodal_curriculum.ipynb \
+            --output "04_multimodal_curriculum.${{ inputs.session_label }}.acquisition.ipynb" \
+            --output-dir onecore-ai/run-state/executed-notebooks \
+            --ExecutePreprocessor.timeout=-1
+        ONECORE_SKIP_ACQUISITION=1 ONECORE_ACQUIRE_ONLY=0 \
+          jupyter nbconvert --to notebook --execute onecore-ai/notebooks/02_data_gate.ipynb \
+            --output "02_data_gate.${{ inputs.session_label }}.executed.ipynb" \
+            --output-dir onecore-ai/run-state/executed-notebooks \
+            --ExecutePreprocessor.timeout=-1
 
     - name: Persist exact source offsets and pending rows with the corpus
       shell: bash
