@@ -1007,8 +1007,9 @@ def acquire_sources(
     project_root: str | Path,
     profile: str = "initial",
     source_file: str | Path | None = None,
-    only_sources: set[str] | None = None,
+    only_sources: set[str] | list[str] | None = None,
     time_budget_seconds: int | None = None,
+    source_budget_seconds: int | None = None,
 ) -> dict[str, Any]:
     """Stream external datasets, resume immutable source cursors, and retain quota overflow.
 
@@ -1030,6 +1031,8 @@ def acquire_sources(
     token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_HUB_TOKEN")
     if time_budget_seconds is not None and int(time_budget_seconds) < 60:
         raise ValueError("time_budget_seconds must be at least 60 when supplied")
+    if source_budget_seconds is not None and int(source_budget_seconds) < 60:
+        raise ValueError("source_budget_seconds must be at least 60 when supplied")
     try:
         from datasets import Audio, load_dataset
         from huggingface_hub import HfApi
@@ -1076,11 +1079,23 @@ def acquire_sources(
         str(item.get("id", "")): item for item in registry.get("sources", [])
     }
 
-    for source in registry.get("sources", []):
+    registry_sources = list(registry.get("sources", []))
+    if only_sources:
+        selected_ids = {str(value) for value in only_sources}
+        registry_sources = [item for item in registry_sources if str(item.get("id", "")) in selected_ids]
+        # Ensure the two required corpora get a fresh slice before optional sources.
+        registry_sources.sort(key=lambda item: not bool(item.get("required_for_training")))
+
+    for source in registry_sources:
         source_id = str(source.get("id", ""))
         if acquisition_deadline is not None and time.monotonic() >= acquisition_deadline:
             session_budget_exhausted = True
             break
+        source_deadline = (
+            time.monotonic() + int(source_budget_seconds)
+            if source_budget_seconds is not None else None
+        )
+        source_budget_exhausted = False
         if only_sources and source_id not in only_sources:
             continue
         adapter = str(source.get("adapter", "text"))
@@ -1299,6 +1314,9 @@ def acquire_sources(
                         if acquisition_deadline is not None and time.monotonic() >= acquisition_deadline:
                             session_budget_exhausted = True
                             break
+                        if source_deadline is not None and time.monotonic() >= source_deadline:
+                            source_budget_exhausted = True
+                            break
                         if all(new_accepted_by_output_split[split] >= remaining_limits[split] for split in SPLITS):
                             break
                         scanned += 1
@@ -1451,7 +1469,7 @@ def acquire_sources(
                     "source_split_exhausted": split_exhausted,
                     "cursor_committed": not split_had_error,
                 }
-                if session_budget_exhausted or source_access_blocked:
+                if session_budget_exhausted or source_access_blocked or source_budget_exhausted:
                     break
 
         pending_final = pending_keep
@@ -1477,9 +1495,10 @@ def acquire_sources(
         all_source_splits_exhausted = set(str(value) for value in source.get("hf_splits", ["train"])) <= source_splits_exhausted
         if report.get("status") == "access_required":
             report["partial"] = True
-        elif session_budget_exhausted:
+        elif session_budget_exhausted or source_budget_exhausted:
             report["partial"] = True
             report["status"] = "partial"
+            report["source_budget_exhausted"] = source_budget_exhausted
         elif targets_reached or all_source_splits_exhausted or report.get("already_satisfied"):
             report["status"] = "completed"
         elif report.get("errors") and not report["read"]:
