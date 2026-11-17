@@ -631,11 +631,16 @@ jobs:
           python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
           python -m pip install --upgrade pip
           python -m pip install -e "onecore-ai[dev]"
-      - name: Restore final corpus and final model checkpoint
+      - name: Restore final corpus snapshot
         uses: actions/download-artifact@v7
         with:
           name: onecore-corpus-final
-          path: onecore-ai/data
+          path: onecore-ai/run-state/corpus-artifact
+      - name: Expand final corpus snapshot
+        shell: bash
+        env:
+          PYTHONPATH: onecore-ai/src
+        run: python -m onecore.artifacts restore --root onecore-ai --artifact-dir onecore-ai/run-state/corpus-artifact
       - name: Restore the tenth session checkpoint
         uses: actions/download-artifact@v7
         with:
