@@ -58,6 +58,7 @@ jobs:
           HF_HUB_DISABLE_TELEMETRY: "1"
         run: |
           python - <<'PY'
+          import os
           import tempfile
           from huggingface_hub import HfApi
           from datasets import load_dataset
@@ -100,7 +101,11 @@ jobs:
                   "first_record_chars": len(first["text"]),
                   "resume_mode": mode,
                   "resume_exact": True,
-              })
+              }, flush=True)
+          # datasets/pyarrow can leave a background reader thread that crashes
+          # during CPython teardown after the successful assertion. This short-lived
+          # smoke process has no writes; exit directly only after every check passes.
+          os._exit(0)
           PY
 
       - name: Validate every notebook
