@@ -103,7 +103,14 @@ jobs:
           name: onecore-corpus-${{ inputs.data_run_id }}
           run-id: ${{ inputs.data_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          path: onecore-ai/data
+          path: onecore-ai/run-state/corpus-artifact
+
+      - name: Expand imported corpus snapshot (tar or legacy layout)
+        if: ${{ inputs.data_run_id != '' }}
+        shell: bash
+        env:
+          PYTHONPATH: onecore-ai/src
+        run: python -m onecore.artifacts restore --root onecore-ai --artifact-dir onecore-ai/run-state/corpus-artifact
 
       - name: Restore previous checkpoint artifact
         if: ${{ inputs.resume_run_id != '' }}
@@ -265,21 +272,24 @@ jobs:
           Path("onecore-ai/run-state/acquisition-report.json").write_text(encoded, encoding="utf-8")
           PY
 
+      - name: Package acquired corpus for exact resume on the next segment
+        if: ${{ success() && inputs.stage != 'smoke' && inputs.stage != 'evaluate' }}
+        shell: bash
+        env:
+          PYTHONPATH: onecore-ai/src
+        run: |
+          python -m onecore.artifacts pack --root onecore-ai --output "$RUNNER_TEMP/onecore-corpus.tar"
+          test -s "$RUNNER_TEMP/onecore-corpus.tar"
+
       - name: Upload acquired corpus for exact resume on the next segment
         if: ${{ success() && inputs.stage != 'smoke' && inputs.stage != 'evaluate' }}
         uses: actions/upload-artifact@v6
         with:
           name: onecore-corpus-${{ github.run_id }}
-          path: |
-            onecore-ai/data/train.jsonl
-            onecore-ai/data/validation.jsonl
-            onecore-ai/data/test.jsonl
-            onecore-ai/data/acquisition-report.json
-            onecore-ai/data/assets/
-            onecore-ai/data/metadata/
+          path: $RUNNER_TEMP/onecore-corpus.tar
           if-no-files-found: error
           retention-days: 90
-          compression-level: 1
+          compression-level: 0
 
       - name: Upload resumable checkpoint and reports, including failed-run recovery
         if: ${{ always() && hashFiles('onecore-ai/run-state/checkpoint.pt') != '' }}
