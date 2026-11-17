@@ -24,6 +24,7 @@ def _metrics(data_verified=True, data_kind="external"):
         thresholds[f"test_{key}"] = 2.0
     thresholds["min_tool_execution_success_rate"] = 0.25
     thresholds["test_min_tool_execution_success_rate"] = 0.25
+    thresholds["tool_behavior_regression_floor"] = 0.90
     tool_behavior = {
         "sample_count": 32,
         "execution_success_rate": 0.5,
