@@ -38,7 +38,7 @@ runs:
   using: composite
   steps:
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v6
       with:
         python-version: "3.11"
         cache: pip
@@ -52,14 +52,14 @@ runs:
         python -m pip install -e "onecore-ai[dev]"
 
     - name: Restore the validated corpus
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v7
       with:
         name: ${{ inputs.corpus_artifact_name }}
         path: onecore-ai/data
 
     - name: Restore the exact previous model and optimizer state
       if: ${{ inputs.checkpoint_artifact_name != '' }}
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v7
       with:
         name: ${{ inputs.checkpoint_artifact_name }}
         path: onecore-ai/run-state
@@ -135,7 +135,7 @@ runs:
       run: cp onecore-ai/data/acquisition-report.json onecore-ai/run-state/acquisition-report.json
 
     - name: Upload resumable model, optimizer, scheduler, RNG and tokenizer state
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: ${{ inputs.output_artifact_name }}
         path: |
