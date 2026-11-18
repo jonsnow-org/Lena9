@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 CURSOR_SCHEMA = "onecore-stream-cursor-v1"
+LEGACY_SKIP_REPLAY_THRESHOLD = 5_000
 
 
 def notebook_for_source(source: dict[str, Any]) -> str:
@@ -108,6 +109,12 @@ class StatefulStreamCursor:
                 pass
 
         offset = max(0, int(legacy_offset))
+        if offset > LEGACY_SKIP_REPLAY_THRESHOLD:
+            # A legacy row offset can force the streaming dataset to read tens of
+            # thousands of rows before the source budget starts. Replay from the
+            # beginning instead; acquisition deduplicates by source_row_id_sha256
+            # before payload conversion, then commits a fresh HF state_dict.
+            return dataset, 0, "legacy_replay_from_start"
         if offset:
             skip = getattr(dataset, "skip", None)
             if callable(skip):

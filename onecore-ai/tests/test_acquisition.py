@@ -16,6 +16,7 @@ from onecore.acquire import (
     _assign_split,
     _grouped_split,
     _record_from_row,
+    _row_identity,
     _stable_split,
     _training_manifest_base,
 )
@@ -921,3 +922,8 @@ def test_optional_gated_source_access_does_not_block_bootstrap() -> None:
 
     assert _source_access_status({"required_for_training": False}) == "optional_access_required"
     assert _source_access_status({"required_for_training": True}) == "access_required"
+
+
+def test_source_row_identity_is_independent_of_legacy_row_offset() -> None:
+    row = {"id": "stable-17", "text": "A stable row whose identity is content-derived."}
+    assert _row_identity(row, "fineweb_ar", 1) == _row_identity(row, "fineweb_ar", 50_000)

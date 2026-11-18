@@ -1096,6 +1096,7 @@ def acquire_sources(
 
     for source in registry_sources:
         source_id = str(source.get("id", ""))
+        source_started_at = time.monotonic()
         if acquisition_deadline is not None and time.monotonic() >= acquisition_deadline:
             session_budget_exhausted = True
             break
@@ -1204,6 +1205,11 @@ def acquire_sources(
         existing_record_ids = {
             str(item.get("id", "")) for split in SPLITS for item in manifest_records[split]
         }
+        seen_source_row_hashes = {
+            str(item.get("source_row_id_sha256", "")).strip()
+            for split in SPLITS for item in manifest_records[split]
+            if str(item.get("source_row_id_sha256", "")).strip()
+        }
         if adapter not in {"metadata_only", "video_manifest"}:
             for pending_path in pending_paths:
                 if not pending_path.is_file():
@@ -1232,6 +1238,9 @@ def acquire_sources(
                             "source_id": source_id, "source_revision": revision,
                             "split": entry_split, "record": record,
                         })
+                        row_hash = str(record.get("source_row_id_sha256", "")).strip()
+                        if row_hash:
+                            seen_source_row_hashes.add(row_hash)
                     except Exception:
                         pending_discarded += 1
 
@@ -1318,6 +1327,8 @@ def acquire_sources(
                     report["crawler_cursors"][str(hf_split)] = {
                         "mode": cursor_mode, "start_rows_read": start_offset,
                     }
+                    if cursor_mode == "legacy_replay_from_start":
+                        report.setdefault("legacy_replay_splits", []).append(str(hf_split))
                     target_count = sum(remaining_limits.values()) or 1
                     max_scan = max(target_count * int(defaults.get("max_scan_multiplier", 12)), target_count + 200)
                     for row in dataset:
@@ -1337,6 +1348,11 @@ def acquire_sources(
                         raw_identity = _row_identity(row, source_id, absolute_index)
                         assigned = _grouped_split(source, row, str(hf_split), raw_identity, seed)
                         if assigned not in SPLITS:
+                            continue
+                        row_identity_hash = _stable_hash(raw_identity)
+                        # Check the source/revision row fingerprint before decoding or
+                        # downloading media. This makes safe legacy replay practical.
+                        if adapter not in {"metadata_only", "video_manifest"} and row_identity_hash in seen_source_row_hashes:
                             continue
                         if adapter in {"video_manifest", "metadata_only"}:
                             if new_accepted_by_output_split[assigned] >= remaining_limits[assigned]:
@@ -1401,6 +1417,7 @@ def acquire_sources(
                                     }
                                     pending_keep.append(pending_entry)
                                     seen_source_ids.add(record_id)
+                                    seen_source_row_hashes.add(row_identity_hash)
                                     report["pending_rows_added"] += 1
                                     per_hf_pending[assigned] += 1
                                 continue
@@ -1432,6 +1449,7 @@ def acquire_sources(
                                     continue
                                 rows_by_split[assigned].append(record)
                                 seen_source_ids.add(record_id)
+                                seen_source_row_hashes.add(row_identity_hash)
                                 new_accepted_by_output_split[assigned] += 1
                                 per_hf_accepted[assigned] += 1
                                 report["accepted"] += 1
@@ -1518,7 +1536,16 @@ def acquire_sources(
             # A scan cap is not the same as exhausting a multi-terabyte dataset.
             report["partial"] = True
             report["status"] = "partial"
+        report["elapsed_seconds"] = round(time.monotonic() - source_started_at, 2)
         source_reports.append(report)
+        print(
+            "[OneCore acquisition] source_complete "
+            f"id={source_id} status={report.get('status')} "
+            f"elapsed_seconds={report['elapsed_seconds']} "
+            f"read={report.get('read', 0)} accepted={report.get('accepted', 0)} "
+            f"legacy_replay_splits={report.get('legacy_replay_splits', [])}",
+            flush=True,
+        )
         if session_budget_exhausted:
             break
 

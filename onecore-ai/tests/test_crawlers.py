@@ -289,3 +289,13 @@ def test_stack_v2_rejects_exposed_secrets_and_redacts_email_addresses():
     sanitized = redact_personal_contacts(source)
     assert "maintainer@example.com" not in sanitized
     assert "[REDACTED_EMAIL]" in sanitized
+
+
+def test_large_legacy_offset_replays_from_start_instead_of_unbounded_skip(tmp_path):
+    cursor = StatefulStreamCursor(
+        tmp_path, "03_text_pretraining", "fineweb_ar", "HuggingFaceFW/fineweb-2",
+        "arb_Arab", "train", "f" * 40,
+    )
+    stream, offset, mode = cursor.restore(FakeIterable(range(10)), legacy_offset=50_000)
+    assert (offset, mode) == (0, "legacy_replay_from_start")
+    assert list(stream) == list(range(10))
