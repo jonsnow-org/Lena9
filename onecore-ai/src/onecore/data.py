@@ -16,7 +16,6 @@ class DatasetError(ValueError):
 
 
 DATA_CLASSES = {"bootstrap", "synthetic", "external", "owner_curated", "other"}
-
 _DATA_CLASS_ALIASES = {
     "synthetic_unverified": "synthetic",
     "synthetic_verified": "synthetic",
@@ -56,6 +55,11 @@ def has_immutable_external_provenance(record: dict[str, Any]) -> bool:
     return bool(source_id) and is_immutable_source_revision(revision) and bool(
         re.fullmatch(r"[0-9a-f]{64}", row_hash)
     )
+
+
+def external_record_is_trainable(record: dict[str, Any]) -> bool:
+    """Identify imported records; this check has no source-policy filter."""
+    return classify_record_data(record) == "external"
 
 
 def read_manifest(path: str | Path) -> list[dict[str, Any]]:
