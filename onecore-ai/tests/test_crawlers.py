@@ -179,10 +179,10 @@ def test_required_source_minimums_and_crawler_credentials_are_wired_into_each_se
         "STACK_V2_AWS_SECRET_ACCESS_KEY",
     ):
         assert key in action or key in workflow
-    assert workflow.count("secrets.STACK_V2_AWS_ACCESS_KEY_ID") == 6
-    assert workflow.count("secrets.STACK_V2_AWS_SECRET_ACCESS_KEY") == 6
+    assert workflow.count("secrets.STACK_V2_AWS_ACCESS_KEY_ID") == 1
+    assert workflow.count("secrets.STACK_V2_AWS_SECRET_ACCESS_KEY") == 1
     assert "Publish per-notebook crawler progress" in action
-    assert "Execute one bounded acquisition session in each owning notebook" in action
+    assert "Execute sequential bounded acquisition sessions" in action
     assert "ONECORE_ACQUIRE_ONLY=1" in action
     assert "ONECORE_ACQUIRE_SOURCE_BUDGET_SECONDS" in action
     assert "source_budget_seconds:" in action
@@ -190,7 +190,7 @@ def test_required_source_minimums_and_crawler_credentials_are_wired_into_each_se
     assert "source_budget_seconds must be between 60 and 120" in action
     assert "onecore-ai/notebooks/03_text_pretraining.ipynb" in action
     assert "onecore-ai/notebooks/04_multimodal_curriculum.ipynb" in action
-    assert "ONECORE_SKIP_ACQUISITION=1" in action
+    assert "02_data_gate.ipynb" not in action
     ci = (root.parent / ".github" / "workflows" / "onecore-ci.yml").read_text(encoding="utf-8")
     assert "os._exit(0)" in ci
     acquire_source = (root / "src" / "onecore" / "acquire.py").read_text(encoding="utf-8")
