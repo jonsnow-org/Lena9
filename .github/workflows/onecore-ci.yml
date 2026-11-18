@@ -155,6 +155,9 @@ jobs:
           assert "onecore-corpus-acq-progress" in bootstrap
           assert "train_existing" in bootstrap, "existing-corpus training must bypass acquisition"
           assert "needs.prepare.outputs.request_stage == 'acquire'" in bootstrap
+          assert "always() && needs.finalize_acquisition.outputs.complete == 'true'" in bootstrap
+          assert "always() && needs.dataset_gate.result == 'success'" in bootstrap
+          assert "always() && needs.train_09.result == 'success'" in bootstrap
           assert "REQUEST_STAGE" in bootstrap
           assert 'print(f"request_stage={stage}")' in bootstrap
           action = yaml.safe_load(Path(".github/actions/onecore-acquire/action.yml").read_text(encoding="utf-8"))
