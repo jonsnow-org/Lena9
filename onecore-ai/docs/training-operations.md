@@ -2,7 +2,7 @@
 
 ## Single source of truth and isolation
 
-The only working branch is `research/onecore-foundation` in `jonsnow-org/Lena9`. All training, data generation, checkpointing, evaluation, and model-registry work runs on GitHub Actions CPU runners. Do not touch `main`, the Lena9 application, Ttbik, or any Sham model. Both training workflows share the non-cancelling `onecore-training` concurrency group.
+The only working branch is `research/onecore-foundation` in `jonsnow-org/Lena9`. All training, data generation, checkpointing, evaluation, and model-registry work runs on GitHub Actions CPU runners. Do not touch `main`, the Lena9 application, Ttbik, or any Sham model. Both current training workflows share the non-cancelling `onecore-training-v2` concurrency group. This isolates the current workflow generation from the stale v1 acquisition run without opening another branch.
 
 ## Staged request-file workflow
 
@@ -56,6 +56,13 @@ The Stack v2 dataset is gated. The Hugging Face token in GitHub Actions must hav
 - `STACK_V2_AWS_SESSION_TOKEN` — only for temporary credentials.
 
 Until both gates are satisfied, the source is reported as `optional_access_required`: it stays enabled and resumable, but it does not block the initial joint run when public sources independently pass the five-family coverage gate. If access is granted, the crawler fetches real licensed file content; no metadata-only rows are accepted and no Stack code is claimed as ingested before payload verification. The source can later be incorporated through the existing append-only data-lineage path. The connected Hugging Face account currently does not have access to the gated dataset, so Stack v2 is a deferred corpus expansion rather than a current training dependency.
+
+
+### Starting joint training without mirroring every upstream terabyte
+
+The bootstrap separates **training readiness** from **source exhaustion**. A first joint run starts when the imported corpus has at least 100 usable external records for each of text, tool-use, image, audio and video in train, plus at least 10 in each independent validation and test split. This gate checks actual decoded payloads, not metadata rows. The crawler continues bounded source sessions until all source quotas are terminal or the six-session batch ends; it can therefore collect more than the minimum pilot sample before training. It does not claim every configured source's full upstream dataset is mirrored. Any unfinished source offsets, pending rows, pinned revisions and payload hashes remain in the corpus artifact for later continuation. The first run is a real, bounded joint-training segment over a verified streaming sample—not a claim that the complete 20+ TB FineWeb-2 collection or 67+ TB Stack v2 archive has been mirrored.
+
+The active data registry excludes datasets with explicit non-commercial/no-derivatives terms or media whose commercial rights are not declared. COYO-700M (CC-BY-4.0), FineOpenImages/Open Images (CC-BY), FineWeb-2 (ODC-By-1.0), FLEURS and the Arabic speech corpus (CC-BY-4.0), Saxo and Turkish function-calling data (Apache-2.0), and Videos4CameraBench (CC-BY-4.0) remain eligible, subject to payload verification and attribution records. A source quarantine list is also enforced in the training iterator, so legacy rows from a subsequently disabled source cannot leak into tokenizer fitting or optimizer updates.
 
 ## Checkpoint integrity and retention
 

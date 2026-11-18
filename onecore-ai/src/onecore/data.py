@@ -16,6 +16,14 @@ class DatasetError(ValueError):
 
 
 DATA_CLASSES = {"bootstrap", "synthetic", "external", "owner_curated", "other"}
+
+# Source-level quarantine applies to both new crawler rows and inherited corpus snapshots.
+# These sources are non-commercial by stated license or lack verified commercial rights.
+COMMERCIAL_EXCLUDED_SOURCE_IDS = frozenset(["sard_arabic_documents","flickr30k_visual_test","conceptual_captions_12m","finevideo","laion_bvd_video_55m","laion_bvd_audio_10m","internvid_10m_flt","laion_bvd_image_300m","sharegpt4v_images","webvid_10m_video","msrvtt_video","stack_v2_edu"])
+
+
+def is_commercially_allowed_record(record: dict[str, Any]) -> bool:
+    return str(record.get("source_id", "")).strip() not in COMMERCIAL_EXCLUDED_SOURCE_IDS
 _DATA_CLASS_ALIASES = {
     "synthetic_unverified": "synthetic",
     "synthetic_verified": "synthetic",
@@ -58,8 +66,8 @@ def has_immutable_external_provenance(record: dict[str, Any]) -> bool:
 
 
 def external_record_is_trainable(record: dict[str, Any]) -> bool:
-    """Identify imported records; this check has no source-policy filter."""
-    return classify_record_data(record) == "external"
+    """Identify imported records with a source eligible for commercial training."""
+    return classify_record_data(record) == "external" and is_commercially_allowed_record(record)
 
 
 def read_manifest(path: str | Path) -> list[dict[str, Any]]:
@@ -153,6 +161,8 @@ def iter_training_records(
     for item in records:
         if item.get("split") != "train":
             raise DatasetError("non-training split reached training iterator")
+        if not is_commercially_allowed_record(item):
+            continue
         if classify_record_data(item) not in allowed_classes:
             continue
         if tasks is None or item.get("task") in tasks:

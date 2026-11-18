@@ -34,7 +34,7 @@ permissions:
   actions: write
 
 concurrency:
-  group: onecore-training
+  group: onecore-training-v2
   cancel-in-progress: false
 
 jobs:
@@ -199,7 +199,7 @@ jobs:
               print(f"VALID {path}")
           for name in ("onecore-training.yml", "onecore-bootstrap.yml"):
               text = (Path(".github/workflows") / name).read_text(encoding="utf-8")
-              assert "group: onecore-training" in text
+              assert "group: onecore-training-v2" in text
               assert "research/onecore-foundation" in text
           PY
       - name: Execute project contract and architecture notebooks

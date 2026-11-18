@@ -389,9 +389,7 @@ sources:
     limits: {train: 500, validation: 25, test: 25}
     profile_limits:
       expanded: {train: 1800, validation: 40, test: 40}
-    enabled: true
-
-  # Speech, sound and audio-language
+    enabled: false  # per-file commercial license provenance is not verified
   - id: saxo_function_calling
     repo: Saxo/alpaca_function_calling_dataset
     config: default
@@ -523,7 +521,7 @@ sources:
     text_fields: [chunk]
     split_strategy: hash
     limits: {train: 250, validation: 30, test: 30}
-    enabled: true
+    enabled: false  # CC-BY-NC-ND-4.0 is not suitable for commercial model training
   - id: flickr30k_visual_test
     repo: nlphuji/flickr30k
     config: TEST
@@ -534,9 +532,7 @@ sources:
     split_strategy: preserve
     force_split: test
     limits: {test: 250}
-    enabled: true
-
-  # Video, temporal understanding and paired audio-video
+    enabled: false  # underlying image-use rights are not explicitly cleared for commercial evaluation
   - id: videos4camera_bench
     repo: syCen/Videos4CameraBench
     config: default
@@ -561,7 +557,7 @@ sources:
     split_strategy: hash
     limits: {train: 150, validation: 20, test: 20}
     requires_access: true
-    enabled: true
+    enabled: false  # underlying media rights have not been verified
   - id: laion_bvd_video_55m
     repo: laion/BVD-V-55M
     config: default
@@ -572,7 +568,7 @@ sources:
     split_strategy: hash
     limits: {train: 200, validation: 25, test: 25}
     requires_access: true
-    enabled: true
+    enabled: false  # underlying media rights have not been verified
   - id: laion_bvd_audio_10m
     repo: laion/BVD-A-10M
     config: default
@@ -583,7 +579,7 @@ sources:
     split_strategy: hash
     limits: {train: 200, validation: 25, test: 25}
     requires_access: true
-    enabled: true
+    enabled: false  # underlying media rights have not been verified
   - id: internvid_10m_flt
     repo: OpenGVLab/InternVid
     config: InternVid-10M-FLT
@@ -594,7 +590,7 @@ sources:
     split_strategy: hash
     limits: {train: 200, validation: 20, test: 20}
     requires_access: true
-    enabled: true
+    enabled: false  # underlying media rights have not been verified
   - id: panda70m_video_manifest
     repo: multimodalart/panda-70m
     config: default
@@ -632,8 +628,7 @@ sources:
     split_strategy: hash
     limits: {train: 200, validation: 20, test: 20}
     requires_access: true
-    enabled: true
-  # Large-scale image-text pairs
+    enabled: false  # underlying media rights have not been verified
   - id: coyo_700m
     repo: kakaobrain/coyo-700m
     config: default
@@ -653,7 +648,7 @@ sources:
     text_fields: [txt]
     split_strategy: hash
     limits: {train: 300, validation: 30, test: 30}
-    enabled: true
+    enabled: false  # source image licensing is not declared in the dataset metadata
   - id: sharegpt4v_images
     repo: Lin-Chen/ShareGPT4V
     config: ShareGPT4V
@@ -688,7 +683,7 @@ sources:
     split_group_field: videoid
     split_strategy: preserve
     limits: {train: 200, validation: 40}
-    enabled: true
+    enabled: false  # AGPL dataset card and Shutterstock preview clips lack a separate verified commercial media grant
   - id: hdvila_100m_manifest
     repo: TempoFunk/hdvila-100M
     config: default
@@ -717,4 +712,4 @@ sources:
     split_group_field: video
     split_strategy: hash
     limits: {train: 500, validation: 50, test: 50}
-    enabled: true
+    enabled: false  # video media license is not declared; quarantine until rights are verified

@@ -10,7 +10,7 @@ permissions:
   actions: write
 
 concurrency:
-  group: onecore-training
+  group: onecore-training-v2
   cancel-in-progress: false
 
 env:
@@ -96,6 +96,7 @@ jobs:
     timeout-minutes: 330
     outputs:
       complete: ${{ steps.session.outputs.complete }}
+      acquisition_complete: ${{ steps.session.outputs.acquisition_complete }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -108,6 +109,9 @@ jobs:
           output_artifact_name: onecore-corpus-acq-1
           budget_seconds: "9000"
           session_label: "01"
+          required_tasks: "text,tool,image,audio,video"
+          min_train_records: "100"
+          min_holdout_records: "10"
           stack_v2_aws_access_key_id: ${{ secrets.STACK_V2_AWS_ACCESS_KEY_ID }}
           stack_v2_aws_secret_access_key: ${{ secrets.STACK_V2_AWS_SECRET_ACCESS_KEY }}
           stack_v2_aws_session_token: ${{ secrets.STACK_V2_AWS_SESSION_TOKEN }}
@@ -116,11 +120,12 @@ jobs:
   acquire_2:
     name: Acquisition session 2 of 6
     needs: acquire_1
-    if: ${{ needs.acquire_1.outputs.complete != 'true' }}
+    if: ${{ needs.acquire_1.outputs.acquisition_complete != 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 330
     outputs:
       complete: ${{ steps.session.outputs.complete }}
+      acquisition_complete: ${{ steps.session.outputs.acquisition_complete }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -133,6 +138,9 @@ jobs:
           output_artifact_name: onecore-corpus-acq-2
           budget_seconds: "9000"
           session_label: "02"
+          required_tasks: "text,tool,image,audio,video"
+          min_train_records: "100"
+          min_holdout_records: "10"
           stack_v2_aws_access_key_id: ${{ secrets.STACK_V2_AWS_ACCESS_KEY_ID }}
           stack_v2_aws_secret_access_key: ${{ secrets.STACK_V2_AWS_SECRET_ACCESS_KEY }}
           stack_v2_aws_session_token: ${{ secrets.STACK_V2_AWS_SESSION_TOKEN }}
@@ -141,11 +149,12 @@ jobs:
   acquire_3:
     name: Acquisition session 3 of 6
     needs: acquire_2
-    if: ${{ needs.acquire_2.outputs.complete != 'true' }}
+    if: ${{ needs.acquire_2.outputs.acquisition_complete != 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 330
     outputs:
       complete: ${{ steps.session.outputs.complete }}
+      acquisition_complete: ${{ steps.session.outputs.acquisition_complete }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -158,6 +167,9 @@ jobs:
           output_artifact_name: onecore-corpus-acq-3
           budget_seconds: "9000"
           session_label: "03"
+          required_tasks: "text,tool,image,audio,video"
+          min_train_records: "100"
+          min_holdout_records: "10"
           stack_v2_aws_access_key_id: ${{ secrets.STACK_V2_AWS_ACCESS_KEY_ID }}
           stack_v2_aws_secret_access_key: ${{ secrets.STACK_V2_AWS_SECRET_ACCESS_KEY }}
           stack_v2_aws_session_token: ${{ secrets.STACK_V2_AWS_SESSION_TOKEN }}
@@ -166,11 +178,12 @@ jobs:
   acquire_4:
     name: Acquisition session 4 of 6
     needs: acquire_3
-    if: ${{ needs.acquire_3.outputs.complete != 'true' }}
+    if: ${{ needs.acquire_3.outputs.acquisition_complete != 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 330
     outputs:
       complete: ${{ steps.session.outputs.complete }}
+      acquisition_complete: ${{ steps.session.outputs.acquisition_complete }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -183,6 +196,9 @@ jobs:
           output_artifact_name: onecore-corpus-acq-4
           budget_seconds: "9000"
           session_label: "04"
+          required_tasks: "text,tool,image,audio,video"
+          min_train_records: "100"
+          min_holdout_records: "10"
           stack_v2_aws_access_key_id: ${{ secrets.STACK_V2_AWS_ACCESS_KEY_ID }}
           stack_v2_aws_secret_access_key: ${{ secrets.STACK_V2_AWS_SECRET_ACCESS_KEY }}
           stack_v2_aws_session_token: ${{ secrets.STACK_V2_AWS_SESSION_TOKEN }}
@@ -191,11 +207,12 @@ jobs:
   acquire_5:
     name: Acquisition session 5 of 6
     needs: acquire_4
-    if: ${{ needs.acquire_4.outputs.complete != 'true' }}
+    if: ${{ needs.acquire_4.outputs.acquisition_complete != 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 330
     outputs:
       complete: ${{ steps.session.outputs.complete }}
+      acquisition_complete: ${{ steps.session.outputs.acquisition_complete }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -208,6 +225,9 @@ jobs:
           output_artifact_name: onecore-corpus-acq-5
           budget_seconds: "9000"
           session_label: "05"
+          required_tasks: "text,tool,image,audio,video"
+          min_train_records: "100"
+          min_holdout_records: "10"
           stack_v2_aws_access_key_id: ${{ secrets.STACK_V2_AWS_ACCESS_KEY_ID }}
           stack_v2_aws_secret_access_key: ${{ secrets.STACK_V2_AWS_SECRET_ACCESS_KEY }}
           stack_v2_aws_session_token: ${{ secrets.STACK_V2_AWS_SESSION_TOKEN }}
@@ -216,11 +236,12 @@ jobs:
   acquire_6:
     name: Acquisition session 6 of 6
     needs: acquire_5
-    if: ${{ needs.acquire_5.outputs.complete != 'true' }}
+    if: ${{ needs.acquire_5.outputs.acquisition_complete != 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 330
     outputs:
       complete: ${{ steps.session.outputs.complete }}
+      acquisition_complete: ${{ steps.session.outputs.acquisition_complete }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -233,13 +254,16 @@ jobs:
           output_artifact_name: onecore-corpus-acq-6
           budget_seconds: "9000"
           session_label: "06"
+          required_tasks: "text,tool,image,audio,video"
+          min_train_records: "100"
+          min_holdout_records: "10"
           stack_v2_aws_access_key_id: ${{ secrets.STACK_V2_AWS_ACCESS_KEY_ID }}
           stack_v2_aws_secret_access_key: ${{ secrets.STACK_V2_AWS_SECRET_ACCESS_KEY }}
           stack_v2_aws_session_token: ${{ secrets.STACK_V2_AWS_SESSION_TOKEN }}
           stack_v2_aws_region: us-east-1
 
   finalize_acquisition:
-    name: Select the latest complete corpus snapshot
+    name: Select the newest snapshot that is ready for joint training
     needs: [prepare, acquire_1, acquire_2, acquire_3, acquire_4, acquire_5, acquire_6]
     if: always()
     runs-on: ubuntu-24.04
@@ -319,7 +343,7 @@ jobs:
           python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
           python -m pip install --upgrade pip
           python -m pip install -e "onecore-ai[dev]"
-      - name: Restore the latest complete acquisition snapshot
+      - name: Restore the latest training-ready corpus snapshot
         uses: actions/download-artifact@v7
         with:
           name: ${{ needs.finalize_acquisition.outputs.artifact_name }}
@@ -329,18 +353,35 @@ jobs:
         env:
           PYTHONPATH: onecore-ai/src
         run: python -m onecore.artifacts restore --root onecore-ai --artifact-dir onecore-ai/run-state/corpus-artifact
-      - name: Require all enabled sources to be terminal
+      - name: Require verified five-family external data coverage
+        shell: bash
+        env:
+          PYTHONPATH: onecore-ai/src
+          ONECORE_REQUIRED_TASKS: "text,tool,image,audio,video"
+          ONECORE_MIN_TRAIN_RECORDS: "100"
+          ONECORE_MIN_HOLDOUT_RECORDS: "10"
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
-          report = json.loads(Path("onecore-ai/data/acquisition-report.json").read_text(encoding="utf-8"))
-          if not report.get("acquisition_complete") or report.get("pending_sources"):
-              raise ValueError(f"Acquisition is not complete: {report.get('pending_sources')}")
+          from onecore.acquire import assert_task_coverage
+          root = Path("onecore-ai")
+          coverage = assert_task_coverage(
+              root, {"text", "tool", "image", "audio", "video"},
+              minimum_train=100, minimum_holdout=10,
+          )
+          report_path = root / "data" / "acquisition-report.json"
+          report = json.loads(report_path.read_text(encoding="utf-8"))
+          report["training_ready"] = True
+          report["training_ready_task_groups"] = ["text", "tool", "image", "audio", "video"]
+          report["training_ready_coverage"] = coverage
+          report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
           print(json.dumps({
-              "completed_sources": report.get("completed_sources"),
-              "source_count": report.get("source_count"),
-              "total_new_records": report.get("total_new_records"),
+              "training_ready": True,
+              "coverage": coverage,
+              "acquisition_complete": report.get("acquisition_complete", False),
+              "pending_sources_preserved": len(report.get("pending_sources", [])),
+              "total_new_records": report.get("total_new_records", 0),
           }, ensure_ascii=False, indent=2))
           PY
       - name: Execute full modality and independent-split data gate
@@ -350,8 +391,8 @@ jobs:
           ONECORE_SKIP_ACQUISITION: "1"
           ONECORE_FINALIZE_DATA_GATE: "1"
           ONECORE_REQUIRED_TASKS: "text,tool,image,audio,video"
-          ONECORE_MIN_TRAIN_RECORDS: "25"
-          ONECORE_MIN_HOLDOUT_RECORDS: "5"
+          ONECORE_MIN_TRAIN_RECORDS: "100"
+          ONECORE_MIN_HOLDOUT_RECORDS: "10"
         run: |
           mkdir -p onecore-ai/run-state/executed-notebooks
           jupyter nbconvert --to notebook --execute onecore-ai/notebooks/02_data_gate.ipynb \
@@ -403,7 +444,7 @@ jobs:
             echo "- base_corpus_run_id: ${BASE_RUN_ID}"
             echo "- base_corpus_artifact_name: ${BASE_ARTIFACT}"
             echo "- Continue by updating these two fields in onecore-ai/training-request.json."
-            echo "- No training was started because acquisition is not complete."
+            echo "- No training was started because the five-family external payload gate is not yet met."
           } >> "$GITHUB_STEP_SUMMARY"
 
   train_01:

@@ -15,6 +15,18 @@ inputs:
     description: Maximum active acquisition window for this runner session
     required: false
     default: "10800"
+  required_tasks:
+    description: External task families required before joint training starts
+    required: false
+    default: "text,tool,image,audio,video"
+  min_train_records:
+    description: Minimum usable external records per task family in train
+    required: false
+    default: "100"
+  min_holdout_records:
+    description: Minimum usable external records per task family in validation and test
+    required: false
+    default: "10"
   session_label:
     description: Human-readable acquisition session label
     required: true
@@ -34,8 +46,11 @@ inputs:
 
 outputs:
   complete:
-    description: Whether every enabled source reached a terminal acquisition state
+    description: Whether the required task families have enough real external records to start training
     value: ${{ steps.report.outputs.complete }}
+  acquisition_complete:
+    description: Whether every enabled source quota reached a terminal state
+    value: ${{ steps.report.outputs.acquisition_complete }}
   pending_sources:
     description: Number of enabled sources that still need acquisition
     value: ${{ steps.report.outputs.pending_sources }}
@@ -87,10 +102,10 @@ runs:
         STACK_V2_AWS_SESSION_TOKEN: ${{ inputs.stack_v2_aws_session_token }}
         STACK_V2_AWS_REGION: ${{ inputs.stack_v2_aws_region }}
         ONECORE_FINALIZE_DATA_GATE: "0"
-        ONECORE_REQUIRED_TASKS: "text,tool,image,audio,video"
+        ONECORE_REQUIRED_TASKS: ${{ inputs.required_tasks }}
         ONECORE_DATA_PROFILE: "expanded"
-        ONECORE_MIN_TRAIN_RECORDS: "25"
-        ONECORE_MIN_HOLDOUT_RECORDS: "5"
+        ONECORE_MIN_TRAIN_RECORDS: ${{ inputs.min_train_records }}
+        ONECORE_MIN_HOLDOUT_RECORDS: ${{ inputs.min_holdout_records }}
       run: |
         echo "Acquisition session: ${{ inputs.session_label }}"
         total_budget="${{ inputs.budget_seconds }}"
@@ -135,21 +150,44 @@ runs:
         python -m onecore.artifacts pack --root onecore-ai --output "$RUNNER_TEMP/onecore-corpus.tar"
         test -s "$RUNNER_TEMP/onecore-corpus.tar"
 
-    - name: Read acquisition completion state
+    - name: Check five-family training readiness separately from source exhaustion
       id: report
       shell: bash
+      env:
+        PYTHONPATH: onecore-ai/src
+        REQUIRED_TASKS: ${{ inputs.required_tasks }}
+        MIN_TRAIN_RECORDS: ${{ inputs.min_train_records }}
+        MIN_HOLDOUT_RECORDS: ${{ inputs.min_holdout_records }}
       run: |
         python - <<'PY' >> "$GITHUB_OUTPUT"
-        import json
+        import json, os
         from pathlib import Path
-        report = json.loads(Path("onecore-ai/data/acquisition-report.json").read_text(encoding="utf-8"))
-        pending = report.get("pending_sources", [])
-        complete = bool(report.get("acquisition_complete", False))
-        print(f"complete={str(complete).lower()}")
-        print(f"pending_sources={len(pending)}")
+        from onecore.acquire import assert_task_coverage
+
+        root = Path("onecore-ai")
+        report = json.loads((root / "data" / "acquisition-report.json").read_text(encoding="utf-8"))
+        required = {value.strip() for value in os.environ["REQUIRED_TASKS"].split(",") if value.strip()}
+        ready = False
+        coverage = {}
+        failures = []
+        try:
+            coverage = assert_task_coverage(
+                root, required,
+                minimum_train=int(os.environ["MIN_TRAIN_RECORDS"]),
+                minimum_holdout=int(os.environ["MIN_HOLDOUT_RECORDS"]),
+            )
+            ready = True
+        except RuntimeError as exc:
+            failures = [line.strip() for line in str(exc).split(";") if line.strip()]
+        print(f"complete={str(ready).lower()}")
+        print(f"training_ready={str(ready).lower()}")
+        print(f"acquisition_complete={str(bool(report.get('acquisition_complete', False))).lower()}")
+        print(f"pending_sources={len(report.get('pending_sources', []))}")
         print(f"completed_sources={report.get('completed_sources', 0)}")
         print(f"total_sources={report.get('source_count', 0)}")
         print(f"new_records={report.get('total_new_records', 0)}")
+        print(f"coverage={json.dumps(coverage, ensure_ascii=False, sort_keys=True)}")
+        print(f"coverage_failures={json.dumps(failures, ensure_ascii=False)}")
         PY
 
     - name: Publish per-notebook crawler progress
@@ -157,6 +195,7 @@ runs:
       env:
         PYTHONPATH: onecore-ai/src
         SESSION_LABEL: ${{ inputs.session_label }}
+        TRAINING_READY: ${{ steps.report.outputs.training_ready }}
       run: |
         python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
         import json
@@ -167,8 +206,9 @@ runs:
         print("### OneCore streaming crawler checkpoint")
         print()
         print("- Session: " + os.environ.get("SESSION_LABEL", "unknown"))
-        print(f"- Acquisition complete: **{report.get('acquisition_complete', False)}**")
-        print(f"- Pending sources: **{len(report.get('pending_sources', []))}**")
+        print(f"- Five-family training ready: **{os.environ.get('TRAINING_READY', 'false')}**")
+        print(f"- All enabled source quotas exhausted: **{report.get('acquisition_complete', False)}**")
+        print(f"- Pending source cursors retained: **{len(report.get('pending_sources', []))}**")
         print(f"- Sources requiring access: **{report.get('sources_with_access_required', 0)}**")
         print()
         print("| Notebook | Source | Status | Raw rows scanned (this session) | Usable records in corpus | New accepted now | Cursor mode |")

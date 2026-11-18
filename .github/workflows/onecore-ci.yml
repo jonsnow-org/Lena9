@@ -8,6 +8,7 @@ on:
       - ".github/workflows/onecore-ci.yml"
       - ".github/workflows/onecore-training.yml"
       - ".github/workflows/onecore-bootstrap.yml"
+      - ".github/actions/onecore-acquire/action.yml"
   pull_request:
     branches: [main]
     paths:
@@ -15,6 +16,7 @@ on:
       - ".github/workflows/onecore-ci.yml"
       - ".github/workflows/onecore-training.yml"
       - ".github/workflows/onecore-bootstrap.yml"
+      - ".github/actions/onecore-acquire/action.yml"
 
 permissions:
   contents: read
@@ -131,7 +133,7 @@ jobs:
           names = ("onecore-training.yml", "onecore-bootstrap.yml")
           for name in names:
               text = (Path(".github/workflows") / name).read_text()
-              assert "group: onecore-training" in text
+              assert "group: onecore-training-v2" in text
               assert "research/onecore-foundation" in text
           bootstrap = (Path(".github/workflows") / "onecore-bootstrap.yml").read_text(encoding="utf-8")
           assert "gh workflow run onecore-training.yml" not in bootstrap, "training must not dispatch a workflow absent from the default branch"
@@ -160,7 +162,9 @@ jobs:
           assert video_sources[0].get("adapter") == "video"
           assert video_sources[0].get("validation_percent") == 10 and video_sources[0].get("test_percent") == 10
           enabled = {item["id"] for item in registry["sources"] if item.get("enabled", True)}
-          assert {"turkish_mobile_function_calling", "oscar_ar", "proof_pile_2", "stack_v2_edu", "sard_arabic_documents", "finevideo", "internvid_10m_flt", "webvid_10m_video"} <= enabled
+          assert {"turkish_mobile_function_calling", "oscar_ar", "proof_pile_2", "fleurs_ar", "arabic_speech_corpus", "open_images_v7", "coyo_700m", "videos4camera_bench"} <= enabled
+          commercial_exclusions = {"sard_arabic_documents", "flickr30k_visual_test", "conceptual_captions_12m", "finevideo", "laion_bvd_video_55m", "laion_bvd_audio_10m", "internvid_10m_flt", "laion_bvd_image_300m", "sharegpt4v_images", "webvid_10m_video", "msrvtt_video", "stack_v2_edu"}
+          assert commercial_exclusions.isdisjoint(enabled)
           image_sources = [item for item in registry["sources"] if item.get("id") == "openimages_finedet_v1"]
           assert len(image_sources) == 1 and image_sources[0].get("enabled") is True
           assert image_sources[0].get("adapter") == "image"
