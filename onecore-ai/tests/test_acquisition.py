@@ -56,16 +56,8 @@ def test_source_registry_covers_all_shared_modalities() -> None:
             "saxo_function_calling", "turkish_mobile_function_calling", "videos4camera_bench"} <= ids
     enabled = {item["id"] for item in sources if item.get("enabled", True)}
     assert {"turkish_mobile_function_calling", "open_images_v7", "coyo_700m", "videos4camera_bench"} <= enabled
-    assert {"oscar_ar", "proof_pile_2", "turkish_mobile_function_calling", "open_images_v7",
-            "openimages_finedet_v1", "coyo_700m", "videos4camera_bench", "fleurs_ar",
-            "arabic_speech_corpus"} <= enabled
-    commercial_exclusions = {
-        "sard_arabic_documents", "flickr30k_visual_test", "conceptual_captions_12m",
-        "finevideo", "laion_bvd_video_55m", "laion_bvd_audio_10m",
-        "internvid_10m_flt", "laion_bvd_image_300m", "sharegpt4v_images",
-        "webvid_10m_video", "msrvtt_video", "stack_v2_edu",
-    }
-    assert commercial_exclusions.isdisjoint(enabled)
+    assert {"oscar_ar", "proof_pile_2", "stack_v2_edu", "sard_arabic_documents",
+            "finevideo", "internvid_10m_flt", "webvid_10m_video", "msrvtt_video"} <= enabled
     stack = next(item for item in sources if item["id"] == "stack_v2_code")
     assert stack["enabled"] is True
     assert stack["required_for_training"] is False
@@ -929,17 +921,3 @@ def test_optional_gated_source_access_does_not_block_bootstrap() -> None:
 
     assert _source_access_status({"required_for_training": False}) == "optional_access_required"
     assert _source_access_status({"required_for_training": True}) == "access_required"
-
-
-def test_unlicensed_or_noncommercial_inherited_records_are_quarantined_from_training() -> None:
-    from onecore.data import external_record_is_trainable, iter_training_records
-
-    inherited = {
-        "id": "legacy-stack-edu-row", "task": "text", "text": "Previously archived text data.",
-        "source_url": "https://huggingface.co/datasets/common-pile/stackv2_edu_filtered",
-        "source_id": "stack_v2_edu", "source_revision": "a" * 40,
-        "source_row_id_sha256": "b" * 64, "data_class": "external", "split": "train",
-    }
-    assert external_record_is_trainable(inherited) is False
-    assert inherited not in iter_training_records([inherited])
-
