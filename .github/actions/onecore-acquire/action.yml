@@ -18,7 +18,7 @@ inputs:
   source_budget_seconds:
     description: Maximum time slice for one source before saving its cursor
     required: false
-    default: "20"
+    default: "60"
   required_tasks:
     description: External task families required before joint training starts
     required: false
@@ -115,8 +115,8 @@ runs:
         total_budget="${{ inputs.budget_seconds }}"
         notebook_budget=0
         source_budget="${{ inputs.source_budget_seconds }}"
-        if ! [[ "$source_budget" =~ ^[0-9]+$ ]] || (( source_budget < 5 || source_budget > 120 )); then
-          echo "::error::source_budget_seconds must be between 5 and 120."
+        if ! [[ "$source_budget" =~ ^[0-9]+$ ]] || (( source_budget < 60 || source_budget > 120 )); then
+          echo "::error::source_budget_seconds must be between 60 and 120."
           exit 1
         fi
         if [[ "$total_budget" =~ ^[0-9]+$ ]] && (( total_budget > 0 )); then

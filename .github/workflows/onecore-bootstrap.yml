@@ -108,7 +108,7 @@ jobs:
           prior_run_id: ${{ needs.prepare.outputs.base_corpus_run_id }}
           output_artifact_name: onecore-corpus-acq-1
           budget_seconds: "540"
-          source_budget_seconds: "20"
+          source_budget_seconds: "60"
           session_label: "01"
           required_tasks: "text,tool,image,audio,video"
           min_train_records: "100"
@@ -138,7 +138,7 @@ jobs:
           prior_run_id: ${{ github.run_id }}
           output_artifact_name: onecore-corpus-acq-2
           budget_seconds: "540"
-          source_budget_seconds: "20"
+          source_budget_seconds: "60"
           session_label: "02"
           required_tasks: "text,tool,image,audio,video"
           min_train_records: "100"
@@ -168,7 +168,7 @@ jobs:
           prior_run_id: ${{ github.run_id }}
           output_artifact_name: onecore-corpus-acq-3
           budget_seconds: "540"
-          source_budget_seconds: "20"
+          source_budget_seconds: "60"
           session_label: "03"
           required_tasks: "text,tool,image,audio,video"
           min_train_records: "100"
@@ -198,7 +198,7 @@ jobs:
           prior_run_id: ${{ github.run_id }}
           output_artifact_name: onecore-corpus-acq-4
           budget_seconds: "540"
-          source_budget_seconds: "20"
+          source_budget_seconds: "60"
           session_label: "04"
           required_tasks: "text,tool,image,audio,video"
           min_train_records: "100"
@@ -228,7 +228,7 @@ jobs:
           prior_run_id: ${{ github.run_id }}
           output_artifact_name: onecore-corpus-acq-5
           budget_seconds: "540"
-          source_budget_seconds: "20"
+          source_budget_seconds: "60"
           session_label: "05"
           required_tasks: "text,tool,image,audio,video"
           min_train_records: "100"
@@ -258,7 +258,7 @@ jobs:
           prior_run_id: ${{ github.run_id }}
           output_artifact_name: onecore-corpus-acq-6
           budget_seconds: "540"
-          source_budget_seconds: "20"
+          source_budget_seconds: "60"
           session_label: "06"
           required_tasks: "text,tool,image,audio,video"
           min_train_records: "100"
