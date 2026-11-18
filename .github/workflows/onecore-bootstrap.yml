@@ -156,10 +156,10 @@ jobs:
               print(f"artifact_run_id={os.environ['BASE_RUN_ID']}")
               print("complete=true")
               with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
-                  summary.write("## Reusing the existing corpus; acquisition skipped\\n")
-                  summary.write(f"- Run ID: {os.environ['BASE_RUN_ID']}\\n")
-                  summary.write(f"- Artifact: {os.environ['BASE_ARTIFACT_NAME']}\\n")
-                  summary.write("- Proceed directly to the full payload and split-integrity gate; no crawler is started.\\n")
+                  summary.write("## Reusing the existing corpus; acquisition skipped\n")
+                  summary.write(f"- Run ID: {os.environ['BASE_RUN_ID']}\n")
+                  summary.write(f"- Artifact: {os.environ['BASE_ARTIFACT_NAME']}\n")
+                  summary.write("- Proceed directly to the full payload and split-integrity gate; no crawler is started.\n")
               raise SystemExit(0)
           if os.environ.get("ACQUIRE_RESULT") == "success":
               print("artifact_name=onecore-corpus-acq-progress")
