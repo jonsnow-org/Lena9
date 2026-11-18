@@ -95,19 +95,19 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 330
     outputs:
-      complete: \${{ steps.session.outputs.complete }}
-      acquisition_complete: \${{ steps.session.outputs.acquisition_complete }}
-      sessions_completed: \${{ steps.session.outputs.sessions_completed }}
-      acquisition_error: \${{ steps.session.outputs.acquisition_error }}
+      complete: ${{ steps.session.outputs.complete }}
+      acquisition_complete: ${{ steps.session.outputs.acquisition_complete }}
+      sessions_completed: ${{ steps.session.outputs.sessions_completed }}
+      acquisition_error: ${{ steps.session.outputs.acquisition_error }}
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: \${{ github.sha }}
+          ref: ${{ github.sha }}
       - id: session
         uses: ./.github/actions/onecore-acquire
         with:
-          prior_artifact_name: \${{ needs.prepare.outputs.base_corpus_artifact_name }}
-          prior_run_id: \${{ needs.prepare.outputs.base_corpus_run_id }}
+          prior_artifact_name: ${{ needs.prepare.outputs.base_corpus_artifact_name }}
+          prior_run_id: ${{ needs.prepare.outputs.base_corpus_run_id }}
           output_artifact_name: onecore-corpus-acq-progress
           session_count: "6"
           budget_seconds: "540"
@@ -115,9 +115,9 @@ jobs:
           required_tasks: "text,tool,image,audio,video"
           min_train_records: "100"
           min_holdout_records: "10"
-          stack_v2_aws_access_key_id: \${{ secrets.STACK_V2_AWS_ACCESS_KEY_ID }}
-          stack_v2_aws_secret_access_key: \${{ secrets.STACK_V2_AWS_SECRET_ACCESS_KEY }}
-          stack_v2_aws_session_token: \${{ secrets.STACK_V2_AWS_SESSION_TOKEN }}
+          stack_v2_aws_access_key_id: ${{ secrets.STACK_V2_AWS_ACCESS_KEY_ID }}
+          stack_v2_aws_secret_access_key: ${{ secrets.STACK_V2_AWS_SECRET_ACCESS_KEY }}
+          stack_v2_aws_session_token: ${{ secrets.STACK_V2_AWS_SESSION_TOKEN }}
           stack_v2_aws_region: us-east-1
 
   finalize_acquisition:
@@ -127,20 +127,20 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
-      artifact_name: \${{ steps.select.outputs.artifact_name }}
-      artifact_run_id: \${{ steps.select.outputs.artifact_run_id }}
-      complete: \${{ steps.select.outputs.complete }}
+      artifact_name: ${{ steps.select.outputs.artifact_name }}
+      artifact_run_id: ${{ steps.select.outputs.artifact_run_id }}
+      complete: ${{ steps.select.outputs.complete }}
     steps:
       - name: Select the newly uploaded snapshot or preserve the previous known-good corpus
         id: select
         shell: bash
         env:
-          PREPARE_RESULT: \${{ needs.prepare.result }}
-          ACQUIRE_RESULT: \${{ needs.acquire_corpus.result }}
-          ACQUIRE_COMPLETE: \${{ needs.acquire_corpus.outputs.complete }}
-          ACQUIRE_ERROR: \${{ needs.acquire_corpus.outputs.acquisition_error }}
-          BASE_RUN_ID: \${{ needs.prepare.outputs.base_corpus_run_id }}
-          BASE_ARTIFACT_NAME: \${{ needs.prepare.outputs.base_corpus_artifact_name }}
+          PREPARE_RESULT: ${{ needs.prepare.result }}
+          ACQUIRE_RESULT: ${{ needs.acquire_corpus.result }}
+          ACQUIRE_COMPLETE: ${{ needs.acquire_corpus.outputs.complete }}
+          ACQUIRE_ERROR: ${{ needs.acquire_corpus.outputs.acquisition_error }}
+          BASE_RUN_ID: ${{ needs.prepare.outputs.base_corpus_run_id }}
+          BASE_ARTIFACT_NAME: ${{ needs.prepare.outputs.base_corpus_artifact_name }}
         run: |
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import os
