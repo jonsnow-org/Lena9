@@ -120,6 +120,7 @@ runs:
         MIN_TRAIN_RECORDS: ${{ inputs.min_train_records }}
         MIN_HOLDOUT_RECORDS: ${{ inputs.min_holdout_records }}
       run: |
+        set +e
         set -uo pipefail
         if ! [[ "$SESSION_COUNT" =~ ^[0-9]+$ ]] || (( SESSION_COUNT < 1 || SESSION_COUNT > 6 )); then
           echo "::error::session_count must be between 1 and 6."
