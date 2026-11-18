@@ -89,244 +89,88 @@ jobs:
               --ExecutePreprocessor.timeout=-1
           done
 
-  acquire_1:
-    name: Acquisition session 1 of 6
+  acquire_corpus:
+    name: Up to six bounded acquisition sessions on one persistent CPU runner
     needs: prepare
     runs-on: ubuntu-24.04
     timeout-minutes: 330
     outputs:
-      complete: ${{ steps.session.outputs.complete }}
-      acquisition_complete: ${{ steps.session.outputs.acquisition_complete }}
+      complete: \${{ steps.session.outputs.complete }}
+      acquisition_complete: \${{ steps.session.outputs.acquisition_complete }}
+      sessions_completed: \${{ steps.session.outputs.sessions_completed }}
+      acquisition_error: \${{ steps.session.outputs.acquisition_error }}
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.sha }}
+          ref: \${{ github.sha }}
       - id: session
         uses: ./.github/actions/onecore-acquire
         with:
-          prior_artifact_name: ${{ needs.prepare.outputs.base_corpus_artifact_name }}
-          prior_run_id: ${{ needs.prepare.outputs.base_corpus_run_id }}
-          output_artifact_name: onecore-corpus-acq-1
+          prior_artifact_name: \${{ needs.prepare.outputs.base_corpus_artifact_name }}
+          prior_run_id: \${{ needs.prepare.outputs.base_corpus_run_id }}
+          output_artifact_name: onecore-corpus-acq-progress
+          session_count: "6"
           budget_seconds: "540"
           source_budget_seconds: "60"
-          session_label: "01"
           required_tasks: "text,tool,image,audio,video"
           min_train_records: "100"
           min_holdout_records: "10"
-          stack_v2_aws_access_key_id: ${{ secrets.STACK_V2_AWS_ACCESS_KEY_ID }}
-          stack_v2_aws_secret_access_key: ${{ secrets.STACK_V2_AWS_SECRET_ACCESS_KEY }}
-          stack_v2_aws_session_token: ${{ secrets.STACK_V2_AWS_SESSION_TOKEN }}
-          stack_v2_aws_region: us-east-1
-
-  acquire_2:
-    name: Acquisition session 2 of 6
-    needs: acquire_1
-    if: ${{ needs.acquire_1.outputs.acquisition_complete != 'true' }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 330
-    outputs:
-      complete: ${{ steps.session.outputs.complete }}
-      acquisition_complete: ${{ steps.session.outputs.acquisition_complete }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ github.sha }}
-      - id: session
-        uses: ./.github/actions/onecore-acquire
-        with:
-          prior_artifact_name: onecore-corpus-acq-1
-          prior_run_id: ${{ github.run_id }}
-          output_artifact_name: onecore-corpus-acq-2
-          budget_seconds: "540"
-          source_budget_seconds: "60"
-          session_label: "02"
-          required_tasks: "text,tool,image,audio,video"
-          min_train_records: "100"
-          min_holdout_records: "10"
-          stack_v2_aws_access_key_id: ${{ secrets.STACK_V2_AWS_ACCESS_KEY_ID }}
-          stack_v2_aws_secret_access_key: ${{ secrets.STACK_V2_AWS_SECRET_ACCESS_KEY }}
-          stack_v2_aws_session_token: ${{ secrets.STACK_V2_AWS_SESSION_TOKEN }}
-          stack_v2_aws_region: us-east-1
-
-  acquire_3:
-    name: Acquisition session 3 of 6
-    needs: acquire_2
-    if: ${{ needs.acquire_2.outputs.acquisition_complete != 'true' }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 330
-    outputs:
-      complete: ${{ steps.session.outputs.complete }}
-      acquisition_complete: ${{ steps.session.outputs.acquisition_complete }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ github.sha }}
-      - id: session
-        uses: ./.github/actions/onecore-acquire
-        with:
-          prior_artifact_name: onecore-corpus-acq-2
-          prior_run_id: ${{ github.run_id }}
-          output_artifact_name: onecore-corpus-acq-3
-          budget_seconds: "540"
-          source_budget_seconds: "60"
-          session_label: "03"
-          required_tasks: "text,tool,image,audio,video"
-          min_train_records: "100"
-          min_holdout_records: "10"
-          stack_v2_aws_access_key_id: ${{ secrets.STACK_V2_AWS_ACCESS_KEY_ID }}
-          stack_v2_aws_secret_access_key: ${{ secrets.STACK_V2_AWS_SECRET_ACCESS_KEY }}
-          stack_v2_aws_session_token: ${{ secrets.STACK_V2_AWS_SESSION_TOKEN }}
-          stack_v2_aws_region: us-east-1
-
-  acquire_4:
-    name: Acquisition session 4 of 6
-    needs: acquire_3
-    if: ${{ needs.acquire_3.outputs.acquisition_complete != 'true' }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 330
-    outputs:
-      complete: ${{ steps.session.outputs.complete }}
-      acquisition_complete: ${{ steps.session.outputs.acquisition_complete }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ github.sha }}
-      - id: session
-        uses: ./.github/actions/onecore-acquire
-        with:
-          prior_artifact_name: onecore-corpus-acq-3
-          prior_run_id: ${{ github.run_id }}
-          output_artifact_name: onecore-corpus-acq-4
-          budget_seconds: "540"
-          source_budget_seconds: "60"
-          session_label: "04"
-          required_tasks: "text,tool,image,audio,video"
-          min_train_records: "100"
-          min_holdout_records: "10"
-          stack_v2_aws_access_key_id: ${{ secrets.STACK_V2_AWS_ACCESS_KEY_ID }}
-          stack_v2_aws_secret_access_key: ${{ secrets.STACK_V2_AWS_SECRET_ACCESS_KEY }}
-          stack_v2_aws_session_token: ${{ secrets.STACK_V2_AWS_SESSION_TOKEN }}
-          stack_v2_aws_region: us-east-1
-
-  acquire_5:
-    name: Acquisition session 5 of 6
-    needs: acquire_4
-    if: ${{ needs.acquire_4.outputs.acquisition_complete != 'true' }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 330
-    outputs:
-      complete: ${{ steps.session.outputs.complete }}
-      acquisition_complete: ${{ steps.session.outputs.acquisition_complete }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ github.sha }}
-      - id: session
-        uses: ./.github/actions/onecore-acquire
-        with:
-          prior_artifact_name: onecore-corpus-acq-4
-          prior_run_id: ${{ github.run_id }}
-          output_artifact_name: onecore-corpus-acq-5
-          budget_seconds: "540"
-          source_budget_seconds: "60"
-          session_label: "05"
-          required_tasks: "text,tool,image,audio,video"
-          min_train_records: "100"
-          min_holdout_records: "10"
-          stack_v2_aws_access_key_id: ${{ secrets.STACK_V2_AWS_ACCESS_KEY_ID }}
-          stack_v2_aws_secret_access_key: ${{ secrets.STACK_V2_AWS_SECRET_ACCESS_KEY }}
-          stack_v2_aws_session_token: ${{ secrets.STACK_V2_AWS_SESSION_TOKEN }}
-          stack_v2_aws_region: us-east-1
-
-  acquire_6:
-    name: Acquisition session 6 of 6
-    needs: acquire_5
-    if: ${{ needs.acquire_5.outputs.acquisition_complete != 'true' }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 330
-    outputs:
-      complete: ${{ steps.session.outputs.complete }}
-      acquisition_complete: ${{ steps.session.outputs.acquisition_complete }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ github.sha }}
-      - id: session
-        uses: ./.github/actions/onecore-acquire
-        with:
-          prior_artifact_name: onecore-corpus-acq-5
-          prior_run_id: ${{ github.run_id }}
-          output_artifact_name: onecore-corpus-acq-6
-          budget_seconds: "540"
-          source_budget_seconds: "60"
-          session_label: "06"
-          required_tasks: "text,tool,image,audio,video"
-          min_train_records: "100"
-          min_holdout_records: "10"
-          stack_v2_aws_access_key_id: ${{ secrets.STACK_V2_AWS_ACCESS_KEY_ID }}
-          stack_v2_aws_secret_access_key: ${{ secrets.STACK_V2_AWS_SECRET_ACCESS_KEY }}
-          stack_v2_aws_session_token: ${{ secrets.STACK_V2_AWS_SESSION_TOKEN }}
+          stack_v2_aws_access_key_id: \${{ secrets.STACK_V2_AWS_ACCESS_KEY_ID }}
+          stack_v2_aws_secret_access_key: \${{ secrets.STACK_V2_AWS_SECRET_ACCESS_KEY }}
+          stack_v2_aws_session_token: \${{ secrets.STACK_V2_AWS_SESSION_TOKEN }}
           stack_v2_aws_region: us-east-1
 
   finalize_acquisition:
-    name: Select the newest snapshot that is ready for joint training
-    needs: [prepare, acquire_1, acquire_2, acquire_3, acquire_4, acquire_5, acquire_6]
+    name: Select the latest durable corpus snapshot
+    needs: [prepare, acquire_corpus]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
-      artifact_name: ${{ steps.select.outputs.artifact_name }}
-      artifact_run_id: ${{ steps.select.outputs.artifact_run_id }}
-      complete: ${{ steps.select.outputs.complete }}
+      artifact_name: \${{ steps.select.outputs.artifact_name }}
+      artifact_run_id: \${{ steps.select.outputs.artifact_run_id }}
+      complete: \${{ steps.select.outputs.complete }}
     steps:
-      - name: Select newest successful acquisition snapshot or preserve the base snapshot
+      - name: Select the newly uploaded snapshot or preserve the previous known-good corpus
         id: select
         shell: bash
         env:
-          PREPARE_RESULT: ${{ needs.prepare.result }}
-          BASE_RUN_ID: ${{ needs.prepare.outputs.base_corpus_run_id }}
-          BASE_ARTIFACT_NAME: ${{ needs.prepare.outputs.base_corpus_artifact_name }}
-          A1_COMPLETE: ${{ needs.acquire_1.outputs.complete }}
-          A1_RESULT: ${{ needs.acquire_1.result }}
-          A2_COMPLETE: ${{ needs.acquire_2.outputs.complete }}
-          A2_RESULT: ${{ needs.acquire_2.result }}
-          A3_COMPLETE: ${{ needs.acquire_3.outputs.complete }}
-          A3_RESULT: ${{ needs.acquire_3.result }}
-          A4_COMPLETE: ${{ needs.acquire_4.outputs.complete }}
-          A4_RESULT: ${{ needs.acquire_4.result }}
-          A5_COMPLETE: ${{ needs.acquire_5.outputs.complete }}
-          A5_RESULT: ${{ needs.acquire_5.result }}
-          A6_COMPLETE: ${{ needs.acquire_6.outputs.complete }}
-          A6_RESULT: ${{ needs.acquire_6.result }}
+          PREPARE_RESULT: \${{ needs.prepare.result }}
+          ACQUIRE_RESULT: \${{ needs.acquire_corpus.result }}
+          ACQUIRE_COMPLETE: \${{ needs.acquire_corpus.outputs.complete }}
+          ACQUIRE_ERROR: \${{ needs.acquire_corpus.outputs.acquisition_error }}
+          BASE_RUN_ID: \${{ needs.prepare.outputs.base_corpus_run_id }}
+          BASE_ARTIFACT_NAME: \${{ needs.prepare.outputs.base_corpus_artifact_name }}
         run: |
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import os
           if os.environ.get("PREPARE_RESULT") != "success":
               raise SystemExit("The prepare job failed; no validated base corpus was selected.")
-          for index in range(6, 0, -1):
-              if os.environ.get(f"A{index}_RESULT") == "success":
-                  complete = os.environ.get(f"A{index}_COMPLETE") == "true"
-                  print(f"artifact_name=onecore-corpus-acq-{index}")
-                  print(f"artifact_run_id={os.environ['GITHUB_RUN_ID']}")
-                  print(f"complete={str(complete).lower()}")
-                  if not complete:
-                      with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
-                          summary.write("## Acquisition needs another bounded continuation\\n")
-                          summary.write(f"- Current run ID: {os.environ['GITHUB_RUN_ID']}\\n")
-                          summary.write(f"- Latest saved corpus artifact: onecore-corpus-acq-{index}\\n")
-                          summary.write("- Set these values in training-request.json as base_corpus_run_id and base_corpus_artifact_name, then trigger the request again.\\n")
-                  raise SystemExit(0)
-          # The source scan can finish before artifact upload fails. Keep the last
-          # known-good corpus addressable; never point the next run at a missing
-          # artifact from this failed attempt.
+          if os.environ.get("ACQUIRE_RESULT") == "success":
+              print("artifact_name=onecore-corpus-acq-progress")
+              print(f"artifact_run_id={os.environ['GITHUB_RUN_ID']}")
+              complete = os.environ.get("ACQUIRE_COMPLETE") == "true"
+              print(f"complete={str(complete).lower()}")
+              if os.environ.get("ACQUIRE_ERROR") == "true":
+                  with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+                      summary.write("## Acquisition stopped after a recoverable notebook error\\n")
+                      summary.write("- The latest committed corpus and cursor state were uploaded.\\n")
+                      summary.write("- Continue from this artifact; do not restart the source cursors.\\n")
+              if not complete:
+                  with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+                      summary.write("## Acquisition needs another bounded continuation\\n")
+                      summary.write(f"- Current run ID: {os.environ['GITHUB_RUN_ID']}\\n")
+                      summary.write("- Latest saved corpus artifact: onecore-corpus-acq-progress\\n")
+                      summary.write("- The full integrity gate and training remain blocked until five-family coverage passes.\\n")
+              raise SystemExit(0)
           print(f"artifact_name={os.environ['BASE_ARTIFACT_NAME']}")
           print(f"artifact_run_id={os.environ['BASE_RUN_ID']}")
           print("complete=false")
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
-              summary.write("## Acquisition upload failed; base corpus preserved\\n")
+              summary.write("## Acquisition snapshot upload failed; previous corpus preserved\\n")
               summary.write(f"- Reusable run ID: {os.environ['BASE_RUN_ID']}\\n")
               summary.write(f"- Reusable artifact: {os.environ['BASE_ARTIFACT_NAME']}\\n")
-              summary.write("- This attempt's unuploaded additions were not preserved. Resume only after fixing artifact transport.\\n")
+              summary.write("- No new snapshot was selected because artifact upload did not succeed.\\n")
           PY
 
   dataset_gate:
