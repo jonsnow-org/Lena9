@@ -106,7 +106,7 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
     assert bootstrap_doc["jobs"]["finalize_acquisition"]["outputs"]["complete"].startswith("${{")
     assert bootstrap_doc["jobs"]["dataset_gate"]["if"].startswith("${{")
     assert "base_corpus_artifact_name" in bootstrap
-    assert 'request.get("stage") not in {"acquire", "train_existing"}' not in bootstrap
+    assert 'print(f"request_stage={stage}")' in bootstrap
     assert "REQUEST_STAGE" in bootstrap
     assert "train_existing" in bootstrap
     assert "needs.prepare.outputs.request_stage == 'acquire'" in bootstrap
