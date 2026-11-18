@@ -105,6 +105,9 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
     assert train_doc["runs"]["using"] == "composite"
     assert bootstrap_doc["jobs"]["finalize_acquisition"]["outputs"]["complete"].startswith("${{")
     assert bootstrap_doc["jobs"]["dataset_gate"]["if"].startswith("${{")
+    assert "always() && needs.finalize_acquisition.outputs.complete == 'true'" in bootstrap
+    assert "always() && needs.dataset_gate.result == 'success'" in bootstrap
+    assert "always() && needs.train_09.result == 'success'" in bootstrap
     assert "base_corpus_artifact_name" in bootstrap
     assert 'print(f"request_stage={stage}")' in bootstrap
     assert "REQUEST_STAGE" in bootstrap
