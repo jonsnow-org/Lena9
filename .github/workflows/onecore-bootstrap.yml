@@ -24,6 +24,7 @@ jobs:
     outputs:
       base_corpus_run_id: ${{ steps.request.outputs.base_corpus_run_id }}
       base_corpus_artifact_name: ${{ steps.request.outputs.base_corpus_artifact_name }}
+      request_stage: ${{ steps.request.outputs.request_stage }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -46,8 +47,9 @@ jobs:
           import json, re
           from pathlib import Path
           request = json.loads(Path("onecore-ai/training-request.json").read_text(encoding="utf-8"))
-          if request.get("stage") != "acquire" or request.get("start_fresh_joint_training") is not True:
-              raise ValueError("The initial run must acquire all data and initialize OneCore from random weights")
+          stage = str(request.get("stage", "")).strip()
+          if stage not in {"acquire", "train_existing"} or request.get("start_fresh_joint_training") is not True:
+              raise ValueError("The request must acquire data or validate the existing corpus, and initialize OneCore from random weights")
           if int(request.get("steps", 0)) != 150:
               raise ValueError("This staged workflow is configured for exactly 150 optimizer steps")
           corpus = str(request.get("base_corpus_run_id", "")).strip()
@@ -58,6 +60,7 @@ jobs:
               raise ValueError("The base corpus artifact name contains unsupported characters")
           print(f"base_corpus_run_id={corpus}")
           print(f"base_corpus_artifact_name={artifact}")
+          print(f"request_stage={stage}")
           PY
       - name: Compile package and run all tests
         run: |
@@ -92,6 +95,7 @@ jobs:
   acquire_corpus:
     name: Up to six bounded acquisition sessions on one persistent CPU runner
     needs: prepare
+    if: ${{ needs.prepare.outputs.request_stage == 'acquire' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 330
     outputs:
@@ -136,6 +140,7 @@ jobs:
         shell: bash
         env:
           PREPARE_RESULT: ${{ needs.prepare.result }}
+          REQUEST_STAGE: ${{ needs.prepare.outputs.request_stage }}
           ACQUIRE_RESULT: ${{ needs.acquire_corpus.result }}
           ACQUIRE_COMPLETE: ${{ needs.acquire_corpus.outputs.complete }}
           ACQUIRE_ERROR: ${{ needs.acquire_corpus.outputs.acquisition_error }}
@@ -146,6 +151,16 @@ jobs:
           import os
           if os.environ.get("PREPARE_RESULT") != "success":
               raise SystemExit("The prepare job failed; no validated base corpus was selected.")
+          if os.environ.get("REQUEST_STAGE") == "train_existing":
+              print(f"artifact_name={os.environ['BASE_ARTIFACT_NAME']}")
+              print(f"artifact_run_id={os.environ['BASE_RUN_ID']}")
+              print("complete=true")
+              with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+                  summary.write("## Reusing the existing corpus; acquisition skipped\\n")
+                  summary.write(f"- Run ID: {os.environ['BASE_RUN_ID']}\\n")
+                  summary.write(f"- Artifact: {os.environ['BASE_ARTIFACT_NAME']}\\n")
+                  summary.write("- Proceed directly to the full payload and split-integrity gate; no crawler is started.\\n")
+              raise SystemExit(0)
           if os.environ.get("ACQUIRE_RESULT") == "success":
               print("artifact_name=onecore-corpus-acq-progress")
               print(f"artifact_run_id={os.environ['GITHUB_RUN_ID']}")
@@ -197,6 +212,8 @@ jobs:
         uses: actions/download-artifact@v7
         with:
           name: ${{ needs.finalize_acquisition.outputs.artifact_name }}
+          run-id: ${{ needs.finalize_acquisition.outputs.artifact_run_id }}
+          github-token: ${{ github.token }}
           path: onecore-ai/run-state/corpus-artifact
       - name: Expand the validated corpus archive
         shell: bash
