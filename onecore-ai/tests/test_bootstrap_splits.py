@@ -106,9 +106,15 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
     assert bootstrap_doc["jobs"]["finalize_acquisition"]["outputs"]["complete"].startswith("${{")
     assert bootstrap_doc["jobs"]["dataset_gate"]["if"].startswith("${{")
     assert "base_corpus_artifact_name" in bootstrap
+    assert 'request.get("stage") not in {"acquire", "train_existing"}' not in bootstrap
+    assert "REQUEST_STAGE" in bootstrap
+    assert "train_existing" in bootstrap
+    assert "needs.prepare.outputs.request_stage == 'acquire'" in bootstrap
+    assert 'run-id: ${{ needs.finalize_acquisition.outputs.artifact_run_id }}' in bootstrap
+    assert 'github-token: ${{ github.token }}' in bootstrap
     assert "onecore-corpus-acq-progress" in bootstrap
     assert "resume_notice" in bootstrap_doc["jobs"]
-    assert "cancel-in-progress: false" in bootstrap
+    assert "cancel-in-progress: true" in bootstrap
     assert "timeout-minutes: 330" in bootstrap
     assert "onecore-corpus-" in bootstrap
     assert "onecore-corpus-final" in bootstrap
