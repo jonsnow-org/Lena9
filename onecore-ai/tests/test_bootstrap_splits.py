@@ -106,15 +106,15 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
     assert bootstrap_doc["jobs"]["finalize_acquisition"]["outputs"]["complete"].startswith("${{")
     assert bootstrap_doc["jobs"]["dataset_gate"]["if"].startswith("${{")
     assert "base_corpus_artifact_name" in bootstrap
-    assert "onecore-corpus-acq-6" in bootstrap
+    assert "onecore-corpus-acq-progress" in bootstrap
     assert "resume_notice" in bootstrap_doc["jobs"]
     assert "cancel-in-progress: false" in bootstrap
     assert "timeout-minutes: 330" in bootstrap
     assert "onecore-corpus-" in bootstrap
     assert "onecore-corpus-final" in bootstrap
     assert "ONECORE_REQUIRED_TASKS: \"text,tool,image,audio,video\"" in bootstrap
-    assert bootstrap.count('budget_seconds: "540"') == 6
-    assert bootstrap.count('source_budget_seconds: "60"') == 6
+    assert bootstrap.count('budget_seconds: "540"') == 1
+    assert bootstrap.count('source_budget_seconds: "60"') == 1
     assert "required_tasks:" in acquire_action
     assert 'default: "540"' in acquire_action
     assert "source_budget_seconds:" in acquire_action
