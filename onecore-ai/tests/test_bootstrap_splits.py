@@ -118,7 +118,7 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
     assert "required_tasks:" in acquire_action
     assert 'default: "540"' in acquire_action
     assert "source_budget_seconds:" in acquire_action
-    assert 'default: "20"' in acquire_action
+    assert 'default: "60"' in acquire_action
     assert "source_budget_seconds must be between 60 and 120" in acquire_action
     assert "REQUIRED_TASKS: ${{ inputs.required_tasks }}" in acquire_action
     assert "MIN_TRAIN_RECORDS: ${{ inputs.min_train_records }}" in acquire_action

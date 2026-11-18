@@ -186,7 +186,7 @@ def test_required_source_minimums_and_crawler_credentials_are_wired_into_each_se
     assert "ONECORE_ACQUIRE_ONLY=1" in action
     assert "ONECORE_ACQUIRE_SOURCE_BUDGET_SECONDS" in action
     assert "source_budget_seconds:" in action
-    assert 'default: "20"' in action
+    assert 'default: "60"' in action
     assert "source_budget_seconds must be between 60 and 120" in action
     assert "onecore-ai/notebooks/03_text_pretraining.ipynb" in action
     assert "onecore-ai/notebooks/04_multimodal_curriculum.ipynb" in action
