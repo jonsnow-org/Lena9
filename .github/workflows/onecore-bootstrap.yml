@@ -11,7 +11,7 @@ permissions:
 
 concurrency:
   group: onecore-training-v2
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 env:
   HF_TOKEN: ${{ secrets.HF_TOKEN }}
