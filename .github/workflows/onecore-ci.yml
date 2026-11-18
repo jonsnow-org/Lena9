@@ -156,6 +156,7 @@ jobs:
           assert "train_existing" in bootstrap, "existing-corpus training must bypass acquisition"
           assert "needs.prepare.outputs.request_stage == 'acquire'" in bootstrap
           assert "REQUEST_STAGE" in bootstrap
+          assert 'print(f"request_stage={stage}")' in bootstrap
           action = yaml.safe_load(Path(".github/actions/onecore-acquire/action.yml").read_text(encoding="utf-8"))
           assert action["inputs"]["session_count"]["default"] == "6"
           action_steps = action["runs"]["steps"]
