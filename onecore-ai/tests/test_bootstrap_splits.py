@@ -113,7 +113,13 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
     assert "onecore-corpus-" in bootstrap
     assert "onecore-corpus-final" in bootstrap
     assert "ONECORE_REQUIRED_TASKS: \"text,tool,image,audio,video\"" in bootstrap
-    assert "ONECORE_REQUIRED_TASKS: \"text,tool,image,audio,video\"" in acquire_action
+    assert "required_tasks:" in acquire_action
+    assert 'default: "text,tool,image,audio,video"' in acquire_action
+    assert "REQUIRED_TASKS: ${{ inputs.required_tasks }}" in acquire_action
+    assert "MIN_TRAIN_RECORDS: ${{ inputs.min_train_records }}" in acquire_action
+    assert "MIN_HOLDOUT_RECORDS: ${{ inputs.min_holdout_records }}" in acquire_action
+    assert "assert_task_coverage" in acquire_action
+    assert "acquisition_complete" in acquire_action
     assert "ONECORE_ACQUIRE_BUDGET_SECONDS" in acquire_action
     assert "persist_acquisition_progress" in acquire_action
     assert "onecore.artifacts pack" in acquire_action
