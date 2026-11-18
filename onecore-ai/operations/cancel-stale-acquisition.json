@@ -1,6 +1,0 @@
-{
-  "purpose": "One-time operational action: stop the old six-session acquisition run because the next bootstrap request now validates the persisted corpus directly.",
-  "target_run_id": "44365113365",
-  "expected_branch": "research/onecore-foundation",
-  "expected_workflow": ".github/workflows/onecore-bootstrap.yml"
-}
