@@ -148,5 +148,5 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
     assert "optimizer_step" in train_action and "checkpoint_sha256" in train_action
     assert "optimizer, scheduler, RNG" in train_action
     assert "text,tool,image,audio,video" in training
-    assert "cancel-in-progress: false" in bootstrap
+    assert "cancel-in-progress: true" in bootstrap
     assert "gh workflow run onecore-training.yml" not in bootstrap
