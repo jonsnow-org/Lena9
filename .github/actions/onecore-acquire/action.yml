@@ -52,19 +52,19 @@ inputs:
 outputs:
   complete:
     description: Whether the five-family external payload gate is met
-    value: \${{ steps.session.outputs.complete }}
+    value: ${{ steps.session.outputs.complete }}
   acquisition_complete:
     description: Whether every enabled source quota reached a terminal state
-    value: \${{ steps.session.outputs.acquisition_complete }}
+    value: ${{ steps.session.outputs.acquisition_complete }}
   pending_sources:
     description: Number of enabled sources that still need acquisition
-    value: \${{ steps.session.outputs.pending_sources }}
+    value: ${{ steps.session.outputs.pending_sources }}
   sessions_completed:
     description: Number of bounded sessions completed on this runner
-    value: \${{ steps.session.outputs.sessions_completed }}
+    value: ${{ steps.session.outputs.sessions_completed }}
   acquisition_error:
     description: Whether a notebook or acquisition step failed before the last checkpoint
-    value: \${{ steps.session.outputs.acquisition_error }}
+    value: ${{ steps.session.outputs.acquisition_error }}
 
 runs:
   using: composite
@@ -86,9 +86,9 @@ runs:
     - name: Restore the previous corpus and all resume caches
       uses: actions/download-artifact@v7
       with:
-        name: \${{ inputs.prior_artifact_name }}
-        run-id: \${{ inputs.prior_run_id }}
-        github-token: \${{ github.token }}
+        name: ${{ inputs.prior_artifact_name }}
+        run-id: ${{ inputs.prior_run_id }}
+        github-token: ${{ github.token }}
         path: onecore-ai/run-state/corpus-artifact
 
     - name: Restore the previous corpus snapshot (tar or legacy layout)
@@ -108,17 +108,17 @@ runs:
       shell: bash
       env:
         PYTHONPATH: onecore-ai/src
-        HF_TOKEN: \${{ env.HF_TOKEN }}
-        STACK_V2_AWS_ACCESS_KEY_ID: \${{ inputs.stack_v2_aws_access_key_id }}
-        STACK_V2_AWS_SECRET_ACCESS_KEY: \${{ inputs.stack_v2_aws_secret_access_key }}
-        STACK_V2_AWS_SESSION_TOKEN: \${{ inputs.stack_v2_aws_session_token }}
-        STACK_V2_AWS_REGION: \${{ inputs.stack_v2_aws_region }}
-        SESSION_COUNT: \${{ inputs.session_count }}
-        TOTAL_BUDGET_SECONDS: \${{ inputs.budget_seconds }}
-        SOURCE_BUDGET_SECONDS: \${{ inputs.source_budget_seconds }}
-        REQUIRED_TASKS: \${{ inputs.required_tasks }}
-        MIN_TRAIN_RECORDS: \${{ inputs.min_train_records }}
-        MIN_HOLDOUT_RECORDS: \${{ inputs.min_holdout_records }}
+        HF_TOKEN: ${{ env.HF_TOKEN }}
+        STACK_V2_AWS_ACCESS_KEY_ID: ${{ inputs.stack_v2_aws_access_key_id }}
+        STACK_V2_AWS_SECRET_ACCESS_KEY: ${{ inputs.stack_v2_aws_secret_access_key }}
+        STACK_V2_AWS_SESSION_TOKEN: ${{ inputs.stack_v2_aws_session_token }}
+        STACK_V2_AWS_REGION: ${{ inputs.stack_v2_aws_region }}
+        SESSION_COUNT: ${{ inputs.session_count }}
+        TOTAL_BUDGET_SECONDS: ${{ inputs.budget_seconds }}
+        SOURCE_BUDGET_SECONDS: ${{ inputs.source_budget_seconds }}
+        REQUIRED_TASKS: ${{ inputs.required_tasks }}
+        MIN_TRAIN_RECORDS: ${{ inputs.min_train_records }}
+        MIN_HOLDOUT_RECORDS: ${{ inputs.min_holdout_records }}
       run: |
         set -uo pipefail
         if ! [[ "$SESSION_COUNT" =~ ^[0-9]+$ ]] || (( SESSION_COUNT < 1 || SESSION_COUNT > 6 )); then
@@ -345,8 +345,8 @@ runs:
       if: always() && steps.package.outcome == 'success'
       uses: actions/upload-artifact@v6
       with:
-        name: \${{ inputs.output_artifact_name }}
-        path: \${{ runner.temp }}/onecore-corpus.tar
+        name: ${{ inputs.output_artifact_name }}
+        path: ${{ runner.temp }}/onecore-corpus.tar
         if-no-files-found: error
         retention-days: 90
         compression-level: 0
