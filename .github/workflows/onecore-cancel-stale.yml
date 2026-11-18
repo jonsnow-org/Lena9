@@ -1,0 +1,51 @@
+name: OneCore — cancel superseded acquisition run
+
+on:
+  push:
+    branches: [research/onecore-foundation]
+    paths:
+      - "onecore-ai/operations/cancel-stale-acquisition.json"
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  cancel:
+    name: Cancel the explicitly superseded acquisition run
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+      - name: Verify and cancel the selected run
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          target_run_id=$(python - <<'PY'
+          import json
+          from pathlib import Path
+          request = json.loads(Path("onecore-ai/operations/cancel-stale-acquisition.json").read_text())
+          run_id = str(request.get("target_run_id", ""))
+          if run_id != "44365113365":
+              raise SystemExit("Refusing to cancel an unapproved run ID")
+          print(run_id)
+          PY
+          )
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${target_run_id}" > "$RUNNER_TEMP/target-run.json"
+          python - "$RUNNER_TEMP/target-run.json" <<'PY'
+          import json, sys
+          run = json.load(open(sys.argv[1], encoding="utf-8"))
+          if run.get("head_branch") != "research/onecore-foundation":
+              raise SystemExit("Target run is not on the isolated OneCore branch")
+          if run.get("path") != ".github/workflows/onecore-bootstrap.yml":
+              raise SystemExit("Target run is not the superseded OneCore acquisition workflow")
+          if run.get("status") != "in_progress":
+              raise SystemExit(f"Target run is not in progress: {run.get('status')}")
+          print(f"Verified superseded run {run['id']} on {run['head_branch']}")
+          PY
+          gh api -X POST "/repos/${GITHUB_REPOSITORY}/actions/runs/${target_run_id}/cancel"
+          echo "Cancellation requested for superseded acquisition run ${target_run_id}"
