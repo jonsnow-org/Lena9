@@ -181,7 +181,7 @@ def test_required_source_minimums_and_crawler_credentials_are_wired_into_each_se
         assert key in action or key in workflow
     assert workflow.count("secrets.STACK_V2_AWS_ACCESS_KEY_ID") == 1
     assert workflow.count("secrets.STACK_V2_AWS_SECRET_ACCESS_KEY") == 1
-    assert "Publish per-notebook crawler progress" in action
+    assert "Publish source and cursor progress" in action
     assert "Execute sequential bounded acquisition sessions" in action
     assert "ONECORE_ACQUIRE_ONLY=1" in action
     assert "ONECORE_ACQUIRE_SOURCE_BUDGET_SECONDS" in action
