@@ -2,7 +2,7 @@
 
 ## Single source of truth and isolation
 
-The only working branch is `research/onecore-foundation` in `jonsnow-org/Lena9`. All training, data generation, checkpointing, evaluation, and model-registry work runs on GitHub Actions CPU runners. Do not touch `main`, the Lena9 application, Ttbik, or any Sham model. Both current training workflows share the non-cancelling `onecore-training-v2` concurrency group. This isolates the current workflow generation from the stale v1 acquisition run without opening another branch.
+The only working branch is `research/onecore-foundation` in `jonsnow-org/Lena9`. All training, data generation, checkpointing, evaluation, and model-registry work runs on GitHub Actions CPU runners. Do not touch `main`, the Lena9 application, Ttbik, or any Sham model. The bootstrap and manually dispatched training workflows share the `onecore-training-v2` concurrency group. The bootstrap cancels an older in-progress bootstrap when a newer training request is submitted, preventing stale acquisition cycles from continuing in parallel.
 
 ## Staged request-file workflow
 
@@ -17,6 +17,10 @@ Request fields:
 Each segment runs notebooks 00, 01, and 02 as gates. A text segment executes notebook 03; a multimodal segment executes notebook 04; notebook 05 evaluates validation and independent test splits after non-smoke training. The same shared model, optimizer, scheduler, tokenizer, RNG states, and checkpoint lineage continue across stages.
 
 The manual `OneCore — staged training` workflow remains available for operator use. It is serialized with the same lock and runs CI and checkpoint verification before executing notebooks.
+
+## Reusing an existing corpus before acquisition
+
+Set `stage` to `train_existing` in `onecore-ai/training-request.json` to validate and train directly from the referenced `base_corpus_run_id` / `base_corpus_artifact_name`. This mode skips the acquisition job entirely. It restores the saved artifact once in the dataset-gate job, checks the five external task families and the independent train/validation/test splits, and proceeds to the existing 150-step from-scratch training chain only when the payload gate passes. If it fails, the gate reports the exact missing family/split counts; switch back to `acquire` only for the missing source families rather than rerunning the entire registry.
 
 ## Initial pipeline baseline
 
