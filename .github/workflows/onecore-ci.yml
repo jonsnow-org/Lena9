@@ -138,7 +138,7 @@ jobs:
           bootstrap = (Path(".github/workflows") / "onecore-bootstrap.yml").read_text(encoding="utf-8")
           assert "gh workflow run onecore-training.yml" not in bootstrap, "training must not dispatch a workflow absent from the default branch"
           assert "Start fresh random-initialized OneCore joint multimodal training in the same CPU job" not in bootstrap
-          assert "cancel-in-progress: false" in bootstrap
+          assert "cancel-in-progress: true" in bootstrap
           assert "timeout-minutes: 330" in bootstrap
           assert "./.github/actions/onecore-acquire" in bootstrap
           assert "./.github/actions/onecore-train" in bootstrap
@@ -153,6 +153,9 @@ jobs:
           assert jobs["acquire_corpus"]["needs"] == "prepare"
           assert jobs["acquire_corpus"]["timeout-minutes"] == 330
           assert "onecore-corpus-acq-progress" in bootstrap
+          assert "train_existing" in bootstrap, "existing-corpus training must bypass acquisition"
+          assert "needs.prepare.outputs.request_stage == 'acquire'" in bootstrap
+          assert "REQUEST_STAGE" in bootstrap
           action = yaml.safe_load(Path(".github/actions/onecore-acquire/action.yml").read_text(encoding="utf-8"))
           assert action["inputs"]["session_count"]["default"] == "6"
           action_steps = action["runs"]["steps"]
