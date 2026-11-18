@@ -2,10 +2,10 @@
   "schema": "onecore-training-request-v1",
   "stage": "acquire",
   "steps": 150,
-  "purpose": "Continue the existing OneCore corpus from saved snapshot 44053295904 / onecore-corpus-acq-6. Resume all persisted source and notebook cursors; do not restart or replace prior records. Run six sequential bounded acquisition sessions (9 minutes of active collection each, 60 seconds per-source slices) across the already enabled text, tool-use, image, audio and video sources, including streaming from the large FineWeb-2 collection. Keep every source revision, committed cursor, pending row, manifest and payload hash in each successor artifact. Start fresh-initialized joint training of the existing 57,579,201-parameter CPU OneCore for 150 optimizer steps only when the five-family data gate passes (at least 100 usable external records per family in train and 10 each in validation/test). Finish with held-out evaluation and checkpoint lineage.",
-  "request_id": "onecore-resume-acq6-legacycursor-joint150-20261118-v17",
+  "purpose": "Resume the latest known-good corpus snapshot 44251243670 / onecore-corpus-acq-3 without resetting source cursors or replacing prior records. Run up to six bounded acquisition sessions sequentially on one CPU runner, restoring the corpus once and uploading one cumulative successor snapshot. Use 60-second per-source slices across the enabled text, tool-use, image, audio and video sources, including streamed FineWeb-2 shards. Preserve each source revision, committed cursor, pending row, manifest, asset hash and checkpoint lineage. Recheck five-family external payload coverage after every session; run the full train/validation/test integrity gate once only after coverage reaches at least 100 usable external records per family in train and 10 each in validation/test. Start fresh-initialized joint training of the unchanged 57,579,201-parameter CPU OneCore for exactly 150 optimizer steps only after that gate passes, then finish with held-out evaluation.",
+  "request_id": "onecore-resume-acq3-sequential-cpu-joint150-20261118-v18",
   "data_profile": "expanded",
-  "base_corpus_run_id": "44053295904",
+  "base_corpus_run_id": "44251243670",
   "start_fresh_joint_training": true,
-  "base_corpus_artifact_name": "onecore-corpus-acq-6"
+  "base_corpus_artifact_name": "onecore-corpus-acq-3"
 }
