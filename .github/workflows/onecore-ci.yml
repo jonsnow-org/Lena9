@@ -148,7 +148,19 @@ jobs:
           import yaml
           workflow = yaml.safe_load(bootstrap)
           jobs = workflow["jobs"]
-          assert all(f"acquire_{i}" in jobs for i in range(1, 7))
+          assert "acquire_corpus" in jobs, "bounded corpus acquisition must use one persistent runner"
+assert not any(f"acquire_{i}" in jobs for i in range(1, 7)), "per-session jobs must not re-transfer the full corpus"
+assert jobs["acquire_corpus"]["needs"] == "prepare"
+assert jobs["acquire_corpus"]["timeout-minutes"] == 330
+assert "onecore-corpus-acq-progress" in bootstrap
+action = yaml.safe_load(Path(".github/actions/onecore-acquire/action.yml").read_text(encoding="utf-8"))
+assert action["inputs"]["session_count"]["default"] == "6"
+action_steps = action["runs"]["steps"]
+assert sum(1 for step in action_steps if step.get("uses", "").startswith("actions/download-artifact@")) == 1
+assert sum(1 for step in action_steps if step.get("uses", "").startswith("actions/upload-artifact@")) == 1
+session_script = next(step for step in action_steps if step.get("id") == "session")["run"]
+assert "03_text_pretraining.ipynb" in session_script and "04_multimodal_curriculum.ipynb" in session_script
+assert "02_data_gate.ipynb" not in session_script, "the full integrity gate runs once after acquisition"
           assert all(f"train_{i:02d}" in jobs for i in range(1, 11))
           assert jobs["train_01"]["needs"] == "dataset_gate"
           for index in range(2, 11):
