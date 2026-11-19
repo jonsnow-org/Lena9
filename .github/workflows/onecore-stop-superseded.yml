@@ -1,4 +1,4 @@
-name: OneCore stop superseded pre-fix run
+name: OneCore force stop superseded pre-fix run
 
 on:
   push:
@@ -10,23 +10,23 @@ permissions:
   actions: write
 
 jobs:
-  stop:
+  force_stop:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Cancel the superseded run
+      - name: Force-cancel only the unresponsive superseded run
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           TARGET_RUN_ID: "44456885046"
         run: |
           set -euo pipefail
-          gh api --method POST "/repos/${GITHUB_REPOSITORY}/actions/runs/${TARGET_RUN_ID}/cancel"
+          gh api --method POST "/repos/${GITHUB_REPOSITORY}/actions/runs/${TARGET_RUN_ID}/force-cancel"
           for attempt in $(seq 1 12); do
             state=$(gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${TARGET_RUN_ID}" --jq '.status + "/" + (.conclusion // "")')
             echo "Target run state: ${state}"
             [[ "${state}" == "completed/cancelled" ]] && exit 0
             sleep 5
           done
-          echo "::error::Cancellation was accepted but run did not reach cancelled state within one minute."
+          echo "::error::Force-cancel accepted but target did not reach cancelled state within one minute."
           exit 1
