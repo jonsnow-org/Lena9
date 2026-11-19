@@ -9,6 +9,7 @@ on:
       - ".github/workflows/onecore-training.yml"
       - ".github/workflows/onecore-bootstrap.yml"
       - ".github/actions/onecore-acquire/action.yml"
+      - ".github/actions/onecore-train/action.yml"
   pull_request:
     branches: [main]
     paths:
@@ -17,6 +18,7 @@ on:
       - ".github/workflows/onecore-training.yml"
       - ".github/workflows/onecore-bootstrap.yml"
       - ".github/actions/onecore-acquire/action.yml"
+      - ".github/actions/onecore-train/action.yml"
 
 permissions:
   contents: read
@@ -157,7 +159,7 @@ jobs:
           assert "needs.prepare.outputs.request_stage == 'acquire'" in bootstrap
           assert "always() && needs.finalize_acquisition.result == 'success' && needs.finalize_acquisition.outputs.complete == 'true'" in bootstrap
           assert "always() && needs.dataset_gate.result == 'success'" in bootstrap
-          assert "always() && needs.train_09.result == 'success'" in bootstrap
+          assert "always() && needs.train_all.result == 'success'" in bootstrap
           assert "REQUEST_STAGE" in bootstrap
           assert 'print(f"request_stage={stage}")' in bootstrap
           action = yaml.safe_load(Path(".github/actions/onecore-acquire/action.yml").read_text(encoding="utf-8"))
@@ -168,12 +170,33 @@ jobs:
           session_script = next(step for step in action_steps if step.get("id") == "session")["run"]
           assert "03_text_pretraining.ipynb" in session_script and "04_multimodal_curriculum.ipynb" in session_script
           assert "02_data_gate.ipynb" not in session_script, "the full integrity gate runs once after acquisition"
-          assert all(f"train_{i:02d}" in jobs for i in range(1, 11))
-          assert jobs["train_01"]["needs"] == "dataset_gate"
-          for index in range(2, 11):
-              assert jobs[f"train_{index:02d}"]["needs"] == f"train_{index-1:02d}"
-          assert jobs["train_01"]["timeout-minutes"] == 330
-          assert jobs["train_10"]["timeout-minutes"] == 330
+          assert "train_all" in jobs
+          assert not any(f"train_{i:02d}" in jobs for i in range(1, 11)), "training segments must not each start a new runner"
+          assert jobs["train_all"]["needs"] == "dataset_gate"
+          assert jobs["train_all"]["timeout-minutes"] == 360
+          train_steps = [step for step in jobs["train_all"]["steps"] if str(step.get("id", "")).startswith("train")]
+          assert len(train_steps) == 10, f"expected ten sequential segments, found {len(train_steps)}"
+          expected_notebooks = [
+              "03_text_pretraining.ipynb", "04_multimodal_curriculum.ipynb",
+              "03_text_pretraining.ipynb", "04_multimodal_curriculum.ipynb",
+              "03_text_pretraining.ipynb", "04_multimodal_curriculum.ipynb",
+              "03_text_pretraining.ipynb", "04_multimodal_curriculum.ipynb",
+              "03_text_pretraining.ipynb", "04_multimodal_curriculum.ipynb",
+          ]
+          for index, step in enumerate(train_steps, 1):
+              assert step["id"] == f"train{index:02d}"
+              assert step["uses"] == "./.github/actions/onecore-train"
+              assert step["with"]["steps"] == "15"
+              assert step["with"]["notebook"] == expected_notebooks[index - 1]
+              assert step["with"]["setup_environment"] == ("true" if index == 1 else "false")
+              assert step["with"]["restore_corpus"] == ("true" if index == 1 else "false")
+          assert sum(1 for step in train_steps if step["with"]["restore_corpus"] == "true") == 1
+          assert sum(1 for step in train_steps if step["with"]["setup_environment"] == "true") == 1
+          assert "onecore-state-train-10" in bootstrap
+          evaluate = jobs["evaluate"]
+          assert evaluate["needs"] == "train_all"
+          assert sum(1 for step in evaluate["steps"] if step.get("uses", "").startswith("actions/download-artifact@")) == 2
+          assert not any("onecore-corpus-final" in str(step.get("with", {})) for step in evaluate["steps"]), "evaluation must reuse the already-restored training workspace results"
           import yaml
           registry = yaml.safe_load(Path("onecore-ai/data/sources.yaml").read_text(encoding="utf-8"))
           video_sources = [item for item in registry["sources"] if item.get("id") == "videos4camera_bench"]
@@ -185,5 +208,14 @@ jobs:
           image_sources = [item for item in registry["sources"] if item.get("id") == "openimages_finedet_v1"]
           assert len(image_sources) == 1 and image_sources[0].get("enabled") is True
           assert image_sources[0].get("adapter") == "image"
-          print("OneCore workflows are isolated, stale runs are replaceable, five-family training is enforced, and external image/video sources are configured.")
+          train_action = yaml.safe_load(Path(".github/actions/onecore-train/action.yml").read_text(encoding="utf-8"))
+          assert train_action["inputs"]["setup_environment"]["default"] == "true"
+          assert train_action["inputs"]["restore_corpus"]["default"] == "true"
+          train_action_steps = train_action["runs"]["steps"]
+          corpus_download = next(step for step in train_action_steps if step.get("name") == "Restore the validated corpus")
+          corpus_restore = next(step for step in train_action_steps if step.get("name") == "Restore the validated corpus snapshot (tar or legacy layout)")
+          assert corpus_download.get("if") == "${{ inputs.restore_corpus == 'true' }}"
+          assert corpus_restore.get("if") == "${{ inputs.restore_corpus == 'true' }}"
+          assert "setup_environment" in str(train_action_steps)
+          print("OneCore uses one persistent training runner, one corpus restore, ten durable chained sessions, and an isolated five-family data gate.")
           PY
