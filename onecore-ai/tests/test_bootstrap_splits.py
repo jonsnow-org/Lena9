@@ -107,7 +107,7 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
     assert bootstrap_doc["jobs"]["dataset_gate"]["if"].startswith("${{")
     assert "always() && needs.finalize_acquisition.result == 'success' && needs.finalize_acquisition.outputs.complete == 'true'" in bootstrap
     assert "always() && needs.dataset_gate.result == 'success'" in bootstrap
-    assert "always() && needs.train_09.result == 'success'" in bootstrap
+    assert "always() && needs.train_all.result == 'success'" in bootstrap
     assert "base_corpus_artifact_name" in bootstrap
     assert 'print(f"request_stage={stage}")' in bootstrap
     assert "REQUEST_STAGE" in bootstrap
@@ -154,6 +154,44 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
     assert "steps: \"15\"" in bootstrap
     assert "onecore-state-train-10" in bootstrap
     assert "Notebook order: 03, 04, 03, 04, 03, 04, 03, 04, 03, 04" in bootstrap
+    jobs = bootstrap_doc["jobs"]
+    assert "train_all" in jobs
+    assert not any(f"train_{index:02d}" in jobs for index in range(1, 11))
+    train_job = jobs["train_all"]
+    assert train_job["needs"] == "dataset_gate"
+    assert train_job["timeout-minutes"] == 360
+    segments = [step for step in train_job["steps"] if str(step.get("id", "")).startswith("train")]
+    expected_notebooks = [
+        "03_text_pretraining.ipynb", "04_multimodal_curriculum.ipynb",
+        "03_text_pretraining.ipynb", "04_multimodal_curriculum.ipynb",
+        "03_text_pretraining.ipynb", "04_multimodal_curriculum.ipynb",
+        "03_text_pretraining.ipynb", "04_multimodal_curriculum.ipynb",
+        "03_text_pretraining.ipynb", "04_multimodal_curriculum.ipynb",
+    ]
+    assert len(segments) == 10
+    for index, step in enumerate(segments, 1):
+        assert step["id"] == f"train{index:02d}"
+        assert step["uses"] == "./.github/actions/onecore-train"
+        assert step["with"]["steps"] == "15"
+        assert step["with"]["notebook"] == expected_notebooks[index - 1]
+        assert step["with"]["setup_environment"] == ("true" if index == 1 else "false")
+        assert step["with"]["restore_corpus"] == ("true" if index == 1 else "false")
+    assert sum(step["with"]["restore_corpus"] == "true" for step in segments) == 1
+    assert sum(step["with"]["setup_environment"] == "true" for step in segments) == 1
+    assert train_job["outputs"]["optimizer_step"] == "${{ steps.train10.outputs.optimizer_step }}"
+    evaluate = jobs["evaluate"]
+    assert evaluate["needs"] == "train_all"
+    assert sum(step.get("uses", "").startswith("actions/download-artifact@") for step in evaluate["steps"]) == 2
+    assert not any("onecore-corpus-final" in str(step.get("with", {})) for step in evaluate["steps"])
+    assert train_doc["inputs"]["setup_environment"]["default"] == "true"
+    assert train_doc["inputs"]["restore_corpus"]["default"] == "true"
+    train_steps = train_doc["runs"]["steps"]
+    for step_name in ("Set up Python", "Install CPU-only PyTorch and OneCore dependencies"):
+        step = next(item for item in train_steps if item.get("name") == step_name)
+        assert step["if"] == "${{ inputs.setup_environment == 'true' }}"
+    for step_name in ("Restore the validated corpus", "Restore the validated corpus snapshot (tar or legacy layout)"):
+        step = next(item for item in train_steps if item.get("name") == step_name)
+        assert step["if"] == "${{ inputs.restore_corpus == 'true' }}"
     assert "optimizer_step" in train_action and "checkpoint_sha256" in train_action
     assert "optimizer, scheduler, RNG" in train_action
     assert "text,tool,image,audio,video" in training
