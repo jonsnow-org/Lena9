@@ -48,7 +48,7 @@ jobs:
           from pathlib import Path
           request = json.loads(Path("onecore-ai/training-request.json").read_text(encoding="utf-8"))
           stage = str(request.get("stage", "")).strip()
-          if stage not in {"acquire", "train_existing"} or request.get("start_fresh_joint_training") is not True:
+          if stage not in {"acquire", "train_existing", "repair_video_existing"} or request.get("start_fresh_joint_training") is not True:
               raise ValueError("The request must acquire data or validate the existing corpus, and initialize OneCore from random weights")
           if int(request.get("steps", 0)) != 150:
               raise ValueError("This staged workflow is configured for exactly 150 optimizer steps")
@@ -134,6 +134,7 @@ jobs:
       artifact_name: ${{ steps.select.outputs.artifact_name }}
       artifact_run_id: ${{ steps.select.outputs.artifact_run_id }}
       complete: ${{ steps.select.outputs.complete }}
+      request_stage: ${{ steps.select.outputs.request_stage }}
     steps:
       - name: Select the newly uploaded snapshot or preserve the previous known-good corpus
         id: select
@@ -151,7 +152,8 @@ jobs:
           import os
           if os.environ.get("PREPARE_RESULT") != "success":
               raise SystemExit("The prepare job failed; no validated base corpus was selected.")
-          if os.environ.get("REQUEST_STAGE") == "train_existing":
+          print(f"request_stage={os.environ.get('REQUEST_STAGE', '')}")
+          if os.environ.get("REQUEST_STAGE") in {"train_existing", "repair_video_existing"}:
               print(f"artifact_name={os.environ['BASE_ARTIFACT_NAME']}")
               print(f"artifact_run_id={os.environ['BASE_RUN_ID']}")
               print("complete=true")
@@ -220,6 +222,95 @@ jobs:
         env:
           PYTHONPATH: onecore-ai/src
         run: python -m onecore.artifacts restore --root onecore-ai --artifact-dir onecore-ai/run-state/corpus-artifact
+      - name: Resume only the saved CC-BY video cursor
+        id: video_repair
+        if: ${{ needs.finalize_acquisition.outputs.request_stage == 'repair_video_existing' }}
+        shell: bash
+        env:
+          PYTHONPATH: onecore-ai/src
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from onecore.acquire import acquire_sources, persist_acquisition_progress, task_coverage
+
+          root = Path("onecore-ai")
+          before = task_coverage(root)
+          report = acquire_sources(
+              root,
+              profile="expanded",
+              only_sources={"videos4camera_bench"},
+              time_budget_seconds=1200,
+              source_budget_seconds=1200,
+          )
+          cursor = persist_acquisition_progress(root)
+          after = task_coverage(root)
+          source = next(
+              (item for item in report.get("sources", [])
+               if item.get("source") == "videos4camera_bench"),
+              {},
+          )
+          print(json.dumps({
+              "scope": "videos4camera_bench only",
+              "before": before,
+              "after": after,
+              "cursor_persistence": cursor,
+              "source": {
+                  key: source.get(key) for key in (
+                      "status", "read", "total_read", "accepted", "total_accepted",
+                      "failed_rows", "by_split", "crawler_cursors",
+                      "conversion_error_samples", "errors",
+                  )
+              },
+          }, ensure_ascii=False, indent=2))
+          PY
+      - name: Diagnose decoded-payload coverage without lowering thresholds
+        id: corpus_diagnostic
+        shell: bash
+        env:
+          PYTHONPATH: onecore-ai/src
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+          from onecore.acquire import task_coverage
+
+          coverage = task_coverage(Path("onecore-ai"))
+          minimums = {
+              "text": {"train": 100, "validation": 10, "test": 10},
+              "tool": {"train": 100, "validation": 10, "test": 10},
+              "image": {"train": 100, "validation": 10, "test": 10},
+              "audio": {"train": 100, "validation": 10, "test": 10},
+              "video": {"train": 100, "validation": 10, "test": 10},
+          }
+          failures = [
+              f"{split}.{task}={coverage.get(split, {}).get(task, 0)} (minimum {minimum})"
+              for task, splits in minimums.items()
+              for split, minimum in splits.items()
+              if coverage.get(split, {}).get(task, 0) < minimum
+          ]
+          ready = not failures
+          print(f"coverage_ready={str(ready).lower()}")
+          print(json.dumps({"coverage": coverage, "failures": failures}, ensure_ascii=False, indent=2))
+          PY
+      - name: Preserve resumable video-only corpus if coverage still needs continuation
+        id: repair_progress_pack
+        if: ${{ needs.finalize_acquisition.outputs.request_stage == 'repair_video_existing' && steps.corpus_diagnostic.outputs.coverage_ready != 'true' }}
+        shell: bash
+        env:
+          PYTHONPATH: onecore-ai/src
+        run: |
+          python -m onecore.artifacts pack --root onecore-ai --output "$RUNNER_TEMP/onecore-corpus-video-repair.tar"
+          test -s "$RUNNER_TEMP/onecore-corpus-video-repair.tar"
+      - name: Upload resumable video-only continuation snapshot
+        if: ${{ steps.repair_progress_pack.outcome == 'success' }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: onecore-corpus-video-repair-progress
+          path: ${{ runner.temp }}/onecore-corpus-video-repair.tar
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0
       - name: Require verified five-family external data coverage
         shell: bash
         env:
