@@ -2,6 +2,14 @@ name: OneCore alternating training session
 description: Restore the same model lineage, run one bounded notebook segment, and save its full optimizer state.
 
 inputs:
+  setup_environment:
+    description: Install Python and OneCore dependencies on this runner
+    required: false
+    default: "true"
+  restore_corpus:
+    description: Download and expand the full validated corpus on this runner
+    required: false
+    default: "true"
   corpus_artifact_name:
     description: Final validated corpus artifact in this workflow run
     required: true
@@ -38,6 +46,7 @@ runs:
   using: composite
   steps:
     - name: Set up Python
+      if: ${{ inputs.setup_environment == 'true' }}
       uses: actions/setup-python@v6
       with:
         python-version: "3.11"
@@ -45,6 +54,7 @@ runs:
         cache-dependency-path: onecore-ai/pyproject.toml
 
     - name: Install CPU-only PyTorch and OneCore dependencies
+      if: ${{ inputs.setup_environment == 'true' }}
       shell: bash
       run: |
         python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
@@ -52,12 +62,14 @@ runs:
         python -m pip install -e "onecore-ai[dev]"
 
     - name: Restore the validated corpus
+      if: ${{ inputs.restore_corpus == 'true' }}
       uses: actions/download-artifact@v7
       with:
         name: ${{ inputs.corpus_artifact_name }}
         path: onecore-ai/run-state/corpus-artifact
 
     - name: Restore the validated corpus snapshot (tar or legacy layout)
+      if: ${{ inputs.restore_corpus == 'true' }}
       shell: bash
       env:
         PYTHONPATH: onecore-ai/src
