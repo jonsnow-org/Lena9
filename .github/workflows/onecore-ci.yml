@@ -214,8 +214,14 @@ jobs:
           train_action_steps = train_action["runs"]["steps"]
           corpus_download = next(step for step in train_action_steps if step.get("name") == "Restore the validated corpus")
           corpus_restore = next(step for step in train_action_steps if step.get("name") == "Restore the validated corpus snapshot (tar or legacy layout)")
-          assert corpus_download.get("if") == "${{ inputs.restore_corpus == 'true' }}"
-          assert corpus_restore.get("if") == "${{ inputs.restore_corpus == 'true' }}"
+          assert "inputs.restore_corpus" in corpus_download.get("if", "")
+          assert "== 'true'" in corpus_download.get("if", "")
+          assert "inputs.restore_corpus" in corpus_restore.get("if", "")
+          assert "== 'true'" in corpus_restore.get("if", "")
+          setup_python = next(step for step in train_action_steps if step.get("name") == "Set up Python")
+          install_dependencies = next(step for step in train_action_steps if step.get("name") == "Install CPU-only PyTorch and OneCore dependencies")
+          assert "inputs.setup_environment" in setup_python.get("if", "")
+          assert "inputs.setup_environment" in install_dependencies.get("if", "")
           assert "setup_environment" in str(train_action_steps)
           print("OneCore uses one persistent training runner, one corpus restore, ten durable chained sessions, and an isolated five-family data gate.")
           PY
