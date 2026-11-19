@@ -22,6 +22,8 @@ The manual `OneCore — staged training` workflow remains available for operator
 
 Set `stage` to `train_existing` in `onecore-ai/training-request.json` to validate and train directly from the referenced `base_corpus_run_id` / `base_corpus_artifact_name`. This mode skips the acquisition job entirely. It restores the saved artifact once in the dataset-gate job, checks the five external task families and the independent train/validation/test splits, and proceeds to the existing 150-step from-scratch training chain only when the payload gate passes. If it fails, the gate reports the exact missing family/split counts; switch back to `acquire` only for the missing source families rather than rerunning the entire registry.
 
+For a corpus that is complete except for decoded video payloads, set `stage` to `repair_video_existing`. This restores the referenced snapshot and resumes only the saved `videos4camera_bench` cursor for a bounded 20-minute pass; all other crawlers stay skipped. The gate keeps the 100/10/10 thresholds. If more video work is needed, it uploads `onecore-corpus-video-repair-progress` in the current run; point the next request to that run and artifact to continue from the committed cursor. If diagnostics show video decode/conversion errors rather than low volume, retry from the original base artifact after applying the decoder fix, not from a cursor that may have passed unreadable rows.
+
 ## Initial pipeline baseline
 
 The earlier 10-step and 100-step runs used only synthetic engineering curricula. They remain historical diagnostics. The current all-data experiment starts from random initialization and includes every usable data class after the task-family and split-integrity gates pass.
