@@ -433,6 +433,21 @@ def _save_audio_features(value: Any, destination: Path) -> bool:
         return False
 
 
+def _disable_video_auto_decode(dataset: Any, video_field: str) -> Any:
+    """Keep HF Video columns as path/bytes so OneCore can decode frames with imageio/FFmpeg.
+
+    Newer datasets releases expose decoded VideoDecoder objects by default. The
+    acquisition path intentionally owns frame sampling and must not require torchcodec.
+    """
+    features = getattr(dataset, "features", None) or {}
+    feature = features.get(video_field) if hasattr(features, "get") else None
+    if feature is None or feature.__class__.__name__ != "Video":
+        return dataset
+    from datasets import Video
+
+    return dataset.cast_column(video_field, Video(decode=False))
+
+
 def _video_frames(value: Any, max_frames: int = 4) -> list[Any]:
     if isinstance(value, dict):
         frames = value.get("frames")
@@ -443,6 +458,8 @@ def _video_frames(value: Any, max_frames: int = 4) -> list[Any]:
         src = value.get("src") or value.get("url")
         if src and not path and not raw:
             return _video_frames(str(src), max_frames=max_frames)
+        if isinstance(path, str) and path.startswith(("http://", "https://")) and not raw:
+            return _video_frames(path, max_frames=max_frames)
         if path or raw:
             temp_path = None
             try:
@@ -1319,6 +1336,9 @@ def acquire_sources(
                         audio_feature = features.get(audio_field) if hasattr(features, "get") else None
                         if audio_feature is not None and audio_feature.__class__.__name__ == "Audio":
                             dataset = dataset.cast_column(audio_field, Audio(decode=False))
+                    elif adapter in {"video", "video_url", "video_repo_file"}:
+                        video_field = str(source.get("video_field") or "video")
+                        dataset = _disable_video_auto_decode(dataset, video_field)
                     cursor = StatefulStreamCursor(
                         root, notebook_for_source(source), source_id, str(source["repo"]),
                         str(source.get("config") or ""), str(hf_split), revision,
