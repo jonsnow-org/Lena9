@@ -142,6 +142,29 @@ def test_image_adapter_exposes_decode_failure_reason(tmp_path: Path, monkeypatch
         _record_from_row({"image": "https://example.invalid/image.jpg"}, source, "row-1", "train", tmp_path)
 
 
+def test_huggingface_video_feature_is_cast_without_auto_decoding() -> None:
+    from datasets import Video
+    from onecore.acquire import _disable_video_auto_decode
+
+    class FakeDataset:
+        features = {"video": Video()}
+
+        def __init__(self) -> None:
+            self.cast_call = None
+
+        def cast_column(self, field: str, feature: object):
+            self.cast_call = (field, feature)
+            return self
+
+    dataset = FakeDataset()
+    assert _disable_video_auto_decode(dataset, "video") is dataset
+    assert dataset.cast_call is not None
+    field, feature = dataset.cast_call
+    assert field == "video"
+    assert isinstance(feature, Video)
+    assert feature.decode is False
+
+
 def test_audio_and_video_payloads_are_prepared_as_shared_modalities(tmp_path: Path) -> None:
     audio_source = {
         "id": "audio-test",
