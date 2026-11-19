@@ -161,7 +161,10 @@ jobs:
                   summary.write("## Reusing the existing corpus; acquisition skipped\n")
                   summary.write(f"- Run ID: {os.environ['BASE_RUN_ID']}\n")
                   summary.write(f"- Artifact: {os.environ['BASE_ARTIFACT_NAME']}\n")
-                  summary.write("- Proceed directly to the full payload and split-integrity gate; no crawler is started.\n")
+                  if os.environ.get("REQUEST_STAGE") == "repair_video_existing":
+                      summary.write("- General acquisition remains skipped; only the saved Videos4CameraBench video cursor is resumed in the dataset gate.\\n")
+                  else:
+                      summary.write("- Proceed directly to the full payload and split-integrity gate; no crawler is started.\\n")
               raise SystemExit(0)
           if os.environ.get("ACQUIRE_RESULT") == "success":
               print("artifact_name=onecore-corpus-acq-progress")
