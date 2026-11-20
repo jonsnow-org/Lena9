@@ -368,7 +368,19 @@ jobs:
           jupyter nbconvert --to notebook --execute onecore-ai/notebooks/02_data_gate.ipynb \
             --output 02_data_gate.final.executed.ipynb \
             --output-dir onecore-ai/run-state/executed-notebooks \
-            --ExecutePreprocessor.timeout=-1
+            --ExecutePreprocessor.timeout=-1 2>&1 | tee onecore-ai/run-state/final-data-gate.log
+      - name: Preserve full final data-gate diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: onecore-data-gate-diagnostic-${{ github.run_id }}
+          path: |
+            onecore-ai/run-state/final-data-gate.log
+            onecore-ai/run-state/executed-notebooks/02_data_gate.final.executed.ipynb
+            onecore-ai/data/acquisition-report.json
+          if-no-files-found: ignore
+          retention-days: 14
+          compression-level: 1
       - name: Package the validated corpus as one stack-safe archive
         shell: bash
         env:
