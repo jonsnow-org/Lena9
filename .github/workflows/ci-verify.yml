@@ -3,7 +3,8 @@ name: CI Verify
 on:
   push:
     branches: [kilo/ivory-engine-kc6]
-  pull_request:
+  schedule:
+    - cron: '0 */6 * * *'
 
 jobs:
   test:
@@ -21,3 +22,15 @@ jobs:
         run: |
           cd onecore-ai
           python -m pytest -q
+      - name: Synthetic training smoke
+        run: |
+          cd onecore-ai
+          python -c "from onecore.synthetic_data import generate_text_samples; print(len(generate_text_samples(5)))"
+      - name: Save report
+        run: |
+          mkdir -p reports
+          echo "CI run complete" > reports/latest.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ci-report
+          path: reports/
