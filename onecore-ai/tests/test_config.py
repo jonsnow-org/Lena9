@@ -19,6 +19,7 @@ def test_repository_config_loads_without_undefined_fields():
         + model.special_tokens
     )
     assert train.gradient_accumulation == 4
+    assert train.tldm_diffusion_weight == 0.15
     assert train.total_steps > train.warmup_steps
     assert raw["seed"] == 20261115
 
