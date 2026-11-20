@@ -167,3 +167,18 @@ def test_native_tldm_rejects_invalid_masked_generation_contract():
         model.generate_tldm(
             context, block_size=3, allowed_token_ids=[cfg.special_id(18)]
         )
+
+
+def test_native_tldm_diffusion_objective_trains_shared_onecore_weights():
+    import random
+    from onecore.train import _tldm_block_denoising_loss
+
+    cfg = tiny_config()
+    model = OneCore(cfg)
+    sequence = torch.randint(0, cfg.text_vocab_size, (1, 20))
+    loss = _tldm_block_denoising_loss(model, sequence, random.Random(17))
+    assert loss.ndim == 0 and torch.isfinite(loss)
+    assert loss.item() > 0
+    loss.backward()
+    assert model.token_embedding.weight.grad is not None
+    assert model.blocks[0].mlp.gate.weight.grad is not None
