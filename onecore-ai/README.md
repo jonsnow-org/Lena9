@@ -40,6 +40,17 @@ Configuration: width 1024, four unique recurrent blocks, three recurrent cycles 
 
 100–150M is a later research phase, not a final ceiling. Expansion above 150M is possible only when independent quality, data coverage, compute, and lineage evidence justify it. Full precision remains the baseline; quantization follows a measured full-precision baseline.
 
+## Native latent-diffusion reasoning (OneCore T-LDM)
+
+OneCore now includes a native latent-compression / recurrent-thinking / discrete-diffusion path. It is **not** the Sham 2 head copied into this repository: OneCore has no donor body, frozen external checkpoint, LoRA, teacher model, or imported T-LDM weights.
+
+- The compressor pools OneCore's own learned token, position, and modality states into at most 16 latent slots.
+- The latent thinker runs those slots through OneCore's own recurrent Transformer blocks.
+- The writer expands the latent context, refines masked shared-vocabulary token blocks over multiple passes, and uses the same tied OneCore LM head.
+- Training combines the ordinary causal objective with a masked-block diffusion objective (default weight 0.15) across the shared token stream, including modality codes.
+
+The path adds **zero trainable parameters**. Compressor, thinker, and writer reuse the existing embeddings, recurrent blocks, and tied output head; the exact 57,579,201-parameter baseline remains unchanged. It increases compute during the diffusion path, so CPU latency and quality must be measured rather than assumed. See `docs/native-tldm.md`.
+
 ## Dataset stages
 
 The current deterministic bootstrap contains 360 training, 87 validation, and 87 test records. It exercises the pipeline only and is not broad world knowledge. The training iterator reads only `train.jsonl`; validation/test are separately hashed and checked for record-ID, asset-path, and exact asset-content leakage.
