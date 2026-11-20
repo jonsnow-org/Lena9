@@ -1,0 +1,238 @@
+name: OneCore — CI and notebook integrity
+
+on:
+  push:
+    branches: [research/onecore-foundation]
+    paths:
+      - "onecore-ai/**"
+      - ".github/workflows/onecore-ci.yml"
+      - ".github/workflows/onecore-training.yml"
+      - ".github/workflows/onecore-bootstrap.yml"
+      - ".github/actions/onecore-acquire/action.yml"
+      - ".github/actions/onecore-train/action.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "onecore-ai/**"
+      - ".github/workflows/onecore-ci.yml"
+      - ".github/workflows/onecore-training.yml"
+      - ".github/workflows/onecore-bootstrap.yml"
+      - ".github/actions/onecore-acquire/action.yml"
+      - ".github/actions/onecore-train/action.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: onecore-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify OneCore isolation, architecture, and tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.head_ref || github.ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: onecore-ai/pyproject.toml
+
+      - name: Install CPU-only PyTorch
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install project and test dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -e "onecore-ai[dev]"
+
+      - name: Compile package
+        run: python -m compileall -q onecore-ai/src
+
+      - name: Run unit and regression tests
+        run: pytest -q onecore-ai/tests
+
+      - name: Smoke-test FineWeb-2 streaming and exact cursor resume
+        env:
+          HF_HUB_DISABLE_TELEMETRY: "1"
+        run: |
+          python - <<'PY'
+          import os
+          import tempfile
+          from huggingface_hub import HfApi
+          from datasets import load_dataset
+          from onecore.crawlers import StatefulStreamCursor
+
+          repo = "HuggingFaceFW/fineweb-2"
+          revision = HfApi().dataset_info(repo).sha
+          kwargs = {
+              "path": repo,
+              "name": "arb_Arab",
+              "split": "train",
+              "streaming": True,
+              "revision": revision,
+          }
+          dataset = load_dataset(**kwargs)
+          with tempfile.TemporaryDirectory(prefix="onecore-fineweb-cursor-") as tmp:
+              cursor = StatefulStreamCursor(
+                  tmp, "03_text_pretraining", "fineweb2_full_ar",
+                  repo, "arb_Arab", "train", revision,
+              )
+              stream, offset, mode = cursor.restore(dataset)
+              assert (offset, mode) == (0, "fresh")
+              iterator = iter(stream)
+              first = next(iterator)
+              assert isinstance(first.get("text"), str) and len(first["text"].strip()) >= 24
+              saved = cursor.save(stream, 1)
+              assert saved["cursor_mode"] == "state_dict", saved
+              expected_next = next(iterator)
+              # Rewind the same live stream object to the saved cursor. Reopening a
+              # second concurrent Arrow/HTTP stream in this runner has a pyarrow
+              # teardown race; this still exercises the real state_dict restore.
+              resumed, offset, mode = cursor.restore(dataset)
+              actual_next = next(iter(resumed))
+              assert offset == 1 and mode == "state_dict", (offset, mode)
+              assert actual_next == expected_next, "FineWeb-2 cursor did not resume at the exact next record"
+              print({
+                  "source": repo,
+                  "config": "arb_Arab",
+                  "revision": revision,
+                  "first_record_chars": len(first["text"]),
+                  "resume_mode": mode,
+                  "resume_exact": True,
+              }, flush=True)
+          # datasets/pyarrow can leave a background reader thread that crashes
+          # during CPython teardown after the successful assertion. This short-lived
+          # smoke process has no writes; exit directly only after every check passes.
+          os._exit(0)
+          PY
+
+      - name: Validate every notebook
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import nbformat
+          notebooks = sorted(Path("onecore-ai/notebooks").glob("*.ipynb"))
+          assert len(notebooks) == 6, f"Expected exactly 6 ordered notebooks, found {len(notebooks)}"
+          for path in notebooks:
+              notebook = nbformat.read(path, as_version=4)
+              nbformat.validate(notebook)
+              for index, cell in enumerate(notebook.cells):
+                  if cell.cell_type == "code":
+                      compile(cell.source, f"{path}:cell-{index}", "exec")
+              print(f"VALID + PYTHON-COMPILED {path}")
+          PY
+
+      - name: Confirm workflows are isolated and share one training lock
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          names = ("onecore-training.yml", "onecore-bootstrap.yml")
+          for name in names:
+              text = (Path(".github/workflows") / name).read_text()
+              assert "group: onecore-training-v2" in text
+              assert "research/onecore-foundation" in text
+          bootstrap = (Path(".github/workflows") / "onecore-bootstrap.yml").read_text(encoding="utf-8")
+          assert "gh workflow run onecore-training.yml" not in bootstrap, "training must not dispatch a workflow absent from the default branch"
+          assert "Start fresh random-initialized OneCore joint multimodal training in the same CPU job" not in bootstrap
+          assert "cancel-in-progress: true" in bootstrap
+          assert "timeout-minutes: 330" in bootstrap
+          assert "./.github/actions/onecore-acquire" in bootstrap
+          assert "./.github/actions/onecore-train" in bootstrap
+          assert "onecore-corpus-final" in bootstrap
+          assert "onecore-state-train-10" in bootstrap
+          assert "Notebook order: 03, 04, 03, 04, 03, 04, 03, 04, 03, 04" in bootstrap
+          import yaml
+          workflow = yaml.safe_load(bootstrap)
+          jobs = workflow["jobs"]
+          assert "acquire_corpus" in jobs, "bounded corpus acquisition must use one persistent runner"
+          assert not any(f"acquire_{i}" in jobs for i in range(1, 7)), "per-session jobs must not re-transfer the full corpus"
+          assert jobs["acquire_corpus"]["needs"] == "prepare"
+          assert jobs["acquire_corpus"]["timeout-minutes"] == 330
+          assert "onecore-corpus-acq-progress" in bootstrap
+          assert "train_existing" in bootstrap, "existing-corpus training must bypass acquisition"
+          assert "needs.prepare.outputs.request_stage == 'acquire'" in bootstrap
+          assert "always() && needs.finalize_acquisition.result == 'success' && needs.finalize_acquisition.outputs.complete == 'true'" in bootstrap
+          assert "always() && needs.dataset_gate.result == 'success'" in bootstrap
+          assert "always() && needs.train_all.result == 'success'" in bootstrap
+          assert "REQUEST_STAGE" in bootstrap
+          assert 'print(f"request_stage={stage}")' in bootstrap
+          action = yaml.safe_load(Path(".github/actions/onecore-acquire/action.yml").read_text(encoding="utf-8"))
+          assert action["inputs"]["session_count"]["default"] == "6"
+          action_steps = action["runs"]["steps"]
+          assert sum(1 for step in action_steps if step.get("uses", "").startswith("actions/download-artifact@")) == 1
+          assert sum(1 for step in action_steps if step.get("uses", "").startswith("actions/upload-artifact@")) == 1
+          session_script = next(step for step in action_steps if step.get("id") == "session")["run"]
+          assert "03_text_pretraining.ipynb" in session_script and "04_multimodal_curriculum.ipynb" in session_script
+          assert "02_data_gate.ipynb" not in session_script, "the full integrity gate runs once after acquisition"
+          assert "train_all" in jobs
+          assert not any(f"train_{i:02d}" in jobs for i in range(1, 11)), "training segments must not each start a new runner"
+          assert jobs["train_all"]["needs"] == "dataset_gate"
+          assert jobs["train_all"]["timeout-minutes"] == 360
+          train_steps = [step for step in jobs["train_all"]["steps"] if str(step.get("id", "")).startswith("train")]
+          assert len(train_steps) == 10, f"expected ten sequential segments, found {len(train_steps)}"
+          expected_notebooks = [
+              "03_text_pretraining.ipynb", "04_multimodal_curriculum.ipynb",
+              "03_text_pretraining.ipynb", "04_multimodal_curriculum.ipynb",
+              "03_text_pretraining.ipynb", "04_multimodal_curriculum.ipynb",
+              "03_text_pretraining.ipynb", "04_multimodal_curriculum.ipynb",
+              "03_text_pretraining.ipynb", "04_multimodal_curriculum.ipynb",
+          ]
+          for index, step in enumerate(train_steps, 1):
+              assert step["id"] == f"train{index:02d}"
+              assert step["uses"] == "./.github/actions/onecore-train"
+              assert step["with"]["steps"] == "15"
+              assert step["with"]["notebook"] == expected_notebooks[index - 1]
+              assert step["with"]["setup_environment"] == ("true" if index == 1 else "false")
+              assert step["with"]["restore_corpus"] == ("true" if index == 1 else "false")
+          assert sum(1 for step in train_steps if step["with"]["restore_corpus"] == "true") == 1
+          assert sum(1 for step in train_steps if step["with"]["setup_environment"] == "true") == 1
+          assert "onecore-state-train-10" in bootstrap
+          assert "native_tldm" in bootstrap
+          assert "diffusion_loss_weight" in bootstrap
+          assert "Expected 750 native diffusion updates" in bootstrap
+          phone_config = yaml.safe_load(Path("onecore-ai/configs/phone-research.yaml").read_text(encoding="utf-8"))
+          assert phone_config["training"]["tldm_diffusion_weight"] == 0.15
+          dataset_gate_steps = jobs["dataset_gate"]["steps"]
+          corpus_diagnostic = next(step for step in dataset_gate_steps if step.get("id") == "corpus_diagnostic")
+          diagnostic_run = corpus_diagnostic["run"]
+          assert 'output.write(f"coverage_ready=' in diagnostic_run
+          assert "GITHUB_STEP_SUMMARY" in diagnostic_run
+          assert '>> "$GITHUB_OUTPUT"' not in diagnostic_run
+          evaluate = jobs["evaluate"]
+          assert evaluate["needs"] == "train_all"
+          assert sum(1 for step in evaluate["steps"] if step.get("uses", "").startswith("actions/download-artifact@")) == 2
+          assert not any("onecore-corpus-final" in str(step.get("with", {})) for step in evaluate["steps"]), "evaluation must reuse the already-restored training workspace results"
+          import yaml
+          registry = yaml.safe_load(Path("onecore-ai/data/sources.yaml").read_text(encoding="utf-8"))
+          video_sources = [item for item in registry["sources"] if item.get("id") == "videos4camera_bench"]
+          assert len(video_sources) == 1 and video_sources[0].get("enabled") is True
+          assert video_sources[0].get("adapter") == "video"
+          assert video_sources[0].get("validation_percent") == 10 and video_sources[0].get("test_percent") == 10
+          enabled = {item["id"] for item in registry["sources"] if item.get("enabled", True)}
+          assert {"turkish_mobile_function_calling", "oscar_ar", "proof_pile_2", "stack_v2_edu", "sard_arabic_documents", "finevideo", "internvid_10m_flt", "webvid_10m_video"} <= enabled
+          image_sources = [item for item in registry["sources"] if item.get("id") == "openimages_finedet_v1"]
+          assert len(image_sources) == 1 and image_sources[0].get("enabled") is True
+          assert image_sources[0].get("adapter") == "image"
+          train_action = yaml.safe_load(Path(".github/actions/onecore-train/action.yml").read_text(encoding="utf-8"))
+          assert train_action["inputs"]["setup_environment"]["default"] == "true"
+          assert train_action["inputs"]["restore_corpus"]["default"] == "true"
+          train_action_steps = train_action["runs"]["steps"]
+          corpus_download = next(step for step in train_action_steps if step.get("name") == "Restore the validated corpus")
+          corpus_restore = next(step for step in train_action_steps if step.get("name") == "Restore the validated corpus snapshot (tar or legacy layout)")
+          assert "inputs.restore_corpus" in corpus_download.get("if", "")
+          assert "== 'true'" in corpus_download.get("if", "")
+          assert "inputs.restore_corpus" in corpus_restore.get("if", "")
+          assert "== 'true'" in corpus_restore.get("if", "")
+          setup_python = next(step for step in train_action_steps if step.get("name") == "Set up Python")
+          install_dependencies = next(step for step in train_action_steps if step.get("name") == "Install CPU-only PyTorch and OneCore dependencies")
+          assert "inputs.setup_environment" in setup_python.get("if", "")
+          assert "inputs.setup_environment" in install_dependencies.get("if", "")
+          assert "setup_environment" in str(train_action_steps)
+          print("OneCore uses one persistent training runner, one corpus restore, ten durable chained sessions, and an isolated five-family data gate.")
+          PY

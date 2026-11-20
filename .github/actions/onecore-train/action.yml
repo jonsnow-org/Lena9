@@ -1,0 +1,179 @@
+name: OneCore alternating training session
+description: Restore the same model lineage, run one bounded notebook segment, and save its full optimizer state.
+
+inputs:
+  setup_environment:
+    description: Install Python and OneCore dependencies on this runner
+    required: false
+    default: "true"
+  restore_corpus:
+    description: Download and expand the full validated corpus on this runner
+    required: false
+    default: "true"
+  corpus_artifact_name:
+    description: Final validated corpus artifact in this workflow run
+    required: true
+  checkpoint_artifact_name:
+    description: Previous resumable checkpoint artifact; empty for fresh initialization
+    required: false
+    default: ""
+  previous_checkpoint_artifact_name:
+    description: Previous checkpoint artifact to remove after its successor has been uploaded
+    required: false
+    default: ""
+  stage:
+    description: joint for fresh initialization or multimodal for exact continuation
+    required: true
+  notebook:
+    description: Notebook selected for this alternating session
+    required: true
+  steps:
+    description: Optimizer steps in this independent runner session
+    required: true
+  output_artifact_name:
+    description: New checkpoint artifact name
+    required: true
+
+outputs:
+  optimizer_step:
+    description: Total optimizer step recorded in the saved checkpoint
+    value: ${{ steps.report.outputs.optimizer_step }}
+  checkpoint_sha256:
+    description: SHA-256 of the saved checkpoint
+    value: ${{ steps.report.outputs.checkpoint_sha256 }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      if: ${{ inputs.setup_environment == 'true' }}
+      uses: actions/setup-python@v6
+      with:
+        python-version: "3.11"
+        cache: pip
+        cache-dependency-path: onecore-ai/pyproject.toml
+
+    - name: Install CPU-only PyTorch and OneCore dependencies
+      if: ${{ inputs.setup_environment == 'true' }}
+      shell: bash
+      run: |
+        python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+        python -m pip install --upgrade pip
+        python -m pip install -e "onecore-ai[dev]"
+
+    - name: Restore the validated corpus
+      if: ${{ inputs.restore_corpus == 'true' }}
+      uses: actions/download-artifact@v7
+      with:
+        name: ${{ inputs.corpus_artifact_name }}
+        path: onecore-ai/run-state/corpus-artifact
+
+    - name: Restore the validated corpus snapshot (tar or legacy layout)
+      if: ${{ inputs.restore_corpus == 'true' }}
+      shell: bash
+      env:
+        PYTHONPATH: onecore-ai/src
+      run: python -m onecore.artifacts restore --root onecore-ai --artifact-dir onecore-ai/run-state/corpus-artifact
+
+    - name: Restore the exact previous model and optimizer state
+      if: ${{ inputs.checkpoint_artifact_name != '' }}
+      uses: actions/download-artifact@v7
+      with:
+        name: ${{ inputs.checkpoint_artifact_name }}
+        path: onecore-ai/run-state
+
+    - name: Verify resumed checkpoint lineage before execution
+      if: ${{ inputs.checkpoint_artifact_name != '' }}
+      shell: bash
+      env:
+        PYTHONPATH: onecore-ai/src
+      run: |
+        python - <<'PY'
+        import hashlib, json
+        from pathlib import Path
+        import torch
+        root = Path("onecore-ai/run-state")
+        checkpoint = root / "checkpoint.pt"
+        report = json.loads((root / "train_result.json").read_text(encoding="utf-8"))
+        digest = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
+        if digest != report.get("checkpoint", {}).get("sha256"):
+            raise ValueError("checkpoint SHA-256 differs from its saved training report")
+        payload = torch.load(checkpoint, map_location="cpu", weights_only=False)
+        if int(payload.get("step", -1)) != int(report.get("optimizer_step", -2)):
+            raise ValueError("optimizer step differs between checkpoint and report")
+        if int(payload.get("step", 0)) > 0 and not payload.get("optimizer", {}).get("state"):
+            raise ValueError("checkpoint has no optimizer moments")
+        metadata = payload.get("metadata", {})
+        print(json.dumps({
+            "optimizer_step": payload["step"],
+            "checkpoint_sha256": digest,
+            "scheduler_step": (payload.get("scheduler") or {}).get("last_epoch"),
+            "lineage_id": metadata.get("lineage_id"),
+            "parent_checkpoint_sha256": metadata.get("parent_checkpoint_sha256"),
+            "codebooks_initialized": metadata.get("codebooks_initialized"),
+        }, ensure_ascii=False, indent=2))
+        PY
+
+    - name: Run the selected notebook segment on the restored OneCore lineage
+      shell: bash
+      env:
+        PYTHONPATH: onecore-ai/src
+        ONECORE_STAGE: ${{ inputs.stage }}
+        ONECORE_STEPS: ${{ inputs.steps }}
+        ONECORE_RESUME: ${{ inputs.stage == 'multimodal' && 'true' || 'false' }}
+        ONECORE_PARENT_RUN_ID: ${{ inputs.stage == 'multimodal' && github.run_id || '' }}
+      run: |
+        mkdir -p onecore-ai/run-state/executed-notebooks
+        echo "Notebook: ${{ inputs.notebook }} | stage: ${{ inputs.stage }} | optimizer steps: ${{ inputs.steps }}"
+        jupyter nbconvert --to notebook --execute "onecore-ai/notebooks/${{ inputs.notebook }}" \
+          --output "${{ inputs.notebook }}.executed.ipynb" \
+          --output-dir onecore-ai/run-state/executed-notebooks \
+          --ExecutePreprocessor.timeout=-1
+
+    - name: Verify the resulting optimizer step and checkpoint digest
+      id: report
+      shell: bash
+      run: |
+        python - <<'PY' >> "$GITHUB_OUTPUT"
+        import hashlib, json
+        from pathlib import Path
+        root = Path("onecore-ai/run-state")
+        report = json.loads((root / "train_result.json").read_text(encoding="utf-8"))
+        checkpoint_sha = hashlib.sha256((root / "checkpoint.pt").read_bytes()).hexdigest()
+        if checkpoint_sha != report.get("checkpoint", {}).get("sha256"):
+            raise ValueError("new checkpoint digest does not match train_result.json")
+        print(f"optimizer_step={int(report['optimizer_step'])}")
+        print(f"checkpoint_sha256={checkpoint_sha}")
+        print(f"steps_in_this_job={int(report['steps_in_this_job'])}")
+        print(f"lineage_id={report.get('lineage_id', '')}")
+        PY
+
+    - name: Preserve the validated corpus acquisition report with this checkpoint
+      shell: bash
+      run: cp onecore-ai/data/acquisition-report.json onecore-ai/run-state/acquisition-report.json
+
+    - name: Upload resumable model, optimizer, scheduler, RNG and tokenizer state
+      uses: actions/upload-artifact@v6
+      with:
+        name: ${{ inputs.output_artifact_name }}
+        path: |
+          onecore-ai/run-state/checkpoint.pt
+          onecore-ai/run-state/tokenizer.json
+          onecore-ai/run-state/train_result.json
+          onecore-ai/run-state/acquisition-report.json
+        if-no-files-found: error
+        retention-days: 90
+        compression-level: 1
+
+    - name: Remove superseded checkpoint after the new checkpoint is safely uploaded
+      if: ${{ inputs.previous_checkpoint_artifact_name != '' }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        previous_id=$(gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts" \
+          --paginate --jq '.artifacts[] | select(.name == "${{ inputs.previous_checkpoint_artifact_name }}") | .id' | head -1)
+        if [[ -n "$previous_id" ]]; then
+          gh api -X DELETE "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${previous_id}"
+          echo "Removed superseded checkpoint artifact ${{ inputs.previous_checkpoint_artifact_name }}"
+        fi

@@ -1,0 +1,380 @@
+name: OneCore — staged training
+
+on:
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: "Training stage"
+        required: true
+        type: choice
+        options:
+          - smoke
+          - text
+          - multimodal
+          - evaluate
+        default: text
+      steps:
+        description: "Optimizer steps in this job (max 250)"
+        required: true
+        default: "10"
+        type: string
+      resume_run_id:
+        description: "Previous OneCore GitHub run ID; required for multimodal/evaluate and optional to continue text"
+        required: false
+        default: ""
+        type: string
+      data_run_id:
+        description: "Run ID whose corpus artifact contains the imported external datasets"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: onecore-training-v2
+  cancel-in-progress: false
+
+jobs:
+  train:
+    name: "OneCore ${{ inputs.stage }} segment"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    env:
+      ONECORE_STAGE: ${{ inputs.stage }}
+      ONECORE_STEPS: ${{ inputs.steps }}
+      ONECORE_RESUME: ${{ inputs.resume_run_id != '' }}
+      ONECORE_PARENT_RUN_ID: ${{ inputs.resume_run_id }}
+      ONECORE_DATA_RUN_ID: ${{ inputs.data_run_id }}
+      PYTHONPATH: onecore-ai/src
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+    steps:
+      - name: Checkout isolated research branch
+        uses: actions/checkout@v5
+        with:
+          ref: research/onecore-foundation
+
+      - name: Validate run request
+        shell: bash
+        run: |
+          case "${ONECORE_STAGE}" in
+            smoke|text|multimodal|evaluate) ;;
+            *) echo "Unknown stage"; exit 2 ;;
+          esac
+          if ! [[ "${ONECORE_STEPS}" =~ ^[0-9]+$ ]] || (( ONECORE_STEPS < 1 || ONECORE_STEPS > 250 )); then
+            echo "steps must be an integer from 1 to 250"; exit 2
+          fi
+          if [[ "${ONECORE_STAGE}" == "multimodal" || "${ONECORE_STAGE}" == "evaluate" ]] && [[ "${ONECORE_RESUME}" != "true" ]]; then
+            echo "multimodal/evaluate stages must restore a previous GitHub checkpoint"; exit 2
+          fi
+          if [[ "${ONECORE_STAGE}" == "smoke" && "${ONECORE_RESUME}" == "true" ]]; then
+            echo "smoke must start from fresh random initialization"; exit 2
+          fi
+          if [[ "${ONECORE_STAGE}" != "smoke" && -z "${ONECORE_DATA_RUN_ID}" ]]; then
+            echo "real training requires an imported external-corpus artifact"; exit 2
+          fi
+          if [[ -n "${ONECORE_DATA_RUN_ID}" && ! "${ONECORE_DATA_RUN_ID}" =~ ^[0-9]+$ ]]; then
+            echo "data_run_id must contain digits only"; exit 2
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: onecore-ai/pyproject.toml
+
+      - name: Install CPU-only PyTorch and OneCore dependencies
+        run: |
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --upgrade pip
+          python -m pip install -e "onecore-ai[dev]"
+
+      - name: Prepare deterministic bootstrap or use reviewed repository data
+        run: python -m onecore.bootstrap --root onecore-ai
+
+      - name: Restore imported external dataset corpus
+        if: ${{ inputs.data_run_id != '' }}
+        uses: actions/download-artifact@v7
+        with:
+          name: onecore-corpus-${{ inputs.data_run_id }}
+          run-id: ${{ inputs.data_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: onecore-ai/run-state/corpus-artifact
+
+      - name: Expand imported corpus snapshot (tar or legacy layout)
+        if: ${{ inputs.data_run_id != '' }}
+        shell: bash
+        env:
+          PYTHONPATH: onecore-ai/src
+        run: python -m onecore.artifacts restore --root onecore-ai --artifact-dir onecore-ai/run-state/corpus-artifact
+
+      - name: Restore previous checkpoint artifact
+        if: ${{ inputs.resume_run_id != '' }}
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          name: onecore-state-${{ inputs.resume_run_id }}
+          run-id: ${{ inputs.resume_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: onecore-ai/run-state
+
+      - name: Restore persistent checkpoint from GitHub Release if artifact expired
+        if: ${{ inputs.resume_run_id != '' }}
+        shell: bash
+        run: |
+          mkdir -p onecore-ai/run-state
+          if [[ ! -s onecore-ai/run-state/checkpoint.pt ]]; then
+            tag="onecore-run-${{ inputs.resume_run_id }}"
+            gh release download "$tag" --pattern onecore-state.zip --dir onecore-ai/run-state
+            unzip -o onecore-ai/run-state/onecore-state.zip -d onecore-ai/run-state
+          fi
+          test -s onecore-ai/run-state/checkpoint.pt
+          if [[ "${ONECORE_STAGE}" != "smoke" ]]; then
+            test -s onecore-ai/run-state/tokenizer.json
+          fi
+
+      - name: Verify restored checkpoint, optimizer, scheduler, hash and parameter count
+        if: ${{ inputs.resume_run_id != '' && inputs.stage != 'smoke' }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          import torch
+          from onecore.config import ModelConfig
+          from onecore.model import OneCore
+          root = Path("onecore-ai/run-state")
+          checkpoint = root / "checkpoint.pt"
+          report_path = root / "train_result.json"
+          if not report_path.is_file():
+              raise FileNotFoundError("restored artifact lacks train_result.json")
+          report = json.loads(report_path.read_text(encoding="utf-8"))
+          digest = hashlib.sha256()
+          with checkpoint.open("rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          actual_sha = digest.hexdigest()
+          if actual_sha != report.get("checkpoint", {}).get("sha256"):
+              raise ValueError("checkpoint SHA-256 differs from train_result.json")
+          payload = torch.load(checkpoint, map_location="cpu", weights_only=False)
+          if int(payload.get("step", -1)) != int(report.get("optimizer_step", -2)):
+              raise ValueError("checkpoint optimizer step differs from train_result.json")
+          optimizer_state = payload.get("optimizer", {}).get("state", {})
+          if int(payload.get("step", 0)) > 0 and not optimizer_state:
+              raise ValueError("checkpoint optimizer state is empty")
+          metadata = payload.get("metadata", {})
+          scheduler = payload.get("scheduler") or {}
+          if metadata.get("scheduler_step") is not None and scheduler.get("last_epoch") != metadata.get("scheduler_step"):
+              raise ValueError("scheduler state differs from checkpoint metadata")
+          raw = payload.get("config", {}).get("model", {})
+          allowed = set(ModelConfig.__dataclass_fields__)
+          cfg = ModelConfig.from_mapping({k: v for k, v in raw.items() if k in allowed})
+          model = OneCore(cfg)
+          count = model.count_parameters()
+          if count != int(report.get("parameter_count", -1)):
+              raise ValueError("checkpoint parameter count differs from train_result.json")
+          print(json.dumps({"checkpoint_sha256": actual_sha, "optimizer_step": payload["step"],
+                            "optimizer_state_entries": len(optimizer_state), "scheduler_last_epoch": scheduler.get("last_epoch"),
+                            "parameter_count": count, "parent_checkpoint_sha256": metadata.get("parent_checkpoint_sha256"),
+                            "asset_manifest_sha256": metadata.get("asset_manifest_sha256"),
+                            "lineage_id": metadata.get("lineage_id")}, ensure_ascii=False, indent=2))
+          PY
+
+      - name: Run complete OneCore CI suite before training
+        shell: bash
+        run: |
+          python -m compileall -q onecore-ai/src
+          pytest -q onecore-ai/tests
+          python - <<'PY'
+          from pathlib import Path
+          import nbformat
+          notebooks = sorted(Path("onecore-ai/notebooks").glob("*.ipynb"))
+          assert len(notebooks) == 6, f"Expected exactly six ordered notebooks, found {len(notebooks)}"
+          for path in notebooks:
+              nbformat.validate(nbformat.read(path, as_version=4))
+              print(f"VALID {path}")
+          for name in ("onecore-training.yml", "onecore-bootstrap.yml"):
+              text = (Path(".github/workflows") / name).read_text(encoding="utf-8")
+              assert "group: onecore-training-v2" in text
+              assert "research/onecore-foundation" in text
+          PY
+      - name: Execute project contract and architecture notebooks
+        run: |
+          mkdir -p onecore-ai/run-state/executed-notebooks
+          for notebook in 00_project_contract 01_architecture_budget; do
+            jupyter nbconvert --to notebook --execute "onecore-ai/notebooks/${notebook}.ipynb" \
+              --output "${notebook}.executed.ipynb" \
+              --output-dir onecore-ai/run-state/executed-notebooks \
+              --ExecutePreprocessor.timeout=-1
+          done
+
+      - name: Verify all available data before optimizer training
+        if: ${{ inputs.stage != 'smoke' }}
+        env:
+          ONECORE_SKIP_ACQUISITION: "1"
+          ONECORE_REQUIRED_TASKS: ${{ inputs.stage == 'evaluate' && 'text,tool,image,audio,video' || inputs.stage == 'multimodal' && 'text,tool,image,audio,video' || 'text' }}
+          ONECORE_MIN_TRAIN_RECORDS: "25"
+          ONECORE_MIN_HOLDOUT_RECORDS: "5"
+        run: |
+          jupyter nbconvert --to notebook --execute onecore-ai/notebooks/02_data_gate.ipynb \
+            --output 02_data_gate.executed.ipynb \
+            --output-dir onecore-ai/run-state/executed-notebooks \
+            --ExecutePreprocessor.timeout=-1
+
+      - name: Execute smoke or text notebook
+        if: ${{ inputs.stage == 'smoke' || inputs.stage == 'text' }}
+        run: |
+          jupyter nbconvert --to notebook --execute onecore-ai/notebooks/03_text_pretraining.ipynb \
+            --output 03_text_pretraining.executed.ipynb \
+            --output-dir onecore-ai/run-state/executed-notebooks \
+            --ExecutePreprocessor.timeout=-1
+
+      - name: Execute joint multimodal notebook
+        if: ${{ inputs.stage == 'multimodal' }}
+        run: |
+          jupyter nbconvert --to notebook --execute onecore-ai/notebooks/04_multimodal_curriculum.ipynb \
+            --output 04_multimodal_curriculum.executed.ipynb \
+            --output-dir onecore-ai/run-state/executed-notebooks \
+            --ExecutePreprocessor.timeout=-1
+
+      - name: Execute held-out evaluation and promotion gate after each non-smoke segment
+        if: ${{ success() && inputs.stage != 'smoke' && hashFiles('onecore-ai/run-state/checkpoint.pt') != '' }}
+        run: |
+          jupyter nbconvert --to notebook --execute onecore-ai/notebooks/05_evaluation_and_promotion.ipynb \
+            --output 05_evaluation_and_promotion.executed.ipynb \
+            --output-dir onecore-ai/run-state/executed-notebooks \
+            --ExecutePreprocessor.timeout=-1
+
+      - name: Advance corpus lineage baseline to this checkpoint
+        if: ${{ always() && inputs.stage != 'smoke' && inputs.stage != 'evaluate' && hashFiles('onecore-ai/data/acquisition-report.json') != '' && hashFiles('onecore-ai/run-state/train_result.json') != '' }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          data = Path("onecore-ai/data")
+          report_path = data / "acquisition-report.json"
+          result = json.loads(Path("onecore-ai/run-state/train_result.json").read_text(encoding="utf-8"))
+          report = json.loads(report_path.read_text(encoding="utf-8"))
+          report["base_train_manifest_sha256"] = result.get("manifest_sha256")
+          report["base_asset_manifest_sha256"] = result.get("asset_manifest_sha256")
+          report["base_train_records"] = sum(
+              1 for line in (data / "train.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()
+          )
+          report["last_checkpoint_sha256"] = result.get("checkpoint", {}).get("sha256")
+          report["last_optimizer_step"] = result.get("optimizer_step")
+          encoded = json.dumps(report, ensure_ascii=False, indent=2)
+          report_path.write_text(encoded, encoding="utf-8")
+          Path("onecore-ai/run-state/acquisition-report.json").write_text(encoded, encoding="utf-8")
+          PY
+
+      - name: Package acquired corpus for exact resume on the next segment
+        if: ${{ success() && inputs.stage != 'smoke' && inputs.stage != 'evaluate' }}
+        shell: bash
+        env:
+          PYTHONPATH: onecore-ai/src
+        run: |
+          python -m onecore.artifacts pack --root onecore-ai --output "$RUNNER_TEMP/onecore-corpus.tar"
+          test -s "$RUNNER_TEMP/onecore-corpus.tar"
+
+      - name: Upload acquired corpus for exact resume on the next segment
+        if: ${{ success() && inputs.stage != 'smoke' && inputs.stage != 'evaluate' }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: onecore-corpus-${{ github.run_id }}
+          path: ${{ runner.temp }}/onecore-corpus.tar
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0
+
+      - name: Upload resumable checkpoint and reports, including failed-run recovery
+        if: ${{ always() && hashFiles('onecore-ai/run-state/checkpoint.pt') != '' }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: onecore-state-${{ github.run_id }}
+          path: |
+            onecore-ai/run-state/checkpoint.pt
+            onecore-ai/run-state/tokenizer.json
+            onecore-ai/run-state/train_result.json
+            onecore-ai/run-state/evaluation.json
+            onecore-ai/run-state/evaluation.validation.json
+            onecore-ai/run-state/evaluation.test.json
+            onecore-ai/run-state/evaluation.bootstrap.validation.json
+            onecore-ai/run-state/evaluation.bootstrap.test.json
+            onecore-ai/run-state/model-registry.json
+            onecore-ai/run-state/acquisition-report.json
+          if-no-files-found: warn
+          retention-days: 90
+          compression-level: 1
+
+      - name: Check durable release write token
+        id: release_auth
+        if: ${{ success() && inputs.stage != 'evaluate' && inputs.stage != 'smoke' && hashFiles('onecore-ai/run-state/checkpoint.pt') != '' }}
+        env:
+          ONECORE_RELEASE_TOKEN: ${{ secrets.ONECORE_RELEASE_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [[ -n "${ONECORE_RELEASE_TOKEN}" || -n "${GH_TOKEN}" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Create durable GitHub Release checkpoint
+        id: release
+        if: ${{ success() && inputs.stage != 'evaluate' && steps.release_auth.outputs.enabled == 'true' && hashFiles('onecore-ai/run-state/checkpoint.pt') != '' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.ONECORE_RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          mkdir -p onecore-ai/run-state/release
+          cp onecore-ai/run-state/checkpoint.pt onecore-ai/run-state/release/
+          [[ ! -f onecore-ai/run-state/tokenizer.json ]] || cp onecore-ai/run-state/tokenizer.json onecore-ai/run-state/release/
+          [[ ! -f onecore-ai/run-state/train_result.json ]] || cp onecore-ai/run-state/train_result.json onecore-ai/run-state/release/
+          [[ ! -f onecore-ai/run-state/evaluation.json ]] || cp onecore-ai/run-state/evaluation.json onecore-ai/run-state/release/
+          [[ ! -f onecore-ai/run-state/evaluation.validation.json ]] || cp onecore-ai/run-state/evaluation.validation.json onecore-ai/run-state/release/
+          [[ ! -f onecore-ai/run-state/evaluation.test.json ]] || cp onecore-ai/run-state/evaluation.test.json onecore-ai/run-state/release/
+          [[ ! -f onecore-ai/run-state/evaluation.bootstrap.validation.json ]] || cp onecore-ai/run-state/evaluation.bootstrap.validation.json onecore-ai/run-state/release/
+          [[ ! -f onecore-ai/run-state/evaluation.bootstrap.test.json ]] || cp onecore-ai/run-state/evaluation.bootstrap.test.json onecore-ai/run-state/release/
+          [[ ! -f onecore-ai/run-state/model-registry.json ]] || cp onecore-ai/run-state/model-registry.json onecore-ai/run-state/release/
+          [[ ! -f onecore-ai/run-state/acquisition-report.json ]] || cp onecore-ai/run-state/acquisition-report.json onecore-ai/run-state/release/
+          (cd onecore-ai/run-state/release && zip -q -1 ../onecore-state.zip ./*)
+          tag="onecore-run-${GITHUB_RUN_ID}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" onecore-ai/run-state/onecore-state.zip --clobber
+          else
+            gh release create "$tag" onecore-ai/run-state/onecore-state.zip \
+              --title "OneCore checkpoint — run ${GITHUB_RUN_ID}" \
+              --notes "Resumable OneCore model + optimizer + scheduler + RNG + tokenizer lineage. Training host: GitHub Actions. Commit: ${GITHUB_SHA}." \
+              --target "${GITHUB_SHA}"
+          fi
+
+      - name: Publish run summary
+        if: always()
+        shell: bash
+        run: |
+          echo "## OneCore training run" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Stage: ${ONECORE_STAGE}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Requested optimizer steps: ${ONECORE_STEPS}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Run ID: ${GITHUB_RUN_ID}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Resume: ${ONECORE_RESUME}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Parent run ID: ${ONECORE_PARENT_RUN_ID}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Checkpoint release: onecore-run-${GITHUB_RUN_ID}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Durable release token configured: ${{ steps.release_auth.outputs.enabled }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Durable release step outcome: ${{ steps.release.outcome }}" >> "$GITHUB_STEP_SUMMARY"
+          if [[ -f onecore-ai/run-state/train_result.json ]]; then
+            echo '### Training report' | tee -a "$GITHUB_STEP_SUMMARY"
+            cat onecore-ai/run-state/train_result.json | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+          if [[ -f onecore-ai/run-state/evaluation.json ]]; then
+            echo '### Evaluation report' | tee -a "$GITHUB_STEP_SUMMARY"
+            cat onecore-ai/run-state/evaluation.json | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+          if [[ -f onecore-ai/data/acquisition-report.json ]]; then
+            echo '### Dataset acquisition report' | tee -a "$GITHUB_STEP_SUMMARY"
+            cat onecore-ai/data/acquisition-report.json | tee -a "$GITHUB_STEP_SUMMARY"
+          fi

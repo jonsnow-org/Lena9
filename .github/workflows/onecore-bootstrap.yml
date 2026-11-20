@@ -1,0 +1,677 @@
+name: OneCore — bounded acquisition and alternating CPU training
+
+on:
+  push:
+    branches: [research/onecore-foundation]
+    paths: ["onecore-ai/training-request.json"]
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: onecore-training-v2
+  cancel-in-progress: true
+
+env:
+  HF_TOKEN: ${{ secrets.HF_TOKEN }}
+
+jobs:
+  prepare:
+    name: Validate code and training contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    outputs:
+      base_corpus_run_id: ${{ steps.request.outputs.base_corpus_run_id }}
+      base_corpus_artifact_name: ${{ steps.request.outputs.base_corpus_artifact_name }}
+      request_stage: ${{ steps.request.outputs.request_stage }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: onecore-ai/pyproject.toml
+      - name: Install CPU-only PyTorch and dependencies
+        run: |
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --upgrade pip
+          python -m pip install -e "onecore-ai[dev]"
+      - name: Validate the all-data from-scratch request
+        id: request
+        shell: bash
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, re
+          from pathlib import Path
+          request = json.loads(Path("onecore-ai/training-request.json").read_text(encoding="utf-8"))
+          stage = str(request.get("stage", "")).strip()
+          if stage not in {"acquire", "train_existing", "repair_video_existing"} or request.get("start_fresh_joint_training") is not True:
+              raise ValueError("The request must acquire data or validate the existing corpus, and initialize OneCore from random weights")
+          if int(request.get("steps", 0)) != 150:
+              raise ValueError("This staged workflow is configured for exactly 150 optimizer steps")
+          corpus = str(request.get("base_corpus_run_id", "")).strip()
+          if not re.fullmatch(r"[0-9]+", corpus):
+              raise ValueError("A preserved base corpus artifact run ID is required")
+          artifact = str(request.get("base_corpus_artifact_name") or f"onecore-corpus-{corpus}").strip()
+          if not re.fullmatch(r"[A-Za-z0-9_.-]+", artifact):
+              raise ValueError("The base corpus artifact name contains unsupported characters")
+          print(f"base_corpus_run_id={corpus}")
+          print(f"base_corpus_artifact_name={artifact}")
+          print(f"request_stage={stage}")
+          PY
+      - name: Compile package and run all tests
+        run: |
+          python -m compileall -q onecore-ai/src
+          pytest -q onecore-ai/tests
+      - name: Validate and compile every notebook
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import nbformat
+          notebooks = sorted(Path("onecore-ai/notebooks").glob("*.ipynb"))
+          assert len(notebooks) == 6, f"Expected six notebooks, found {len(notebooks)}"
+          for path in notebooks:
+              notebook = nbformat.read(path, as_version=4)
+              nbformat.validate(notebook)
+              for index, cell in enumerate(notebook.cells):
+                  if cell.cell_type == "code":
+                      compile(cell.source, f"{path}:cell-{index}", "exec")
+              print(f"VALID + PYTHON-COMPILED {path}")
+          PY
+      - name: Execute project contract and architecture notebooks
+        shell: bash
+        run: |
+          mkdir -p onecore-ai/run-state/executed-notebooks
+          for notebook in 00_project_contract 01_architecture_budget; do
+            jupyter nbconvert --to notebook --execute "onecore-ai/notebooks/${notebook}.ipynb" \
+              --output "${notebook}.executed.ipynb" \
+              --output-dir onecore-ai/run-state/executed-notebooks \
+              --ExecutePreprocessor.timeout=-1
+          done
+
+  acquire_corpus:
+    name: Up to six bounded acquisition sessions on one persistent CPU runner
+    needs: prepare
+    if: ${{ needs.prepare.outputs.request_stage == 'acquire' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    outputs:
+      complete: ${{ steps.session.outputs.complete }}
+      acquisition_complete: ${{ steps.session.outputs.acquisition_complete }}
+      sessions_completed: ${{ steps.session.outputs.sessions_completed }}
+      acquisition_error: ${{ steps.session.outputs.acquisition_error }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+      - id: session
+        uses: ./.github/actions/onecore-acquire
+        with:
+          prior_artifact_name: ${{ needs.prepare.outputs.base_corpus_artifact_name }}
+          prior_run_id: ${{ needs.prepare.outputs.base_corpus_run_id }}
+          output_artifact_name: onecore-corpus-acq-progress
+          session_count: "6"
+          budget_seconds: "540"
+          source_budget_seconds: "60"
+          required_tasks: "text,tool,image,audio,video"
+          min_train_records: "100"
+          min_holdout_records: "10"
+          stack_v2_aws_access_key_id: ${{ secrets.STACK_V2_AWS_ACCESS_KEY_ID }}
+          stack_v2_aws_secret_access_key: ${{ secrets.STACK_V2_AWS_SECRET_ACCESS_KEY }}
+          stack_v2_aws_session_token: ${{ secrets.STACK_V2_AWS_SESSION_TOKEN }}
+          stack_v2_aws_region: us-east-1
+
+  finalize_acquisition:
+    name: Select the latest durable corpus snapshot
+    needs: [prepare, acquire_corpus]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      artifact_name: ${{ steps.select.outputs.artifact_name }}
+      artifact_run_id: ${{ steps.select.outputs.artifact_run_id }}
+      complete: ${{ steps.select.outputs.complete }}
+      request_stage: ${{ steps.select.outputs.request_stage }}
+    steps:
+      - name: Select the newly uploaded snapshot or preserve the previous known-good corpus
+        id: select
+        shell: bash
+        env:
+          PREPARE_RESULT: ${{ needs.prepare.result }}
+          REQUEST_STAGE: ${{ needs.prepare.outputs.request_stage }}
+          ACQUIRE_RESULT: ${{ needs.acquire_corpus.result }}
+          ACQUIRE_COMPLETE: ${{ needs.acquire_corpus.outputs.complete }}
+          ACQUIRE_ERROR: ${{ needs.acquire_corpus.outputs.acquisition_error }}
+          BASE_RUN_ID: ${{ needs.prepare.outputs.base_corpus_run_id }}
+          BASE_ARTIFACT_NAME: ${{ needs.prepare.outputs.base_corpus_artifact_name }}
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import os
+          if os.environ.get("PREPARE_RESULT") != "success":
+              raise SystemExit("The prepare job failed; no validated base corpus was selected.")
+          print(f"request_stage={os.environ.get('REQUEST_STAGE', '')}")
+          if os.environ.get("REQUEST_STAGE") in {"train_existing", "repair_video_existing"}:
+              print(f"artifact_name={os.environ['BASE_ARTIFACT_NAME']}")
+              print(f"artifact_run_id={os.environ['BASE_RUN_ID']}")
+              print("complete=true")
+              with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+                  summary.write("## Reusing the existing corpus; acquisition skipped\n")
+                  summary.write(f"- Run ID: {os.environ['BASE_RUN_ID']}\n")
+                  summary.write(f"- Artifact: {os.environ['BASE_ARTIFACT_NAME']}\n")
+                  if os.environ.get("REQUEST_STAGE") == "repair_video_existing":
+                      summary.write("- General acquisition remains skipped; only the saved Videos4CameraBench video cursor is resumed in the dataset gate.\\n")
+                  else:
+                      summary.write("- Proceed directly to the full payload and split-integrity gate; no crawler is started.\\n")
+              raise SystemExit(0)
+          if os.environ.get("ACQUIRE_RESULT") == "success":
+              print("artifact_name=onecore-corpus-acq-progress")
+              print(f"artifact_run_id={os.environ['GITHUB_RUN_ID']}")
+              complete = os.environ.get("ACQUIRE_COMPLETE") == "true"
+              print(f"complete={str(complete).lower()}")
+              if os.environ.get("ACQUIRE_ERROR") == "true":
+                  with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+                      summary.write("## Acquisition stopped after a recoverable notebook error\\n")
+                      summary.write("- The latest committed corpus and cursor state were uploaded.\\n")
+                      summary.write("- Continue from this artifact; do not restart the source cursors.\\n")
+              if not complete:
+                  with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+                      summary.write("## Acquisition needs another bounded continuation\\n")
+                      summary.write(f"- Current run ID: {os.environ['GITHUB_RUN_ID']}\\n")
+                      summary.write("- Latest saved corpus artifact: onecore-corpus-acq-progress\\n")
+                      summary.write("- The full integrity gate and training remain blocked until five-family coverage passes.\\n")
+              raise SystemExit(0)
+          print(f"artifact_name={os.environ['BASE_ARTIFACT_NAME']}")
+          print(f"artifact_run_id={os.environ['BASE_RUN_ID']}")
+          print("complete=false")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("## Acquisition snapshot upload failed; previous corpus preserved\\n")
+              summary.write(f"- Reusable run ID: {os.environ['BASE_RUN_ID']}\\n")
+              summary.write(f"- Reusable artifact: {os.environ['BASE_ARTIFACT_NAME']}\\n")
+              summary.write("- No new snapshot was selected because artifact upload did not succeed.\\n")
+          PY
+
+  dataset_gate:
+    name: Final multimodal coverage and split-integrity gate
+    needs: finalize_acquisition
+    if: ${{ always() && needs.finalize_acquisition.result == 'success' && needs.finalize_acquisition.outputs.complete == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: onecore-ai/pyproject.toml
+      - name: Install CPU-only PyTorch and dependencies
+        run: |
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --upgrade pip
+          python -m pip install -e "onecore-ai[dev]"
+      - name: Restore the latest training-ready corpus snapshot
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ needs.finalize_acquisition.outputs.artifact_name }}
+          run-id: ${{ needs.finalize_acquisition.outputs.artifact_run_id }}
+          github-token: ${{ github.token }}
+          path: onecore-ai/run-state/corpus-artifact
+      - name: Expand the validated corpus archive
+        shell: bash
+        env:
+          PYTHONPATH: onecore-ai/src
+        run: python -m onecore.artifacts restore --root onecore-ai --artifact-dir onecore-ai/run-state/corpus-artifact
+      - name: Resume only the saved CC-BY video cursor
+        id: video_repair
+        if: ${{ needs.finalize_acquisition.outputs.request_stage == 'repair_video_existing' }}
+        shell: bash
+        env:
+          PYTHONPATH: onecore-ai/src
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from onecore.acquire import acquire_sources, persist_acquisition_progress, task_coverage
+
+          root = Path("onecore-ai")
+          before = task_coverage(root)
+          report = acquire_sources(
+              root,
+              profile="expanded",
+              only_sources={"videos4camera_bench"},
+              time_budget_seconds=1200,
+              source_budget_seconds=1200,
+          )
+          cursor = persist_acquisition_progress(root)
+          after = task_coverage(root)
+          source = next(
+              (item for item in report.get("sources", [])
+               if item.get("source") == "videos4camera_bench"),
+              {},
+          )
+          print(json.dumps({
+              "scope": "videos4camera_bench only",
+              "before": before,
+              "after": after,
+              "cursor_persistence": cursor,
+              "source": {
+                  key: source.get(key) for key in (
+                      "status", "read", "total_read", "accepted", "total_accepted",
+                      "failed_rows", "by_split", "crawler_cursors",
+                      "conversion_error_samples", "errors",
+                  )
+              },
+          }, ensure_ascii=False, indent=2))
+          PY
+      - name: Diagnose decoded-payload coverage without lowering thresholds
+        id: corpus_diagnostic
+        shell: bash
+        env:
+          PYTHONPATH: onecore-ai/src
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          from onecore.acquire import task_coverage
+
+          coverage = task_coverage(Path("onecore-ai"))
+          minimums = {
+              "text": {"train": 100, "validation": 10, "test": 10},
+              "tool": {"train": 100, "validation": 10, "test": 10},
+              "image": {"train": 100, "validation": 10, "test": 10},
+              "audio": {"train": 100, "validation": 10, "test": 10},
+              "video": {"train": 100, "validation": 10, "test": 10},
+          }
+          failures = [
+              f"{split}.{task}={coverage.get(split, {}).get(task, 0)} (minimum {minimum})"
+              for task, splits in minimums.items()
+              for split, minimum in splits.items()
+              if coverage.get(split, {}).get(task, 0) < minimum
+          ]
+          ready = not failures
+          diagnostic = json.dumps(
+              {"coverage": coverage, "failures": failures},
+              ensure_ascii=False,
+              indent=2,
+          )
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"coverage_ready={str(ready).lower()}\n")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("## Decoded-payload coverage diagnostic\n\n" + diagnostic + "\n")
+          print(diagnostic)
+          PY
+      - name: Preserve resumable video-only corpus if coverage still needs continuation
+        id: repair_progress_pack
+        if: ${{ needs.finalize_acquisition.outputs.request_stage == 'repair_video_existing' && steps.corpus_diagnostic.outputs.coverage_ready != 'true' }}
+        shell: bash
+        env:
+          PYTHONPATH: onecore-ai/src
+        run: |
+          python -m onecore.artifacts pack --root onecore-ai --output "$RUNNER_TEMP/onecore-corpus-video-repair.tar"
+          test -s "$RUNNER_TEMP/onecore-corpus-video-repair.tar"
+      - name: Upload resumable video-only continuation snapshot
+        if: ${{ steps.repair_progress_pack.outcome == 'success' }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: onecore-corpus-video-repair-progress
+          path: ${{ runner.temp }}/onecore-corpus-video-repair.tar
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0
+      - name: Require verified five-family external data coverage
+        shell: bash
+        env:
+          PYTHONPATH: onecore-ai/src
+          ONECORE_REQUIRED_TASKS: "text,tool,image,audio,video"
+          ONECORE_MIN_TRAIN_RECORDS: "100"
+          ONECORE_MIN_HOLDOUT_RECORDS: "10"
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from onecore.acquire import assert_task_coverage
+          root = Path("onecore-ai")
+          coverage = assert_task_coverage(
+              root, {"text", "tool", "image", "audio", "video"},
+              minimum_train=100, minimum_holdout=10,
+          )
+          report_path = root / "data" / "acquisition-report.json"
+          report = json.loads(report_path.read_text(encoding="utf-8"))
+          report["training_ready"] = True
+          report["training_ready_task_groups"] = ["text", "tool", "image", "audio", "video"]
+          report["training_ready_coverage"] = coverage
+          report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+          print(json.dumps({
+              "training_ready": True,
+              "coverage": coverage,
+              "acquisition_complete": report.get("acquisition_complete", False),
+              "pending_sources_preserved": len(report.get("pending_sources", [])),
+              "total_new_records": report.get("total_new_records", 0),
+          }, ensure_ascii=False, indent=2))
+          PY
+      - name: Execute full modality and independent-split data gate
+        shell: bash
+        env:
+          PYTHONPATH: onecore-ai/src
+          ONECORE_SKIP_ACQUISITION: "1"
+          ONECORE_FINALIZE_DATA_GATE: "1"
+          ONECORE_REQUIRED_TASKS: "text,tool,image,audio,video"
+          ONECORE_MIN_TRAIN_RECORDS: "100"
+          ONECORE_MIN_HOLDOUT_RECORDS: "10"
+        run: |
+          mkdir -p onecore-ai/run-state/executed-notebooks
+          jupyter nbconvert --to notebook --execute onecore-ai/notebooks/02_data_gate.ipynb \
+            --output 02_data_gate.final.executed.ipynb \
+            --output-dir onecore-ai/run-state/executed-notebooks \
+            --ExecutePreprocessor.timeout=-1
+      - name: Package the validated corpus as one stack-safe archive
+        shell: bash
+        env:
+          PYTHONPATH: onecore-ai/src
+        run: |
+          python -m onecore.artifacts pack --root onecore-ai --output "$RUNNER_TEMP/onecore-corpus.tar"
+          test -s "$RUNNER_TEMP/onecore-corpus.tar"
+      - name: Upload complete validated corpus and resume state
+        uses: actions/upload-artifact@v6
+        with:
+          name: onecore-corpus-final
+          path: ${{ runner.temp }}/onecore-corpus.tar
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0
+      - name: Remove intermediate corpus after validated replacement is uploaded
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_ARTIFACT: ${{ needs.finalize_acquisition.outputs.artifact_name }}
+        run: |
+          previous_id=$(gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts" \
+            --paginate --jq '.artifacts[] | select(.name == "'"$SOURCE_ARTIFACT"'") | .id' | head -1)
+          if [[ -n "$previous_id" ]]; then
+            gh api -X DELETE "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${previous_id}"
+          fi
+
+  resume_notice:
+    name: Preserve acquisition progress for the next bounded run
+    needs: finalize_acquisition
+    if: ${{ always() && needs.finalize_acquisition.result == 'success' && needs.finalize_acquisition.outputs.complete != 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Publish exact continuation inputs
+        shell: bash
+        env:
+          BASE_ARTIFACT: ${{ needs.finalize_acquisition.outputs.artifact_name }}
+          BASE_RUN_ID: ${{ needs.finalize_acquisition.outputs.artifact_run_id }}
+        run: |
+          {
+            echo "## OneCore acquisition continuation"
+            echo "- base_corpus_run_id: ${BASE_RUN_ID}"
+            echo "- base_corpus_artifact_name: ${BASE_ARTIFACT}"
+            echo "- Continue by updating these two fields in onecore-ai/training-request.json."
+            echo "- No training was started because the five-family external payload gate is not yet met."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  train_all:
+    name: Ten sequential CPU training sessions on one persistent runner
+    needs: dataset_gate
+    if: ${{ always() && needs.dataset_gate.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    outputs:
+      optimizer_step: ${{ steps.train10.outputs.optimizer_step }}
+      checkpoint_sha256: ${{ steps.train10.outputs.checkpoint_sha256 }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+      - id: train01
+        name: Training session 1 of 10 — joint — 03_text_pretraining.ipynb
+        uses: ./.github/actions/onecore-train
+        with:
+          setup_environment: "true"
+          restore_corpus: "true"
+          corpus_artifact_name: onecore-corpus-final
+          checkpoint_artifact_name: ""
+          previous_checkpoint_artifact_name: ""
+          stage: "joint"
+          notebook: "03_text_pretraining.ipynb"
+          steps: "15"
+          output_artifact_name: onecore-state-train-01
+      - id: train02
+        name: Training session 2 of 10 — multimodal — 04_multimodal_curriculum.ipynb
+        uses: ./.github/actions/onecore-train
+        with:
+          setup_environment: "false"
+          restore_corpus: "false"
+          corpus_artifact_name: onecore-corpus-final
+          checkpoint_artifact_name: "onecore-state-train-01"
+          previous_checkpoint_artifact_name: "onecore-state-train-01"
+          stage: "multimodal"
+          notebook: "04_multimodal_curriculum.ipynb"
+          steps: "15"
+          output_artifact_name: onecore-state-train-02
+      - id: train03
+        name: Training session 3 of 10 — multimodal — 03_text_pretraining.ipynb
+        uses: ./.github/actions/onecore-train
+        with:
+          setup_environment: "false"
+          restore_corpus: "false"
+          corpus_artifact_name: onecore-corpus-final
+          checkpoint_artifact_name: "onecore-state-train-02"
+          previous_checkpoint_artifact_name: "onecore-state-train-02"
+          stage: "multimodal"
+          notebook: "03_text_pretraining.ipynb"
+          steps: "15"
+          output_artifact_name: onecore-state-train-03
+      - id: train04
+        name: Training session 4 of 10 — multimodal — 04_multimodal_curriculum.ipynb
+        uses: ./.github/actions/onecore-train
+        with:
+          setup_environment: "false"
+          restore_corpus: "false"
+          corpus_artifact_name: onecore-corpus-final
+          checkpoint_artifact_name: "onecore-state-train-03"
+          previous_checkpoint_artifact_name: "onecore-state-train-03"
+          stage: "multimodal"
+          notebook: "04_multimodal_curriculum.ipynb"
+          steps: "15"
+          output_artifact_name: onecore-state-train-04
+      - id: train05
+        name: Training session 5 of 10 — multimodal — 03_text_pretraining.ipynb
+        uses: ./.github/actions/onecore-train
+        with:
+          setup_environment: "false"
+          restore_corpus: "false"
+          corpus_artifact_name: onecore-corpus-final
+          checkpoint_artifact_name: "onecore-state-train-04"
+          previous_checkpoint_artifact_name: "onecore-state-train-04"
+          stage: "multimodal"
+          notebook: "03_text_pretraining.ipynb"
+          steps: "15"
+          output_artifact_name: onecore-state-train-05
+      - id: train06
+        name: Training session 6 of 10 — multimodal — 04_multimodal_curriculum.ipynb
+        uses: ./.github/actions/onecore-train
+        with:
+          setup_environment: "false"
+          restore_corpus: "false"
+          corpus_artifact_name: onecore-corpus-final
+          checkpoint_artifact_name: "onecore-state-train-05"
+          previous_checkpoint_artifact_name: "onecore-state-train-05"
+          stage: "multimodal"
+          notebook: "04_multimodal_curriculum.ipynb"
+          steps: "15"
+          output_artifact_name: onecore-state-train-06
+      - id: train07
+        name: Training session 7 of 10 — multimodal — 03_text_pretraining.ipynb
+        uses: ./.github/actions/onecore-train
+        with:
+          setup_environment: "false"
+          restore_corpus: "false"
+          corpus_artifact_name: onecore-corpus-final
+          checkpoint_artifact_name: "onecore-state-train-06"
+          previous_checkpoint_artifact_name: "onecore-state-train-06"
+          stage: "multimodal"
+          notebook: "03_text_pretraining.ipynb"
+          steps: "15"
+          output_artifact_name: onecore-state-train-07
+      - id: train08
+        name: Training session 8 of 10 — multimodal — 04_multimodal_curriculum.ipynb
+        uses: ./.github/actions/onecore-train
+        with:
+          setup_environment: "false"
+          restore_corpus: "false"
+          corpus_artifact_name: onecore-corpus-final
+          checkpoint_artifact_name: "onecore-state-train-07"
+          previous_checkpoint_artifact_name: "onecore-state-train-07"
+          stage: "multimodal"
+          notebook: "04_multimodal_curriculum.ipynb"
+          steps: "15"
+          output_artifact_name: onecore-state-train-08
+      - id: train09
+        name: Training session 9 of 10 — multimodal — 03_text_pretraining.ipynb
+        uses: ./.github/actions/onecore-train
+        with:
+          setup_environment: "false"
+          restore_corpus: "false"
+          corpus_artifact_name: onecore-corpus-final
+          checkpoint_artifact_name: "onecore-state-train-08"
+          previous_checkpoint_artifact_name: "onecore-state-train-08"
+          stage: "multimodal"
+          notebook: "03_text_pretraining.ipynb"
+          steps: "15"
+          output_artifact_name: onecore-state-train-09
+      - id: train10
+        name: Training session 10 of 10 — multimodal — 04_multimodal_curriculum.ipynb
+        uses: ./.github/actions/onecore-train
+        with:
+          setup_environment: "false"
+          restore_corpus: "false"
+          corpus_artifact_name: onecore-corpus-final
+          checkpoint_artifact_name: "onecore-state-train-09"
+          previous_checkpoint_artifact_name: "onecore-state-train-09"
+          stage: "multimodal"
+          notebook: "04_multimodal_curriculum.ipynb"
+          steps: "15"
+          output_artifact_name: onecore-state-train-10
+      - name: Execute independent validation and held-out test on the same restored corpus
+        shell: bash
+        run: |
+          mkdir -p onecore-ai/run-state/executed-notebooks
+          jupyter nbconvert --to notebook --execute onecore-ai/notebooks/05_evaluation_and_promotion.ipynb \
+            --output 05_evaluation_and_promotion.executed.ipynb \
+            --output-dir onecore-ai/run-state/executed-notebooks \
+            --ExecutePreprocessor.timeout=-1
+      - name: Upload scientific evaluation results
+        uses: actions/upload-artifact@v6
+        with:
+          name: onecore-evaluation-${{ github.run_id }}
+          path: |
+            onecore-ai/run-state/evaluation.json
+            onecore-ai/run-state/evaluation.validation.json
+            onecore-ai/run-state/evaluation.test.json
+            onecore-ai/run-state/model-registry.json
+            onecore-ai/run-state/train_result.json
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 1
+
+  evaluate:
+    name: Independent validation, test and checkpoint report
+    needs: train_all
+    if: ${{ always() && needs.train_all.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+      - name: Restore the final session checkpoint
+        uses: actions/download-artifact@v7
+        with:
+          name: onecore-state-train-10
+          path: onecore-ai/run-state
+      - name: Restore scientific evaluation results
+        uses: actions/download-artifact@v7
+        with:
+          name: onecore-evaluation-${{ github.run_id }}
+          path: onecore-ai/run-state
+      - name: Confirm 150 optimizer steps and five-family balance
+        shell: bash
+        run: |
+          python - <<'PY'
+          import hashlib, json, math
+          from pathlib import Path
+          report = json.loads(Path("onecore-ai/run-state/train_result.json").read_text(encoding="utf-8"))
+          checkpoint = Path("onecore-ai/run-state/checkpoint.pt")
+          digest = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
+          if int(report.get("optimizer_step", -1)) != 150:
+              raise ValueError(f"Expected 150 optimizer steps; found {report.get('optimizer_step')}")
+          if digest != report.get("checkpoint", {}).get("sha256"):
+              raise ValueError("Checkpoint SHA-256 differs from train_result.json")
+          expected = {"text": 150, "tool": 150, "image": 150, "audio": 150, "video": 150}
+          observed = report.get("sampled_family_counts", {})
+          if report.get("sampling_policy") != "one external sample from each of text/tool/image/audio/video per optimizer step":
+              raise ValueError("Final report does not attest to five-family joint training")
+          if any(int(observed.get(key, 0)) != value for key, value in expected.items()):
+              raise ValueError(f"Unexpected family sample counts: {observed}")
+          native = report.get("native_tldm") or {}
+          if int(native.get("additional_trainable_parameters", -1)) != 0:
+              raise ValueError(f"Native T-LDM must add zero parameters: {native}")
+          if int(report.get("parameter_count", -1)) != 57_579_201:
+              raise ValueError(f"OneCore parameter count changed: {report.get('parameter_count')}")
+          if float(native.get("diffusion_loss_weight", -1)) != 0.15:
+              raise ValueError(f"Unexpected native diffusion loss weight: {native}")
+          if int(native.get("updates", 0)) != 750:
+              raise ValueError(f"Expected 750 native diffusion updates (5 families × 150 steps): {native}")
+          mean_diffusion_loss = float(native.get("mean_diffusion_loss", float("nan")))
+          if not math.isfinite(mean_diffusion_loss) or mean_diffusion_loss <= 0:
+              raise ValueError(f"Native diffusion objective did not produce a finite positive loss: {native}")
+          print(json.dumps({
+              "optimizer_step": report["optimizer_step"],
+              "checkpoint_sha256": digest,
+              "lineage_id": report.get("lineage_id"),
+              "sampled_family_counts": observed,
+              "parameter_count": report.get("parameter_count"),
+              "native_tldm": native,
+          }, ensure_ascii=False, indent=2))
+          PY
+      - name: Create durable versioned checkpoint release
+        env:
+          GH_TOKEN: ${{ secrets.ONECORE_RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          mkdir -p onecore-ai/run-state/release
+          cp onecore-ai/run-state/checkpoint.pt onecore-ai/run-state/release/
+          cp onecore-ai/run-state/tokenizer.json onecore-ai/run-state/release/
+          cp onecore-ai/run-state/train_result.json onecore-ai/run-state/release/
+          cp onecore-ai/run-state/evaluation.json onecore-ai/run-state/release/
+          cp onecore-ai/run-state/evaluation.validation.json onecore-ai/run-state/release/
+          cp onecore-ai/run-state/evaluation.test.json onecore-ai/run-state/release/
+          (cd onecore-ai/run-state/release && zip -q -1 ../onecore-final-state.zip ./*)
+          tag="onecore-run-${GITHUB_RUN_ID}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" onecore-ai/run-state/onecore-final-state.zip --clobber
+          else
+            gh release create "$tag" onecore-ai/run-state/onecore-final-state.zip \
+              --title "OneCore final checkpoint — 150 optimizer steps" \
+              --notes "OneCore initialized from random weights and trained in ten sequential 15-step sessions on one persistent CPU runner; the validated corpus was restored once. Every optimizer update samples text, tool, image, audio and video. The checkpoint contains model, optimizer, scheduler, RNG and tokenizer state. Commit: ${GITHUB_SHA}." \
+              --target "${GITHUB_SHA}"
+          fi
+      - name: Publish final training and evaluation summary
+        if: always()
+        shell: bash
+        run: |
+          echo "## OneCore persistent-runner CPU training" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Optimizer steps: 150" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Training sessions: 10 × 15 steps on one CPU runner" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Notebook order: 03, 04, 03, 04, 03, 04, 03, 04, 03, 04" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Checkpoint release: onecore-run-${GITHUB_RUN_ID}" >> "$GITHUB_STEP_SUMMARY"
+          [[ ! -f onecore-ai/run-state/train_result.json ]] || cat onecore-ai/run-state/train_result.json >> "$GITHUB_STEP_SUMMARY"
+          [[ ! -f onecore-ai/run-state/evaluation.json ]] || cat onecore-ai/run-state/evaluation.json >> "$GITHUB_STEP_SUMMARY"

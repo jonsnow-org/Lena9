@@ -34,6 +34,8 @@ class ModelConfig:
             raise ValueError("width must be divisible by attention_heads")
         if self.image_size % self.patch_size:
             raise ValueError("image_size must be divisible by patch_size")
+        if self.adaptive_tolerance < 0:
+            raise ValueError("adaptive_tolerance cannot be negative")
         values = (
             self.text_vocab_size, self.vision_codebook_size, self.audio_codebook_size,
             self.motion_codebook_size, self.special_tokens,
@@ -111,8 +113,6 @@ class TrainConfig:
             raise ValueError("warmup_steps must be in [0, total_steps)")
         if self.cpu_threads < 1:
             raise ValueError("cpu_threads must be positive")
-        if self.adaptive_tolerance < 0:
-            raise ValueError("adaptive_tolerance cannot be negative")
         if self.tldm_diffusion_weight < 0:
             raise ValueError("tldm_diffusion_weight cannot be negative")
 
