@@ -606,7 +606,7 @@ jobs:
         shell: bash
         run: |
           python - <<'PY'
-          import hashlib, json
+          import hashlib, json, math
           from pathlib import Path
           report = json.loads(Path("onecore-ai/run-state/train_result.json").read_text(encoding="utf-8"))
           checkpoint = Path("onecore-ai/run-state/checkpoint.pt")
@@ -621,12 +621,25 @@ jobs:
               raise ValueError("Final report does not attest to five-family joint training")
           if any(int(observed.get(key, 0)) != value for key, value in expected.items()):
               raise ValueError(f"Unexpected family sample counts: {observed}")
+          native = report.get("native_tldm") or {}
+          if int(native.get("additional_trainable_parameters", -1)) != 0:
+              raise ValueError(f"Native T-LDM must add zero parameters: {native}")
+          if int(report.get("parameter_count", -1)) != 57_579_201:
+              raise ValueError(f"OneCore parameter count changed: {report.get('parameter_count')}")
+          if float(native.get("diffusion_loss_weight", -1)) != 0.15:
+              raise ValueError(f"Unexpected native diffusion loss weight: {native}")
+          if int(native.get("updates", 0)) != 750:
+              raise ValueError(f"Expected 750 native diffusion updates (5 families × 150 steps): {native}")
+          mean_diffusion_loss = float(native.get("mean_diffusion_loss", float("nan")))
+          if not math.isfinite(mean_diffusion_loss) or mean_diffusion_loss <= 0:
+              raise ValueError(f"Native diffusion objective did not produce a finite positive loss: {native}")
           print(json.dumps({
               "optimizer_step": report["optimizer_step"],
               "checkpoint_sha256": digest,
               "lineage_id": report.get("lineage_id"),
               "sampled_family_counts": observed,
               "parameter_count": report.get("parameter_count"),
+              "native_tldm": native,
           }, ensure_ascii=False, indent=2))
           PY
       - name: Create durable versioned checkpoint release
