@@ -950,3 +950,73 @@ def test_optional_gated_source_access_does_not_block_bootstrap() -> None:
 def test_source_row_identity_is_independent_of_legacy_row_offset() -> None:
     row = {"id": "stable-17", "text": "A stable row whose identity is content-derived."}
     assert _row_identity(row, "fineweb_ar", 1) == _row_identity(row, "fineweb_ar", 50_000)
+
+
+def test_video_adapter_resolves_relative_hub_video_path_at_pinned_revision(tmp_path: Path, monkeypatch) -> None:
+    import sys
+    import types
+    import onecore.acquire as acquire_module
+
+    downloaded = tmp_path / "hub-video.mp4"
+    downloaded.write_bytes(b"test-video")
+    calls = {}
+
+    def fake_hub_download(**kwargs):
+        calls.update(kwargs)
+        return str(downloaded)
+
+    monkeypatch.setitem(
+        sys.modules, "huggingface_hub",
+        types.SimpleNamespace(hf_hub_download=fake_hub_download),
+    )
+
+    def fake_write_frames(value, assets_root: Path, prefix: str, max_frames: int = 4):
+        assert value == {"path": str(downloaded), "bytes": None}
+        relative = f"acquired/{prefix}/frame_00.png"
+        target = assets_root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        Image.new("RGB", (16, 16), (30, 60, 90)).save(target, format="PNG")
+        return [relative]
+
+    monkeypatch.setattr(acquire_module, "_write_frames", fake_write_frames)
+    revision = "a" * 40
+    source = {
+        "id": "videos4camera_bench",
+        "repo": "syCen/Videos4CameraBench",
+        "adapter": "video",
+        "video_field": "video",
+        "text_fields": ["caption"],
+        "_resolved_revision": revision,
+    }
+    record = _record_from_row(
+        {
+            "video": {"path": "-2uIa-XMJC0.5.3.mp4", "bytes": None},
+            "caption": "A short video segment for the pinned source.",
+        },
+        source,
+        "video-relative-path-row",
+        "train",
+        tmp_path,
+    )
+
+    assert record is not None
+    assert record["task"] == "video_caption"
+    assert len(record["frames"]) == 1
+    assert calls == {
+        "repo_id": "syCen/Videos4CameraBench",
+        "filename": "-2uIa-XMJC0.5.3.mp4",
+        "repo_type": "dataset",
+        "revision": revision,
+        "token": None,
+    }
+
+
+def test_video_adapter_rejects_unsafe_relative_hub_paths() -> None:
+    from onecore.acquire import _resolve_video_asset
+
+    source = {
+        "repo": "syCen/Videos4CameraBench",
+        "_resolved_revision": "a" * 40,
+    }
+    with pytest.raises(ValueError, match="unsafe"):
+        _resolve_video_asset({"path": "../outside.mp4", "bytes": None}, source)
