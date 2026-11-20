@@ -469,16 +469,37 @@ def _resolve_video_asset(value: Any, source: dict[str, Any]) -> Any:
     if path.startswith(("http://", "https://")) or Path(path).is_file():
         return value
 
-    normalized = unquote(path.replace("\\", "/"))
-    while normalized.startswith("./"):
-        normalized = normalized[2:]
-    if not normalized or normalized.startswith("/") or ".." in Path(normalized).parts:
-        raise ValueError("video dataset path is empty, absolute, or unsafe")
-
     repo_id = str(source.get("repo") or "").strip()
     revision = str(source.get("_resolved_revision") or source.get("revision") or "").strip()
     if not repo_id or not is_immutable_source_revision(revision):
         raise ValueError("relative video paths require a repository and pinned immutable revision")
+
+    # datasets.Video(decode=False) on recent releases can return a fully qualified
+    # Hub URI: hf://datasets/{repo_id}@{commit_sha}/{filename}. Parse that URI
+    # instead of passing it to hf_hub_download as if it were a filename.
+    if path.startswith("hf://"):
+        prefix = "hf://datasets/"
+        if not path.startswith(prefix):
+            raise ValueError("unsupported Hugging Face video URI namespace")
+        hub_target = path[len(prefix):]
+        repo_revision, separator, filename = hub_target.partition("/")
+        if not separator:
+            raise ValueError("Hugging Face video URI is missing its repository file path")
+        uri_repo, revision_separator, uri_revision = repo_revision.rpartition("@")
+        if (
+            not revision_separator
+            or uri_repo != repo_id
+            or uri_revision != revision
+            or not is_immutable_source_revision(uri_revision)
+        ):
+            raise ValueError("Hugging Face video URI repository or revision does not match the pinned source")
+        path = filename
+
+    normalized = unquote(path.replace("\\", "/"))
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    if not normalized or normalized.startswith("/") or "://" in normalized or ".." in Path(normalized).parts:
+        raise ValueError("video dataset path is empty, absolute, or unsafe")
 
     try:
         from huggingface_hub import hf_hub_download
