@@ -194,8 +194,10 @@ jobs:
           assert sum(1 for step in train_steps if step["with"]["setup_environment"] == "true") == 1
           assert "onecore-state-train-10" in bootstrap
           assert "native_tldm" in bootstrap
-          assert "tldm_diffusion_weight" in bootstrap
+          assert "diffusion_loss_weight" in bootstrap
           assert "Expected 750 native diffusion updates" in bootstrap
+          phone_config = yaml.safe_load(Path("onecore-ai/configs/phone-research.yaml").read_text(encoding="utf-8"))
+          assert phone_config["training"]["tldm_diffusion_weight"] == 0.15
           dataset_gate_steps = jobs["dataset_gate"]["steps"]
           corpus_diagnostic = next(step for step in dataset_gate_steps if step.get("id") == "corpus_diagnostic")
           diagnostic_run = corpus_diagnostic["run"]
