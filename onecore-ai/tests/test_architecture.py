@@ -128,3 +128,42 @@ def test_tool_payload_generation_stops_at_trained_terminator(monkeypatch):
     assert captured["max_new_tokens"] == 24
     assert captured["temperature"] == 0.4
     assert captured["top_k"] == 8
+
+
+def test_native_tldm_uses_onecore_shared_parameters_and_iterative_writer():
+    cfg = tiny_config()
+    model = OneCore(cfg)
+    original_count = model.count_parameters()
+    mask_id = cfg.special_id(18)
+    source = torch.tensor([[4, 9, 12, 15, 23, 31, 42, 51]])
+    masked = source.clone()
+    masked[:, 3:6] = mask_id
+
+    logits = model.forward_tldm(masked, latent_slots=4)
+    assert logits.shape == (1, source.shape[1], cfg.vocab_size)
+    assert torch.isfinite(logits).all()
+    loss = torch.nn.functional.cross_entropy(logits[:, 3:6].reshape(-1, cfg.vocab_size), source[:, 3:6].reshape(-1))
+    loss.backward()
+    assert model.token_embedding.weight.grad is not None
+    assert model.blocks[0].attn.qkv.weight.grad is not None
+    assert model.lm_head.weight is model.token_embedding.weight
+    assert model.count_parameters() == original_count
+    assert model.parameter_report()["tldm_additional_trainable_parameters"] == 0
+
+    generated = model.generate_tldm(
+        source[:, :3], block_size=5, diffusion_steps=4,
+        latent_slots=4, allowed_token_ids=list(range(cfg.text_vocab_size)),
+    )
+    assert generated.shape == (1, 5)
+    assert torch.all(generated < cfg.text_vocab_size)
+    assert not torch.any(generated == mask_id)
+
+
+def test_native_tldm_rejects_invalid_masked_generation_contract():
+    cfg = tiny_config()
+    model = OneCore(cfg)
+    context = torch.tensor([[cfg.special_id(0), 5]])
+    with pytest.raises(ValueError, match="exclude the mask token"):
+        model.generate_tldm(
+            context, block_size=3, allowed_token_ids=[cfg.special_id(18)]
+        )
