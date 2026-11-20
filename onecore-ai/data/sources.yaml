@@ -1,0 +1,715 @@
+version: 1
+description: "Unified multimodal OneCore source registry; all records feed one shared checkpoint."
+profile: initial
+defaults:
+  split_seed: "onecore-shard-v1"
+  max_scan_multiplier: 12
+  image_size: 64
+  max_video_frames: 4
+sources:
+  # Broad general-language pretraining
+  - id: fineweb2_hq_ar
+    repo: epfml/FineWeb2-HQ-Plus
+    config: arb_Arab
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    limits: {train: 2000, validation: 100, test: 100}
+    profile_limits:
+      expanded: {train: 12000, validation: 400, test: 400}
+    enabled: true
+  - id: fineweb2_hq_en
+    repo: epfml/FineWeb2-HQ-Plus
+    config: eng_Latn
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    limits: {train: 1500, validation: 75, test: 75}
+    profile_limits:
+      expanded: {train: 9000, validation: 300, test: 300}
+    enabled: false  # English config is not published by this repo; avoid repeatable source failure
+  - id: fineweb2_hq_ar_saudi
+    repo: epfml/FineWeb2-HQ-Plus
+    config: ars_Arab
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    limits: {train: 400, validation: 25, test: 25}
+    profile_limits:
+      expanded: {train: 2400, validation: 100, test: 100}
+    enabled: true
+  - id: fineweb2_hq_ar_moroccan
+    repo: epfml/FineWeb2-HQ-Plus
+    config: ary_Arab
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    limits: {train: 600, validation: 30, test: 30}
+    profile_limits:
+      expanded: {train: 3600, validation: 150, test: 150}
+    enabled: true
+  - id: fineweb2_hq_ar_egyptian
+    repo: epfml/FineWeb2-HQ-Plus
+    config: arz_Arab
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    limits: {train: 500, validation: 25, test: 25}
+    profile_limits:
+      expanded: {train: 3000, validation: 120, test: 120}
+    enabled: true
+  - id: fineweb2_full_ar
+    repo: HuggingFaceFW/fineweb-2
+    config: arb_Arab
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    crawler: hf_state_dict
+    notebook_id: 03_text_pretraining
+    required_for_training: true
+    minimum_accepted_records: 10000
+    limits: {train: 20000, validation: 1000, test: 1000}
+    profile_limits:
+      expanded: {train: 250000, validation: 10000, test: 10000}
+    enabled: true
+  - id: fineweb2_full_ar_egyptian
+    repo: HuggingFaceFW/fineweb-2
+    config: arz_Arab
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    crawler: hf_state_dict
+    notebook_id: 03_text_pretraining
+    limits: {train: 10000, validation: 500, test: 500}
+    profile_limits:
+      expanded: {train: 100000, validation: 5000, test: 5000}
+    enabled: true
+  - id: fineweb2_full_ar_saudi
+    repo: HuggingFaceFW/fineweb-2
+    config: ars_Arab
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    crawler: hf_state_dict
+    notebook_id: 03_text_pretraining
+    limits: {train: 10000, validation: 500, test: 500}
+    profile_limits:
+      expanded: {train: 100000, validation: 5000, test: 5000}
+    enabled: true
+  - id: fineweb2_full_ar_moroccan
+    repo: HuggingFaceFW/fineweb-2
+    config: ary_Arab
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    crawler: hf_state_dict
+    notebook_id: 03_text_pretraining
+    limits: {train: 10000, validation: 500, test: 500}
+    profile_limits:
+      expanded: {train: 100000, validation: 5000, test: 5000}
+    enabled: true
+  - id: fineweb2_full_ar_iraqi
+    repo: HuggingFaceFW/fineweb-2
+    config: acm_Arab
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    crawler: hf_state_dict
+    notebook_id: 03_text_pretraining
+    limits: {train: 8000, validation: 400, test: 400}
+    profile_limits:
+      expanded: {train: 80000, validation: 4000, test: 4000}
+    enabled: true
+  - id: fineweb2_full_ar_algerian
+    repo: HuggingFaceFW/fineweb-2
+    config: arq_Arab
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    crawler: hf_state_dict
+    notebook_id: 03_text_pretraining
+    limits: {train: 8000, validation: 400, test: 400}
+    profile_limits:
+      expanded: {train: 80000, validation: 4000, test: 4000}
+    enabled: true
+  # FineWeb-2 has no eng_Latn shard; use verified multilingual shards rather than a broken English config.
+  - id: fineweb2_full_tr
+    repo: HuggingFaceFW/fineweb-2
+    config: tur_Latn
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    crawler: hf_state_dict
+    notebook_id: 03_text_pretraining
+    limits: {train: 5000, validation: 250, test: 250}
+    profile_limits:
+      expanded: {train: 50000, validation: 2500, test: 2500}
+    enabled: true
+  - id: fineweb2_full_de
+    repo: HuggingFaceFW/fineweb-2
+    config: deu_Latn
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    crawler: hf_state_dict
+    notebook_id: 03_text_pretraining
+    limits: {train: 5000, validation: 250, test: 250}
+    profile_limits:
+      expanded: {train: 50000, validation: 2500, test: 2500}
+    enabled: true
+  - id: fineweb2_full_fr
+    repo: HuggingFaceFW/fineweb-2
+    config: fra_Latn
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    crawler: hf_state_dict
+    notebook_id: 03_text_pretraining
+    limits: {train: 5000, validation: 250, test: 250}
+    profile_limits:
+      expanded: {train: 50000, validation: 2500, test: 2500}
+    enabled: true
+  - id: fineweb2_full_es
+    repo: HuggingFaceFW/fineweb-2
+    config: spa_Latn
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    crawler: hf_state_dict
+    notebook_id: 03_text_pretraining
+    limits: {train: 5000, validation: 250, test: 250}
+    profile_limits:
+      expanded: {train: 50000, validation: 2500, test: 2500}
+    enabled: true
+  - id: fineweb2_full_pt
+    repo: HuggingFaceFW/fineweb-2
+    config: por_Latn
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    crawler: hf_state_dict
+    notebook_id: 03_text_pretraining
+    limits: {train: 5000, validation: 250, test: 250}
+    profile_limits:
+      expanded: {train: 50000, validation: 2500, test: 2500}
+    enabled: true
+  - id: fineweb2_full_id
+    repo: HuggingFaceFW/fineweb-2
+    config: ind_Latn
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    crawler: hf_state_dict
+    notebook_id: 03_text_pretraining
+    limits: {train: 5000, validation: 250, test: 250}
+    profile_limits:
+      expanded: {train: 50000, validation: 2500, test: 2500}
+    enabled: true
+  - id: fineweb2_full_ja
+    repo: HuggingFaceFW/fineweb-2
+    config: jpn_Jpan
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    crawler: hf_state_dict
+    notebook_id: 03_text_pretraining
+    limits: {train: 5000, validation: 250, test: 250}
+    profile_limits:
+      expanded: {train: 50000, validation: 2500, test: 2500}
+    enabled: true
+  - id: fineweb2_full_ru
+    repo: HuggingFaceFW/fineweb-2
+    config: rus_Cyrl
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    crawler: hf_state_dict
+    notebook_id: 03_text_pretraining
+    limits: {train: 5000, validation: 250, test: 250}
+    profile_limits:
+      expanded: {train: 50000, validation: 2500, test: 2500}
+    enabled: true
+  - id: stack_v2_code
+    repo: bigcode/the-stack-v2
+    hf_splits: [train]
+    adapter: stack_v2_code
+    split_strategy: hash
+    split_group_field: directory_id
+    crawler: hf_state_dict_plus_swh_content
+    notebook_id: 03_text_pretraining
+    requires_access: true
+    # Keep the gated code corpus enabled, but do not block the first joint run
+    # while HF/SWH approvals are pending. Only verified file payloads count.
+    required_for_training: false
+    minimum_accepted_records: 10000
+    limits: {train: 10000, validation: 500, test: 500}
+    profile_limits:
+      expanded: {train: 200000, validation: 5000, test: 5000}
+    max_content_bytes: 524288
+    max_record_chars: 8192
+    allowed_languages:
+      - Python
+      - JavaScript
+      - TypeScript
+      - Java
+      - C
+      - C++
+      - C#
+      - C-Sharp
+      - Go
+      - Rust
+      - SQL
+      - Shell
+      - Bash
+      - HTML
+      - CSS
+      - PHP
+      - Ruby
+      - Kotlin
+      - Swift
+      - Dart
+      - Scala
+      - R
+      - Julia
+      - Lua
+      - Markdown
+    license_allowlist:
+      - 0BSD
+      - Apache-2.0
+      - BSD-2-Clause
+      - BSD-3-Clause
+      - CC0-1.0
+      - ISC
+      - MIT
+      - Unlicense
+      - Zlib
+    enabled: true
+
+  - id: fineweb2_full_en
+    repo: HuggingFaceFW/fineweb-2
+    config: eng_Latn
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    limits: {train: 1000, validation: 50, test: 50}
+    profile_limits:
+      expanded: {train: 6000, validation: 250, test: 250}
+    enabled: false  # eng_Latn is not published in the available FineWeb2 configurations
+  - id: wikipedia_ar
+    repo: wikimedia/wikipedia
+    config: "20231101.ar"
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    limits: {train: 1000, validation: 50, test: 50}
+    profile_limits:
+      expanded: {train: 4000, validation: 200, test: 200}
+    enabled: true
+  - id: wikipedia_en
+    repo: wikimedia/wikipedia
+    config: "20231101.en"
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    limits: {train: 500, validation: 25, test: 25}
+    profile_limits:
+      expanded: {train: 2500, validation: 150, test: 150}
+    enabled: true
+  - id: c4_ar
+    repo: allenai/c4
+    config: ar
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    limits: {train: 500, validation: 25, test: 25}
+    profile_limits:
+      expanded: {train: 1000, validation: 30, test: 30}
+    enabled: true
+  - id: oscar_ar
+    repo: oscar-corpus/OSCAR-2301
+    config: ar
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    limits: {train: 1000, validation: 30, test: 30}
+    enabled: true
+
+  # Mathematics, proofs, algorithms and software
+  - id: open_web_math_pro
+    repo: gair-prox/open-web-math-pro
+    config: default
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text, content]
+    split_strategy: hash
+    limits: {train: 800, validation: 25, test: 25}
+    profile_limits:
+      expanded: {train: 2200, validation: 50, test: 50}
+    enabled: true
+  - id: proof_pile_2
+    repo: EleutherAI/proof-pile-2
+    config: default
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text, content]
+    split_strategy: hash
+    limits: {train: 1000, validation: 30, test: 30}
+    enabled: true
+  - id: stack_v2_edu
+    repo: common-pile/stackv2_edu_filtered
+    config: default
+    hf_splits: [train]
+    adapter: text
+    text_fields: [text]
+    split_strategy: hash
+    limits: {train: 500, validation: 25, test: 25}
+    profile_limits:
+      expanded: {train: 1800, validation: 40, test: 40}
+    enabled: true
+  - id: saxo_function_calling
+    repo: Saxo/alpaca_function_calling_dataset
+    config: default
+    hf_splits: [train]
+    adapter: tool_use
+    system_fields: [system]
+    text_fields: [instruction]
+    response_fields: [output]
+    split_strategy: hash
+    limits: {train: 9000, validation: 250, test: 250}
+    enabled: true
+  - id: turkish_mobile_function_calling
+    repo: BTX24/turkish-mobile-function-calling-dataset
+    config: default
+    hf_splits: [train]
+    adapter: tool_use
+    text_fields: [user_content]
+    tool_name_field: tool_name
+    tool_arguments_field: tool_arguments
+    split_strategy: hash
+    limits: {train: 5000, validation: 150, test: 150}
+    enabled: true
+  - id: fleurs_ar
+    repo: google/fleurs
+    config: ar_eg
+    hf_splits: [train, validation, test]
+    adapter: audio
+    audio_field: audio
+    text_fields: [transcription, raw_transcription]
+    split_strategy: preserve
+    limits: {train: 200, validation: 50, test: 50}
+    profile_limits:
+      expanded: {train: 500, validation: 100, test: 100}
+    enabled: true
+  - id: arabic_speech_corpus
+    repo: tunis-ai/arabic_speech_corpus
+    config: default
+    hf_splits: [train, test]
+    adapter: audio
+    audio_field: audio
+    text_fields: [orthographic, text]
+    split_strategy: hash
+    limits: {train: 150, validation: 20, test: 30}
+    profile_limits:
+      expanded: {train: 350, validation: 40, test: 60}
+    enabled: true
+  - id: gigaspeech3_arabic
+    repo: speechcolab/gigaspeech3
+    config: EGY
+    hf_splits: [train]
+    adapter: audio
+    audio_field: audio
+    text_fields: [transcription, text]
+    split_strategy: hash
+    limits: {train: 500, validation: 30, test: 30}
+    requires_access: true
+    enabled: true
+  - id: gigaspeech_english
+    repo: speechcolab/gigaspeech
+    config: xl
+    hf_splits: [train]
+    adapter: audio
+    audio_field: audio
+    text_fields: [text, transcription]
+    split_strategy: hash
+    limits: {train: 300, validation: 20, test: 20}
+    requires_access: true
+    enabled: true
+  - id: gigaspeech2_multilingual
+    repo: speechcolab/gigaspeech2
+    config: default
+    hf_splits: [train]
+    adapter: audio
+    audio_field: audio
+    text_fields: [text, transcription]
+    split_strategy: hash
+    limits: {train: 300, validation: 20, test: 20}
+    requires_access: true
+    enabled: true
+  - id: wavcaps_audio_language
+    repo: txya900619/wavcaps-10s-16k
+    config: default
+    hf_splits: [bbc, freesound, soundbible, audioset_no_audiocaps]
+    adapter: audio
+    audio_field: audio
+    text_fields: [caption]
+    split_strategy: hash
+    limits: {train: 250, validation: 25, test: 25}
+    enabled: true
+  - id: common_voice_ar_17
+    repo: mozilla-foundation/common_voice_17_0
+    config: ar
+    hf_splits: [train]
+    adapter: audio
+    audio_field: audio
+    text_fields: [sentence, text]
+    split_strategy: hash
+    limits: {train: 300, validation: 20, test: 20}
+    requires_access: true
+    enabled: true
+
+  # Still images and Arabic document understanding
+  - id: openimages_finedet_v1
+    repo: finedet/openimages
+    config: default
+    hf_splits: [train, validation, test]
+    adapter: image
+    image_field: image
+    split_strategy: preserve
+    limits: {train: 250, validation: 40, test: 40}
+    profile_limits:
+      expanded: {train: 900, validation: 120, test: 120}
+    enabled: true
+  - id: open_images_v7
+    repo: bitmind/open-images-v7
+    config: default
+    hf_splits: [train, validation, test]
+    adapter: image_url
+    image_field: url
+    split_strategy: preserve
+    limits: {train: 250, validation: 40, test: 40}
+    enabled: true
+  - id: sard_arabic_documents
+    repo: riotu-lab/SARD
+    config: default
+    hf_splits: [Amiri, Sakkal_Majalla, Arial, Calibri, Scheherazade_New, Traditional_Arabic]
+    adapter: image_base64
+    image_field: image_base64
+    text_fields: [chunk]
+    split_strategy: hash
+    limits: {train: 250, validation: 30, test: 30}
+    enabled: true
+  - id: flickr30k_visual_test
+    repo: nlphuji/flickr30k
+    config: TEST
+    hf_splits: [test]
+    adapter: image
+    image_field: image
+    text_fields: [caption]
+    split_strategy: preserve
+    force_split: test
+    limits: {test: 250}
+    enabled: true
+  - id: videos4camera_bench
+    repo: syCen/Videos4CameraBench
+    config: default
+    hf_splits: [train]
+    adapter: video
+    video_field: video
+    split_group_filename_field: video
+    split_strategy: hash
+    validation_percent: 10
+    test_percent: 10
+    limits: {train: 60, validation: 6, test: 6}
+    profile_limits:
+      expanded: {train: 100, validation: 10, test: 10}
+    enabled: true
+  - id: finevideo
+    repo: HuggingFaceFV/finevideo
+    config: default
+    hf_splits: [train]
+    adapter: video
+    video_field: video
+    text_fields: [caption, text, answer]
+    split_strategy: hash
+    limits: {train: 150, validation: 20, test: 20}
+    requires_access: true
+    enabled: true
+  - id: laion_bvd_video_55m
+    repo: laion/BVD-V-55M
+    config: default
+    hf_splits: [train]
+    adapter: video
+    video_field: video
+    text_fields: [caption, text]
+    split_strategy: hash
+    limits: {train: 200, validation: 25, test: 25}
+    requires_access: true
+    enabled: true
+  - id: laion_bvd_audio_10m
+    repo: laion/BVD-A-10M
+    config: default
+    hf_splits: [train]
+    adapter: audio
+    audio_field: audio
+    text_fields: [caption, text]
+    split_strategy: hash
+    limits: {train: 200, validation: 25, test: 25}
+    requires_access: true
+    enabled: true
+  - id: internvid_10m_flt
+    repo: OpenGVLab/InternVid
+    config: InternVid-10M-FLT
+    hf_splits: [train]
+    adapter: video
+    video_field: video
+    text_fields: [caption, text]
+    split_strategy: hash
+    limits: {train: 200, validation: 20, test: 20}
+    requires_access: true
+    enabled: true
+  - id: panda70m_video_manifest
+    repo: multimodalart/panda-70m
+    config: default
+    hf_splits: [train]
+    adapter: video_manifest
+    text_fields: [caption, text]
+    split_strategy: hash
+    limits: {train: 1000, validation: 50, test: 50}
+    enabled: false
+  - id: wavcaps_original
+    repo: cvssp/WavCaps
+    config: default
+    hf_splits: [test]
+    adapter: metadata_only
+    split_strategy: preserve
+    limits: {test: 1}
+    enabled: false
+  - id: gigaspeech_bench_eval
+    repo: speechcolab/GigaSpeechBench
+    config: default
+    hf_splits: [test]
+    adapter: metadata_only
+    split_strategy: preserve
+    limits: {test: 50}
+    profile_limits:
+      expanded: {test: 250}
+    enabled: false  # Metadata catalog only; no decoded media payload for this model
+  - id: laion_bvd_image_300m
+    repo: laion/BVD-I-300M
+    config: default
+    hf_splits: [train]
+    adapter: image
+    image_field: image
+    text_fields: [caption, text]
+    split_strategy: hash
+    limits: {train: 200, validation: 20, test: 20}
+    requires_access: true
+    enabled: true
+  - id: coyo_700m
+    repo: kakaobrain/coyo-700m
+    config: default
+    hf_splits: [train]
+    adapter: image_url
+    image_field: url
+    text_fields: [text]
+    split_strategy: hash
+    limits: {train: 500, validation: 50, test: 50}
+    enabled: true
+  - id: conceptual_captions_12m
+    repo: laion/conceptual-captions-12m-webdataset
+    config: default
+    hf_splits: [train]
+    adapter: image
+    image_field: jpg
+    text_fields: [txt]
+    split_strategy: hash
+    limits: {train: 300, validation: 30, test: 30}
+    enabled: true
+  - id: sharegpt4v_images
+    repo: Lin-Chen/ShareGPT4V
+    config: ShareGPT4V
+    hf_splits: [train]
+    adapter: image_url
+    image_field: image
+    image_url_prefix: "https://images.cocodataset.org/train2017"
+    conversation_field: conversations
+    split_group_field: image
+    split_strategy: hash
+    limits: {train: 400, validation: 30, test: 30}
+    enabled: false
+
+  # Video catalogs and temporal annotations
+  - id: sharegpt4video_temporal_manifest
+    repo: ShareGPT4Video/ShareGPT4Video
+    config: ShareGPT4Video
+    hf_splits: [train]
+    adapter: metadata_only
+    split_group_field: video_id
+    split_strategy: hash
+    limits: {train: 2500, validation: 100, test: 100}
+    enabled: false
+  - id: webvid_10m_video
+    repo: TempoFunk/webvid-10M
+    config: default
+    hf_splits: [train, validation]
+    adapter: video_url
+    video_field: contentUrl
+    video_url_fields: [contentUrl]
+    text_fields: [name]
+    split_group_field: videoid
+    split_strategy: preserve
+    limits: {train: 200, validation: 40}
+    enabled: true
+  - id: hdvila_100m_manifest
+    repo: TempoFunk/hdvila-100M
+    config: default
+    hf_splits: [train]
+    adapter: metadata_only
+    split_group_field: video_id
+    split_strategy: hash
+    limits: {train: 2500, validation: 100, test: 100}
+    enabled: false
+  - id: youcook2_temporal_manifest
+    repo: lmms-eval/YouCook2
+    config: default
+    hf_splits: [train, validation, test]
+    adapter: metadata_only
+    split_group_field: youtube_id
+    split_strategy: preserve
+    limits: {train: 1500, validation: 100, test: 100}
+    enabled: false
+  - id: msrvtt_video
+    repo: NTQAI/MSR-VTT-Video-Captioning-Vi
+    config: default
+    hf_splits: [train]
+    adapter: video_repo_file
+    video_field: video
+    text_fields: [caption]
+    split_group_field: video
+    split_strategy: hash
+    limits: {train: 500, validation: 50, test: 50}
+    enabled: true
