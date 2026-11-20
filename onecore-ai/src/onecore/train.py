@@ -562,7 +562,8 @@ def run_training(
     model.train()
     losses: list[float] = []
     tldm_diffusion_losses: list[float] = []
-    tldm_updates = 0
+    tldm_updates = int(saved_metadata.get("tldm_updates", 0))
+    tldm_diffusion_loss_sum = float(saved_metadata.get("tldm_diffusion_loss_sum", 0.0))
     rng = random
     if records:
         rng.shuffle(records)
@@ -601,8 +602,10 @@ def run_training(
                 logits.reshape(-1, logits.shape[-1]), targets.reshape(-1)
             )
             tldm_loss = _tldm_block_denoising_loss(model, sequence, rng)
-            tldm_diffusion_losses.append(float(tldm_loss.detach()))
-            tldm_updates += int(sequence.shape[1] >= 3)
+            diffusion_loss_value = float(tldm_loss.detach())
+            tldm_diffusion_losses.append(diffusion_loss_value)
+            tldm_diffusion_loss_sum += diffusion_loss_value
+            tldm_updates += 1
             loss = language_loss + aux_loss + train_cfg.tldm_diffusion_weight * tldm_loss
             if not torch.isfinite(loss):
                 raise FloatingPointError(f"non-finite loss at optimizer step {step + 1}")
@@ -635,7 +638,8 @@ def run_training(
                 "sampled_task_counts": sampled_task_counts,
                 "tldm_diffusion_weight": train_cfg.tldm_diffusion_weight,
                 "tldm_updates": tldm_updates,
-                "last_tldm_diffusion_loss": tldm_diffusion_losses[-1] if tldm_diffusion_losses else None,
+                "tldm_diffusion_loss_sum": tldm_diffusion_loss_sum,
+                "last_tldm_diffusion_loss": tldm_diffusion_losses[-1] if tldm_diffusion_losses else saved_metadata.get("last_tldm_diffusion_loss"),
                 "last_loss": losses[-1],
                 "scheduler_step": scheduler.last_epoch,
             }
@@ -665,11 +669,11 @@ def run_training(
         "sampled_task_counts": sampled_task_counts,
         "tldm_diffusion_weight": train_cfg.tldm_diffusion_weight,
         "tldm_updates": tldm_updates,
+        "tldm_diffusion_loss_sum": tldm_diffusion_loss_sum,
         "mean_tldm_diffusion_loss": (
-            sum(tldm_diffusion_losses) / len(tldm_diffusion_losses)
-            if tldm_diffusion_losses else None
+            tldm_diffusion_loss_sum / tldm_updates if tldm_updates else None
         ),
-        "last_tldm_diffusion_loss": tldm_diffusion_losses[-1] if tldm_diffusion_losses else None,
+        "last_tldm_diffusion_loss": tldm_diffusion_losses[-1] if tldm_diffusion_losses else saved_metadata.get("last_tldm_diffusion_loss"),
         "last_loss": losses[-1] if losses else None,
         "scheduler_step": scheduler.last_epoch,
     }
@@ -728,9 +732,9 @@ def run_training(
             "additional_trainable_parameters": 0,
             "diffusion_loss_weight": train_cfg.tldm_diffusion_weight,
             "updates": tldm_updates,
+            "loss_sum": tldm_diffusion_loss_sum,
             "mean_diffusion_loss": (
-                sum(tldm_diffusion_losses) / len(tldm_diffusion_losses)
-                if tldm_diffusion_losses else None
+                tldm_diffusion_loss_sum / tldm_updates if tldm_updates else None
             ),
         },
         "micro_batches_per_optimizer_step": 5 if stage in {"joint", "multimodal"} else train_cfg.gradient_accumulation,
