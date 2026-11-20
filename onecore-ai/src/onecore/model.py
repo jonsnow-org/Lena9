@@ -16,7 +16,7 @@ IMAGE_START, IMAGE_END = 3, 4
 AUDIO_START, AUDIO_END = 5, 6
 VIDEO_START, VIDEO_FRAME, VIDEO_END = 7, 8, 9
 TOOL_START, TOOL_END, TURN_START, TURN_END = 10, 11, 12, 13
-TEXT_START, ANSWER_START, NO_ANSWER, MOTION_START = 14, 15, 16, 17
+TEXT_START, ANSWER_START, NO_ANSWER, MOTION_START, MASK = 14, 15, 16, 17, 18
 
 
 def patchify(images: torch.Tensor, patch_size: int) -> torch.Tensor:
@@ -250,6 +250,136 @@ class OneCore(nn.Module):
             for block in self.blocks:
                 x = block(x, causal=causal)
         return self.final_norm(x)
+
+    def compress_to_latents(self, hidden: torch.Tensor, latent_slots: int = 16) -> torch.Tensor:
+        """Compress this model's own token states into a short latent sequence.
+
+        Adaptive pooling is deliberately parameter-free: the compressor uses
+        OneCore's learned token/modality embeddings rather than a donor encoder
+        or a separately trained adapter.
+        """
+        if hidden.ndim != 3 or hidden.shape[1] < 1:
+            raise ValueError("hidden states must have shape [batch, sequence, width]")
+        if latent_slots < 1:
+            raise ValueError("latent_slots must be positive")
+        slots = min(int(latent_slots), hidden.shape[1])
+        return F.adaptive_avg_pool1d(hidden.transpose(1, 2), slots).transpose(1, 2)
+
+    def think_in_latents(self, latents: torch.Tensor) -> torch.Tensor:
+        """Run latent reasoning through OneCore's shared recurrent blocks."""
+        if latents.ndim != 3 or latents.shape[-1] != self.cfg.width:
+            raise ValueError("latents must have shape [batch, slots, model_width]")
+        thought = latents
+        for cycle in range(self.cfg.recurrent_cycles):
+            thought = thought + self.cycle_embedding.weight[cycle].view(1, 1, -1)
+            for block in self.blocks:
+                thought = block(thought, causal=False)
+        return thought
+
+    def forward_tldm_hidden(self, ids: torch.Tensor, latent_slots: int = 16) -> torch.Tensor:
+        """Native OneCore latent-compression / latent-thinking / block-writer path.
+
+        The compressor, thinker and writer are not separate heads. They reuse
+        this OneCore instance's embeddings, recurrent blocks, final norm and
+        tied LM head. Bidirectional attention is safe here because diffusion
+        targets are explicitly masked before this method is called.
+        """
+        if ids.ndim != 2 or ids.shape[1] < 1:
+            raise ValueError("token ids must have shape [batch, non-empty sequence]")
+        if ids.shape[1] > self.cfg.max_sequence_length:
+            raise ValueError("sequence exceeds configured maximum length")
+        if ids.min().item() < 0 or ids.max().item() >= self.cfg.vocab_size:
+            raise ValueError("token id outside configured vocabulary")
+
+        positions = torch.arange(ids.shape[1], device=ids.device).unsqueeze(0)
+        token_states = self.token_embedding(ids) + self.position_embedding(positions)
+        token_states = token_states + self.modality_embedding(self._modality_ids(ids))
+
+        latents = self.compress_to_latents(token_states, latent_slots=latent_slots)
+        latents = self.think_in_latents(latents)
+        latent_context = F.interpolate(
+            latents.transpose(1, 2),
+            size=token_states.shape[1],
+            mode="linear",
+            align_corners=False,
+        ).transpose(1, 2)
+        writer_states = token_states + latent_context
+
+        # The diffusion writer is the same recurrent OneCore body, now allowed
+        # to attend across the masked block and the visible context.
+        for cycle in range(self.cfg.recurrent_cycles):
+            writer_states = writer_states + self.cycle_embedding.weight[cycle].view(1, 1, -1)
+            for block in self.blocks:
+                writer_states = block(writer_states, causal=False)
+        return self.final_norm(writer_states)
+
+    def forward_tldm(self, ids: torch.Tensor, latent_slots: int = 16) -> torch.Tensor:
+        """Predict masked shared-vocabulary tokens from native latent context."""
+        return self.lm_head(self.forward_tldm_hidden(ids, latent_slots=latent_slots))
+
+    @torch.no_grad()
+    def generate_tldm(self, context_ids: torch.Tensor, block_size: int = 32,
+                      diffusion_steps: int = 8, latent_slots: int = 16,
+                      allowed_token_ids: list[int] | None = None,
+                      temperature: float = 0.0, top_k: int = 0) -> torch.Tensor:
+        """Generate a block through iterative masked-token refinement (discrete diffusion)."""
+        if context_ids.ndim != 2 or context_ids.shape[1] < 1:
+            raise ValueError("context_ids must be a non-empty [batch, sequence] tensor")
+        if block_size < 1 or diffusion_steps < 1 or temperature < 0:
+            raise ValueError("block_size and diffusion_steps must be positive; temperature cannot be negative")
+        if context_ids.shape[1] + block_size > self.cfg.max_sequence_length:
+            raise ValueError("context plus diffusion block exceeds configured maximum length")
+        mask_id = self.cfg.special_id(MASK)
+        allowed = allowed_token_ids or (
+            list(range(self.cfg.text_vocab_size))
+            + [self.cfg.special_id(EOS), self.cfg.special_id(TOOL_END)]
+        )
+        if not allowed or mask_id in allowed:
+            raise ValueError("allowed token IDs must be non-empty and exclude the mask token")
+        if any(token < 0 or token >= self.cfg.vocab_size for token in allowed):
+            raise ValueError("allowed token ID lies outside the shared vocabulary")
+
+        self.eval()
+        block = torch.full(
+            (context_ids.shape[0], block_size), mask_id,
+            dtype=context_ids.dtype, device=context_ids.device,
+        )
+        for step in range(diffusion_steps):
+            masked = block.eq(mask_id)
+            if not bool(masked.any()):
+                break
+            complete_input = torch.cat([context_ids, block], dim=1)
+            logits = self.forward_tldm(complete_input, latent_slots=latent_slots)[:, -block_size:, :].float()
+            allowed_mask = torch.ones(logits.shape[-1], dtype=torch.bool, device=logits.device)
+            allowed_mask[allowed] = False
+            logits = logits.masked_fill(allowed_mask.view(1, 1, -1), float("-inf"))
+            if temperature > 0:
+                logits = logits / temperature
+            if top_k > 0:
+                k = min(top_k, len(allowed))
+                threshold = torch.topk(logits, k, dim=-1).values[..., -1:]
+                logits = logits.masked_fill(logits < threshold, float("-inf"))
+            probabilities = torch.softmax(logits, dim=-1)
+            predictions = probabilities.argmax(dim=-1) if temperature == 0 else torch.multinomial(
+                probabilities.reshape(-1, probabilities.shape[-1]), 1
+            ).reshape(block.shape)
+            confidence = probabilities.max(dim=-1).values
+
+            # Reveal the most confident positions first; the final pass fills
+            # every remaining mask, exactly as a bounded discrete denoiser.
+            for batch_index in range(block.shape[0]):
+                positions_to_fill = masked[batch_index].nonzero(as_tuple=False).flatten()
+                remaining_passes = diffusion_steps - step
+                reveal_count = max(1, math.ceil(positions_to_fill.numel() / remaining_passes))
+                ranked = torch.topk(
+                    confidence[batch_index, positions_to_fill],
+                    min(reveal_count, positions_to_fill.numel()),
+                ).indices
+                selected = positions_to_fill[ranked]
+                block[batch_index, selected] = predictions[batch_index, selected]
+        if bool(block.eq(mask_id).any()):
+            raise RuntimeError("T-LDM diffusion writer left masked tokens unrevealed")
+        return block
 
     def forward(self, ids: torch.Tensor, causal: bool = True) -> torch.Tensor:
         return self.lm_head(self.forward_hidden(ids, causal=causal))
@@ -505,4 +635,9 @@ class OneCore(nn.Module):
             "unique_blocks": self.cfg.unique_blocks,
             "recurrent_cycles": self.cfg.recurrent_cycles,
             "effective_block_applications": self.cfg.unique_blocks * self.cfg.recurrent_cycles,
+            "native_tldm": "shared-embedding latent compressor + shared recurrent thinker + tied-vocabulary diffusion writer",
+            "tldm_additional_trainable_parameters": 0,
+            "tldm_latent_slots_default": 16,
+            "tldm_thinker_block_applications": self.cfg.unique_blocks * self.cfg.recurrent_cycles,
+            "tldm_writer_block_applications": self.cfg.unique_blocks * self.cfg.recurrent_cycles,
         }
