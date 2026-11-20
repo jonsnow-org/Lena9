@@ -24,6 +24,7 @@ training:
   checkpoint_every: 25
   max_steps_per_job: 250
   cpu_threads: 4
+  tldm_diffusion_weight: 0.15
 evaluation:
   min_text_tokens: 1000
   max_validation_loss_regression: 0.02
