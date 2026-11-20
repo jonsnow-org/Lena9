@@ -18,7 +18,7 @@ from .config import ModelConfig, load_config
 from .data import classify_record_data, iter_training_records, read_manifest, validate_training_data
 from .model import (
     AUDIO_END, AUDIO_START, BOS, EOS, IMAGE_END, IMAGE_START, TEXT_START,
-    TOOL_END, TOOL_START, VIDEO_END, VIDEO_FRAME, VIDEO_START, MOTION_START,
+    TOOL_END, TOOL_START, VIDEO_END, VIDEO_FRAME, VIDEO_START, MOTION_START, MASK,
     OneCore, patchify,
 )
 from .tokenizer import load_tokenizer, train_tokenizer
@@ -320,6 +320,28 @@ def _joint_micro_batches(
     return selected
 
 
+def _tldm_block_denoising_loss(model: OneCore, sequence: torch.Tensor, rng: Any) -> torch.Tensor:
+    """Train the native shared-core diffusion writer on one masked contiguous block."""
+    if sequence.ndim != 2:
+        raise ValueError("T-LDM training sequence must have shape [batch, sequence]")
+    sequence_length = sequence.shape[1]
+    if sequence_length < 3:
+        return sequence.float().sum() * 0.0
+
+    block_width = min(32, max(1, sequence_length // 4), sequence_length - 2)
+    latest_start = sequence_length - block_width - 1
+    start = rng.randint(1, max(1, latest_start))
+    end = start + block_width
+    masked_sequence = sequence.clone()
+    masked_sequence[:, start:end] = model.cfg.special_id(MASK)
+    logits = model.forward_tldm(masked_sequence)
+    target = sequence[:, start:end]
+    return torch.nn.functional.cross_entropy(
+        logits[:, start:end, :].reshape(-1, logits.shape[-1]),
+        target.reshape(-1),
+    )
+
+
 def _asset_manifest_sha256(project_root: Path, records: list[dict[str, Any]]) -> str:
     assets_root = (project_root / "data" / "assets").resolve()
     paths: set[str] = set()
@@ -539,6 +561,8 @@ def run_training(
 
     model.train()
     losses: list[float] = []
+    tldm_diffusion_losses: list[float] = []
+    tldm_updates = 0
     rng = random
     if records:
         rng.shuffle(records)
@@ -576,7 +600,10 @@ def run_training(
             language_loss = torch.nn.functional.cross_entropy(
                 logits.reshape(-1, logits.shape[-1]), targets.reshape(-1)
             )
-            loss = language_loss + aux_loss
+            tldm_loss = _tldm_block_denoising_loss(model, sequence, rng)
+            tldm_diffusion_losses.append(float(tldm_loss.detach()))
+            tldm_updates += int(sequence.shape[1] >= 3)
+            loss = language_loss + aux_loss + train_cfg.tldm_diffusion_weight * tldm_loss
             if not torch.isfinite(loss):
                 raise FloatingPointError(f"non-finite loss at optimizer step {step + 1}")
             (loss / accumulation).backward()
@@ -606,6 +633,9 @@ def run_training(
                 "codebook_report": codebook_report,
                 "sampled_family_counts": sampled_family_counts,
                 "sampled_task_counts": sampled_task_counts,
+                "tldm_diffusion_weight": train_cfg.tldm_diffusion_weight,
+                "tldm_updates": tldm_updates,
+                "last_tldm_diffusion_loss": tldm_diffusion_losses[-1] if tldm_diffusion_losses else None,
                 "last_loss": losses[-1],
                 "scheduler_step": scheduler.last_epoch,
             }
@@ -633,6 +663,13 @@ def run_training(
         "codebook_report": codebook_report,
         "sampled_family_counts": sampled_family_counts,
         "sampled_task_counts": sampled_task_counts,
+        "tldm_diffusion_weight": train_cfg.tldm_diffusion_weight,
+        "tldm_updates": tldm_updates,
+        "mean_tldm_diffusion_loss": (
+            sum(tldm_diffusion_losses) / len(tldm_diffusion_losses)
+            if tldm_diffusion_losses else None
+        ),
+        "last_tldm_diffusion_loss": tldm_diffusion_losses[-1] if tldm_diffusion_losses else None,
         "last_loss": losses[-1] if losses else None,
         "scheduler_step": scheduler.last_epoch,
     }
@@ -686,6 +723,16 @@ def run_training(
         "sampled_family_counts_in_this_job": job_sampled_family_counts,
         "sampled_task_counts": sampled_task_counts,
         "sampled_task_counts_in_this_job": job_sampled_task_counts,
+        "native_tldm": {
+            "architecture": "shared OneCore embeddings + latent pooling + recurrent shared-block thinker + tied-LM-head discrete diffusion writer",
+            "additional_trainable_parameters": 0,
+            "diffusion_loss_weight": train_cfg.tldm_diffusion_weight,
+            "updates": tldm_updates,
+            "mean_diffusion_loss": (
+                sum(tldm_diffusion_losses) / len(tldm_diffusion_losses)
+                if tldm_diffusion_losses else None
+            ),
+        },
         "micro_batches_per_optimizer_step": 5 if stage in {"joint", "multimodal"} else train_cfg.gradient_accumulation,
         "source_data_counts": source_data_counts,
         "optimizer_data_class_counts": optimizer_data_class_counts,
