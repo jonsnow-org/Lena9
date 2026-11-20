@@ -196,6 +196,15 @@ def validate_test_data(project_root: str | Path) -> dict[str, Any]:
     return report
 
 
+def _sha256_asset_file(path: Path) -> str:
+    """Hash one asset's complete bytes; callers cache by its resolved path."""
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def validate_split_disjointness(project_root: str | Path) -> dict[str, Any]:
     root = Path(project_root)
     assets_root = (root / "data" / "assets").resolve()
@@ -205,6 +214,9 @@ def validate_split_disjointness(project_root: str | Path) -> dict[str, Any]:
     content_hash_sets: dict[str, set[str]] = {name: set() for name in splits}
     content_details: dict[str, dict[str, list[str]]] = {name: {} for name in splits}
     group_sets: dict[str, set[str]] = {name: set() for name in splits}
+    # The same media file can be referenced by many records. Cache its verified
+    # digest once per resolved path instead of rereading large payloads per row.
+    asset_digest_cache: dict[Path, str] = {}
     errors: list[str] = []
     for split, records in splits.items():
         for item in records:
@@ -228,14 +240,17 @@ def validate_split_disjointness(project_root: str | Path) -> dict[str, Any]:
                 if not target.is_file():
                     raise DatasetError(f"asset is missing in {split}: {relative}")
                 path_sets[split].add(relative)
-                digest = hashlib.sha256()
-                with target.open("rb") as stream:
-                    for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-                        digest.update(chunk)
-                sha = digest.hexdigest()
+                sha = asset_digest_cache.get(target)
+                if sha is None:
+                    sha = _sha256_asset_file(target)
+                    asset_digest_cache[target] = sha
                 content_hash_sets[split].add(sha)
                 actual_asset_groups.add(f"asset-sha256:{sha}")
-                content_details[split].setdefault(sha, []).append(f"{record_id}:{relative}")
+                samples = content_details[split].setdefault(sha, [])
+                # Three examples are enough to diagnose leakage; avoid retaining
+                # an unbounded list when a popular asset is referenced repeatedly.
+                if len(samples) < 3:
+                    samples.append(f"{record_id}:{relative}")
             group_sets[split].update(actual_asset_groups)
             declared_groups = item.get("asset_content_group_ids")
             if isinstance(declared_groups, list):
