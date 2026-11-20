@@ -97,6 +97,7 @@ class TrainConfig:
     total_steps: int = 20_000
     warmup_steps: int = 200
     cpu_threads: int = 4
+    tldm_diffusion_weight: float = 0.15
 
     def __post_init__(self) -> None:
         if self.learning_rate <= 0 or self.gradient_accumulation <= 0:
@@ -109,6 +110,8 @@ class TrainConfig:
             raise ValueError("warmup_steps must be in [0, total_steps)")
         if self.cpu_threads < 1:
             raise ValueError("cpu_threads must be positive")
+        if self.tldm_diffusion_weight < 0:
+            raise ValueError("tldm_diffusion_weight cannot be negative")
 
 
 def load_config(path: str | Path) -> tuple[ModelConfig, TrainConfig, dict[str, Any]]:
