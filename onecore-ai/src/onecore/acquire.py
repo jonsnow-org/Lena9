@@ -478,22 +478,10 @@ def _resolve_video_asset(value: Any, source: dict[str, Any]) -> Any:
     # Hub URI: hf://datasets/{repo_id}@{commit_sha}/{filename}. Parse that URI
     # instead of passing it to hf_hub_download as if it were a filename.
     if path.startswith("hf://"):
-        prefix = "hf://datasets/"
+        prefix = f"hf://datasets/{repo_id}@{revision}/"
         if not path.startswith(prefix):
-            raise ValueError("unsupported Hugging Face video URI namespace")
-        hub_target = path[len(prefix):]
-        repo_revision, separator, filename = hub_target.partition("/")
-        if not separator:
-            raise ValueError("Hugging Face video URI is missing its repository file path")
-        uri_repo, revision_separator, uri_revision = repo_revision.rpartition("@")
-        if (
-            not revision_separator
-            or uri_repo != repo_id
-            or uri_revision != revision
-            or not is_immutable_source_revision(uri_revision)
-        ):
             raise ValueError("Hugging Face video URI repository or revision does not match the pinned source")
-        path = filename
+        path = path[len(prefix):]
 
     normalized = unquote(path.replace("\\", "/"))
     while normalized.startswith("./"):
