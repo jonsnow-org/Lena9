@@ -448,6 +448,56 @@ def _disable_video_auto_decode(dataset: Any, video_field: str) -> Any:
     return dataset.cast_column(video_field, Video(decode=False))
 
 
+def _resolve_video_asset(value: Any, source: dict[str, Any]) -> Any:
+    """Resolve relative Video(decode=False) paths from the pinned dataset revision.
+
+    HF Video columns with decode=False expose {"path": ..., "bytes": ...}. For
+    repository-backed video datasets, path is often a filename relative to the
+    dataset repository rather than a file already present on the runner.
+    """
+    if isinstance(value, dict):
+        path = value.get("path")
+        payload = value.get("bytes")
+        if payload is not None or not isinstance(path, str) or not path.strip():
+            return value
+    elif isinstance(value, str):
+        path = value
+    else:
+        return value
+
+    path = path.strip()
+    if path.startswith(("http://", "https://")) or Path(path).is_file():
+        return value
+
+    normalized = unquote(path.replace("\\", "/"))
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    if not normalized or normalized.startswith("/") or ".." in Path(normalized).parts:
+        raise ValueError("video dataset path is empty, absolute, or unsafe")
+
+    repo_id = str(source.get("repo") or "").strip()
+    revision = str(source.get("_resolved_revision") or source.get("revision") or "").strip()
+    if not repo_id or not is_immutable_source_revision(revision):
+        raise ValueError("relative video paths require a repository and pinned immutable revision")
+
+    try:
+        from huggingface_hub import hf_hub_download
+
+        local_path = hf_hub_download(
+            repo_id=repo_id,
+            filename=normalized,
+            repo_type="dataset",
+            revision=revision,
+            token=os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_HUB_TOKEN"),
+        )
+    except Exception as exc:
+        raise ValueError(
+            f"could not fetch video asset {normalized!r} from pinned dataset revision "
+            f"({type(exc).__name__}: {str(exc)[:240]})"
+        ) from exc
+    return {"path": str(local_path), "bytes": None}
+
+
 def _video_frames(value: Any, max_frames: int = 4) -> list[Any]:
     if isinstance(value, dict):
         frames = value.get("frames")
@@ -478,8 +528,11 @@ def _video_frames(value: Any, max_frames: int = 4) -> list[Any]:
                     if len(selected) >= max_frames:
                         break
                 return selected
-            except Exception:
-                return []
+            except Exception as exc:
+                raise ValueError(
+                    f"imageio/FFmpeg could not decode video payload "
+                    f"({type(exc).__name__}: {str(exc)[:240]})"
+                ) from exc
             finally:
                 if temp_path:
                     Path(temp_path).unlink(missing_ok=True)
@@ -493,8 +546,11 @@ def _video_frames(value: Any, max_frames: int = 4) -> list[Any]:
             if len(raw) > 64 * 1024 * 1024:
                 return []
             return _video_frames({"bytes": raw}, max_frames=max_frames)
-        except Exception:
-            return []
+        except Exception as exc:
+            raise ValueError(
+                f"could not download or decode video URL "
+                f"({type(exc).__name__}: {str(exc)[:240]})"
+            ) from exc
     if isinstance(value, str) and Path(value).is_file():
         return _video_frames({"path": value}, max_frames=max_frames)
     if isinstance(value, (list, tuple)):
@@ -669,6 +725,8 @@ def _record_from_row(
             record.update({"task": "audio_reconstruction", "audio_features": relative})
     elif adapter in {"video", "video_url", "video_repo_file"}:
         video_value = _nested(row, str(source.get("video_field") or "video"))
+        if adapter == "video":
+            video_value = _resolve_video_asset(video_value, source)
         if adapter == "video_url":
             aliases = source.get("video_url_fields") or ["video_url", "contentUrl", "url"]
             if not (isinstance(video_value, str) and video_value.startswith(("http://", "https://"))):
