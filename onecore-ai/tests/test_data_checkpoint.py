@@ -153,7 +153,7 @@ def test_split_disjointness_hashes_each_repeated_asset_path_once(tmp_path, monke
     }
     for split, records in manifests.items():
         (data_root / f"{split}.jsonl").write_text(
-            "\\n".join(json.dumps(record) for record in records) + "\\n",
+            "\n".join(json.dumps(record) for record in records) + "\n",
             encoding="utf-8",
         )
 
@@ -188,7 +188,7 @@ def test_split_disjointness_still_detects_identical_content_at_different_paths(t
     }
     for split, records in manifests.items():
         (data_root / f"{split}.jsonl").write_text(
-            "\\n".join(json.dumps(record) for record in records) + "\\n",
+            "\n".join(json.dumps(record) for record in records) + "\n",
             encoding="utf-8",
         )
 
