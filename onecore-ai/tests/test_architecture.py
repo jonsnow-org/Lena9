@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 import torch
 
 from onecore.config import ModelConfig, load_config
