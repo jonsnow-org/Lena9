@@ -24,6 +24,12 @@ Set `stage` to `train_existing` in `onecore-ai/training-request.json` to validat
 
 For a corpus that is complete except for decoded video payloads, set `stage` to `repair_video_existing`. This restores the referenced snapshot and resumes only the saved `videos4camera_bench` cursor for a bounded 20-minute pass; all other crawlers stay skipped. The gate keeps the 100/10/10 thresholds. If more video work is needed, it uploads `onecore-corpus-video-repair-progress` in the current run; point the next request to that run and artifact to continue from the committed cursor. If diagnostics show video decode/conversion errors rather than low volume, retry from the original base artifact after applying the decoder fix, not from a cursor that may have passed unreadable rows.
 
+## Native OneCore T-LDM objective
+
+The training step computes both the normal causal next-token loss and a native masked-block diffusion loss. The latter is implemented by `OneCore.forward_tldm`: pooled latent context is refined by the same recurrent blocks, then masked positions are predicted with the tied vocabulary head. A contiguous target span is replaced by the reserved mask token before the forward pass. Default objective weight: `0.15`; configure through `training.tldm_diffusion_weight`.
+
+Each joint optimizer update applies the same objective to the sampled text, tool, image, audio and video records. The checkpoint therefore contains one randomly initialized OneCore model and one optimizer lineage; there is no frozen donor or sidecar head. The native path adds zero parameters and preserves the exact architecture parameter count, but performs additional recurrent compute. CPU cost and held-out improvement will be reported by the actual run.
+
 ## Initial pipeline baseline
 
 The earlier 10-step and 100-step runs used only synthetic engineering curricula. They remain historical diagnostics. The current all-data experiment starts from random initialization and includes every usable data class after the task-family and split-integrity gates pass.
