@@ -131,3 +131,66 @@ def test_joint_sampler_rejects_missing_external_family_before_any_update():
     }
     with pytest.raises(ValueError, match="all five families"):
         _joint_micro_batches(records_by_task, random.Random(3))
+
+
+def test_split_disjointness_hashes_each_repeated_asset_path_once(tmp_path, monkeypatch):
+    import onecore.data as data_module
+
+    data_root = tmp_path / "data"
+    assets = data_root / "assets"
+    assets.mkdir(parents=True)
+    asset = assets / "shared.bin"
+    asset.write_bytes(b"one shared media payload")
+
+    manifests = {
+        "train": [
+            {"id": "train-1", "split": "train", "image": "shared.bin"},
+            {"id": "train-2", "split": "train", "image": "shared.bin"},
+            {"id": "train-3", "split": "train", "image": "shared.bin"},
+        ],
+        "validation": [{"id": "validation-1", "split": "validation"}],
+        "test": [{"id": "test-1", "split": "test"}],
+    }
+    for split, records in manifests.items():
+        (data_root / f"{split}.jsonl").write_text(
+            "\\n".join(json.dumps(record) for record in records) + "\\n",
+            encoding="utf-8",
+        )
+
+    calls = []
+    original = data_module._sha256_asset_file
+
+    def counted_hash(path):
+        calls.append(path)
+        return original(path)
+
+    monkeypatch.setattr(data_module, "_sha256_asset_file", counted_hash)
+    report = data_module.validate_split_disjointness(tmp_path)
+
+    assert report["valid"] is True
+    assert calls == [asset.resolve()]
+
+
+def test_split_disjointness_still_detects_identical_content_at_different_paths(tmp_path):
+    from onecore.data import DatasetError, validate_split_disjointness
+
+    data_root = tmp_path / "data"
+    assets = data_root / "assets"
+    assets.mkdir(parents=True)
+    payload = b"same media bytes stored at separate paths"
+    (assets / "train.bin").write_bytes(payload)
+    (assets / "validation.bin").write_bytes(payload)
+
+    manifests = {
+        "train": [{"id": "train-1", "split": "train", "image": "train.bin"}],
+        "validation": [{"id": "validation-1", "split": "validation", "image": "validation.bin"}],
+        "test": [{"id": "test-1", "split": "test"}],
+    }
+    for split, records in manifests.items():
+        (data_root / f"{split}.jsonl").write_text(
+            "\\n".join(json.dumps(record) for record in records) + "\\n",
+            encoding="utf-8",
+        )
+
+    with pytest.raises(DatasetError, match="identical asset content leakage"):
+        validate_split_disjointness(tmp_path)
