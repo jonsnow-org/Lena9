@@ -238,6 +238,10 @@ class InferenceSession:
             temperature=0.5, top_k=20, decoding=decoding,
             diffusion_steps=diffusion_steps,
         )[0].tolist()
+        terminators = {self.cfg.special_id(TOOL_END), self.cfg.special_id(EOS)}
+        stop_positions = [index for index, token in enumerate(payload_ids) if token in terminators]
+        if stop_positions:
+            payload_ids = payload_ids[:min(stop_positions)]
         payload_ids = [token for token in payload_ids if token < self.cfg.text_vocab_size]
         payload = self.tokenizer.decode(payload_ids, skip_special_tokens=True).strip()
         # Validate strict JSON and allowlisted tool name before dispatch. The model's
