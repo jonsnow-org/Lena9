@@ -273,8 +273,9 @@ jobs:
         env:
           PYTHONPATH: onecore-ai/src
         run: |
-          python - <<'PY' >> "$GITHUB_OUTPUT"
+          python - <<'PY'
           import json
+          import os
           from pathlib import Path
           from onecore.acquire import task_coverage
 
@@ -293,8 +294,16 @@ jobs:
               if coverage.get(split, {}).get(task, 0) < minimum
           ]
           ready = not failures
-          print(f"coverage_ready={str(ready).lower()}")
-          print(json.dumps({"coverage": coverage, "failures": failures}, ensure_ascii=False, indent=2))
+          diagnostic = json.dumps(
+              {"coverage": coverage, "failures": failures},
+              ensure_ascii=False,
+              indent=2,
+          )
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"coverage_ready={str(ready).lower()}\n")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("## Decoded-payload coverage diagnostic\n\n" + diagnostic + "\n")
+          print(diagnostic)
           PY
       - name: Preserve resumable video-only corpus if coverage still needs continuation
         id: repair_progress_pack
