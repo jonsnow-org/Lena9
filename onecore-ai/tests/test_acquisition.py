@@ -990,7 +990,11 @@ def test_video_adapter_resolves_relative_hub_video_path_at_pinned_revision(tmp_p
     }
     record = _record_from_row(
         {
-            "video": {"path": "-2uIa-XMJC0.5.3.mp4", "bytes": None},
+            "video": {
+                "path": "hf://datasets/syCen/Videos4CameraBench@"
+                        + revision + "/-2uIa-XMJC0.5.3.mp4",
+                "bytes": None,
+            },
             "caption": "A short video segment for the pinned source.",
         },
         source,
@@ -1020,3 +1024,28 @@ def test_video_adapter_rejects_unsafe_relative_hub_paths() -> None:
     }
     with pytest.raises(ValueError, match="unsafe"):
         _resolve_video_asset({"path": "../outside.mp4", "bytes": None}, source)
+
+
+def test_video_adapter_rejects_hugging_face_uri_from_other_repo_or_revision() -> None:
+    from onecore.acquire import _resolve_video_asset
+
+    source = {
+        "repo": "syCen/Videos4CameraBench",
+        "_resolved_revision": "a" * 40,
+    }
+    with pytest.raises(ValueError, match="repository or revision"):
+        _resolve_video_asset(
+            {
+                "path": "hf://datasets/another/dataset@" + ("a" * 40) + "/clip.mp4",
+                "bytes": None,
+            },
+            source,
+        )
+    with pytest.raises(ValueError, match="repository or revision"):
+        _resolve_video_asset(
+            {
+                "path": "hf://datasets/syCen/Videos4CameraBench@" + ("b" * 40) + "/clip.mp4",
+                "bytes": None,
+            },
+            source,
+        )
