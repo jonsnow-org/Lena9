@@ -622,7 +622,7 @@ class OneCore(nn.Module):
         hidden = self.forward_hidden(ids, causal=True)
         return torch.sigmoid(self.halt_head(hidden)).squeeze(-1)
 
-    def parameter_report(self) -> dict[str, int | float]:
+    def parameter_report(self) -> dict[str, int | float | str]:
         total = self.count_parameters()
         return {
             "parameters": total,
