@@ -111,6 +111,8 @@ class TrainConfig:
             raise ValueError("warmup_steps must be in [0, total_steps)")
         if self.cpu_threads < 1:
             raise ValueError("cpu_threads must be positive")
+        if self.adaptive_tolerance < 0:
+            raise ValueError("adaptive_tolerance cannot be negative")
         if self.tldm_diffusion_weight < 0:
             raise ValueError("tldm_diffusion_weight cannot be negative")
 
