@@ -182,3 +182,21 @@ def test_native_tldm_diffusion_objective_trains_shared_onecore_weights():
     loss.backward()
     assert model.token_embedding.weight.grad is not None
     assert model.blocks[0].mlp.gate.weight.grad is not None
+
+
+def test_inference_session_exposes_native_tldm_decoding_mode():
+    from onecore.inference import InferenceSession
+
+    class TinyTokenizer:
+        def encode(self, _text):
+            return type("Encoded", (), {"ids": [5, 7, 9]})()
+
+        def decode(self, _ids, skip_special_tokens=True):
+            return "native diffusion output"
+
+    session = InferenceSession(OneCore(tiny_config()), TinyTokenizer())
+    answer = session.chat(
+        "solve this", max_new_tokens=5, decoding="tldm",
+        diffusion_steps=3, temperature=0.0, top_k=0,
+    )
+    assert answer == "native diffusion output"
