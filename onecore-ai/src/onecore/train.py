@@ -22,6 +22,7 @@ from .model import (
     OneCore, patchify,
 )
 from .tokenizer import load_tokenizer, train_tokenizer
+from .flops import micro_batch_train_flops
 
 
 def _sid(cfg: ModelConfig, offset: int) -> int:
@@ -395,7 +396,8 @@ def run_training(
 
     model = OneCore(cfg).cpu()
     optimizer = torch.optim.AdamW(
-        model.parameters(), lr=train_cfg.learning_rate, weight_decay=train_cfg.weight_decay
+        model.parameters(), lr=train_cfg.learning_rate, weight_decay=train_cfg.weight_decay,
+        betas=tuple(train_cfg.adam_betas)
     )
     scheduler = _build_scheduler(optimizer, train_cfg.warmup_steps, train_cfg.total_steps)
     checkpoint_path = out / "checkpoint.pt"
@@ -561,6 +563,9 @@ def run_training(
 
     model.train()
     losses: list[float] = []
+    first_language_loss: float | None = None
+    job_training_flops = 0
+    optimizer_step_flops: list[int] = []
     tldm_diffusion_losses: list[float] = []
     tldm_updates = int(saved_metadata.get("tldm_updates", 0))
     tldm_diffusion_loss_sum = float(saved_metadata.get("tldm_diffusion_loss_sum", 0.0))
@@ -575,6 +580,7 @@ def run_training(
     for local_step in range(steps):
         optimizer.zero_grad(set_to_none=True)
         micro_losses: list[float] = []
+        current_step_flops = 0
         if stage in {"joint", "multimodal"}:
             micro_batch = _joint_micro_batches(records_by_task, rng)
         elif stage == "smoke":
@@ -596,11 +602,14 @@ def run_training(
                     job_sampled_family_counts[family] = job_sampled_family_counts.get(family, 0) + 1
                     sampled_task_counts[task] = sampled_task_counts.get(task, 0) + 1
                     job_sampled_task_counts[task] = job_sampled_task_counts.get(task, 0) + 1
+            current_step_flops += micro_batch_train_flops(int(sequence.shape[1]))
             logits = model(sequence[:, :-1], causal=True)
             targets = sequence[:, 1:]
             language_loss = torch.nn.functional.cross_entropy(
                 logits.reshape(-1, logits.shape[-1]), targets.reshape(-1)
             )
+            if first_language_loss is None:
+                first_language_loss = float(language_loss.detach())
             tldm_loss = _tldm_block_denoising_loss(model, sequence, rng)
             diffusion_loss_value = float(tldm_loss.detach())
             tldm_diffusion_losses.append(diffusion_loss_value)
@@ -617,6 +626,8 @@ def run_training(
         scheduler.step()
         step += 1
         losses.append(sum(micro_losses) / len(micro_losses))
+        optimizer_step_flops.append(current_step_flops)
+        job_training_flops += current_step_flops
 
         if step % train_cfg.checkpoint_every == 0:
             metadata = {
@@ -701,6 +712,11 @@ def run_training(
         "parameter_count": model.count_parameters(),
         "parameter_report": model.parameter_report(),
         "mean_loss": sum(losses) / max(1, len(losses)),
+        "first_language_loss": first_language_loss,
+        "first_language_loss_reference_nats": 8.5456,
+        "training_flops_total": job_training_flops,
+        "training_flops_per_optimizer_step": optimizer_step_flops,
+        "training_flops_mean_per_optimizer_step": job_training_flops / max(1, len(optimizer_step_flops)),
         "last_loss": losses[-1] if losses else None,
         "learning_rate": scheduler.get_last_lr()[0],
         "tokenizer_sha256": tokenizer_sha,
