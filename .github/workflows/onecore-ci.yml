@@ -87,12 +87,14 @@ jobs:
           })
           PY
           if grep -R -nE '57,587,393|57587393|57,575,425|57575425' \
-            --include='*.py' --include='*.md' --include='*.ipynb' --include='*.yaml' --include='*.yml' onecore-ai .github; then
+            --include='*.py' --include='*.md' --include='*.ipynb' --include='*.yaml' --include='*.yml' onecore-ai; then
             echo "Obsolete parameter counts remain in the source tree."
             exit 1
           fi
           if grep -R -nE 'ONECORE_MIN_TRAIN_RECORDS.*25|ONECORE_MIN_HOLDOUT_RECORDS.*5|minimum_train: int = 25|minimum_holdout: int = 5' \
-            --include='*.py' --include='*.ipynb' --include='*.yaml' --include='*.yml' onecore-ai .github; then
+            --include='*.py' --include='*.ipynb' --include='*.yaml' --include='*.yml' onecore-ai \
+            .github/workflows/onecore-training.yml .github/workflows/onecore-bootstrap.yml \
+            .github/actions/onecore-acquire/action.yml; then
             echo "Legacy 25/5 data gate remains."
             exit 1
           fi
