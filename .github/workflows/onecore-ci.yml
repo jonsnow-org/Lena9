@@ -72,6 +72,7 @@ jobs:
           assert train.learning_rate == 0.0003 and train.weight_decay == 0.1
           assert tuple(train.adam_betas) == (0.9, 0.95)
           assert cfg.vocab_size == 5144 and cfg.hidden_size == 2730
+          assert cfg.thinker_latents == 16
           assert raw["model"]["expected_parameter_count"] == 57579201
           model = OneCore(cfg)
           assert model.count_parameters() == 57579201
