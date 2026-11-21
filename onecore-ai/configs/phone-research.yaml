@@ -1,15 +1,17 @@
 seed: 20261115
 model:
   width: 1024
-  unique_blocks: 4
-  recurrent_cycles: 3
-  attention_heads: 8
+  n_blocks: 4
+  n_cycles: 3
+  n_heads: 8
+  hidden_size: 2730
   max_sequence_length: 512
   text_vocab_size: 4096
   vision_codebook_size: 512
   audio_codebook_size: 256
   motion_codebook_size: 256
   special_tokens: 24
+  vocab_size: 5144
   patch_size: 8
   image_size: 64
   audio_bins: 80
@@ -30,6 +32,10 @@ training:
   max_steps_per_job: 250
   cpu_threads: 4
   tldm_diffusion_weight: 0.15
+data_gate:
+  min_train_per_family: 100
+  min_holdout_per_family: 10
+  required_families: [text, tool, image, audio, video]
 evaluation:
   min_text_tokens: 1000
   max_validation_loss_regression: 0.02
