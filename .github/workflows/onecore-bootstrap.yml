@@ -27,6 +27,7 @@ jobs:
       request_stage: ${{ steps.request.outputs.request_stage }}
       resume_checkpoint_run_id: ${{ steps.request.outputs.resume_checkpoint_run_id }}
       resume_checkpoint_artifact_name: ${{ steps.request.outputs.resume_checkpoint_artifact_name }}
+      resume_checkpoint_session: ${{ steps.request.outputs.resume_checkpoint_session }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -66,13 +67,15 @@ jobs:
               raise ValueError("A resumed checkpoint requires both resume_checkpoint_run_id and resume_checkpoint_artifact_name")
           if resume_run and not re.fullmatch(r"[0-9]+", resume_run):
               raise ValueError("resume_checkpoint_run_id must be a numeric GitHub Actions run ID")
-          if resume_artifact and not re.fullmatch(r"[A-Za-z0-9_.-]+", resume_artifact):
-              raise ValueError("resume_checkpoint_artifact_name contains unsupported characters")
+          if resume_artifact and not re.fullmatch(r"onecore-state-train-(0[1-9]|10)", resume_artifact):
+              raise ValueError("resume_checkpoint_artifact_name must identify a numbered OneCore training checkpoint")
+          resume_session = int(resume_artifact.rsplit("-", 1)[-1]) if resume_artifact else 0
           print(f"base_corpus_run_id={corpus}")
           print(f"base_corpus_artifact_name={artifact}")
           print(f"request_stage={stage}")
           print(f"resume_checkpoint_run_id={resume_run}")
           print(f"resume_checkpoint_artifact_name={resume_artifact}")
+          print(f"resume_checkpoint_session={resume_session}")
           PY
       - name: Compile package and run all tests
         run: |
@@ -457,7 +460,7 @@ jobs:
           ref: ${{ github.sha }}
       - id: train01
         name: Training session 1 of 10 — joint — 03_text_pretraining.ipynb
-        if: ${{ needs.prepare.outputs.resume_checkpoint_artifact_name == '' }}
+        if: ${{ needs.prepare.outputs.resume_checkpoint_session == '0' }}
         uses: ./.github/actions/onecore-train
         with:
           setup_environment: "true"
@@ -471,119 +474,135 @@ jobs:
           output_artifact_name: onecore-state-train-01
       - id: train02
         name: Training session 2 of 10 — multimodal — 04_multimodal_curriculum.ipynb
-        if: ${{ always() && !cancelled() && (steps.train01.outcome == 'success' || needs.prepare.outputs.resume_checkpoint_artifact_name != '') }}
+        if: ${{ always() && !cancelled() && (steps.train01.outcome == 'success' || needs.prepare.outputs.resume_checkpoint_session == '1') }}
         uses: ./.github/actions/onecore-train
         with:
-          setup_environment: ${{ needs.prepare.outputs.resume_checkpoint_artifact_name != '' && 'true' || 'false' }}
-          restore_corpus: ${{ needs.prepare.outputs.resume_checkpoint_artifact_name != '' && 'true' || 'false' }}
+          setup_environment: ${{ needs.prepare.outputs.resume_checkpoint_session == '1' && 'true' || 'false' }}
+          restore_corpus: ${{ needs.prepare.outputs.resume_checkpoint_session == '1' && 'true' || 'false' }}
           corpus_artifact_name: onecore-corpus-final
-          checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_artifact_name != '' && needs.prepare.outputs.resume_checkpoint_artifact_name || 'onecore-state-train-01' }}
-          checkpoint_run_id: ${{ needs.prepare.outputs.resume_checkpoint_run_id }}
-          previous_checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_run_id == '' && 'onecore-state-train-01' || '' }}
+          checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '1' && needs.prepare.outputs.resume_checkpoint_artifact_name || 'onecore-state-train-01' }}
+          checkpoint_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '1' && needs.prepare.outputs.resume_checkpoint_run_id || '' }}
+          previous_checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '1' && '' || 'onecore-state-train-01' }}
           stage: "multimodal"
           notebook: "04_multimodal_curriculum.ipynb"
           steps: "15"
           output_artifact_name: onecore-state-train-02
       - id: train03
         name: Training session 3 of 10 — multimodal — 03_text_pretraining.ipynb
+        if: ${{ always() && !cancelled() && (steps.train02.outcome == 'success' || needs.prepare.outputs.resume_checkpoint_session == '2') }}
         uses: ./.github/actions/onecore-train
         with:
-          setup_environment: "false"
-          restore_corpus: "false"
+          setup_environment: ${{ needs.prepare.outputs.resume_checkpoint_session == '2' && 'true' || 'false' }}
+          restore_corpus: ${{ needs.prepare.outputs.resume_checkpoint_session == '2' && 'true' || 'false' }}
           corpus_artifact_name: onecore-corpus-final
-          checkpoint_artifact_name: "onecore-state-train-02"
-          previous_checkpoint_artifact_name: "onecore-state-train-02"
+          checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '2' && needs.prepare.outputs.resume_checkpoint_artifact_name || 'onecore-state-train-02' }}
+          checkpoint_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '2' && needs.prepare.outputs.resume_checkpoint_run_id || '' }}
+          previous_checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '2' && '' || 'onecore-state-train-02' }}
           stage: "multimodal"
           notebook: "03_text_pretraining.ipynb"
           steps: "15"
           output_artifact_name: onecore-state-train-03
       - id: train04
         name: Training session 4 of 10 — multimodal — 04_multimodal_curriculum.ipynb
+        if: ${{ always() && !cancelled() && (steps.train03.outcome == 'success' || needs.prepare.outputs.resume_checkpoint_session == '3') }}
         uses: ./.github/actions/onecore-train
         with:
-          setup_environment: "false"
-          restore_corpus: "false"
+          setup_environment: ${{ needs.prepare.outputs.resume_checkpoint_session == '3' && 'true' || 'false' }}
+          restore_corpus: ${{ needs.prepare.outputs.resume_checkpoint_session == '3' && 'true' || 'false' }}
           corpus_artifact_name: onecore-corpus-final
-          checkpoint_artifact_name: "onecore-state-train-03"
-          previous_checkpoint_artifact_name: "onecore-state-train-03"
+          checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '3' && needs.prepare.outputs.resume_checkpoint_artifact_name || 'onecore-state-train-03' }}
+          checkpoint_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '3' && needs.prepare.outputs.resume_checkpoint_run_id || '' }}
+          previous_checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '3' && '' || 'onecore-state-train-03' }}
           stage: "multimodal"
           notebook: "04_multimodal_curriculum.ipynb"
           steps: "15"
           output_artifact_name: onecore-state-train-04
       - id: train05
         name: Training session 5 of 10 — multimodal — 03_text_pretraining.ipynb
+        if: ${{ always() && !cancelled() && (steps.train04.outcome == 'success' || needs.prepare.outputs.resume_checkpoint_session == '4') }}
         uses: ./.github/actions/onecore-train
         with:
-          setup_environment: "false"
-          restore_corpus: "false"
+          setup_environment: ${{ needs.prepare.outputs.resume_checkpoint_session == '4' && 'true' || 'false' }}
+          restore_corpus: ${{ needs.prepare.outputs.resume_checkpoint_session == '4' && 'true' || 'false' }}
           corpus_artifact_name: onecore-corpus-final
-          checkpoint_artifact_name: "onecore-state-train-04"
-          previous_checkpoint_artifact_name: "onecore-state-train-04"
+          checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '4' && needs.prepare.outputs.resume_checkpoint_artifact_name || 'onecore-state-train-04' }}
+          checkpoint_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '4' && needs.prepare.outputs.resume_checkpoint_run_id || '' }}
+          previous_checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '4' && '' || 'onecore-state-train-04' }}
           stage: "multimodal"
           notebook: "03_text_pretraining.ipynb"
           steps: "15"
           output_artifact_name: onecore-state-train-05
       - id: train06
         name: Training session 6 of 10 — multimodal — 04_multimodal_curriculum.ipynb
+        if: ${{ always() && !cancelled() && (steps.train05.outcome == 'success' || needs.prepare.outputs.resume_checkpoint_session == '5') }}
         uses: ./.github/actions/onecore-train
         with:
-          setup_environment: "false"
-          restore_corpus: "false"
+          setup_environment: ${{ needs.prepare.outputs.resume_checkpoint_session == '5' && 'true' || 'false' }}
+          restore_corpus: ${{ needs.prepare.outputs.resume_checkpoint_session == '5' && 'true' || 'false' }}
           corpus_artifact_name: onecore-corpus-final
-          checkpoint_artifact_name: "onecore-state-train-05"
-          previous_checkpoint_artifact_name: "onecore-state-train-05"
+          checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '5' && needs.prepare.outputs.resume_checkpoint_artifact_name || 'onecore-state-train-05' }}
+          checkpoint_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '5' && needs.prepare.outputs.resume_checkpoint_run_id || '' }}
+          previous_checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '5' && '' || 'onecore-state-train-05' }}
           stage: "multimodal"
           notebook: "04_multimodal_curriculum.ipynb"
           steps: "15"
           output_artifact_name: onecore-state-train-06
       - id: train07
         name: Training session 7 of 10 — multimodal — 03_text_pretraining.ipynb
+        if: ${{ always() && !cancelled() && (steps.train06.outcome == 'success' || needs.prepare.outputs.resume_checkpoint_session == '6') }}
         uses: ./.github/actions/onecore-train
         with:
-          setup_environment: "false"
-          restore_corpus: "false"
+          setup_environment: ${{ needs.prepare.outputs.resume_checkpoint_session == '6' && 'true' || 'false' }}
+          restore_corpus: ${{ needs.prepare.outputs.resume_checkpoint_session == '6' && 'true' || 'false' }}
           corpus_artifact_name: onecore-corpus-final
-          checkpoint_artifact_name: "onecore-state-train-06"
-          previous_checkpoint_artifact_name: "onecore-state-train-06"
+          checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '6' && needs.prepare.outputs.resume_checkpoint_artifact_name || 'onecore-state-train-06' }}
+          checkpoint_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '6' && needs.prepare.outputs.resume_checkpoint_run_id || '' }}
+          previous_checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '6' && '' || 'onecore-state-train-06' }}
           stage: "multimodal"
           notebook: "03_text_pretraining.ipynb"
           steps: "15"
           output_artifact_name: onecore-state-train-07
       - id: train08
         name: Training session 8 of 10 — multimodal — 04_multimodal_curriculum.ipynb
+        if: ${{ always() && !cancelled() && (steps.train07.outcome == 'success' || needs.prepare.outputs.resume_checkpoint_session == '7') }}
         uses: ./.github/actions/onecore-train
         with:
-          setup_environment: "false"
-          restore_corpus: "false"
+          setup_environment: ${{ needs.prepare.outputs.resume_checkpoint_session == '7' && 'true' || 'false' }}
+          restore_corpus: ${{ needs.prepare.outputs.resume_checkpoint_session == '7' && 'true' || 'false' }}
           corpus_artifact_name: onecore-corpus-final
-          checkpoint_artifact_name: "onecore-state-train-07"
-          previous_checkpoint_artifact_name: "onecore-state-train-07"
+          checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '7' && needs.prepare.outputs.resume_checkpoint_artifact_name || 'onecore-state-train-07' }}
+          checkpoint_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '7' && needs.prepare.outputs.resume_checkpoint_run_id || '' }}
+          previous_checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '7' && '' || 'onecore-state-train-07' }}
           stage: "multimodal"
           notebook: "04_multimodal_curriculum.ipynb"
           steps: "15"
           output_artifact_name: onecore-state-train-08
       - id: train09
         name: Training session 9 of 10 — multimodal — 03_text_pretraining.ipynb
+        if: ${{ always() && !cancelled() && (steps.train08.outcome == 'success' || needs.prepare.outputs.resume_checkpoint_session == '8') }}
         uses: ./.github/actions/onecore-train
         with:
-          setup_environment: "false"
-          restore_corpus: "false"
+          setup_environment: ${{ needs.prepare.outputs.resume_checkpoint_session == '8' && 'true' || 'false' }}
+          restore_corpus: ${{ needs.prepare.outputs.resume_checkpoint_session == '8' && 'true' || 'false' }}
           corpus_artifact_name: onecore-corpus-final
-          checkpoint_artifact_name: "onecore-state-train-08"
-          previous_checkpoint_artifact_name: "onecore-state-train-08"
+          checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '8' && needs.prepare.outputs.resume_checkpoint_artifact_name || 'onecore-state-train-08' }}
+          checkpoint_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '8' && needs.prepare.outputs.resume_checkpoint_run_id || '' }}
+          previous_checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '8' && '' || 'onecore-state-train-08' }}
           stage: "multimodal"
           notebook: "03_text_pretraining.ipynb"
           steps: "15"
           output_artifact_name: onecore-state-train-09
       - id: train10
         name: Training session 10 of 10 — multimodal — 04_multimodal_curriculum.ipynb
+        if: ${{ always() && !cancelled() && (steps.train09.outcome == 'success' || needs.prepare.outputs.resume_checkpoint_session == '9') }}
         uses: ./.github/actions/onecore-train
         with:
-          setup_environment: "false"
-          restore_corpus: "false"
+          setup_environment: ${{ needs.prepare.outputs.resume_checkpoint_session == '9' && 'true' || 'false' }}
+          restore_corpus: ${{ needs.prepare.outputs.resume_checkpoint_session == '9' && 'true' || 'false' }}
           corpus_artifact_name: onecore-corpus-final
-          checkpoint_artifact_name: "onecore-state-train-09"
-          previous_checkpoint_artifact_name: "onecore-state-train-09"
+          checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '9' && needs.prepare.outputs.resume_checkpoint_artifact_name || 'onecore-state-train-09' }}
+          checkpoint_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '9' && needs.prepare.outputs.resume_checkpoint_run_id || '' }}
+          previous_checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '9' && '' || 'onecore-state-train-09' }}
           stage: "multimodal"
           notebook: "04_multimodal_curriculum.ipynb"
           steps: "15"
