@@ -17,6 +17,7 @@ def test_repository_config_loads_without_undefined_fields():
     )
     assert model.vocab_size == 5144
     assert model.hidden_size == 2730
+    assert model.thinker_latents == 16
     assert raw["model"]["expected_parameter_count"] == 57579201
     assert train.gradient_accumulation == 4
     assert train.weight_decay == 0.1
@@ -139,3 +140,10 @@ def test_v2_checkpoint_with_exact_architecture_and_training_config_can_resume():
         model,
         raw,
     )
+
+
+def test_tldm_thinker_latents_must_be_positive():
+    from onecore.config import ModelConfig
+
+    with pytest.raises(ValueError, match="thinker_latents must be positive"):
+        ModelConfig(thinker_latents=0)
