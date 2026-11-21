@@ -3,7 +3,12 @@ import math
 import pytest
 import torch
 
-from onecore.evaluate import (\n    _tldm_masked_span_loss, codebook_assignment_report,\n    select_evaluation_records, select_tldm_evaluation_records,\n)\nfrom onecore.config import ModelConfig\nfrom onecore.model import OneCore
+from onecore.evaluate import (
+    _tldm_masked_span_loss, codebook_assignment_report,
+    select_evaluation_records, select_tldm_evaluation_records,
+)
+from onecore.config import ModelConfig
+from onecore.model import OneCore
 
 
 def test_codebook_assignment_report_has_expected_entropy_perplexity_and_dead_codes():
