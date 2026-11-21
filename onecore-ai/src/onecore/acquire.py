@@ -643,15 +643,10 @@ def _record_from_row(
             if answer:
                 text = f"Question: {question}\nAnswer: {answer}" if question else answer
     if adapter == "stack_v2_code":
-        # Stack v2 exposes per-file provenance and an inferred license class.
-        # Do not request SWH bytes for non-permissive, vendor, generated, or
-        # out-of-scope languages; this saves crawler time and avoids needless GETs.
-        if str(row.get("license_type") or "").strip().casefold() != "permissive":
-            return None
+        # Fetch code regardless of license metadata. Keep quality/safety filters:
+        # vendor/generated files, unsupported languages, exposed secrets and
+        # unsafe payloads remain excluded before records enter the corpus.
         if bool(row.get("is_vendor")) or bool(row.get("is_generated")):
-            return None
-        allowlist = {str(value) for value in (source.get("license_allowlist") or [])}
-        if not has_allowed_stack_license(row, allowlist):
             return None
         allowed_languages = {str(value).strip().casefold() for value in (source.get("allowed_languages") or [])}
         language = str(row.get("language") or "").strip()
