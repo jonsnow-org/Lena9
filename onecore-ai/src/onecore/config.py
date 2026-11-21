@@ -55,7 +55,7 @@ class ModelConfig:
             + 5 * width
             + self.recurrent_cycles * width
         )
-        per_block = 2 * width + 3 * width * width + 3 * width * hidden
+        per_block = 2 * width + 4 * width * width + 3 * width * hidden
         final_norm = width
         codecs = (
             patch_dim * width + width
