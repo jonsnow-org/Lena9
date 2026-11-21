@@ -466,6 +466,7 @@ jobs:
           setup_environment: "true"
           restore_corpus: "true"
           corpus_artifact_name: onecore-corpus-final
+          corpus_run_id: ""
           checkpoint_artifact_name: ""
           previous_checkpoint_artifact_name: ""
           stage: "joint"
@@ -480,6 +481,7 @@ jobs:
           setup_environment: ${{ needs.prepare.outputs.resume_checkpoint_session == '1' && 'true' || 'false' }}
           restore_corpus: ${{ needs.prepare.outputs.resume_checkpoint_session == '1' && 'true' || 'false' }}
           corpus_artifact_name: onecore-corpus-final
+          corpus_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '1' && needs.prepare.outputs.base_corpus_run_id || '' }}
           checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '1' && needs.prepare.outputs.resume_checkpoint_artifact_name || 'onecore-state-train-01' }}
           checkpoint_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '1' && needs.prepare.outputs.resume_checkpoint_run_id || '' }}
           previous_checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '1' && '' || 'onecore-state-train-01' }}
@@ -495,6 +497,7 @@ jobs:
           setup_environment: ${{ needs.prepare.outputs.resume_checkpoint_session == '2' && 'true' || 'false' }}
           restore_corpus: ${{ needs.prepare.outputs.resume_checkpoint_session == '2' && 'true' || 'false' }}
           corpus_artifact_name: onecore-corpus-final
+          corpus_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '2' && needs.prepare.outputs.base_corpus_run_id || '' }}
           checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '2' && needs.prepare.outputs.resume_checkpoint_artifact_name || 'onecore-state-train-02' }}
           checkpoint_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '2' && needs.prepare.outputs.resume_checkpoint_run_id || '' }}
           previous_checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '2' && '' || 'onecore-state-train-02' }}
@@ -510,6 +513,7 @@ jobs:
           setup_environment: ${{ needs.prepare.outputs.resume_checkpoint_session == '3' && 'true' || 'false' }}
           restore_corpus: ${{ needs.prepare.outputs.resume_checkpoint_session == '3' && 'true' || 'false' }}
           corpus_artifact_name: onecore-corpus-final
+          corpus_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '3' && needs.prepare.outputs.base_corpus_run_id || '' }}
           checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '3' && needs.prepare.outputs.resume_checkpoint_artifact_name || 'onecore-state-train-03' }}
           checkpoint_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '3' && needs.prepare.outputs.resume_checkpoint_run_id || '' }}
           previous_checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '3' && '' || 'onecore-state-train-03' }}
@@ -525,6 +529,7 @@ jobs:
           setup_environment: ${{ needs.prepare.outputs.resume_checkpoint_session == '4' && 'true' || 'false' }}
           restore_corpus: ${{ needs.prepare.outputs.resume_checkpoint_session == '4' && 'true' || 'false' }}
           corpus_artifact_name: onecore-corpus-final
+          corpus_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '4' && needs.prepare.outputs.base_corpus_run_id || '' }}
           checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '4' && needs.prepare.outputs.resume_checkpoint_artifact_name || 'onecore-state-train-04' }}
           checkpoint_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '4' && needs.prepare.outputs.resume_checkpoint_run_id || '' }}
           previous_checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '4' && '' || 'onecore-state-train-04' }}
@@ -540,6 +545,7 @@ jobs:
           setup_environment: ${{ needs.prepare.outputs.resume_checkpoint_session == '5' && 'true' || 'false' }}
           restore_corpus: ${{ needs.prepare.outputs.resume_checkpoint_session == '5' && 'true' || 'false' }}
           corpus_artifact_name: onecore-corpus-final
+          corpus_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '5' && needs.prepare.outputs.base_corpus_run_id || '' }}
           checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '5' && needs.prepare.outputs.resume_checkpoint_artifact_name || 'onecore-state-train-05' }}
           checkpoint_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '5' && needs.prepare.outputs.resume_checkpoint_run_id || '' }}
           previous_checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '5' && '' || 'onecore-state-train-05' }}
@@ -555,6 +561,7 @@ jobs:
           setup_environment: ${{ needs.prepare.outputs.resume_checkpoint_session == '6' && 'true' || 'false' }}
           restore_corpus: ${{ needs.prepare.outputs.resume_checkpoint_session == '6' && 'true' || 'false' }}
           corpus_artifact_name: onecore-corpus-final
+          corpus_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '6' && needs.prepare.outputs.base_corpus_run_id || '' }}
           checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '6' && needs.prepare.outputs.resume_checkpoint_artifact_name || 'onecore-state-train-06' }}
           checkpoint_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '6' && needs.prepare.outputs.resume_checkpoint_run_id || '' }}
           previous_checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '6' && '' || 'onecore-state-train-06' }}
@@ -570,6 +577,7 @@ jobs:
           setup_environment: ${{ needs.prepare.outputs.resume_checkpoint_session == '7' && 'true' || 'false' }}
           restore_corpus: ${{ needs.prepare.outputs.resume_checkpoint_session == '7' && 'true' || 'false' }}
           corpus_artifact_name: onecore-corpus-final
+          corpus_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '7' && needs.prepare.outputs.base_corpus_run_id || '' }}
           checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '7' && needs.prepare.outputs.resume_checkpoint_artifact_name || 'onecore-state-train-07' }}
           checkpoint_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '7' && needs.prepare.outputs.resume_checkpoint_run_id || '' }}
           previous_checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '7' && '' || 'onecore-state-train-07' }}
@@ -585,6 +593,7 @@ jobs:
           setup_environment: ${{ needs.prepare.outputs.resume_checkpoint_session == '8' && 'true' || 'false' }}
           restore_corpus: ${{ needs.prepare.outputs.resume_checkpoint_session == '8' && 'true' || 'false' }}
           corpus_artifact_name: onecore-corpus-final
+          corpus_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '8' && needs.prepare.outputs.base_corpus_run_id || '' }}
           checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '8' && needs.prepare.outputs.resume_checkpoint_artifact_name || 'onecore-state-train-08' }}
           checkpoint_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '8' && needs.prepare.outputs.resume_checkpoint_run_id || '' }}
           previous_checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '8' && '' || 'onecore-state-train-08' }}
@@ -600,6 +609,7 @@ jobs:
           setup_environment: ${{ needs.prepare.outputs.resume_checkpoint_session == '9' && 'true' || 'false' }}
           restore_corpus: ${{ needs.prepare.outputs.resume_checkpoint_session == '9' && 'true' || 'false' }}
           corpus_artifact_name: onecore-corpus-final
+          corpus_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '9' && needs.prepare.outputs.base_corpus_run_id || '' }}
           checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '9' && needs.prepare.outputs.resume_checkpoint_artifact_name || 'onecore-state-train-09' }}
           checkpoint_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '9' && needs.prepare.outputs.resume_checkpoint_run_id || '' }}
           previous_checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '9' && '' || 'onecore-state-train-09' }}
