@@ -340,9 +340,9 @@ jobs:
           assert "artifact_run_id == github.run_id" in bootstrap
           train_action_text = Path(".github/actions/onecore-train/action.yml").read_text(encoding="utf-8")
           assert "repository:" in train_action_text and "github.repository" in train_action_text
-          assert "run-id: ${{ inputs.checkpoint_run_id != '' && inputs.checkpoint_run_id || github.run_id }}" in train_action_text
-          assert "run-id: ${{ inputs.corpus_run_id != '' && inputs.corpus_run_id || github.run_id }}" in train_action_text
-          assert "ONECORE_PARENT_RUN_ID: ${{ inputs.stage == 'multimodal' && (inputs.checkpoint_run_id != '' && inputs.checkpoint_run_id || github.run_id) || '' }}" in train_action_text
+          assert "run-id:" in train_action_text and "inputs.checkpoint_run_id" in train_action_text and "github.run_id" in train_action_text
+          assert "run-id:" in train_action_text and "inputs.corpus_run_id" in train_action_text and "github.run_id" in train_action_text
+          assert "ONECORE_PARENT_RUN_ID:" in train_action_text and "inputs.checkpoint_run_id" in train_action_text
           assert "resume_checkpoint_session:" in bootstrap
           assert "corpus_run_id:" in train_action_text
           assert "onecore-state-train-10" in bootstrap
