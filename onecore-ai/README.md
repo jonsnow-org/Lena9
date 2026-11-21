@@ -34,7 +34,7 @@ A compact model may spend parameters more efficiently by combining a shared recu
 
 ## First architecture budget and future expansion
 
-The first experiment must contain 50–70M trainable parameters. The instantiated `phone-research.yaml` model is **57,579,201 parameters**, including all trainable image/audio/motion modules and counting the tied token embedding/output weight once. This is 8,192 below the earlier approximate target of 57,587,393 and is protected by an exact CI regression test.
+The instantiated architecture is guarded by the exact v2 parameter count; future scaling is allowed only with complete recomputation and retraining. The instantiated `phone-research.yaml` model is **57,579,201 parameters**, including all trainable image/audio/motion modules and counting the tied token embedding/output weight once. This is 8,192 below the earlier approximate target of the discarded approximate parameter estimate and is protected by an exact CI regression test.
 
 Configuration: width 1024, four unique recurrent blocks, three recurrent cycles (12 block applications), eight attention heads, 4,096 text-token slots plus learned modality code ranges/special tokens, 8×8 RGB image patches, and 80-bin log-mel frames grouped by four.
 
