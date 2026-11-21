@@ -396,6 +396,12 @@ def run_training(
     torch.set_num_threads(train_cfg.cpu_threads)
 
     model = OneCore(cfg).cpu()
+    actual_parameter_count = model.count_parameters()
+    if actual_parameter_count != cfg.expected_parameter_count:
+        raise ValueError(
+            f"instantiated model has {actual_parameter_count} trainable parameters; "
+            f"config requires exactly {cfg.expected_parameter_count}"
+        )
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=train_cfg.learning_rate, weight_decay=train_cfg.weight_decay,
         betas=tuple(train_cfg.adam_betas)
