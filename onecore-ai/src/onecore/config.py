@@ -24,6 +24,7 @@ class ModelConfig:
     audio_bins: int = 80
     audio_group_frames: int = 4
     max_video_frames: int = 4
+    thinker_latents: int = 16
     dropout: float = 0.05
     expected_parameter_count: int | None = None
 
@@ -34,6 +35,8 @@ class ModelConfig:
             raise ValueError("width must be divisible by attention_heads")
         if self.image_size % self.patch_size:
             raise ValueError("image_size must be divisible by patch_size")
+        if self.thinker_latents < 1:
+            raise ValueError("thinker_latents must be positive")
         values = (
             self.text_vocab_size, self.vision_codebook_size, self.audio_codebook_size,
             self.motion_codebook_size, self.special_tokens,
