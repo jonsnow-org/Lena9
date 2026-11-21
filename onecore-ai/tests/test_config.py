@@ -65,3 +65,16 @@ def test_wrong_exact_parameter_budget_is_rejected(tmp_path):
     )
     with pytest.raises(ValueError, match="expected_parameter_count must equal 57579201"):
         load_config(path)
+
+
+def test_missing_total_steps_is_rejected(tmp_path):
+    path = tmp_path / "missing-total-steps.yaml"
+    path.write_text(
+        "model:\\n  expected_parameter_count: 57579201\\n"
+        "training:\\n  learning_rate: 0.001\\n  weight_decay: 0.1\\n"
+        "  adam_betas: [0.9, 0.95]\\n  max_grad_norm: 1.0\\n"
+        "  tldm_diffusion_weight: 0.15\\n  warmup_steps: 1\\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="training.total_steps must be explicit"):
+        load_config(path)
