@@ -103,7 +103,7 @@ def test_phone_research_config_exact_trainable_parameter_budget():
     assert actual == expected
     assert model.parameter_report()["parameters"] == actual
     assert model.lm_head.weight is model.token_embedding.weight
-    assert 50_000_000 <= actual <= 70_000_000
+    assert actual == 57_579_201  # Corrected Specification v2 exact budget
 
 
 
