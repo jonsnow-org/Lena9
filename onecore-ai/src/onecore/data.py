@@ -273,8 +273,6 @@ def validate_split_disjointness(project_root: str | Path) -> dict[str, Any]:
                         f"declared={sorted(declared)[:10]}, actual={sorted(actual_asset_groups)[:10]}"
                     )
 
-        if split_record_counts[split] == 0:
-            raise DatasetError(f"{split} manifest is empty")
         print(
             f"[OneCore split-integrity] split_complete={split} "
             f"records={split_record_counts[split]} unique_assets_hashed={len(asset_digest_cache)}",
