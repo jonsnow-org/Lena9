@@ -36,7 +36,7 @@ The earlier 10-step and 100-step runs used only synthetic engineering curricula.
 
 ## Architecture and expansion
 
-The first architecture experiment must remain within 50–70M trainable parameters. The instantiated `phone-research.yaml` model is **57,579,201 parameters**, including all trainable image/audio/motion encoders and decoders and counting the tied token embedding/output weight once. This is 8,192 below the earlier approximate 57,587,393 target and remains within the agreed range; CI asserts the exact current count.
+The instantiated architecture is guarded by the exact v2 parameter count; future scaling is allowed only with complete recomputation and retraining. The instantiated `phone-research.yaml` model is **57,579,201 parameters**, including all trainable image/audio/motion encoders and decoders and counting the tied token embedding/output weight once. This is 8,192 below the earlier approximate the discarded approximate parameter estimate target and remains within the agreed range; CI asserts the exact current count.
 
 100–150M is a later research phase, not a final ceiling. Expansion above 150M remains possible only after quality, data coverage, compute, and checkpoint-lineage evidence justify it. Do not resize or migrate weights silently.
 
