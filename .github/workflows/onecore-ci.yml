@@ -308,7 +308,11 @@ jobs:
           assert "02_data_gate.ipynb" not in session_script, "the full integrity gate runs once after acquisition"
           assert "train_all" in jobs
           assert not any(f"train_{i:02d}" in jobs for i in range(1, 11)), "training segments must not each start a new runner"
-          assert jobs["train_all"]["needs"] == "dataset_gate"
+          assert jobs["train_all"]["needs"] == ["dataset_gate", "prepare"]
+          assert "resume_checkpoint_run_id" in bootstrap
+          assert "resume_checkpoint_artifact_name" in bootstrap
+          assert "checkpoint_run_id" in train_action["inputs"]
+          assert "github-token: ${{ github.token }}" in Path(".github/actions/onecore-train/action.yml").read_text(encoding="utf-8")
           assert jobs["train_all"]["timeout-minutes"] == 360
           train_steps = [step for step in jobs["train_all"]["steps"] if str(step.get("id", "")).startswith("train")]
           assert len(train_steps) == 10, f"expected ten sequential segments, found {len(train_steps)}"
