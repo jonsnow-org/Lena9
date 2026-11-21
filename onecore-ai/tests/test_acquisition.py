@@ -1049,3 +1049,12 @@ def test_video_adapter_rejects_hugging_face_uri_from_other_repo_or_revision() ->
             },
             source,
         )
+
+
+def test_default_external_task_gate_is_corrected_v2():
+    import inspect
+    from onecore.acquire import assert_task_coverage
+
+    parameters = inspect.signature(assert_task_coverage).parameters
+    assert parameters["minimum_train"].default == 100
+    assert parameters["minimum_holdout"].default == 10
