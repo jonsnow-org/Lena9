@@ -23,7 +23,7 @@ from .audio import log_mel_spectrogram
 from .data import external_record_is_trainable, is_immutable_source_revision
 from .crawlers import StatefulStreamCursor, notebook_for_source
 from .stack_v2 import (
-    StackAccessRequired, contains_exposed_secret, fetch_stack_content, has_allowed_stack_license,
+    StackAccessRequired, contains_exposed_secret, fetch_stack_content,
     redact_personal_contacts, stack_credentials_present,
 )
 
