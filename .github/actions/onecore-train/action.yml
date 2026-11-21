@@ -11,8 +11,12 @@ inputs:
     required: false
     default: "true"
   corpus_artifact_name:
-    description: Final validated corpus artifact in this workflow run
+    description: Final validated corpus artifact
     required: true
+  corpus_run_id:
+    description: Source workflow run ID when restoring a corpus created by an earlier workflow run
+    required: false
+    default: ""
   checkpoint_artifact_name:
     description: Previous resumable checkpoint artifact; empty for fresh initialization
     required: false
@@ -71,6 +75,9 @@ runs:
       with:
         name: ${{ inputs.corpus_artifact_name }}
         path: onecore-ai/run-state/corpus-artifact
+        github-token: ${{ github.token }}
+        repository: ${{ github.repository }}
+        run-id: ${{ inputs.corpus_run_id != '' && inputs.corpus_run_id || github.run_id }}
 
     - name: Restore the validated corpus snapshot (tar or legacy layout)
       if: ${{ inputs.restore_corpus == 'true' }}
