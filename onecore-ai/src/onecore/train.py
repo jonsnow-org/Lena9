@@ -413,6 +413,12 @@ def run_training(
         saved_config = saved.get("config", {}).get("model")
         if saved_config != cfg.to_dict():
             raise ValueError("checkpoint model config does not match this run config")
+        saved_training_config = saved.get("config", {}).get("training")
+        if saved_training_config != raw_cfg.get("training", {}):
+            raise ValueError(
+                "checkpoint optimizer/schedule config does not match this run config; "
+                "start a fresh lineage rather than resuming incompatible AdamW state"
+            )
         saved_metadata = saved.get("metadata", {})
         parent_optimizer_step = step
         seed = int(saved_metadata.get("seed", seed))
