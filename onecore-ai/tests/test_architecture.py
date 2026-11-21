@@ -201,3 +201,14 @@ def test_inference_session_exposes_native_tldm_decoding_mode():
         diffusion_steps=3, temperature=0.0, top_k=0,
     )
     assert answer == "native diffusion output"
+
+
+def test_tldm_default_latent_slots_come_from_model_config():
+    from dataclasses import replace
+
+    cfg = replace(tiny_config(), thinker_latents=5)
+    model = OneCore(cfg)
+    hidden = torch.randn(2, 12, cfg.width)
+    latents = model.compress_to_latents(hidden)
+    assert latents.shape == (2, 5, cfg.width)
+    assert model.parameter_report()["tldm_latent_slots_default"] == 5
