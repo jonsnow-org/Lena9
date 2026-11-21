@@ -153,7 +153,7 @@ def load_config(path: str | Path) -> tuple[ModelConfig, TrainConfig, dict[str, A
     raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
     if not isinstance(raw, dict) or not isinstance(raw.get("model"), dict):
         raise ValueError("config must contain a model mapping")
-    if "expected_parameter_count" not in raw["model"]:
+    if raw["model"].get("expected_parameter_count") is None:
         raise ValueError("model.expected_parameter_count must be explicit; silent parameter budgets are forbidden")
     model = ModelConfig.from_mapping(raw["model"])
     if model.expected_parameter_count != model.computed_parameter_count:
