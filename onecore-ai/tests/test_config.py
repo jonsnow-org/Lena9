@@ -30,11 +30,18 @@ def test_repository_config_loads_without_undefined_fields():
 def test_unknown_config_training_key_is_rejected(tmp_path):
     path = tmp_path / "bad.yaml"
     path.write_text(
-        "model:\n  expected_parameter_count: 57579201\n"
-        "training:\n  learning_rate: 0.001\n  weight_decay: 0.1\n"
-        "  adam_betas: [0.9, 0.95]\n  max_grad_norm: 1.0\n"
-        "  tldm_diffusion_weight: 0.15\n  warmup_steps: 1\n"
-        "  total_steps: 10\n  mystery_optimizer_knob: 1\n",
+        """model:
+  expected_parameter_count: 57579201
+training:
+  learning_rate: 0.001
+  weight_decay: 0.1
+  adam_betas: [0.9, 0.95]
+  max_grad_norm: 1.0
+  tldm_diffusion_weight: 0.15
+  warmup_steps: 1
+  total_steps: 10
+  mystery_optimizer_knob: 1
+""",
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="unknown training config keys"):
@@ -44,37 +51,55 @@ def test_unknown_config_training_key_is_rejected(tmp_path):
 def test_missing_explicit_schedule_is_rejected(tmp_path):
     path = tmp_path / "missing-schedule.yaml"
     path.write_text(
-        "model:\n  expected_parameter_count: 57579201\n"
-        "training:\n  learning_rate: 0.001\n  weight_decay: 0.1\n"
-        "  adam_betas: [0.9, 0.95]\n  max_grad_norm: 1.0\n"
-        "  tldm_diffusion_weight: 0.15\n",
+        """model:
+  expected_parameter_count: 57579201
+training:
+  learning_rate: 0.001
+  weight_decay: 0.1
+  adam_betas: [0.9, 0.95]
+  max_grad_norm: 1.0
+  tldm_diffusion_weight: 0.15
+""",
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="training.warmup_steps must be explicit"):
         load_config(path)
 
 
-def test_wrong_exact_parameter_budget_is_rejected(tmp_path):
-    path = tmp_path / "wrong-budget.yaml"
-    path.write_text(
-        "model:\n  expected_parameter_count: 57579200\n"
-        "training:\n  learning_rate: 0.001\n  weight_decay: 0.1\n"
-        "  adam_betas: [0.9, 0.95]\n  max_grad_norm: 1.0\n"
-        "  tldm_diffusion_weight: 0.15\n  warmup_steps: 1\n  total_steps: 10\n",
-        encoding="utf-8",
-    )
-    with pytest.raises(ValueError, match="expected_parameter_count must equal 57579201"):
-        load_config(path)
-
-
 def test_missing_total_steps_is_rejected(tmp_path):
     path = tmp_path / "missing-total-steps.yaml"
     path.write_text(
-        "model:\\n  expected_parameter_count: 57579201\\n"
-        "training:\\n  learning_rate: 0.001\\n  weight_decay: 0.1\\n"
-        "  adam_betas: [0.9, 0.95]\\n  max_grad_norm: 1.0\\n"
-        "  tldm_diffusion_weight: 0.15\\n  warmup_steps: 1\\n",
+        """model:
+  expected_parameter_count: 57579201
+training:
+  learning_rate: 0.001
+  weight_decay: 0.1
+  adam_betas: [0.9, 0.95]
+  max_grad_norm: 1.0
+  tldm_diffusion_weight: 0.15
+  warmup_steps: 1
+""",
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="training.total_steps must be explicit"):
+        load_config(path)
+
+
+def test_wrong_exact_parameter_budget_is_rejected(tmp_path):
+    path = tmp_path / "wrong-budget.yaml"
+    path.write_text(
+        """model:
+  expected_parameter_count: 57579200
+training:
+  learning_rate: 0.001
+  weight_decay: 0.1
+  adam_betas: [0.9, 0.95]
+  max_grad_norm: 1.0
+  tldm_diffusion_weight: 0.15
+  warmup_steps: 1
+  total_steps: 10
+""",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="expected_parameter_count must equal 57579201"):
         load_config(path)
