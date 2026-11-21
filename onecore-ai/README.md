@@ -68,4 +68,4 @@ Artifacts are retained for 90 days. Durable GitHub Release upload currently rece
 
 The earlier 10-step engineering run and 100-step synthetic-curriculum experiment are historical pipeline diagnostics only. The current data run starts from fresh random initialization and includes all usable records regardless of data class. Evaluation measures held-out codebook usage, entropy, perplexity, dead codes, and max-code concentration; promotion remains blocked until independent modality coverage and calibrated numeric quality thresholds are in place.
 
-See `docs/training-operations.md`, `data/README.md`, and `notebooks/README.md` for operational details.
+See `docs/corrected-spec-v2.md` for the exact engineering contract; `docs/training-operations.md`, `data/README.md`, and `notebooks/README.md` contain operational details.
