@@ -305,20 +305,20 @@ jobs:
               summary.write("## Decoded-payload coverage diagnostic\n\n" + diagnostic + "\n")
           print(diagnostic)
           PY
-      - name: Preserve resumable video-only corpus if coverage still needs continuation
+      - name: Preserve the post-video corpus checkpoint before the expensive split gate
         id: repair_progress_pack
-        if: ${{ needs.finalize_acquisition.outputs.request_stage == 'repair_video_existing' && steps.corpus_diagnostic.outputs.coverage_ready != 'true' }}
+        if: ${{ needs.finalize_acquisition.outputs.request_stage == 'repair_video_existing' }}
         shell: bash
         env:
           PYTHONPATH: onecore-ai/src
         run: |
           python -m onecore.artifacts pack --root onecore-ai --output "$RUNNER_TEMP/onecore-corpus-video-repair.tar"
           test -s "$RUNNER_TEMP/onecore-corpus-video-repair.tar"
-      - name: Upload resumable video-only continuation snapshot
+      - name: Upload durable post-video corpus checkpoint
         if: ${{ steps.repair_progress_pack.outcome == 'success' }}
         uses: actions/upload-artifact@v6
         with:
-          name: onecore-corpus-video-repair-progress
+          name: onecore-corpus-video-repair-snapshot
           path: ${{ runner.temp }}/onecore-corpus-video-repair.tar
           if-no-files-found: error
           retention-days: 90
