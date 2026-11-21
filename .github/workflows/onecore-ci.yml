@@ -150,6 +150,33 @@ jobs:
               --output-dir "$RUNNER_TEMP" --ExecutePreprocessor.timeout=-1
           done
 
+      - name: Execute text-training notebook through one-step smoke training
+        env:
+          PYTHONPATH: onecore-ai/src
+          ONECORE_EXECUTE_TRAINING: "1"
+          ONECORE_STAGE: "smoke"
+          ONECORE_STEPS: "1"
+          ONECORE_RESUME: "false"
+        run: |
+          jupyter nbconvert --to notebook --execute onecore-ai/notebooks/03_text_pretraining.ipynb \
+            --output 03_text_pretraining.smoke.executed.ipynb \
+            --output-dir "$RUNNER_TEMP" --ExecutePreprocessor.timeout=-1
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path("onecore-ai/run-state/train_result.json").read_text(encoding="utf-8"))
+          assert report["stage"] == "smoke"
+          assert report["optimizer_step"] == 1
+          assert report["parameter_count"] == 57_579_201
+          assert 7.5456 <= report["first_language_loss"] <= 9.5456
+          print({
+              "notebook_training_path": "passed",
+              "optimizer_step": report["optimizer_step"],
+              "first_language_loss": report["first_language_loss"],
+          })
+          PY
+          rm -rf onecore-ai/run-state
+
       - name: Run one-step random-init smoke gate
         env:
           PYTHONPATH: onecore-ai/src
