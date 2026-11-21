@@ -133,7 +133,7 @@ jobs:
         env:
           PYTHONPATH: onecore-ai/src
         run: |
-          python -m onecore.train --root onecore-ai \
+          python -m onecore.train --root . \
             --config onecore-ai/configs/phone-research.yaml \
             --stage smoke --steps 1 --output-dir "$RUNNER_TEMP/onecore-v2-smoke"
           python - <<'PY'
