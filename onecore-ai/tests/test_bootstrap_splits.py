@@ -181,7 +181,13 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
         assert step["uses"] == "./.github/actions/onecore-train"
         assert step["with"]["steps"] == "15"
         assert step["with"]["notebook"] == expected_notebooks[index - 1]
-        assert step["with"]["setup_environment"] == ("true" if index == 1 else "false")
+        if index == 1:
+            assert step["with"]["setup_environment"] == "true"
+        elif index == 2:
+            assert "resume_checkpoint_artifact_name != ''" in step["with"]["setup_environment"]
+            assert "'true' || 'false'" in step["with"]["setup_environment"]
+        else:
+            assert step["with"]["setup_environment"] == "false"
         assert step["with"]["restore_corpus"] == ("true" if index == 1 else "false")
     assert sum(step["with"]["restore_corpus"] == "true" for step in segments) == 1
     assert sum(step["with"]["setup_environment"] == "true" for step in segments) == 1
