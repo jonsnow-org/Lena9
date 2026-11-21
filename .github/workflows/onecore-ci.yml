@@ -108,6 +108,11 @@ jobs:
             echo "Obsolete parameter counts remain in the source tree."
             exit 1
           fi
+          if grep -R -nE '50_000_000.*70_000_000|50[–-]70M' \
+            --include='*.py' --include='*.md' --include='*.ipynb' --include='*.yaml' --include='*.yml' onecore-ai; then
+            echo "A broad 50–70M range assertion or claim remains; use the exact parameter count."
+            exit 1
+          fi
           if grep -R -nE 'ONECORE_MIN_TRAIN_RECORDS.*25|ONECORE_MIN_HOLDOUT_RECORDS.*5|minimum_train: int = 25|minimum_holdout: int = 5' \
             --include='*.py' --include='*.ipynb' --include='*.yaml' --include='*.yml' onecore-ai \
             .github/workflows/onecore-training.yml .github/workflows/onecore-bootstrap.yml \
