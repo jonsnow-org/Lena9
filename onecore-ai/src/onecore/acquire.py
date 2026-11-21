@@ -993,7 +993,7 @@ def task_coverage(project_root: str | Path) -> dict[str, dict[str, int]]:
 
 def assert_task_coverage(
     project_root: str | Path, required_tasks: set[str],
-    minimum_train: int = 25, minimum_holdout: int = 5,
+    minimum_train: int = 100, minimum_holdout: int = 10,
 ) -> dict[str, dict[str, int]]:
     coverage = task_coverage(project_root)
     failures = []
