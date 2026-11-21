@@ -260,6 +260,7 @@ class OneCore(nn.Module):
         """
         if hidden.ndim != 3 or hidden.shape[1] < 1:
             raise ValueError("hidden states must have shape [batch, sequence, width]")
+        latent_slots = self.cfg.thinker_latents if latent_slots is None else int(latent_slots)
         if latent_slots < 1:
             raise ValueError("latent_slots must be positive")
         slots = min(int(latent_slots), hidden.shape[1])
