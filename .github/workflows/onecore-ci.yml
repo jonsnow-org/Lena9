@@ -335,7 +335,7 @@ jobs:
               else:
                   assert f"resume_checkpoint_session == '{index-1}'" in step["with"]["setup_environment"]
                   assert f"resume_checkpoint_session == '{index-1}'" in step["with"]["restore_corpus"]
-                  assert "checkpoint_run_id:" in step["with"]
+                  assert "checkpoint_run_id" in step["with"]
           assert "artifact_run_id == github.run_id" in bootstrap
           train_action_text = Path(".github/actions/onecore-train/action.yml").read_text(encoding="utf-8")
           assert "repository: ${{ github.repository }}" in train_action_text
