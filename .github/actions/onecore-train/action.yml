@@ -138,7 +138,7 @@ runs:
         ONECORE_STEPS: ${{ inputs.steps }}
         ONECORE_EXECUTE_TRAINING: "1"
         ONECORE_RESUME: ${{ inputs.stage == 'multimodal' && 'true' || 'false' }}
-        ONECORE_PARENT_RUN_ID: ${{ inputs.stage == 'multimodal' && github.run_id || '' }}
+        ONECORE_PARENT_RUN_ID: ${{ inputs.stage == 'multimodal' && (inputs.checkpoint_run_id != '' && inputs.checkpoint_run_id || github.run_id) || '' }}
       run: |
         mkdir -p onecore-ai/run-state/executed-notebooks
         echo "Notebook: ${{ inputs.notebook }} | stage: ${{ inputs.stage }} | optimizer steps: ${{ inputs.steps }}"
