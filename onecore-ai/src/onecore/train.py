@@ -265,6 +265,7 @@ def _validate_resume_configuration(
     # The pre-v2 checkpoint used the same fixed 16-slot default in code, but
     # did not serialize it as a config field. Normalize only that exact legacy default.
     saved_model_config.setdefault("thinker_latents", 16)
+    saved_model_config.setdefault("hidden_size", expected_model_config["hidden_size"])
     if saved_model_config != expected_model_config:
         raise ValueError("checkpoint model architecture does not match this run config")
     if saved_config.get("training") != raw_config.get("training", {}):
