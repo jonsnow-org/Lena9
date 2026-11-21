@@ -80,9 +80,9 @@ def test_smoke_training_segment_saves_checkpoint_and_empty_data_class_counts(tmp
     config_path.write_text(yaml.safe_dump({
         "model": model_config,
         "training": {
-            "learning_rate": 1e-3, "weight_decay": 0.0, "gradient_accumulation": 1,
+            "learning_rate": 1e-3, "weight_decay": 0.0, "adam_betas": [0.9, 0.95], "gradient_accumulation": 1,
             "max_grad_norm": 1.0, "checkpoint_every": 1, "max_steps_per_job": 10,
-            "total_steps": 10, "warmup_steps": 0, "cpu_threads": 1,
+            "total_steps": 10, "warmup_steps": 0, "cpu_threads": 1, "tldm_diffusion_weight": 0.15,
         },
         "seed": 42,
     }), encoding="utf-8")
