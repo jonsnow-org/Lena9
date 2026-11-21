@@ -196,14 +196,10 @@ def _smoke_sample(model: OneCore, step: int) -> tuple[torch.Tensor, torch.Tensor
     image = torch.rand(1, 3, cfg.image_size, cfg.image_size)
     codes, latents, vq = model.encode_image(image)
     reconstruction = model.decode_image_latents(latents)
-    sequence = torch.cat([
-        torch.tensor([[cfg.special_id(BOS), cfg.special_id(IMAGE_START)]]),
-        codes.flatten().unsqueeze(0),
-        torch.tensor([[cfg.special_id(IMAGE_END), cfg.special_id(EOS)]]),
-    ], dim=1)
-    # Include a tiny text objective in the same smoke cycle.
-    text = torch.tensor([text_ids], dtype=torch.long)
-    return sequence, vq + torch.nn.functional.mse_loss(reconstruction, image) + model(text[:, :-1]).square().mean() * 0.0
+    # Use a real text-token sequence for the first-language-loss sanity gate,
+    # while the auxiliary image reconstruction objective exercises the codecs.
+    sequence = torch.tensor([text_ids], dtype=torch.long)
+    return sequence, vq + torch.nn.functional.mse_loss(reconstruction, image)
 
 
 def _initialize_multimodal_codebooks(
