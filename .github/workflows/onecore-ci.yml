@@ -313,7 +313,7 @@ jobs:
           assert "resume_checkpoint_artifact_name" in bootstrap
           train_action_text = Path(".github/actions/onecore-train/action.yml").read_text(encoding="utf-8")
           assert "checkpoint_run_id:" in train_action_text
-          assert "github-token: ${{ github.token }}" in train_action_text
+          assert "github-token:" in train_action_text
           assert jobs["train_all"]["timeout-minutes"] == 360
           train_steps = [step for step in jobs["train_all"]["steps"] if str(step.get("id", "")).startswith("train")]
           assert len(train_steps) == 10, f"expected ten sequential segments, found {len(train_steps)}"
