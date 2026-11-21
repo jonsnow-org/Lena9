@@ -136,6 +136,10 @@ def load_config(path: str | Path) -> tuple[ModelConfig, TrainConfig, dict[str, A
     if model.hidden_size != 2730:
         raise ValueError("derived SwiGLU hidden_size must be int(width*8/3) = 2730")
     train_values = raw.get("training", {})
+    allowed = set(TrainConfig.__dataclass_fields__)
+    unknown = set(train_values) - allowed
+    if unknown:
+        raise ValueError(f"unknown training config keys: {sorted(unknown)}")
     required_training = (
         "warmup_steps", "total_steps", "learning_rate", "weight_decay",
         "max_grad_norm", "tldm_diffusion_weight", "adam_betas",
@@ -146,9 +150,5 @@ def load_config(path: str | Path) -> tuple[ModelConfig, TrainConfig, dict[str, A
                 f"training.{key} must be explicit in config; silent defaults are forbidden "
                 "(Corrected Specification v2)"
             )
-    allowed = set(TrainConfig.__dataclass_fields__)
-    unknown = set(train_values) - allowed
-    if unknown:
-        raise ValueError(f"unknown training config keys: {sorted(unknown)}")
     train = TrainConfig(**train_values)
     return model, train, raw
