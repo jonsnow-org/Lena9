@@ -327,7 +327,7 @@ jobs:
           for index, step in enumerate(train_steps, 1):
               assert step["id"] == f"train{index:02d}"
               assert step["uses"] == "./.github/actions/onecore-train"
-              assert step["with"]["steps"] == "15"
+              assert step["with"]["steps"] == "150"
               assert step["with"]["notebook"] == expected_notebooks[index - 1]
               if index == 1:
                   assert step["with"]["setup_environment"] == "true"
@@ -348,7 +348,7 @@ jobs:
           assert "onecore-state-train-10" in bootstrap
           assert "native_tldm" in bootstrap
           assert "diffusion_loss_weight" in bootstrap
-          assert "Expected 750 native diffusion updates" in bootstrap
+          assert "Expected 7,500 native diffusion updates" in bootstrap
           phone_config = yaml.safe_load(Path("onecore-ai/configs/phone-research.yaml").read_text(encoding="utf-8"))
           assert phone_config["training"]["tldm_diffusion_weight"] == 0.15
           dataset_gate_steps = jobs["dataset_gate"]["steps"]
