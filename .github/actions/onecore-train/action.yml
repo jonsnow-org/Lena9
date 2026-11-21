@@ -17,6 +17,10 @@ inputs:
     description: Previous resumable checkpoint artifact; empty for fresh initialization
     required: false
     default: ""
+  checkpoint_run_id:
+    description: Source workflow run ID when restoring a checkpoint created by an earlier workflow run
+    required: false
+    default: ""
   previous_checkpoint_artifact_name:
     description: Previous checkpoint artifact to remove after its successor has been uploaded
     required: false
@@ -81,6 +85,9 @@ runs:
       with:
         name: ${{ inputs.checkpoint_artifact_name }}
         path: onecore-ai/run-state
+        github-token: ${{ github.token }}
+        repository: ${{ inputs.checkpoint_run_id != '' && github.repository || '' }}
+        run-id: ${{ inputs.checkpoint_run_id }}
 
     - name: Verify resumed checkpoint lineage before execution
       if: ${{ inputs.checkpoint_artifact_name != '' }}
