@@ -163,11 +163,17 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
     assert "resume_checkpoint_artifact_name" in bootstrap
     assert "checkpoint_run_id" in train_doc["inputs"]
     assert "github-token: ${{ github.token }}" in train_action
-    assert "run-id: ${{ inputs.checkpoint_run_id }}" in train_action
+    assert "repository: ${{ github.repository }}" in train_action
+    assert "run-id: ${{ inputs.checkpoint_run_id != '' && inputs.checkpoint_run_id || github.run_id }}" in train_action
+    assert "resume_checkpoint_session:" in bootstrap
     assert train_job["timeout-minutes"] == 360
     segments = [step for step in train_job["steps"] if str(step.get("id", "")).startswith("train")]
-    assert segments[0]["if"].endswith("resume_checkpoint_artifact_name == '' }}")
-    assert "resume_checkpoint_artifact_name != ''" in segments[1]["if"]
+    assert "resume_checkpoint_session == '0'" in segments[0]["if"]
+    for index, step in enumerate(segments[1:], 2):
+        assert f"resume_checkpoint_session == '{index-1}'" in step["if"]
+        assert f"resume_checkpoint_session == '{index-1}'" in step["with"]["setup_environment"]
+        assert f"resume_checkpoint_session == '{index-1}'" in step["with"]["restore_corpus"]
+        assert "checkpoint_run_id:" in step["with"] or index > 2
     expected_notebooks = [
         "03_text_pretraining.ipynb", "04_multimodal_curriculum.ipynb",
         "03_text_pretraining.ipynb", "04_multimodal_curriculum.ipynb",
@@ -183,19 +189,12 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
         assert step["with"]["notebook"] == expected_notebooks[index - 1]
         if index == 1:
             assert step["with"]["setup_environment"] == "true"
-        elif index == 2:
-            assert "resume_checkpoint_artifact_name != ''" in step["with"]["setup_environment"]
-            assert "'true' || 'false'" in step["with"]["setup_environment"]
+            assert step["with"]["restore_corpus"] == "true"
         else:
-            assert step["with"]["setup_environment"] == "false"
-        if index == 2:
-            assert "resume_checkpoint_artifact_name != ''" in step["with"]["restore_corpus"]
-            assert "'true' || 'false'" in step["with"]["restore_corpus"]
-        else:
-            assert step["with"]["restore_corpus"] == ("true" if index == 1 else "false")
-    assert sum(step["with"]["restore_corpus"] == "true" for step in segments) == 1
+            assert f"resume_checkpoint_session == '{index-1}'" in step["with"]["setup_environment"]
+            assert f"resume_checkpoint_session == '{index-1}'" in step["with"]["restore_corpus"]
+            assert "checkpoint_run_id:" in step["with"]
     assert "artifact_run_id == github.run_id" in bootstrap
-    assert sum(step["with"]["setup_environment"] == "true" for step in segments) == 1
     assert train_job["outputs"]["optimizer_step"] == "${{ steps.train10.outputs.optimizer_step }}"
     evaluate = jobs["evaluate"]
     assert evaluate["needs"] == "train_all"
