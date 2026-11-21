@@ -15,6 +15,7 @@ model:
   audio_bins: 80
   audio_group_frames: 4
   max_video_frames: 4
+  thinker_latents: 16
   dropout: 0.05
   expected_parameter_count: 57579201
 training:
