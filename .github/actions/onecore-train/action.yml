@@ -86,8 +86,10 @@ runs:
         name: ${{ inputs.checkpoint_artifact_name }}
         path: onecore-ai/run-state
         github-token: ${{ github.token }}
-        repository: ${{ inputs.checkpoint_run_id != '' && github.repository || '' }}
-        run-id: ${{ inputs.checkpoint_run_id }}
+        # Always pass a valid owner/repo. For same-run artifacts use this
+        # workflow run; for resumed lineages use the explicitly supplied run ID.
+        repository: ${{ github.repository }}
+        run-id: ${{ inputs.checkpoint_run_id != '' && inputs.checkpoint_run_id || github.run_id }}
 
     - name: Verify resumed checkpoint lineage before execution
       if: ${{ inputs.checkpoint_artifact_name != '' }}
