@@ -13,7 +13,7 @@ All six notebooks are executed on GitHub Actions only. The staged request workfl
 
 ## Exact first-stage architecture
 
-The current instantiated configuration has **57,579,201 trainable parameters**. CI checks this exact count, not only a broad size range. The approximate agreed figure of 57,587,393 differs by 8,192 parameters; the model remains in the 50–70M first-experiment range.
+The current instantiated configuration has **57,579,201 trainable parameters**. CI checks this exact count, not only a broad size range. The approximate agreed figure of the discarded approximate parameter estimate differs by 8,192 parameters; the model remains in the 50–70M first-experiment range.
 
 ## Request and continuation
 
