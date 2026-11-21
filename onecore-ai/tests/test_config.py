@@ -160,3 +160,14 @@ def test_tldm_thinker_latents_must_be_positive():
 
     with pytest.raises(ValueError, match="thinker_latents must be positive"):
         ModelConfig(thinker_latents=0)
+
+
+def test_model_config_rejects_wrong_derived_vocab_and_hidden_assertions():
+    from onecore.config import ModelConfig
+
+    root = Path(__file__).resolve().parents[1]
+    _, _, raw = load_config(root / "configs" / "phone-research.yaml")
+    with pytest.raises(ValueError, match="model.vocab_size must equal 5144"):
+        ModelConfig.from_mapping({**raw["model"], "vocab_size": 5143})
+    with pytest.raises(ValueError, match="model.hidden_size must equal 2730"):
+        ModelConfig.from_mapping({**raw["model"], "hidden_size": 2729})
