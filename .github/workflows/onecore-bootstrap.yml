@@ -473,7 +473,7 @@ jobs:
         if: ${{ always() && !cancelled() && (steps.train01.outcome == 'success' || needs.prepare.outputs.resume_checkpoint_artifact_name != '') }}
         uses: ./.github/actions/onecore-train
         with:
-          setup_environment: "false"
+          setup_environment: ${{ needs.prepare.outputs.resume_checkpoint_artifact_name != '' && 'true' || 'false' }}
           restore_corpus: "false"
           corpus_artifact_name: onecore-corpus-final
           checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_artifact_name != '' && needs.prepare.outputs.resume_checkpoint_artifact_name || 'onecore-state-train-01' }}
