@@ -158,7 +158,14 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
     assert "train_all" in jobs
     assert not any(f"train_{index:02d}" in jobs for index in range(1, 11))
     train_job = jobs["train_all"]
-    assert train_job["needs"] == "dataset_gate"
+    assert train_job["needs"] == ["dataset_gate", "prepare"]
+    assert "resume_checkpoint_run_id" in bootstrap
+    assert "resume_checkpoint_artifact_name" in bootstrap
+    assert "checkpoint_run_id" in train_doc["inputs"]
+    assert "github-token: ${{ github.token }}" in train_action
+    assert "run-id: ${{ inputs.checkpoint_run_id }}" in train_action
+    assert segments[0]["if"].endswith("resume_checkpoint_artifact_name == '' }}")
+    assert "resume_checkpoint_artifact_name != ''" in segments[1]["if"]
     assert train_job["timeout-minutes"] == 360
     segments = [step for step in train_job["steps"] if str(step.get("id", "")).startswith("train")]
     expected_notebooks = [
