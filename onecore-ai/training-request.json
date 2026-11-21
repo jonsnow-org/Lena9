@@ -2,10 +2,12 @@
   "schema": "onecore-training-request-v1",
   "stage": "train_existing",
   "steps": 150,
-  "purpose": "Resume only from durable post-video corpus snapshot 44903471685 / onecore-corpus-video-repair-snapshot. No broad acquisition or video recrawl. Run the corrected five-family external payload coverage and independent train/validation/test split-integrity gate using unchanged thresholds (100 train, 10 validation, 10 test per family: text, tool, image, audio, video). The data-gate notebook now imports load_config before use and preserves multiline code-cell source exactly. If and only if all external payload, per-family quota, and split-integrity checks pass, initialize OneCore v2 from random weights and run ten chained CPU sessions (150 optimizer steps), preserving full model/optimizer/scheduler/RNG/tokenizer lineage. Do not resume the incompatible synthetic historical step-210 checkpoint. Keep promotion blocked until independently approved validation and test thresholds are measured.",
-  "request_id": "onecore-v2-final-split-gate-fix-20261121-v32",
+  "purpose": "Continue OneCore v2 from the verified checkpoint produced by successful training session 1 in workflow run 44907540935 (onecore-state-train-01, artifact ID 14709144980, 635614781 bytes). Do not repeat session 1 and do not initialize new random weights. Reuse the already validated five-family corpus artifact onecore-corpus-final from the same run, rerun the strict coverage/split gate without any crawling or video repair, then resume at training session 2 with exact model/optimizer/scheduler/RNG/tokenizer lineage. Execute remaining nine sessions (135 optimizer steps) to reach exactly 150 total. The checkpoint restore must use an authenticated cross-run download with actions:read. Never restore the incompatible historical synthetic step-210 checkpoint. Keep promotion blocked until separately approved validation and test thresholds are measured.",
+  "request_id": "onecore-v2-resume-session01-20261121-v33",
   "data_profile": "expanded",
-  "base_corpus_run_id": "44903471685",
+  "base_corpus_run_id": "44907540935",
   "start_fresh_joint_training": true,
-  "base_corpus_artifact_name": "onecore-corpus-video-repair-snapshot"
+  "base_corpus_artifact_name": "onecore-corpus-final",
+  "resume_checkpoint_run_id": "44907540935",
+  "resume_checkpoint_artifact_name": "onecore-state-train-01"
 }
