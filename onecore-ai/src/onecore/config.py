@@ -25,7 +25,7 @@ class ModelConfig:
     audio_group_frames: int = 4
     max_video_frames: int = 4
     dropout: float = 0.05
-    expected_parameter_count: int = 57_579_201
+    expected_parameter_count: int | None = None
 
     def __post_init__(self) -> None:
         if self.width <= 0 or self.unique_blocks <= 0 or self.recurrent_cycles <= 0:
@@ -40,6 +40,33 @@ class ModelConfig:
         )
         if min(values) <= 0:
             raise ValueError("all vocabulary ranges must be positive")
+        if self.expected_parameter_count is None:
+            object.__setattr__(self, "expected_parameter_count", self.computed_parameter_count)
+
+    @property
+    def computed_parameter_count(self) -> int:
+        width = self.width
+        hidden = self.hidden_size
+        patch_dim = self.patch_size * self.patch_size * 3
+        audio_dim = self.audio_bins * self.audio_group_frames
+        embeddings = (
+            self.vocab_size * width
+            + self.max_sequence_length * width
+            + 5 * width
+            + self.recurrent_cycles * width
+        )
+        per_block = 2 * width + 3 * width * width + 3 * width * hidden
+        final_norm = width
+        codecs = (
+            patch_dim * width + width
+            + width * patch_dim + patch_dim
+            + audio_dim * width + width
+            + width * audio_dim + audio_dim
+            + patch_dim * width + width
+            + width * patch_dim + patch_dim
+            + width + 1
+        )
+        return embeddings + self.unique_blocks * per_block + final_norm + codecs
 
     @property
     def vision_start(self) -> int:
@@ -126,15 +153,14 @@ def load_config(path: str | Path) -> tuple[ModelConfig, TrainConfig, dict[str, A
     raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
     if not isinstance(raw, dict) or not isinstance(raw.get("model"), dict):
         raise ValueError("config must contain a model mapping")
-    required_model = {"expected_parameter_count": 57_579_201}
-    for key, expected in required_model.items():
-        if raw["model"].get(key) != expected:
-            raise ValueError(f"model.{key} must equal {expected} (Corrected Specification v2)")
+    if "expected_parameter_count" not in raw["model"]:
+        raise ValueError("model.expected_parameter_count must be explicit; silent parameter budgets are forbidden")
     model = ModelConfig.from_mapping(raw["model"])
-    if model.vocab_size != 5144:
-        raise ValueError("model vocabulary must be 5144 = 4096+512+256+256+24")
-    if model.hidden_size != 2730:
-        raise ValueError("derived SwiGLU hidden_size must be int(width*8/3) = 2730")
+    if model.expected_parameter_count != model.computed_parameter_count:
+        raise ValueError(
+            f"model.expected_parameter_count must equal {model.computed_parameter_count} "
+            f"from the configured tensor shapes, got {model.expected_parameter_count}"
+        )
     train_values = raw.get("training", {})
     allowed = set(TrainConfig.__dataclass_fields__)
     unknown = set(train_values) - allowed
