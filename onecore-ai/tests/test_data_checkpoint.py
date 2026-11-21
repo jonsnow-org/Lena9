@@ -165,6 +165,11 @@ def test_split_disjointness_hashes_each_repeated_asset_path_once(tmp_path, monke
         return original(path)
 
     monkeypatch.setattr(data_module, "_sha256_asset_file", counted_hash)
+    monkeypatch.setattr(
+        data_module,
+        "read_manifest",
+        lambda _path: pytest.fail("split-integrity must stream JSONL instead of materializing rows"),
+    )
     report = data_module.validate_split_disjointness(tmp_path)
 
     assert report["valid"] is True
@@ -194,3 +199,29 @@ def test_split_disjointness_still_detects_identical_content_at_different_paths(t
 
     with pytest.raises(DatasetError, match="identical asset content leakage"):
         validate_split_disjointness(tmp_path)
+
+
+def test_manifest_file_validation_streams_rows_without_read_manifest(tmp_path, monkeypatch):
+    import onecore.data as data_module
+
+    data_root = tmp_path / "data"
+    (data_root / "assets").mkdir(parents=True)
+    record = {
+        "id": "streamed-text-1",
+        "task": "text",
+        "source_url": "https://example.org/source",
+        "split": "train",
+        "text": "This is a streamed manifest record with enough text content.",
+    }
+    (data_root / "train.jsonl").write_text(json.dumps(record) + "\n", encoding="utf-8")
+    monkeypatch.setattr(
+        data_module,
+        "read_manifest",
+        lambda _path: pytest.fail("file validators must use the streaming iterator"),
+    )
+
+    report = data_module.validate_training_data(tmp_path)
+
+    assert report["valid"] is True
+    assert report["records"] == 1
+    assert report["task_counts"] == {"text": 1}
