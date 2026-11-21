@@ -120,6 +120,7 @@ runs:
         PYTHONPATH: onecore-ai/src
         ONECORE_STAGE: ${{ inputs.stage }}
         ONECORE_STEPS: ${{ inputs.steps }}
+        ONECORE_EXECUTE_TRAINING: "1"
         ONECORE_RESUME: ${{ inputs.stage == 'multimodal' && 'true' || 'false' }}
         ONECORE_PARENT_RUN_ID: ${{ inputs.stage == 'multimodal' && github.run_id || '' }}
       run: |
