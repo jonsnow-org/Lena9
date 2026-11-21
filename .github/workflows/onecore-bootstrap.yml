@@ -25,6 +25,8 @@ jobs:
       base_corpus_run_id: ${{ steps.request.outputs.base_corpus_run_id }}
       base_corpus_artifact_name: ${{ steps.request.outputs.base_corpus_artifact_name }}
       request_stage: ${{ steps.request.outputs.request_stage }}
+      resume_checkpoint_run_id: ${{ steps.request.outputs.resume_checkpoint_run_id }}
+      resume_checkpoint_artifact_name: ${{ steps.request.outputs.resume_checkpoint_artifact_name }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -58,9 +60,19 @@ jobs:
           artifact = str(request.get("base_corpus_artifact_name") or f"onecore-corpus-{corpus}").strip()
           if not re.fullmatch(r"[A-Za-z0-9_.-]+", artifact):
               raise ValueError("The base corpus artifact name contains unsupported characters")
+          resume_run = str(request.get("resume_checkpoint_run_id", "")).strip()
+          resume_artifact = str(request.get("resume_checkpoint_artifact_name", "")).strip()
+          if bool(resume_run) != bool(resume_artifact):
+              raise ValueError("A resumed checkpoint requires both resume_checkpoint_run_id and resume_checkpoint_artifact_name")
+          if resume_run and not re.fullmatch(r"[0-9]+", resume_run):
+              raise ValueError("resume_checkpoint_run_id must be a numeric GitHub Actions run ID")
+          if resume_artifact and not re.fullmatch(r"[A-Za-z0-9_.-]+", resume_artifact):
+              raise ValueError("resume_checkpoint_artifact_name contains unsupported characters")
           print(f"base_corpus_run_id={corpus}")
           print(f"base_corpus_artifact_name={artifact}")
           print(f"request_stage={stage}")
+          print(f"resume_checkpoint_run_id={resume_run}")
+          print(f"resume_checkpoint_artifact_name={resume_artifact}")
           PY
       - name: Compile package and run all tests
         run: |
@@ -431,7 +443,7 @@ jobs:
 
   train_all:
     name: Ten sequential CPU training sessions on one persistent runner
-    needs: dataset_gate
+    needs: [dataset_gate, prepare]
     if: ${{ always() && needs.dataset_gate.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 360
@@ -444,6 +456,7 @@ jobs:
           ref: ${{ github.sha }}
       - id: train01
         name: Training session 1 of 10 — joint — 03_text_pretraining.ipynb
+        if: ${{ needs.prepare.outputs.resume_checkpoint_artifact_name == '' }}
         uses: ./.github/actions/onecore-train
         with:
           setup_environment: "true"
@@ -457,13 +470,15 @@ jobs:
           output_artifact_name: onecore-state-train-01
       - id: train02
         name: Training session 2 of 10 — multimodal — 04_multimodal_curriculum.ipynb
+        if: ${{ always() && !cancelled() && (steps.train01.outcome == 'success' || needs.prepare.outputs.resume_checkpoint_artifact_name != '') }}
         uses: ./.github/actions/onecore-train
         with:
           setup_environment: "false"
           restore_corpus: "false"
           corpus_artifact_name: onecore-corpus-final
-          checkpoint_artifact_name: "onecore-state-train-01"
-          previous_checkpoint_artifact_name: "onecore-state-train-01"
+          checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_artifact_name != '' && needs.prepare.outputs.resume_checkpoint_artifact_name || 'onecore-state-train-01' }}
+          checkpoint_run_id: ${{ needs.prepare.outputs.resume_checkpoint_run_id }}
+          previous_checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_run_id == '' && 'onecore-state-train-01' || '' }}
           stage: "multimodal"
           notebook: "04_multimodal_curriculum.ipynb"
           steps: "15"
