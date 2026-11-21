@@ -57,6 +57,70 @@ jobs:
       - name: Run unit and regression tests
         run: pytest -q onecore-ai/tests
 
+      - name: Verify Corrected Specification v2 values and FLOPs
+        shell: bash
+        run: |
+          python - <<'PY'
+          import math
+          from onecore.config import load_config
+          from onecore.flops import joint_step_train_flops, text_step_train_flops
+          from onecore.model import OneCore
+          cfg, train, raw = load_config("onecore-ai/configs/phone-research.yaml")
+          assert train.total_steps == 20000 and train.warmup_steps == 200
+          assert train.learning_rate == 0.0003 and train.weight_decay == 0.1
+          assert tuple(train.adam_betas) == (0.9, 0.95)
+          assert cfg.vocab_size == 5144 and cfg.hidden_size == 2730
+          assert raw["model"]["expected_parameter_count"] == 57579201
+          model = OneCore(cfg)
+          assert model.count_parameters() == 57579201
+          assert joint_step_train_flops(128) == 1_296_720_199_680
+          assert joint_step_train_flops(512) == 5_258_827_530_240
+          assert text_step_train_flops(128) == 1_037_376_159_744
+          print({
+              "parameters": model.count_parameters(),
+              "vocab": cfg.vocab_size,
+              "hidden": cfg.hidden_size,
+              "joint_128_tflops": joint_step_train_flops(128) / 1e12,
+              "joint_512_tflops": joint_step_train_flops(512) / 1e12,
+              "text_128_tflops": text_step_train_flops(128) / 1e12,
+              "random_init_loss_reference": math.log(cfg.vocab_size),
+          })
+          PY
+          if grep -R -nE '57,587,393|57587393|57,575,425|57575425' \
+            --include='*.py' --include='*.md' --include='*.ipynb' --include='*.yaml' --include='*.yml' onecore-ai .github; then
+            echo "Obsolete parameter counts remain in the source tree."
+            exit 1
+          fi
+          if grep -R -nE 'ONECORE_MIN_TRAIN_RECORDS.*25|ONECORE_MIN_HOLDOUT_RECORDS.*5|minimum_train: int = 25|minimum_holdout: int = 5' \
+            --include='*.py' --include='*.ipynb' --include='*.yaml' --include='*.yml' onecore-ai .github; then
+            echo "Legacy 25/5 data gate remains."
+            exit 1
+          fi
+
+      - name: Execute exact architecture notebook
+        env:
+          PYTHONPATH: onecore-ai/src
+        run: |
+          jupyter nbconvert --to notebook --execute onecore-ai/notebooks/01_architecture_budget.ipynb \
+            --output 01_architecture_budget.executed.ipynb \
+            --output-dir "$RUNNER_TEMP" --ExecutePreprocessor.timeout=-1
+
+      - name: Run one-step random-init smoke gate
+        env:
+          PYTHONPATH: onecore-ai/src
+        run: |
+          python -m onecore.train --root onecore-ai \
+            --config onecore-ai/configs/phone-research.yaml \
+            --stage smoke --steps 1 --output-dir "$RUNNER_TEMP/onecore-v2-smoke"
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          report = json.loads((Path(os.environ["RUNNER_TEMP"]) / "onecore-v2-smoke" / "train_result.json").read_text())
+          loss = report.get("first_language_loss")
+          assert isinstance(loss, (int, float)) and 7.5456 <= loss <= 9.5456, loss
+          print({"first_language_loss": loss, "reference_nats": report["first_language_loss_reference_nats"]})
+          PY
+
       - name: Smoke-test FineWeb-2 streaming and exact cursor resume
         env:
           HF_HUB_DISABLE_TELEMETRY: "1"
