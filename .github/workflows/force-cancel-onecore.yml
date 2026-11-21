@@ -1,0 +1,32 @@
+name: Force cancel superseded OneCore run
+
+on:
+  push:
+    branches:
+      - research/onecore-foundation
+    paths:
+      - ".github/onecore-force-cancel-run.txt"
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  force_cancel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out force-cancel request
+        uses: actions/checkout@v5
+      - name: Force cancel stale run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          run_id="$(tr -d '[:space:]' < .github/onecore-force-cancel-run.txt)"
+          if [[ ! "$run_id" =~ ^[0-9]+$ ]]; then
+            echo "Invalid workflow run ID in cancellation request"
+            exit 2
+          fi
+          gh api --method POST "repos/jonsnow-org/Lena9/actions/runs/$run_id/force-cancel"
+          echo "Force-cancel request submitted for OneCore run $run_id"
