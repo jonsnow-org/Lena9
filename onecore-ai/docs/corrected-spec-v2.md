@@ -30,7 +30,7 @@ The vocabulary ranges are text 0–4095, vision 4096–4607, audio 4608–4863, 
 - Joint/multimodal: exactly five micro-batches, one from each of text, tool, image, audio, and video.
 - CPU thread count: 4; per-job cap: 250 optimizer steps; checkpoint interval: 25 steps.
 
-The training code rejects checkpoint continuation when the model or optimizer/schedule configuration differs. A changed optimizer contract must start a new compatible lineage rather than silently reusing stale AdamW state.
+The training code rejects checkpoint continuation when the model architecture or optimizer/schedule configuration differs. A changed optimizer contract must start a new compatible lineage rather than silently reusing stale AdamW state. The historical checkpoint at optimizer step 210 (run 43715922010) has the same tensor dimensions and exact 57,579,201 parameter count, but was trained with weight decay 0.01 and PyTorch's default AdamW betas (0.9, 0.999), not v2's 0.1 and (0.9, 0.95). It is retained as a historical experimental artifact and is not resumable under v2. Its reported corpus is synthetic bootstrap data, so its loss metrics are not external-data quality evidence. The active v2 training request deliberately starts a new random-initialized lineage and does not restore that legacy checkpoint.
 
 ## One external data gate
 
