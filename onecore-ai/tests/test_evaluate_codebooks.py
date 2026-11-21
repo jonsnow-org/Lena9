@@ -3,7 +3,7 @@ import math
 import pytest
 import torch
 
-from onecore.evaluate import codebook_assignment_report, select_evaluation_records
+from onecore.evaluate import (\n    _tldm_masked_span_loss, codebook_assignment_report,\n    select_evaluation_records, select_tldm_evaluation_records,\n)\nfrom onecore.config import ModelConfig\nfrom onecore.model import OneCore
 
 
 def test_codebook_assignment_report_has_expected_entropy_perplexity_and_dead_codes():
@@ -41,3 +41,41 @@ def test_evaluation_filter_rejects_empty_subsets():
             [{"id": "bootstrap", "task": "text", "data_class": "bootstrap"}],
             {"external"},
         )
+
+
+def test_tldm_evaluation_selection_is_deterministic_and_task_stratified():
+    records = [
+        {"id": f"text-{index:03}", "task": "text"}
+        for index in range(24)
+    ] + [
+        {"id": f"image-{index:03}", "task": "image_caption"}
+        for index in range(19)
+    ] + [
+        {"id": f"video-{index:03}", "task": "video_reconstruction"}
+        for index in range(8)
+    ]
+    first = select_tldm_evaluation_records(records, "validation", per_task_limit=5)
+    second = select_tldm_evaluation_records(list(reversed(records)), "validation", per_task_limit=5)
+
+    assert [item["id"] for item in first] == [item["id"] for item in second]
+    assert sum(item["task"] == "text" for item in first) == 5
+    assert sum(item["task"] == "image_caption" for item in first) == 5
+    assert sum(item["task"] == "video_reconstruction" for item in first) == 5
+
+
+def test_tldm_masked_span_evaluation_is_deterministic():
+    cfg = ModelConfig(
+        width=32, unique_blocks=1, recurrent_cycles=1, attention_heads=4,
+        max_sequence_length=32, text_vocab_size=64, vision_codebook_size=8,
+        audio_codebook_size=4, motion_codebook_size=4, special_tokens=24,
+        patch_size=4, image_size=8, audio_bins=8, audio_group_frames=2,
+        max_video_frames=2, dropout=0.0,
+    )
+    model = OneCore(cfg).eval()
+    sequence = torch.tensor([[0, 14, 20, 21, 22, 23, 24, 25, 26, 27, 28, 1]])
+    first = _tldm_masked_span_loss(model, sequence, "heldout-record-1", "validation")
+    second = _tldm_masked_span_loss(model, sequence, "heldout-record-1", "validation")
+
+    assert first[1] > 0
+    assert first[0] == pytest.approx(second[0])
+    assert first[1] == second[1]

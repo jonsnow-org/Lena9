@@ -11,7 +11,7 @@ import torch
 from .checkpoint import load_checkpoint, sha256_file
 from .config import load_config
 from .data import classify_record_data, external_record_is_trainable, read_manifest, validate_manifest
-from .model import OneCore
+from .model import MASK, OneCore
 from .inference import InferenceSession
 from .tool_eval import evaluate_tool_behavior
 from .train import _load_image, _load_mel, _record_sequence
@@ -22,6 +22,14 @@ REQUIRED_METRICS = (
     "audio_reconstruction", "video_sequence",
 )
 REQUIRED_CODEBOOKS = ("vision", "audio", "motion")
+T_LDM_EVALUATION_PROTOCOL = "onecore-native-tldm-heldout-v1"
+T_LDM_FAMILY_TASKS = {
+    "text": {"text"},
+    "tool": {"tool_use"},
+    "image": {"image_caption", "image_reconstruction"},
+    "audio": {"audio_text", "audio_reconstruction"},
+    "video": {"video_caption", "video_reconstruction"},
+}
 
 
 def _asset_manifest_sha256(root: Path, records: list[dict[str, Any]]) -> str:
@@ -133,6 +141,175 @@ def select_evaluation_records(
     return selected
 
 
+def select_tldm_evaluation_records(
+    records: list[dict[str, Any]],
+    split: str,
+    per_task_limit: int = 16,
+) -> list[dict[str, Any]]:
+    """Choose a stable, bounded, task-stratified held-out T-LDM evaluation set."""
+    if split not in {"validation", "test"}:
+        raise ValueError("T-LDM held-out evaluation split must be validation or test")
+    if per_task_limit < 1:
+        raise ValueError("per_task_limit must be positive")
+    grouped: dict[str, list[tuple[str, dict[str, Any]]]] = {}
+    for record in records:
+        task = str(record.get("task", ""))
+        if not any(task in tasks for tasks in T_LDM_FAMILY_TASKS.values()):
+            continue
+        record_id = str(record.get("id", "")).strip()
+        if not record_id:
+            raise ValueError("T-LDM held-out records require stable record IDs")
+        rank = hashlib.sha256(
+            f"{T_LDM_EVALUATION_PROTOCOL}:{split}:{record_id}".encode("utf-8")
+        ).hexdigest()
+        grouped.setdefault(task, []).append((rank, record))
+    selected: list[dict[str, Any]] = []
+    for task in sorted(grouped):
+        ordered = sorted(grouped[task], key=lambda item: item[0])
+        selected.extend(record for _, record in ordered[:per_task_limit])
+    if not selected:
+        raise ValueError(f"{split} split contains no records for T-LDM held-out evaluation")
+    return selected
+
+
+@torch.no_grad()
+def _tldm_masked_span_loss(
+    model: OneCore,
+    sequence: torch.Tensor,
+    record_id: str,
+    split: str,
+) -> tuple[float | None, int]:
+    """Measure deterministic contiguous-span denoising loss on one held-out sequence."""
+    if split not in {"validation", "test"}:
+        raise ValueError("T-LDM masked-span evaluation requires validation or test")
+    if sequence.ndim != 2:
+        raise ValueError("T-LDM evaluation sequence must have shape [batch, sequence]")
+    sequence_length = int(sequence.shape[1])
+    if sequence_length < 3:
+        return None, 0
+    block_width = min(32, max(1, sequence_length // 4), sequence_length - 2)
+    latest_start = sequence_length - block_width - 1
+    seed = int(hashlib.sha256(
+        f"{T_LDM_EVALUATION_PROTOCOL}:{split}:{record_id}".encode("utf-8")
+    ).hexdigest()[:16], 16)
+    start = 1 + (seed % max(1, latest_start))
+    end = start + block_width
+    masked_sequence = sequence.clone()
+    masked_sequence[:, start:end] = model.cfg.special_id(MASK)
+    logits = model.forward_tldm(masked_sequence)
+    targets = sequence[:, start:end]
+    loss = torch.nn.functional.cross_entropy(
+        logits[:, start:end, :].reshape(-1, logits.shape[-1]),
+        targets.reshape(-1),
+    )
+    return float(loss), int(targets.numel())
+
+
+@torch.no_grad()
+def _evaluate_native_tldm(
+    project_root: Path,
+    records: list[dict[str, Any]],
+    model: OneCore,
+    tokenizer: Any,
+    split: str,
+    checkpoint_sha256: str,
+    per_task_limit: int = 16,
+) -> dict[str, Any]:
+    """Evaluate the native diffusion objective on deterministic held-out examples."""
+    selected = select_tldm_evaluation_records(records, split, per_task_limit)
+    task_loss_sum: dict[str, float] = {}
+    task_counts: dict[str, int] = {}
+    masked_token_count = 0
+    skipped_short_sequences = 0
+
+    for record in selected:
+        sequence, _, task = _record_sequence(record, model, tokenizer, project_root)
+        loss, masked_tokens = _tldm_masked_span_loss(
+            model, sequence, str(record["id"]), split
+        )
+        if loss is None:
+            skipped_short_sequences += 1
+            continue
+        task_loss_sum[task] = task_loss_sum.get(task, 0.0) + loss
+        task_counts[task] = task_counts.get(task, 0) + 1
+        masked_token_count += masked_tokens
+
+    per_task_loss = {
+        task: task_loss_sum[task] / task_counts[task]
+        for task in sorted(task_counts)
+    }
+    family_counts = {
+        family: sum(task_counts.get(task, 0) for task in tasks)
+        for family, tasks in T_LDM_FAMILY_TASKS.items()
+    }
+    family_loss: dict[str, float | None] = {}
+    for family, tasks in T_LDM_FAMILY_TASKS.items():
+        count = family_counts[family]
+        total = sum(task_loss_sum.get(task, 0.0) for task in tasks)
+        family_loss[family] = total / count if count else None
+    total_count = sum(task_counts.values())
+    overall_loss = sum(task_loss_sum.values()) / total_count if total_count else None
+    return {
+        "protocol": T_LDM_EVALUATION_PROTOCOL,
+        "split": split,
+        "checkpoint_sha256": checkpoint_sha256,
+        "sample_cap_per_task": per_task_limit,
+        "sample_counts_by_task": task_counts,
+        "sample_counts_by_family": family_counts,
+        "per_task_masked_span_loss": per_task_loss,
+        "per_family_masked_span_loss": family_loss,
+        "masked_span_loss": overall_loss,
+        "sample_count": total_count,
+        "masked_token_count": masked_token_count,
+        "skipped_short_sequences": skipped_short_sequences,
+    }
+
+
+def _check_native_tldm_evaluation(
+    prefix: str,
+    report: dict[str, Any] | None,
+    expected_split: str,
+    checkpoint_sha256: str,
+    thresholds: dict[str, Any],
+    threshold_key: str,
+    failures: list[str],
+) -> None:
+    """Require independent, five-family held-out evidence and a separately approved limit."""
+    if not isinstance(report, dict):
+        failures.append(f"{prefix} native T-LDM held-out evaluation report is missing")
+        return
+    if report.get("protocol") != T_LDM_EVALUATION_PROTOCOL:
+        failures.append(f"{prefix} native T-LDM evaluation protocol is missing or unsupported")
+    if report.get("split") != expected_split:
+        failures.append(f"{prefix} native T-LDM evaluation used the wrong split")
+    if report.get("checkpoint_sha256") != checkpoint_sha256:
+        failures.append(f"{prefix} native T-LDM report refers to a different checkpoint")
+    family_counts = report.get("sample_counts_by_family")
+    family_losses = report.get("per_family_masked_span_loss")
+    if not isinstance(family_counts, dict) or not isinstance(family_losses, dict):
+        failures.append(f"{prefix} native T-LDM family-level held-out evidence is missing")
+        family_counts = {}
+        family_losses = {}
+    for family in T_LDM_FAMILY_TASKS:
+        count = family_counts.get(family)
+        if not isinstance(count, int) or count < 10:
+            failures.append(f"{prefix} native T-LDM has fewer than 10 held-out {family} examples")
+        value = family_losses.get(family)
+        if not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+            failures.append(f"{prefix} native T-LDM {family} masked-span loss is missing or invalid")
+    overall = report.get("masked_span_loss")
+    if not isinstance(overall, (int, float)) or not math.isfinite(overall) or overall <= 0:
+        failures.append(f"{prefix} native T-LDM overall masked-span loss is missing or invalid")
+        return
+    limit = thresholds.get(threshold_key)
+    if not isinstance(limit, (int, float)) or not math.isfinite(limit) or limit <= 0:
+        failures.append(f"approved positive T-LDM threshold {threshold_key} is missing")
+    elif overall > limit:
+        failures.append(
+            f"{prefix} native T-LDM masked-span loss {overall:.6g} exceeds approved threshold {limit:.6g}"
+        )
+
+
 @torch.no_grad()
 def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
                         checkpoint_path: str | Path, tokenizer_path: str | Path,
@@ -218,6 +395,10 @@ def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
 
     thresholds_file = Path(thresholds_path)
     threshold_doc = json.loads(thresholds_file.read_text(encoding="utf-8")) if thresholds_file.is_file() else {}
+    checkpoint_digest = sha256_file(checkpoint_file)
+    native_tldm_evaluation = _evaluate_native_tldm(
+        root, records, model, tokenizer, split, checkpoint_digest
+    )
     data_classes = sorted({classify_record_data(record) for record in records})
     data_kind = "all_available_data" if records else "empty"
     data_verified_for_promotion = bool(records)
@@ -232,7 +413,7 @@ def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
     metrics = {
         "evaluation_id": f"{split}-step-{step}-{sha256_file(checkpoint_file)[:12]}",
         "split": split,
-        "checkpoint_sha256": sha256_file(checkpoint_file),
+        "checkpoint_sha256": checkpoint_digest,
         "checkpoint_step": step,
         "tokenizer_sha256": tokenizer_sha,
         "real_data": real_data,
@@ -243,6 +424,7 @@ def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
         "text_loss": mean(loss_sum, "text"),
         "tool_use": mean(loss_sum, "tool_use"),
         "tool_behavior": tool_behavior,
+        "native_tldm_evaluation": native_tldm_evaluation,
         "image_reconstruction": combined_mean(aux_sum, {"image_caption", "image_reconstruction"}),
         "audio_reconstruction": combined_mean(aux_sum, {"audio_text", "audio_reconstruction"}),
         "video_sequence": (
@@ -455,6 +637,11 @@ def promotion_gate(metrics: dict[str, Any], baseline: dict[str, Any] | None = No
         elif isinstance(value, (int, float)) and math.isfinite(value) and value > limit:
             failures.append(f"validation {key}={value:.6g} exceeds approved threshold {limit:.6g}")
     _check_codebook_thresholds("validation", metrics.get("codebook_usage"), thresholds, failures)
+    _check_native_tldm_evaluation(
+        "validation", metrics.get("native_tldm_evaluation"), "validation",
+        metrics.get("checkpoint_sha256"), thresholds,
+        "native_tldm_max_masked_span_loss", failures,
+    )
     _check_tool_behavior(
         "validation", metrics.get("tool_behavior"), thresholds,
         "min_tool_execution_success_rate", failures,
@@ -488,6 +675,11 @@ def promotion_gate(metrics: dict[str, Any], baseline: dict[str, Any] | None = No
             elif isinstance(value, (int, float)) and math.isfinite(value) and value > limit:
                 failures.append(f"test {key}={value:.6g} exceeds approved threshold {limit:.6g}")
         _check_codebook_thresholds("test", test_metrics.get("codebook_usage"), thresholds, failures, test_split=True)
+        _check_native_tldm_evaluation(
+            "test", test_metrics.get("native_tldm_evaluation"), "test",
+            metrics.get("checkpoint_sha256"), thresholds,
+            "test_native_tldm_max_masked_span_loss", failures,
+        )
         _check_tool_behavior(
             "test", test_metrics.get("tool_behavior"), thresholds,
             "test_min_tool_execution_success_rate", failures,

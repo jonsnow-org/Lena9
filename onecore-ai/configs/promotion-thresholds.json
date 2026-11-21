@@ -1,7 +1,7 @@
 {
   "schema": "onecore-quality-thresholds-v1",
   "status": "not-approved",
-  "note": "Do not fill these with arbitrary values. Run a reviewed benchmark, agree on measurable thresholds, then set each required key. Loss limits are upper bounds; codebook usage and normalized entropy are lower bounds; max-code concentration is an upper bound. Validation and test thresholds must be calibrated separately. Promotion also requires executed tool-behaviour metrics with separately calibrated validation and held-out test success-rate thresholds, including both steps of a two-step workflow.",
+  "note": "Do not fill these with arbitrary values. Run a reviewed benchmark, agree on measurable thresholds, then set each required key. Loss limits are upper bounds; codebook usage and normalized entropy are lower bounds; max-code concentration is an upper bound. Validation and test thresholds must be calibrated separately. Promotion also requires executed tool-behaviour metrics with separately calibrated validation and held-out test success-rate thresholds, including both steps of a two-step workflow. Native T-LDM masked-span loss must also be benchmarked and approved separately on validation and held-out test data.",
   "required_keys": {
     "validation_loss_metrics": [
       "text_loss",
@@ -44,6 +44,12 @@
     ],
     "test_tool_behavior": [
       "test_min_tool_execution_success_rate"
+    ],
+    "native_tldm_validation_metrics": [
+      "native_tldm_max_masked_span_loss"
+    ],
+    "native_tldm_test_metrics": [
+      "test_native_tldm_max_masked_span_loss"
     ]
   },
   "thresholds": {

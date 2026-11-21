@@ -13,6 +13,26 @@ def _codebook_report():
     }
 
 
+def _native_tldm_report(split, checkpoint_sha):
+    families = ("text", "tool", "image", "audio", "video")
+    return {
+        "protocol": "onecore-native-tldm-heldout-v1",
+        "split": split,
+        "checkpoint_sha256": checkpoint_sha,
+        "sample_cap_per_task": 16,
+        "sample_counts_by_task": {
+            "text": 10, "tool_use": 10, "image_caption": 10,
+            "audio_text": 10, "video_caption": 10,
+        },
+        "sample_counts_by_family": {family: 10 for family in families},
+        "per_family_masked_span_loss": {family: 1.0 for family in families},
+        "masked_span_loss": 1.0,
+        "sample_count": 50,
+        "masked_token_count": 500,
+        "skipped_short_sequences": 0,
+    }
+
+
 def _metrics(data_verified=True, data_kind="external"):
     checkpoint_sha = "a" * 64
     validation_hash = "b" * 64
@@ -25,6 +45,8 @@ def _metrics(data_verified=True, data_kind="external"):
     thresholds["min_tool_execution_success_rate"] = 0.25
     thresholds["test_min_tool_execution_success_rate"] = 0.25
     thresholds["tool_behavior_regression_floor"] = 0.90
+    thresholds["native_tldm_max_masked_span_loss"] = 2.0
+    thresholds["test_native_tldm_max_masked_span_loss"] = 2.0
     tool_behavior = {
         "sample_count": 32,
         "execution_success_rate": 0.5,
@@ -46,13 +68,16 @@ def _metrics(data_verified=True, data_kind="external"):
         thresholds[f"test_max_{modality}_max_code_fraction"] = 0.2
         thresholds[f"test_min_{modality}_normalized_entropy"] = 0.6
     codebook_usage = _codebook_report()
+    native_tldm_validation = _native_tldm_report("validation", checkpoint_sha)
+    native_tldm_test = _native_tldm_report("test", checkpoint_sha)
     test_metrics = {**values, "split": "test", "checkpoint_sha256": checkpoint_sha,
         "parameter_count": 57_579_201, "real_data": data_kind == "external",
         "data_kind": data_kind,
         "data_classes": ["external"] if data_kind == "external" else [data_kind],
         "data_verified_for_promotion": data_verified,
         "modalities_tested": list(REQUIRED_METRICS), "split_manifest_sha256": test_hash,
-        "codebook_usage": codebook_usage, "tool_behavior": tool_behavior}
+        "codebook_usage": codebook_usage, "tool_behavior": tool_behavior,
+        "native_tldm_evaluation": native_tldm_test}
     return {**values, "split": "validation", "checkpoint_sha256": checkpoint_sha,
         "parameter_count": 57_579_201, "real_data": data_kind == "external",
         "data_kind": data_kind,
@@ -61,6 +86,7 @@ def _metrics(data_verified=True, data_kind="external"):
         "modalities_tested": list(REQUIRED_METRICS), "quality_thresholds": thresholds,
         "split_manifest_sha256": validation_hash, "test_manifest_sha256": test_hash,
         "codebook_usage": codebook_usage, "tool_behavior": tool_behavior,
+        "native_tldm_evaluation": native_tldm_validation,
         "test_metrics": test_metrics}
 
 
@@ -145,3 +171,31 @@ def test_gate_requires_identical_tool_cases_before_comparing_baseline():
     passed, failures = promotion_gate(metrics, baseline=baseline)
     assert not passed
     assert any("validation tool evaluation does not use the same fixed held-out cases" in item for item in failures)
+
+
+def test_gate_requires_independent_native_tldm_metrics_for_both_splits():
+    metrics = _metrics(data_verified=True)
+    metrics.pop("native_tldm_evaluation")
+    metrics["test_metrics"].pop("native_tldm_evaluation")
+    passed, failures = promotion_gate(metrics)
+    assert not passed
+    assert any("validation native T-LDM held-out evaluation report is missing" in item for item in failures)
+    assert any("test native T-LDM held-out evaluation report is missing" in item for item in failures)
+
+
+def test_gate_rejects_native_tldm_masked_span_loss_above_separate_limit():
+    metrics = _metrics(data_verified=True)
+    metrics["native_tldm_evaluation"]["masked_span_loss"] = 2.5
+    metrics["test_metrics"]["native_tldm_evaluation"]["masked_span_loss"] = 2.5
+    passed, failures = promotion_gate(metrics)
+    assert not passed
+    assert any("validation native T-LDM masked-span loss" in item for item in failures)
+    assert any("test native T-LDM masked-span loss" in item for item in failures)
+
+
+def test_gate_rejects_tldm_heldout_family_with_insufficient_examples():
+    metrics = _metrics(data_verified=True)
+    metrics["native_tldm_evaluation"]["sample_counts_by_family"]["video"] = 9
+    passed, failures = promotion_gate(metrics)
+    assert not passed
+    assert any("fewer than 10 held-out video examples" in item for item in failures)
