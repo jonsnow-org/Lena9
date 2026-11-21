@@ -252,6 +252,25 @@ def _initialize_multimodal_codebooks(
     }
 
 
+def _validate_resume_configuration(
+    saved_config: dict[str, Any],
+    model_config: ModelConfig,
+    raw_config: dict[str, Any],
+) -> None:
+    saved_model_config = dict(saved_config.get("model", {}))
+    expected_model_config = model_config.to_dict()
+    # This v2 field verifies tensor shapes but does not itself alter the architecture.
+    saved_model_config.pop("expected_parameter_count", None)
+    expected_model_config.pop("expected_parameter_count", None)
+    if saved_model_config != expected_model_config:
+        raise ValueError("checkpoint model architecture does not match this run config")
+    if saved_config.get("training") != raw_config.get("training", {}):
+        raise ValueError(
+            "checkpoint optimizer/schedule config does not match this run config; "
+            "start a fresh lineage rather than resuming incompatible AdamW state"
+        )
+
+
 def _build_scheduler(optimizer: torch.optim.Optimizer, warmup_steps: int,
                     total_steps: int) -> torch.optim.lr_scheduler.LambdaLR:
     def factor(step: int) -> float:
@@ -417,15 +436,7 @@ def run_training(
         step, saved = load_checkpoint(
             checkpoint_path, model, optimizer, scheduler=scheduler, map_location="cpu"
         )
-        saved_config = saved.get("config", {}).get("model")
-        if saved_config != cfg.to_dict():
-            raise ValueError("checkpoint model config does not match this run config")
-        saved_training_config = saved.get("config", {}).get("training")
-        if saved_training_config != raw_cfg.get("training", {}):
-            raise ValueError(
-                "checkpoint optimizer/schedule config does not match this run config; "
-                "start a fresh lineage rather than resuming incompatible AdamW state"
-            )
+        _validate_resume_configuration(saved.get("config", {}), cfg, raw_cfg)
         saved_metadata = saved.get("metadata", {})
         parent_optimizer_step = step
         seed = int(saved_metadata.get("seed", seed))
