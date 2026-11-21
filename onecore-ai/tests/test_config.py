@@ -18,6 +18,17 @@ def test_repository_config_loads_without_undefined_fields():
     assert model.vocab_size == 5144
     assert model.hidden_size == 2730
     assert model.thinker_latents == 16
+    assert model.vocab_size == 5144
+    assert raw["model"]["hidden_size"] == 2730
+    assert raw["model"]["vocab_size"] == 5144
+    assert raw["model"]["n_blocks"] == 4
+    assert raw["model"]["n_cycles"] == 3
+    assert raw["model"]["n_heads"] == 8
+    assert raw["data_gate"] == {
+        "min_train_per_family": 100,
+        "min_holdout_per_family": 10,
+        "required_families": ["text", "tool", "image", "audio", "video"],
+    }
     assert raw["model"]["expected_parameter_count"] == 57579201
     assert train.gradient_accumulation == 4
     assert train.weight_decay == 0.1
