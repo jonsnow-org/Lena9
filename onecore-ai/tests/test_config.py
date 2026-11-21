@@ -125,6 +125,7 @@ def test_legacy_checkpoint_same_architecture_but_old_optimizer_is_not_resumable(
     legacy_model = model.to_dict()
     legacy_model.pop("expected_parameter_count")
     legacy_model.pop("thinker_latents")
+    legacy_model.pop("hidden_size")
     legacy_training = {
         "learning_rate": 0.0003,
         "weight_decay": 0.01,
