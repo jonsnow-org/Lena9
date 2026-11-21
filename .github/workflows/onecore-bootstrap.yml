@@ -409,6 +409,7 @@ jobs:
           retention-days: 90
           compression-level: 0
       - name: Remove intermediate corpus after validated replacement is uploaded
+        if: ${{ needs.finalize_acquisition.outputs.artifact_run_id == github.run_id && needs.finalize_acquisition.outputs.artifact_name != 'onecore-corpus-final' }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -474,7 +475,7 @@ jobs:
         uses: ./.github/actions/onecore-train
         with:
           setup_environment: ${{ needs.prepare.outputs.resume_checkpoint_artifact_name != '' && 'true' || 'false' }}
-          restore_corpus: "false"
+          restore_corpus: ${{ needs.prepare.outputs.resume_checkpoint_artifact_name != '' && 'true' || 'false' }}
           corpus_artifact_name: onecore-corpus-final
           checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_artifact_name != '' && needs.prepare.outputs.resume_checkpoint_artifact_name || 'onecore-state-train-01' }}
           checkpoint_run_id: ${{ needs.prepare.outputs.resume_checkpoint_run_id }}
