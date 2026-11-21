@@ -116,8 +116,8 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
     assert "request_stage: ${{ steps.select.outputs.request_stage }}" in bootstrap
     assert 'only_sources={"videos4camera_bench"}' in bootstrap
     assert "time_budget_seconds=1200" in bootstrap and "source_budget_seconds=1200" in bootstrap
-    assert "onecore-corpus-video-repair-progress" in bootstrap
-    assert "steps.corpus_diagnostic.outputs.coverage_ready != 'true'" in bootstrap
+    assert "onecore-corpus-video-repair-snapshot" in bootstrap
+    assert "needs.finalize_acquisition.outputs.request_stage == 'repair_video_existing'" in bootstrap
     assert "needs.prepare.outputs.request_stage == 'acquire'" in bootstrap
     assert 'run-id: ${{ needs.finalize_acquisition.outputs.artifact_run_id }}' in bootstrap
     assert 'github-token: ${{ github.token }}' in bootstrap
