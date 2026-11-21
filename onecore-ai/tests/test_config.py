@@ -103,3 +103,39 @@ training:
     )
     with pytest.raises(ValueError, match="expected_parameter_count must equal 57579201"):
         load_config(path)
+
+
+def test_legacy_checkpoint_same_architecture_but_old_optimizer_is_not_resumable():
+    from onecore.train import _validate_resume_configuration
+
+    root = Path(__file__).resolve().parents[1]
+    model, _, raw = load_config(root / "configs" / "phone-research.yaml")
+    legacy_model = model.to_dict()
+    legacy_model.pop("expected_parameter_count")
+    legacy_training = {
+        "learning_rate": 0.0003,
+        "weight_decay": 0.01,
+        "gradient_accumulation": 4,
+        "max_grad_norm": 1.0,
+        "checkpoint_every": 25,
+        "max_steps_per_job": 250,
+        "cpu_threads": 4,
+    }
+    with pytest.raises(ValueError, match="optimizer/schedule config"):
+        _validate_resume_configuration(
+            {"model": legacy_model, "training": legacy_training},
+            model,
+            raw,
+        )
+
+
+def test_v2_checkpoint_with_exact_architecture_and_training_config_can_resume():
+    from onecore.train import _validate_resume_configuration
+
+    root = Path(__file__).resolve().parents[1]
+    model, _, raw = load_config(root / "configs" / "phone-research.yaml")
+    _validate_resume_configuration(
+        {"model": model.to_dict(), "training": raw["training"]},
+        model,
+        raw,
+    )
