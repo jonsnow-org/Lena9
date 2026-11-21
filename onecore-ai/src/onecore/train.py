@@ -262,6 +262,9 @@ def _validate_resume_configuration(
     # This v2 field verifies tensor shapes but does not itself alter the architecture.
     saved_model_config.pop("expected_parameter_count", None)
     expected_model_config.pop("expected_parameter_count", None)
+    # The pre-v2 checkpoint used the same fixed 16-slot default in code, but
+    # did not serialize it as a config field. Normalize only that exact legacy default.
+    saved_model_config.setdefault("thinker_latents", 16)
     if saved_model_config != expected_model_config:
         raise ValueError("checkpoint model architecture does not match this run config")
     if saved_config.get("training") != raw_config.get("training", {}):
