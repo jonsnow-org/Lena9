@@ -108,6 +108,9 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
     assert "always() && needs.finalize_acquisition.result == 'success' && needs.finalize_acquisition.outputs.complete == 'true'" in bootstrap
     assert "always() && needs.dataset_gate.result == 'success'" in bootstrap
     assert "always() && needs.train_all.result == 'success'" in bootstrap
+    assert 'ONECORE_EXECUTE_EVALUATION: "1"' in bootstrap
+    assert "Require complete validation and test metrics" in bootstrap
+    assert "sampled_data_class_counts" in bootstrap
     assert "base_corpus_artifact_name" in bootstrap
     assert 'print(f"request_stage={stage}")' in bootstrap
     assert "REQUEST_STAGE" in bootstrap
@@ -218,6 +221,8 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
     assert corpus_download["with"]["repository"] == "${{ github.repository }}"
     assert "inputs.corpus_run_id" in corpus_download["with"]["run-id"]
     assert "optimizer_step" in train_action and "checkpoint_sha256" in train_action
+    assert "ONECORE_EXPECTED_STAGE" in train_action
+    assert "sampled_data_class_counts_in_this_job" in train_action
     assert "optimizer, scheduler, RNG" in train_action
     assert "text,tool,image,audio,video" in training
     assert "cancel-in-progress: true" in bootstrap

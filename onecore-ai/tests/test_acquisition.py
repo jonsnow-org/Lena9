@@ -712,7 +712,7 @@ def test_acquisition_resume_promotes_pending_rows_and_skips_processed_source_row
         "test": {"text": 1, "tool": 0, "image": 0, "audio": 0, "video": 0},
     }
 
-def test_every_available_data_class_reaches_training_sampler() -> None:
+def test_weighted_training_sampler_uses_only_external_rows() -> None:
     import random
     from onecore.data import TRAINABLE_DATA_CLASSES, iter_training_records
     from onecore.train import _weighted_record
@@ -730,11 +730,19 @@ def test_every_available_data_class_reaches_training_sampler() -> None:
     ]
     selected = iter_training_records(rows, {"text", "tool_use"})
     assert {item["id"] for item in selected} == {"bootstrap-1", "synthetic-1", "external-1", "external-2"}
+    production_rows = iter_training_records(
+        rows, {"text", "tool_use"}, allowed_data_classes={"external"}
+    )
+    assert {item["id"] for item in production_rows} == {"external-1", "external-2"}
     text_rows = [item for item in selected if item["task"] == "text"]
     tool_rows = [item for item in selected if item["task"] == "tool_use"]
-    sampled = [_weighted_record({"text": text_rows, "tool_use": tool_rows}, "text", random.Random(i))
-               for i in range(100)]
-    assert {item["data_class"] for item in sampled} <= {"bootstrap", "synthetic", "external"}
+    sampled = [
+        _weighted_record({"text": text_rows, "tool_use": tool_rows}, "text", random.Random(i))
+        for i in range(100)
+    ]
+    assert {item["data_class"] for item in sampled} == {"external"}
+    assert all(item["id"] in {"external-1", "external-2"} for item in sampled)
+    assert {item["id"] for item in production_rows} == {"external-1", "external-2"}
 
 
 def test_task_coverage_gate_counts_all_usable_records(tmp_path: Path) -> None:

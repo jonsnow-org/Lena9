@@ -619,12 +619,40 @@ jobs:
           output_artifact_name: onecore-state-train-10
       - name: Execute independent validation and held-out test on the same restored corpus
         shell: bash
+        env:
+          PYTHONPATH: onecore-ai/src
+          ONECORE_EXECUTE_EVALUATION: "1"
         run: |
           mkdir -p onecore-ai/run-state/executed-notebooks
           jupyter nbconvert --to notebook --execute onecore-ai/notebooks/05_evaluation_and_promotion.ipynb \
             --output 05_evaluation_and_promotion.executed.ipynb \
             --output-dir onecore-ai/run-state/executed-notebooks \
             --ExecutePreprocessor.timeout=-1
+      - name: Require complete validation and test metrics
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("onecore-ai/run-state")
+          required = {
+              "evaluation.json": "combined",
+              "evaluation.validation.json": "validation",
+              "evaluation.test.json": "test",
+          }
+          for filename, split in required.items():
+              path = root / filename
+              if not path.is_file():
+                  raise FileNotFoundError(
+                      f"actual evaluation did not produce required {split} metrics: {path}"
+                  )
+              payload = json.loads(path.read_text(encoding="utf-8"))
+              if not isinstance(payload, dict) or not payload:
+                  raise ValueError(f"evaluation output is empty or invalid: {path}")
+              print(f"VERIFIED {split} evaluation: {filename} ({len(payload)} fields)")
+          PY
+
       - name: Upload scientific evaluation results
         uses: actions/upload-artifact@v6
         with:
@@ -687,6 +715,19 @@ jobs:
               raise ValueError(f"Unexpected native diffusion loss weight: {native}")
           if int(native.get("updates", 0)) != 750:
               raise ValueError(f"Expected 750 native diffusion updates (5 families × 150 steps): {native}")
+          if report.get("sampled_data_class_counts") != {"external": 750}:
+              raise ValueError(
+                  "150-step joint lineage must sample exactly 750 external records and no bootstrap/synthetic records: "
+                  f"{report.get('sampled_data_class_counts')}"
+              )
+          if any(
+              key != "external" and int(value) > 0
+              for key, value in (report.get("optimizer_data_class_counts") or {}).items()
+          ):
+              raise ValueError(
+                  "optimizer input contains non-external data classes: "
+                  f"{report.get('optimizer_data_class_counts')}"
+              )
           mean_diffusion_loss = float(native.get("mean_diffusion_loss", float("nan")))
           if not math.isfinite(mean_diffusion_loss) or mean_diffusion_loss <= 0:
               raise ValueError(f"Native diffusion objective did not produce a finite positive loss: {native}")

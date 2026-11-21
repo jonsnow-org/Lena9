@@ -294,13 +294,20 @@ def _weighted_record(records_by_task: dict[str, list[dict[str, Any]]],
             "audio_text": 0.18, "audio_reconstruction": 0.07,
             "video_caption": 0.18, "video_reconstruction": 0.09,
         }
-    available = {key: value for key, value in target_weights.items() if records_by_task.get(key)}
+    available = {
+        key: [
+            record for record in records_by_task.get(key, [])
+            if classify_record_data(record) == "external"
+        ]
+        for key in target_weights
+    }
+    available = {key: rows for key, rows in available.items() if rows}
     if not available:
         raise ValueError(f"no imported external records are available for the {stage} training stage")
     tasks = list(available)
-    weights = [available[key] for key in tasks]
+    weights = [target_weights[key] for key in tasks]
     selected_task = rng.choices(tasks, weights=weights, k=1)[0]
-    return rng.choice(records_by_task[selected_task])
+    return rng.choice(available[selected_task])
 
 
 JOINT_FAMILY_TASKS: dict[str, tuple[str, ...]] = {
@@ -317,9 +324,18 @@ def _joint_micro_batches(
     rng: random.Random,
 ) -> list[tuple[str, dict[str, Any]]]:
     """Pick one external record from each family for the same optimizer update."""
+    candidates_by_family = {
+        family: [
+            item
+            for task in tasks
+            for item in records_by_task.get(task, [])
+            if classify_record_data(item) == "external"
+        ]
+        for family, tasks in JOINT_FAMILY_TASKS.items()
+    }
     missing = [
-        family for family, tasks in JOINT_FAMILY_TASKS.items()
-        if not any(records_by_task.get(task) for task in tasks)
+        family for family, candidates in candidates_by_family.items()
+        if not candidates
     ]
     if missing:
         raise ValueError(
@@ -330,12 +346,7 @@ def _joint_micro_batches(
     rng.shuffle(family_order)
     selected: list[tuple[str, dict[str, Any]]] = []
     for family in family_order:
-        candidates = [
-            item
-            for task in JOINT_FAMILY_TASKS[family]
-            for item in records_by_task.get(task, [])
-        ]
-        selected.append((family, rng.choice(candidates)))
+        selected.append((family, rng.choice(candidates_by_family[family])))
     if {family for family, _ in selected} != set(JOINT_FAMILY_TASKS):
         raise RuntimeError("joint micro-batch does not contain all five task families")
     return selected
@@ -448,6 +459,11 @@ def run_training(
     sampled_task_counts: dict[str, int] = {
         str(key): int(value) for key, value in (saved_metadata.get("sampled_task_counts") or {}).items()
     }
+    sampled_data_class_counts: dict[str, int] = {
+        str(key): int(value)
+        for key, value in (saved_metadata.get("sampled_data_class_counts") or {}).items()
+    }
+    job_sampled_data_class_counts: dict[str, int] = {}
     job_sampled_family_counts = {family: 0 for family in JOINT_FAMILY_TASKS}
     job_sampled_task_counts: dict[str, int] = {}
     lineage_id = saved_metadata.get("lineage_id")
@@ -475,13 +491,15 @@ def run_training(
 
     if stage != "smoke":
         data_report = validate_training_data(root)
-        records = read_manifest(root / "data" / "train.jsonl")
+        all_train_records = read_manifest(root / "data" / "train.jsonl")
         manifest_sha = sha256_file(root / "data" / "train.jsonl")
         allowed_tasks = {"text", "tool_use"} if stage == "text" else {
             "text", "tool_use", "image_caption", "image_reconstruction",
             "audio_text", "audio_reconstruction", "video_caption", "video_reconstruction"
         }
-        records = list(iter_training_records(records, allowed_tasks))
+        records = list(iter_training_records(
+            all_train_records, allowed_tasks, allowed_data_classes={"external"}
+        ))
         for record in records:
             records_by_task.setdefault(record["task"], []).append(record)
         required = {"text"}
@@ -499,7 +517,7 @@ def run_training(
         missing = required - set(records_by_task)
         if missing:
             raise ValueError(f"training data is missing required task categories: {sorted(missing)}")
-        all_manifest_records = read_manifest(root / "data" / "train.jsonl")
+        all_manifest_records = all_train_records
         asset_manifest_sha = _asset_manifest_sha256(root, all_manifest_records)
         fingerprint_payload = {
             "train_manifest_sha256": manifest_sha,
@@ -517,7 +535,11 @@ def run_training(
         for record in records:
             data_class = classify_record_data(record)
             optimizer_data_class_counts[data_class] = optimizer_data_class_counts.get(data_class, 0) + 1
-        excluded_data_class_counts = {}
+        excluded_data_class_counts = {
+            data_class: count
+            for data_class, count in data_class_counts.items()
+            if data_class != "external" and count > 0
+        }
         optimizer_classes = set(optimizer_data_class_counts)
         data_kind = "all_available_data"
         real_data = "external" in optimizer_classes
@@ -621,6 +643,13 @@ def run_training(
             else:
                 assert record is not None
                 sequence, aux_loss, task = _record_sequence(record, model, tokenizer, root)
+                data_class = classify_record_data(record)
+                sampled_data_class_counts[data_class] = sampled_data_class_counts.get(data_class, 0) + 1
+                job_sampled_data_class_counts[data_class] = job_sampled_data_class_counts.get(data_class, 0) + 1
+                if stage in {"joint", "multimodal"} and data_class != "external":
+                    raise RuntimeError(
+                        f"joint OneCore training sampled non-external data class: {data_class}"
+                    )
                 if family is not None:
                     sampled_family_counts[family] = sampled_family_counts.get(family, 0) + 1
                     job_sampled_family_counts[family] = job_sampled_family_counts.get(family, 0) + 1
@@ -671,6 +700,8 @@ def run_training(
                 "codebook_report": codebook_report,
                 "sampled_family_counts": sampled_family_counts,
                 "sampled_task_counts": sampled_task_counts,
+                "sampled_data_class_counts": sampled_data_class_counts,
+                "sampled_data_class_counts_in_this_job": job_sampled_data_class_counts,
                 "tldm_diffusion_weight": train_cfg.tldm_diffusion_weight,
                 "tldm_updates": tldm_updates,
                 "tldm_diffusion_loss_sum": tldm_diffusion_loss_sum,
@@ -702,6 +733,8 @@ def run_training(
         "codebook_report": codebook_report,
         "sampled_family_counts": sampled_family_counts,
         "sampled_task_counts": sampled_task_counts,
+                "sampled_data_class_counts": sampled_data_class_counts,
+                "sampled_data_class_counts_in_this_job": job_sampled_data_class_counts,
         "tldm_diffusion_weight": train_cfg.tldm_diffusion_weight,
         "tldm_updates": tldm_updates,
         "tldm_diffusion_loss_sum": tldm_diffusion_loss_sum,
@@ -775,6 +808,8 @@ def run_training(
         "sampled_family_counts": sampled_family_counts,
         "sampled_family_counts_in_this_job": job_sampled_family_counts,
         "sampled_task_counts": sampled_task_counts,
+                "sampled_data_class_counts": sampled_data_class_counts,
+                "sampled_data_class_counts_in_this_job": job_sampled_data_class_counts,
         "sampled_task_counts_in_this_job": job_sampled_task_counts,
         "native_tldm": {
             "architecture": "shared OneCore embeddings + latent pooling + recurrent shared-block thinker + tied-LM-head discrete diffusion writer",

@@ -98,14 +98,23 @@ def test_joint_sampler_picks_one_record_from_each_of_five_families():
     import random
 
     records_by_task = {
-        "text": [{"id": "text-1", "task": "text"}],
-        "tool_use": [{"id": "tool-1", "task": "tool_use"}],
-        "image_caption": [{"id": "image-1", "task": "image_caption"}],
-        "image_reconstruction": [{"id": "image-2", "task": "image_reconstruction"}],
-        "audio_text": [{"id": "audio-1", "task": "audio_text"}],
-        "audio_reconstruction": [{"id": "audio-2", "task": "audio_reconstruction"}],
-        "video_caption": [{"id": "video-1", "task": "video_caption"}],
-        "video_reconstruction": [{"id": "video-2", "task": "video_reconstruction"}],
+        "text": [
+            {"id": "bootstrap-text", "task": "text", "data_class": "bootstrap"},
+            {"id": "text-1", "task": "text", "data_class": "external"},
+        ],
+        "tool_use": [
+            {"id": "synthetic-tool", "task": "tool_use", "data_class": "synthetic"},
+            {"id": "tool-1", "task": "tool_use", "data_class": "external"},
+        ],
+        "image_caption": [
+            {"id": "image-bootstrap", "task": "image_caption", "data_class": "bootstrap"},
+            {"id": "image-1", "task": "image_caption", "data_class": "external"},
+        ],
+        "image_reconstruction": [{"id": "image-2", "task": "image_reconstruction", "data_class": "external"}],
+        "audio_text": [{"id": "audio-1", "task": "audio_text", "data_class": "external"}],
+        "audio_reconstruction": [{"id": "audio-2", "task": "audio_reconstruction", "data_class": "external"}],
+        "video_caption": [{"id": "video-1", "task": "video_caption", "data_class": "external"}],
+        "video_reconstruction": [{"id": "video-2", "task": "video_reconstruction", "data_class": "external"}],
     }
     batch = _joint_micro_batches(records_by_task, random.Random(17))
     assert len(batch) == 5
@@ -118,16 +127,18 @@ def test_joint_sampler_picks_one_record_from_each_of_five_families():
     }
     for family, record in batch:
         assert record["task"] in allowed_tasks[family]
+        assert record["data_class"] == "external"
 
 
 def test_joint_sampler_rejects_missing_external_family_before_any_update():
     import random
 
     records_by_task = {
-        "text": [{"id": "text-1", "task": "text"}],
-        "tool_use": [{"id": "tool-1", "task": "tool_use"}],
-        "image_caption": [{"id": "image-1", "task": "image_caption"}],
-        "audio_text": [{"id": "audio-1", "task": "audio_text"}],
+        "text": [{"id": "text-1", "task": "text", "data_class": "external"}],
+        "tool_use": [{"id": "tool-1", "task": "tool_use", "data_class": "external"}],
+        "image_caption": [{"id": "image-1", "task": "image_caption", "data_class": "external"}],
+        "audio_text": [{"id": "audio-1", "task": "audio_text", "data_class": "external"}],
+        "video_caption": [{"id": "video-bootstrap-only", "task": "video_caption", "data_class": "bootstrap"}],
     }
     with pytest.raises(ValueError, match="all five families"):
         _joint_micro_batches(records_by_task, random.Random(3))

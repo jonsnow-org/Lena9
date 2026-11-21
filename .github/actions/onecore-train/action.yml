@@ -150,9 +150,12 @@ runs:
     - name: Verify the resulting optimizer step and checkpoint digest
       id: report
       shell: bash
+      env:
+        ONECORE_EXPECTED_STAGE: ${{ inputs.stage }}
+        ONECORE_EXPECTED_STEPS: ${{ inputs.steps }}
       run: |
         python - <<'PY' >> "$GITHUB_OUTPUT"
-        import hashlib, json
+        import hashlib, json, os
         from pathlib import Path
         root = Path("onecore-ai/run-state")
         report = json.loads((root / "train_result.json").read_text(encoding="utf-8"))
@@ -163,6 +166,22 @@ runs:
         print(f"checkpoint_sha256={checkpoint_sha}")
         print(f"steps_in_this_job={int(report['steps_in_this_job'])}")
         print(f"lineage_id={report.get('lineage_id', '')}")
+        if os.environ.get("ONECORE_EXPECTED_STAGE") in {"joint", "multimodal"}:
+            expected_samples = 5 * int(os.environ["ONECORE_EXPECTED_STEPS"])
+            sampled_classes = report.get("sampled_data_class_counts_in_this_job", {})
+            if sampled_classes != {"external": expected_samples}:
+                raise ValueError(
+                    "joint/multimodal job must sample exactly five external records per optimizer step; "
+                    f"expected={expected_samples}, actual={sampled_classes}"
+                )
+            optimizer_classes = report.get("optimizer_data_class_counts", {})
+            if any(
+                key != "external" and int(value) > 0
+                for key, value in optimizer_classes.items()
+            ):
+                raise ValueError(
+                    f"non-external records reached optimizer input: {optimizer_classes}"
+                )
         PY
 
     - name: Preserve the validated corpus acquisition report with this checkpoint
