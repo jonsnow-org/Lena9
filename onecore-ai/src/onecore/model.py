@@ -251,7 +251,7 @@ class OneCore(nn.Module):
                 x = block(x, causal=causal)
         return self.final_norm(x)
 
-    def compress_to_latents(self, hidden: torch.Tensor, latent_slots: int = 16) -> torch.Tensor:
+    def compress_to_latents(self, hidden: torch.Tensor, latent_slots: int | None = None) -> torch.Tensor:
         """Compress this model's own token states into a short latent sequence.
 
         Adaptive pooling is deliberately parameter-free: the compressor uses
@@ -276,7 +276,7 @@ class OneCore(nn.Module):
                 thought = block(thought, causal=False)
         return thought
 
-    def forward_tldm_hidden(self, ids: torch.Tensor, latent_slots: int = 16) -> torch.Tensor:
+    def forward_tldm_hidden(self, ids: torch.Tensor, latent_slots: int | None = None) -> torch.Tensor:
         """Native OneCore latent-compression / latent-thinking / block-writer path.
 
         The compressor, thinker and writer are not separate heads. They reuse
@@ -313,13 +313,13 @@ class OneCore(nn.Module):
                 writer_states = block(writer_states, causal=False)
         return self.final_norm(writer_states)
 
-    def forward_tldm(self, ids: torch.Tensor, latent_slots: int = 16) -> torch.Tensor:
+    def forward_tldm(self, ids: torch.Tensor, latent_slots: int | None = None) -> torch.Tensor:
         """Predict masked shared-vocabulary tokens from native latent context."""
         return self.lm_head(self.forward_tldm_hidden(ids, latent_slots=latent_slots))
 
     @torch.no_grad()
     def generate_tldm(self, context_ids: torch.Tensor, block_size: int = 32,
-                      diffusion_steps: int = 8, latent_slots: int = 16,
+                      diffusion_steps: int = 8, latent_slots: int | None = None,
                       allowed_token_ids: list[int] | None = None,
                       temperature: float = 0.0, top_k: int = 0) -> torch.Tensor:
         """Generate a block through iterative masked-token refinement (discrete diffusion)."""
@@ -637,7 +637,7 @@ class OneCore(nn.Module):
             "effective_block_applications": self.cfg.unique_blocks * self.cfg.recurrent_cycles,
             "native_tldm": "shared-embedding latent compressor + shared recurrent thinker + tied-vocabulary diffusion writer",
             "tldm_additional_trainable_parameters": 0,
-            "tldm_latent_slots_default": 16,
+            "tldm_latent_slots_default": self.cfg.thinker_latents,
             "tldm_thinker_block_applications": self.cfg.unique_blocks * self.cfg.recurrent_cycles,
             "tldm_writer_block_applications": self.cfg.unique_blocks * self.cfg.recurrent_cycles,
         }
