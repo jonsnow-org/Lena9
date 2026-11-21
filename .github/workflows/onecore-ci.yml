@@ -129,6 +129,18 @@ jobs:
             --output 01_architecture_budget.executed.ipynb \
             --output-dir "$RUNNER_TEMP" --ExecutePreprocessor.timeout=-1
 
+      - name: Execute safe notebook preflights
+        env:
+          PYTHONPATH: onecore-ai/src
+          ONECORE_EXECUTE_TRAINING: "0"
+          ONECORE_EXECUTE_EVALUATION: "0"
+        run: |
+          for notebook in 00_project_contract 03_text_pretraining 04_multimodal_curriculum 05_evaluation_and_promotion; do
+            jupyter nbconvert --to notebook --execute "onecore-ai/notebooks/${notebook}.ipynb" \
+              --output "${notebook}.preflight.executed.ipynb" \
+              --output-dir "$RUNNER_TEMP" --ExecutePreprocessor.timeout=-1
+          done
+
       - name: Run one-step random-init smoke gate
         env:
           PYTHONPATH: onecore-ai/src
