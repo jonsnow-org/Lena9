@@ -331,20 +331,16 @@ jobs:
               assert step["with"]["notebook"] == expected_notebooks[index - 1]
               if index == 1:
                   assert step["with"]["setup_environment"] == "true"
-              elif index == 2:
-                  assert "resume_checkpoint_artifact_name != ''" in step["with"]["setup_environment"]
-                  assert "'true' || 'false'" in step["with"]["setup_environment"]
+                  assert step["with"]["restore_corpus"] == "true"
               else:
-                  assert step["with"]["setup_environment"] == "false"
-              if index == 2:
-                  assert "resume_checkpoint_artifact_name != ''" in step["with"]["restore_corpus"]
-                  assert "'true' || 'false'" in step["with"]["restore_corpus"]
-              else:
-                  assert step["with"]["restore_corpus"] == ("true" if index == 1 else "false")
-          assert sum(1 for step in train_steps if step["with"]["restore_corpus"] == "true") == 1
+                  assert f"resume_checkpoint_session == '{index-1}'" in step["with"]["setup_environment"]
+                  assert f"resume_checkpoint_session == '{index-1}'" in step["with"]["restore_corpus"]
+                  assert "checkpoint_run_id:" in step["with"]
           assert "artifact_run_id == github.run_id" in bootstrap
-          assert sum(1 for step in train_steps if step["with"]["setup_environment"] == "true") == 1
-          assert "resume_checkpoint_artifact_name != ''" in train_steps[1]["with"]["setup_environment"]
+          train_action_text = Path(".github/actions/onecore-train/action.yml").read_text(encoding="utf-8")
+          assert "repository: ${{ github.repository }}" in train_action_text
+          assert "run-id: ${{ inputs.checkpoint_run_id != '' && inputs.checkpoint_run_id || github.run_id }}" in train_action_text
+          assert "resume_checkpoint_session:" in bootstrap
           assert "onecore-state-train-10" in bootstrap
           assert "native_tldm" in bootstrap
           assert "diffusion_loss_weight" in bootstrap
