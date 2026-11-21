@@ -4,7 +4,7 @@ import hashlib
 import json
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable, Iterator
 from urllib.parse import urlparse
 
 ALLOWED_TASKS = {"text", "image_caption", "image_reconstruction", "audio_text", "audio_reconstruction", "video_caption", "video_reconstruction", "tool_use"}
@@ -62,24 +62,28 @@ def external_record_is_trainable(record: dict[str, Any]) -> bool:
     return classify_record_data(record) == "external"
 
 
-def read_manifest(path: str | Path) -> list[dict[str, Any]]:
+def iter_manifest(path: str | Path) -> Iterator[dict[str, Any]]:
+    """Read JSONL rows incrementally without retaining the complete manifest."""
     manifest = Path(path)
     if not manifest.is_file():
         raise FileNotFoundError(f"training manifest not found: {manifest}")
-    records: list[dict[str, Any]] = []
-    for line_no, line in enumerate(manifest.read_text(encoding="utf-8").splitlines(), 1):
-        if not line.strip():
-            continue
-        try:
-            item = json.loads(line)
-        except json.JSONDecodeError as exc:
-            raise DatasetError(f"{manifest}:{line_no}: invalid JSON: {exc}") from exc
-        if not isinstance(item, dict):
-            raise DatasetError(f"{manifest}:{line_no}: each JSONL row must be an object")
-        item["_line"] = line_no
-        records.append(item)
-    return records
+    with manifest.open("r", encoding="utf-8") as stream:
+        for line_no, line in enumerate(stream, 1):
+            if not line.strip():
+                continue
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise DatasetError(f"{manifest}:{line_no}: invalid JSON: {exc}") from exc
+            if not isinstance(item, dict):
+                raise DatasetError(f"{manifest}:{line_no}: each JSONL row must be an object")
+            item["_line"] = line_no
+            yield item
 
+
+def read_manifest(path: str | Path) -> list[dict[str, Any]]:
+    """Compatibility helper for consumers that genuinely need an in-memory list."""
+    return list(iter_manifest(path))
 
 def _valid_source(value: str) -> bool:
     if value.startswith("local://"):
@@ -88,13 +92,16 @@ def _valid_source(value: str) -> bool:
     return parsed.scheme in {"https", "http"} and bool(parsed.netloc)
 
 
-def validate_manifest(records: list[dict[str, Any]], assets_root: str | Path,
+def validate_manifest(records: Iterable[dict[str, Any]], assets_root: str | Path,
                       expected_split: str = "train") -> dict[str, Any]:
+    """Validate records incrementally; the caller may pass a streamed JSONL iterator."""
     assets = Path(assets_root).resolve()
     errors: list[str] = []
     seen_ids: set[str] = set()
     task_counts: dict[str, int] = {}
+    record_count = 0
     for index, item in enumerate(records, 1):
+        record_count = index
         line = item.get("_line", index)
         missing = REQUIRED_FIELDS - set(item)
         if missing:
@@ -136,7 +143,7 @@ def validate_manifest(records: list[dict[str, Any]], assets_root: str | Path,
             item.get("caption") or item.get("transcript") or ""
         ).strip():
             errors.append(f"line {line}: paired modality records require caption/transcript text")
-    return {"valid": not errors, "records": len(records), "task_counts": task_counts, "errors": errors}
+    return {"valid": not errors, "records": record_count, "task_counts": task_counts, "errors": errors}
 
 
 TRAINABLE_DATA_CLASSES = set(DATA_CLASSES)
@@ -160,41 +167,28 @@ def iter_training_records(
     return selected
 
 
-def validate_training_data(project_root: str | Path) -> dict[str, Any]:
+def _validate_manifest_file(project_root: str | Path, split: str) -> dict[str, Any]:
     root = Path(project_root)
-    records = read_manifest(root / "data" / "train.jsonl")
-    report = validate_manifest(records, root / "data" / "assets", expected_split="train")
+    manifest = root / "data" / f"{split}.jsonl"
+    report = validate_manifest(iter_manifest(manifest), root / "data" / "assets", expected_split=split)
     if not report["valid"]:
         details = "\n".join(report["errors"][:30])
-        raise DatasetError(f"training data gate failed with {len(report['errors'])} error(s):\n{details}")
-    if not records:
-        raise DatasetError("training manifest is empty")
+        raise DatasetError(f"{split} data gate failed with {len(report['errors'])} error(s):\n{details}")
+    if not report["records"]:
+        raise DatasetError(f"{split} manifest is empty")
     return report
+
+
+def validate_training_data(project_root: str | Path) -> dict[str, Any]:
+    return _validate_manifest_file(project_root, "train")
 
 
 def validate_validation_data(project_root: str | Path) -> dict[str, Any]:
-    root = Path(project_root)
-    records = read_manifest(root / "data" / "validation.jsonl")
-    report = validate_manifest(records, root / "data" / "assets", expected_split="validation")
-    if not report["valid"]:
-        details = "\n".join(report["errors"][:30])
-        raise DatasetError(f"validation data gate failed with {len(report['errors'])} error(s):\n{details}")
-    if not records:
-        raise DatasetError("validation manifest is empty")
-    return report
+    return _validate_manifest_file(project_root, "validation")
 
 
 def validate_test_data(project_root: str | Path) -> dict[str, Any]:
-    root = Path(project_root)
-    records = read_manifest(root / "data" / "test.jsonl")
-    report = validate_manifest(records, root / "data" / "assets", expected_split="test")
-    if not report["valid"]:
-        details = "\n".join(report["errors"][:30])
-        raise DatasetError(f"test data gate failed with {len(report['errors'])} error(s):\n{details}")
-    if not records:
-        raise DatasetError("test manifest is empty")
-    return report
-
+    return _validate_manifest_file(project_root, "test")
 
 def _sha256_asset_file(path: Path) -> str:
     """Hash one asset's complete bytes; callers cache by its resolved path."""
@@ -206,24 +200,42 @@ def _sha256_asset_file(path: Path) -> str:
 
 
 def validate_split_disjointness(project_root: str | Path) -> dict[str, Any]:
+    """Stream three manifests while checking record, asset and source-group leakage.
+
+    The previous implementation held every JSONL row from all three splits in
+    memory at once. Keep only compact cross-split indexes and stream each row.
+    """
     root = Path(project_root)
     assets_root = (root / "data" / "assets").resolve()
-    splits = {name: read_manifest(root / "data" / f"{name}.jsonl") for name in ("train", "validation", "test")}
-    id_sets = {name: {str(item.get("id", "")).strip() for item in records} for name, records in splits.items()}
-    path_sets: dict[str, set[str]] = {name: set() for name in splits}
-    content_hash_sets: dict[str, set[str]] = {name: set() for name in splits}
-    content_details: dict[str, dict[str, list[str]]] = {name: {} for name in splits}
-    group_sets: dict[str, set[str]] = {name: set() for name in splits}
-    # The same media file can be referenced by many records. Cache its verified
-    # digest once per resolved path instead of rereading large payloads per row.
+    split_names = ("train", "validation", "test")
+    split_record_counts: dict[str, int] = {name: 0 for name in split_names}
+    id_sets: dict[str, set[str]] = {name: set() for name in split_names}
+    path_sets: dict[str, set[str]] = {name: set() for name in split_names}
+    content_hash_sets: dict[str, set[str]] = {name: set() for name in split_names}
+    content_details: dict[str, dict[str, list[str]]] = {name: {} for name in split_names}
+    group_sets: dict[str, set[str]] = {name: set() for name in split_names}
+    # Hash identical file paths only once across the three streamed manifests.
     asset_digest_cache: dict[Path, str] = {}
     errors: list[str] = []
-    for split, records in splits.items():
-        for item in records:
+
+    for split in split_names:
+        manifest = root / "data" / f"{split}.jsonl"
+        for item in iter_manifest(manifest):
+            split_record_counts[split] += 1
+            if split_record_counts[split] % 50000 == 0:
+                print(
+                    f"[OneCore split-integrity] split={split} "
+                    f"records_scanned={split_record_counts[split]} "
+                    f"unique_assets_hashed={len(asset_digest_cache)}",
+                    flush=True,
+                )
             record_id = str(item.get("id", "")).strip()
+            if record_id:
+                id_sets[split].add(record_id)
             group_id = str(item.get("source_group_id", "")).strip()
             if group_id:
                 group_sets[split].add(group_id)
+
             values: list[str] = []
             for field in ("image", "audio_features"):
                 value = item.get(field)
@@ -232,6 +244,7 @@ def validate_split_disjointness(project_root: str | Path) -> dict[str, Any]:
             frames = item.get("frames")
             if isinstance(frames, list):
                 values.extend(value for value in frames if isinstance(value, str) and value.strip())
+
             actual_asset_groups: set[str] = set()
             for relative in values:
                 target = (assets_root / relative).resolve()
@@ -247,10 +260,9 @@ def validate_split_disjointness(project_root: str | Path) -> dict[str, Any]:
                 content_hash_sets[split].add(sha)
                 actual_asset_groups.add(f"asset-sha256:{sha}")
                 samples = content_details[split].setdefault(sha, [])
-                # Three examples are enough to diagnose leakage; avoid retaining
-                # an unbounded list when a popular asset is referenced repeatedly.
                 if len(samples) < 3:
                     samples.append(f"{record_id}:{relative}")
+
             group_sets[split].update(actual_asset_groups)
             declared_groups = item.get("asset_content_group_ids")
             if isinstance(declared_groups, list):
@@ -260,6 +272,15 @@ def validate_split_disjointness(project_root: str | Path) -> dict[str, Any]:
                         f"asset content group fingerprint mismatch for {record_id} in {split}: "
                         f"declared={sorted(declared)[:10]}, actual={sorted(actual_asset_groups)[:10]}"
                     )
+
+        if split_record_counts[split] == 0:
+            raise DatasetError(f"{split} manifest is empty")
+        print(
+            f"[OneCore split-integrity] split_complete={split} "
+            f"records={split_record_counts[split]} unique_assets_hashed={len(asset_digest_cache)}",
+            flush=True,
+        )
+
     overlaps: dict[str, dict[str, int]] = {}
     pairs = (("train", "validation"), ("train", "test"), ("validation", "test"))
     for left, right in pairs:
@@ -291,11 +312,15 @@ def validate_split_disjointness(project_root: str | Path) -> dict[str, Any]:
                 f"{len(shared_asset_content)} hash(es); samples={samples}"
             )
         if shared_groups:
-            errors.append(f"source/media content group leakage between {left} and {right}: {sorted(shared_groups)[:10]}")
+            errors.append(
+                f"source/media content group leakage between {left} and {right}: "
+                f"{sorted(shared_groups)[:10]}"
+            )
+
     if errors:
         raise DatasetError("split disjointness gate failed:\n- " + "\n- ".join(errors))
     return {
         "valid": True,
-        "split_record_counts": {name: len(records) for name, records in splits.items()},
+        "split_record_counts": split_record_counts,
         "cross_split_overlaps": overlaps,
     }
