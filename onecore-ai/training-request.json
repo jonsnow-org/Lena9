@@ -2,12 +2,14 @@
   "schema": "onecore-training-request-v1",
   "stage": "train_existing",
   "steps": 150,
-  "purpose": "Start a clean OneCore v2 joint-training lineage from random initialization using the already validated five-family corpus artifact onecore-corpus-final from run 44917891284. Do not restore or warm-start from any previous checkpoint: the earlier sampler admitted bootstrap and synthetic classes and did not prove external-only optimizer samples. Reuse the existing corpus only; do not crawl, reacquire or repair video. Enforce the external-only sampler and per-session sampled-data-class proof, then run actual independent validation and test evaluation. This is the first 150-update segment of the configured 20,000-step schedule, not a completed full training run. Keep promotion blocked unless the approved evaluation gate passes.",
-  "request_id": "onecore-v2-external-only-clean-init-20261121-v41",
+  "purpose": "Start a clean OneCore v2 joint-training lineage from random initialization using the already validated five-family corpus artifact onecore-corpus-final from run 44917891284. Do not restore or warm-start from any previous checkpoint: the earlier run did not record sampled data-class provenance. Reuse the existing corpus only; do not crawl, reacquire or repair video. Run exactly 10 sequential training segments of 150 optimizer updates each (1,500 total), with five family micro-batches per optimizer update. Enforce external-only joint sampling and record per-segment sampled classes/family counts. Then execute actual independent validation and test evaluation. This covers only the current 1,500-update request, 7.5% of the configured 20,000-step schedule; it is not full training completion. Keep promotion blocked unless the approved evaluation gate passes.",
+  "request_id": "onecore-v2-clean-external-1500-20261121-v42",
   "data_profile": "expanded",
   "base_corpus_run_id": "44917891284",
   "start_fresh_joint_training": true,
   "base_corpus_artifact_name": "onecore-corpus-final",
   "resume_checkpoint_run_id": "",
-  "resume_checkpoint_artifact_name": ""
+  "resume_checkpoint_artifact_name": "",
+  "jobs": 10,
+  "total_optimizer_steps": 1500
 }

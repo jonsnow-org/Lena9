@@ -808,8 +808,8 @@ def run_training(
         "sampled_family_counts": sampled_family_counts,
         "sampled_family_counts_in_this_job": job_sampled_family_counts,
         "sampled_task_counts": sampled_task_counts,
-                "sampled_data_class_counts": sampled_data_class_counts,
-                "sampled_data_class_counts_in_this_job": job_sampled_data_class_counts,
+        "sampled_data_class_counts": sampled_data_class_counts,
+        "sampled_data_class_counts_in_this_job": job_sampled_data_class_counts,
         "sampled_task_counts_in_this_job": job_sampled_task_counts,
         "native_tldm": {
             "architecture": "shared OneCore embeddings + latent pooling + recurrent shared-block thinker + tied-LM-head discrete diffusion writer",

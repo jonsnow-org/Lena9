@@ -154,7 +154,13 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
     assert "start_fresh_joint_training" in bootstrap
     assert "./.github/actions/onecore-acquire" in bootstrap
     assert "./.github/actions/onecore-train" in bootstrap
-    assert "steps: \"15\"" in bootstrap
+    assert "steps: \"150\"" in bootstrap
+    assert bootstrap.count('steps: "150"') == 10
+    assert "exactly 10 jobs x 150 optimizer steps = 1,500 updates" in bootstrap
+    assert 'int(report.get("optimizer_step", -1)) != 1500' in bootstrap
+    assert '"text": 1500, "tool": 1500, "image": 1500, "audio": 1500, "video": 1500' in bootstrap
+    assert 'native.get("updates", 0)) != 7500' in bootstrap
+    assert 'sampled_data_class_counts") != {"external": 7500}' in bootstrap
     assert "onecore-state-train-10" in bootstrap
     assert "Notebook order: 03, 04, 03, 04, 03, 04, 03, 04, 03, 04" in bootstrap
     jobs = bootstrap_doc["jobs"]
@@ -192,7 +198,7 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
     for index, step in enumerate(segments, 1):
         assert step["id"] == f"train{index:02d}"
         assert step["uses"] == "./.github/actions/onecore-train"
-        assert step["with"]["steps"] == "15"
+        assert step["with"]["steps"] == "150"
         assert step["with"]["notebook"] == expected_notebooks[index - 1]
         if index == 1:
             assert step["with"]["setup_environment"] == "true"
@@ -223,7 +229,9 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
     assert "optimizer_step" in train_action and "checkpoint_sha256" in train_action
     assert "ONECORE_EXPECTED_STAGE" in train_action
     assert "sampled_data_class_counts_in_this_job" in train_action
+    assert "sampled_family_counts_in_this_job" in train_action
     assert "optimizer, scheduler, RNG" in train_action
+    assert 'expected_family_counts = {' in train_action
     assert "text,tool,image,audio,video" in training
     assert "cancel-in-progress: true" in bootstrap
     assert "gh workflow run onecore-training.yml" not in bootstrap

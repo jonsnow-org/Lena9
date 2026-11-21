@@ -53,8 +53,11 @@ jobs:
           stage = str(request.get("stage", "")).strip()
           if stage not in {"acquire", "train_existing", "repair_video_existing"} or request.get("start_fresh_joint_training") is not True:
               raise ValueError("The request must acquire data or validate the existing corpus, and initialize OneCore from random weights")
-          if int(request.get("steps", 0)) != 150:
-              raise ValueError("This staged workflow is configured for exactly 150 optimizer steps")
+          per_job_steps = int(request.get("steps", 0))
+          training_jobs = int(request.get("jobs", 0))
+          total_optimizer_steps = int(request.get("total_optimizer_steps", 0))
+          if per_job_steps != 150 or training_jobs != 10 or total_optimizer_steps != per_job_steps * training_jobs:
+              raise ValueError("Current Spec v2 request must be exactly 10 jobs x 150 optimizer steps = 1,500 updates")
           corpus = str(request.get("base_corpus_run_id", "")).strip()
           if not re.fullmatch(r"[0-9]+", corpus):
               raise ValueError("A preserved base corpus artifact run ID is required")
@@ -73,6 +76,8 @@ jobs:
           print(f"base_corpus_run_id={corpus}")
           print(f"base_corpus_artifact_name={artifact}")
           print(f"request_stage={stage}")
+          print(f"training_jobs={training_jobs}")
+          print(f"total_optimizer_steps={total_optimizer_steps}")
           print(f"resume_checkpoint_run_id={resume_run}")
           print(f"resume_checkpoint_artifact_name={resume_artifact}")
           print(f"resume_checkpoint_session={resume_session}")
@@ -446,7 +451,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   train_all:
-    name: Ten sequential CPU training sessions on one persistent runner
+    name: Ten sequential 150-step CPU training sessions on one persistent runner
     needs: [dataset_gate, prepare]
     if: ${{ always() && needs.dataset_gate.result == 'success' }}
     runs-on: ubuntu-24.04
@@ -471,7 +476,7 @@ jobs:
           previous_checkpoint_artifact_name: ""
           stage: "joint"
           notebook: "03_text_pretraining.ipynb"
-          steps: "15"
+          steps: "150"
           output_artifact_name: onecore-state-train-01
       - id: train02
         name: Training session 2 of 10 — multimodal — 04_multimodal_curriculum.ipynb
@@ -487,7 +492,7 @@ jobs:
           previous_checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '1' && '' || 'onecore-state-train-01' }}
           stage: "multimodal"
           notebook: "04_multimodal_curriculum.ipynb"
-          steps: "15"
+          steps: "150"
           output_artifact_name: onecore-state-train-02
       - id: train03
         name: Training session 3 of 10 — multimodal — 03_text_pretraining.ipynb
@@ -503,7 +508,7 @@ jobs:
           previous_checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '2' && '' || 'onecore-state-train-02' }}
           stage: "multimodal"
           notebook: "03_text_pretraining.ipynb"
-          steps: "15"
+          steps: "150"
           output_artifact_name: onecore-state-train-03
       - id: train04
         name: Training session 4 of 10 — multimodal — 04_multimodal_curriculum.ipynb
@@ -519,7 +524,7 @@ jobs:
           previous_checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '3' && '' || 'onecore-state-train-03' }}
           stage: "multimodal"
           notebook: "04_multimodal_curriculum.ipynb"
-          steps: "15"
+          steps: "150"
           output_artifact_name: onecore-state-train-04
       - id: train05
         name: Training session 5 of 10 — multimodal — 03_text_pretraining.ipynb
@@ -535,7 +540,7 @@ jobs:
           previous_checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '4' && '' || 'onecore-state-train-04' }}
           stage: "multimodal"
           notebook: "03_text_pretraining.ipynb"
-          steps: "15"
+          steps: "150"
           output_artifact_name: onecore-state-train-05
       - id: train06
         name: Training session 6 of 10 — multimodal — 04_multimodal_curriculum.ipynb
@@ -551,7 +556,7 @@ jobs:
           previous_checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '5' && '' || 'onecore-state-train-05' }}
           stage: "multimodal"
           notebook: "04_multimodal_curriculum.ipynb"
-          steps: "15"
+          steps: "150"
           output_artifact_name: onecore-state-train-06
       - id: train07
         name: Training session 7 of 10 — multimodal — 03_text_pretraining.ipynb
@@ -567,7 +572,7 @@ jobs:
           previous_checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '6' && '' || 'onecore-state-train-06' }}
           stage: "multimodal"
           notebook: "03_text_pretraining.ipynb"
-          steps: "15"
+          steps: "150"
           output_artifact_name: onecore-state-train-07
       - id: train08
         name: Training session 8 of 10 — multimodal — 04_multimodal_curriculum.ipynb
@@ -583,7 +588,7 @@ jobs:
           previous_checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '7' && '' || 'onecore-state-train-07' }}
           stage: "multimodal"
           notebook: "04_multimodal_curriculum.ipynb"
-          steps: "15"
+          steps: "150"
           output_artifact_name: onecore-state-train-08
       - id: train09
         name: Training session 9 of 10 — multimodal — 03_text_pretraining.ipynb
@@ -599,7 +604,7 @@ jobs:
           previous_checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '8' && '' || 'onecore-state-train-08' }}
           stage: "multimodal"
           notebook: "03_text_pretraining.ipynb"
-          steps: "15"
+          steps: "150"
           output_artifact_name: onecore-state-train-09
       - id: train10
         name: Training session 10 of 10 — multimodal — 04_multimodal_curriculum.ipynb
@@ -615,7 +620,7 @@ jobs:
           previous_checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '9' && '' || 'onecore-state-train-09' }}
           stage: "multimodal"
           notebook: "04_multimodal_curriculum.ipynb"
-          steps: "15"
+          steps: "150"
           output_artifact_name: onecore-state-train-10
       - name: Execute independent validation and held-out test on the same restored corpus
         shell: bash
@@ -687,7 +692,7 @@ jobs:
         with:
           name: onecore-evaluation-${{ github.run_id }}
           path: onecore-ai/run-state
-      - name: Confirm 150 optimizer steps and five-family balance
+      - name: Confirm 1,500 optimizer steps and five-family balance
         shell: bash
         run: |
           python - <<'PY'
@@ -696,11 +701,11 @@ jobs:
           report = json.loads(Path("onecore-ai/run-state/train_result.json").read_text(encoding="utf-8"))
           checkpoint = Path("onecore-ai/run-state/checkpoint.pt")
           digest = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
-          if int(report.get("optimizer_step", -1)) != 150:
-              raise ValueError(f"Expected 150 optimizer steps; found {report.get('optimizer_step')}")
+          if int(report.get("optimizer_step", -1)) != 1500:
+              raise ValueError(f"Expected 1,500 optimizer steps; found {report.get('optimizer_step')}")
           if digest != report.get("checkpoint", {}).get("sha256"):
               raise ValueError("Checkpoint SHA-256 differs from train_result.json")
-          expected = {"text": 150, "tool": 150, "image": 150, "audio": 150, "video": 150}
+          expected = {"text": 1500, "tool": 1500, "image": 1500, "audio": 1500, "video": 1500}
           observed = report.get("sampled_family_counts", {})
           if report.get("sampling_policy") != "one external sample from each of text/tool/image/audio/video per optimizer step":
               raise ValueError("Final report does not attest to five-family joint training")
@@ -713,11 +718,11 @@ jobs:
               raise ValueError(f"OneCore parameter count changed: {report.get('parameter_count')}")
           if float(native.get("diffusion_loss_weight", -1)) != 0.15:
               raise ValueError(f"Unexpected native diffusion loss weight: {native}")
-          if int(native.get("updates", 0)) != 750:
-              raise ValueError(f"Expected 750 native diffusion updates (5 families × 150 steps): {native}")
-          if report.get("sampled_data_class_counts") != {"external": 750}:
+          if int(native.get("updates", 0)) != 7500:
+              raise ValueError(f"Expected 7,500 native diffusion updates (5 families × 1,500 steps): {native}")
+          if report.get("sampled_data_class_counts") != {"external": 7500}:
               raise ValueError(
-                  "150-step joint lineage must sample exactly 750 external records and no bootstrap/synthetic records: "
+                  "1,500-step joint lineage must sample exactly 7,500 external records and no bootstrap/synthetic records: "
                   f"{report.get('sampled_data_class_counts')}"
               )
           if any(
