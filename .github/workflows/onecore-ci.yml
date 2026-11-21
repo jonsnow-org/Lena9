@@ -64,6 +64,8 @@ jobs:
           import math
           from onecore.config import load_config
           from onecore.flops import joint_step_train_flops, text_step_train_flops
+          from pathlib import Path
+          import json, yaml
           from onecore.model import OneCore
           cfg, train, raw = load_config("onecore-ai/configs/phone-research.yaml")
           assert train.total_steps == 20000 and train.warmup_steps == 200
@@ -76,6 +78,21 @@ jobs:
           assert joint_step_train_flops(128) == 1_296_720_199_680
           assert joint_step_train_flops(512) == 5_258_827_530_240
           assert text_step_train_flops(128) == 1_037_376_159_744
+          notebook = json.loads(Path("onecore-ai/notebooks/02_data_gate.ipynb").read_text(encoding="utf-8"))
+          notebook_source = "\\n".join(
+              "".join(cell.get("source", [])) for cell in notebook["cells"] if cell.get("cell_type") == "code"
+          )
+          assert 'ONECORE_REQUIRED_TASKS", "text,tool,image,audio,video"' in notebook_source
+          assert 'ONECORE_MIN_TRAIN_RECORDS", "100"' in notebook_source
+          assert 'ONECORE_MIN_HOLDOUT_RECORDS", "10"' in notebook_source
+          action = yaml.safe_load(Path(".github/actions/onecore-acquire/action.yml").read_text(encoding="utf-8"))
+          assert action["inputs"]["required_tasks"]["default"] == "text,tool,image,audio,video"
+          assert action["inputs"]["min_train_records"]["default"] == "100"
+          assert action["inputs"]["min_holdout_records"]["default"] == "10"
+          training_workflow = Path(".github/workflows/onecore-training.yml").read_text(encoding="utf-8")
+          assert 'ONECORE_REQUIRED_TASKS: "text,tool,image,audio,video"' in training_workflow
+          assert 'ONECORE_MIN_TRAIN_RECORDS: "100"' in training_workflow
+          assert 'ONECORE_MIN_HOLDOUT_RECORDS: "10"' in training_workflow
           print({
               "parameters": model.count_parameters(),
               "vocab": cfg.vocab_size,
