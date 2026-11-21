@@ -173,7 +173,7 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
         assert f"resume_checkpoint_session == '{index-1}'" in step["if"]
         assert f"resume_checkpoint_session == '{index-1}'" in step["with"]["setup_environment"]
         assert f"resume_checkpoint_session == '{index-1}'" in step["with"]["restore_corpus"]
-        assert "checkpoint_run_id:" in step["with"] or index > 2
+        assert "checkpoint_run_id" in step["with"]
     expected_notebooks = [
         "03_text_pretraining.ipynb", "04_multimodal_curriculum.ipynb",
         "03_text_pretraining.ipynb", "04_multimodal_curriculum.ipynb",
@@ -193,7 +193,7 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
         else:
             assert f"resume_checkpoint_session == '{index-1}'" in step["with"]["setup_environment"]
             assert f"resume_checkpoint_session == '{index-1}'" in step["with"]["restore_corpus"]
-            assert "checkpoint_run_id:" in step["with"]
+            assert "checkpoint_run_id" in step["with"]
     assert "artifact_run_id == github.run_id" in bootstrap
     assert train_job["outputs"]["optimizer_step"] == "${{ steps.train10.outputs.optimizer_step }}"
     evaluate = jobs["evaluate"]
