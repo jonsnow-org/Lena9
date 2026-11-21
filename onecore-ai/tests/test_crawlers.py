@@ -141,8 +141,7 @@ def test_fineweb2_and_stack_v2_are_real_streaming_sources_with_notebook_ownershi
     assert stack["notebook_id"] == "03_text_pretraining"
     assert stack["required_for_training"] is False
     assert stack["minimum_accepted_records"] >= 10_000
-    assert "MIT" in stack["license_allowlist"]
-    assert "GPL-3.0-only" not in stack["license_allowlist"]
+    assert "license_allowlist" not in stack
     assert stack["split_group_field"] == "directory_id"
     assert stack["max_content_bytes"] <= 1_048_576
 
@@ -247,9 +246,22 @@ def test_stack_v2_filters_before_fetching_swh_blobs(tmp_path, monkeypatch):
     assert good["code_license_type"] == "permissive"
     assert calls == ["f" * 40]
 
+    # License metadata is provenance only: missing, unknown and copyleft
+    # declarations must not block acquisition.
+    accepted = []
+    for index, changes in enumerate((
+        {"license_type": "no_license", "detected_licenses": [], "gha_license_id": ""},
+        {"license_type": "copyleft", "detected_licenses": ["GPL-3.0-only"]},
+    ), start=1):
+        row = dict(base)
+        row.update(changes)
+        record = acquire._record_from_row(row, dict(source), f"license-independent-{index}", "train", assets)
+        assert record is not None and record["task"] == "text"
+        accepted.append(record)
+    assert calls == ["f" * 40] * 3
+
+    # Retain non-license quality and secret-protection gates.
     for changes in (
-        {"license_type": "no_license"},
-        {"detected_licenses": ["GPL-3.0-only"]},
         {"is_vendor": True},
         {"is_generated": True},
         {"language": "Brainfuck"},
@@ -257,7 +269,7 @@ def test_stack_v2_filters_before_fetching_swh_blobs(tmp_path, monkeypatch):
         row = dict(base)
         row.update(changes)
         assert acquire._record_from_row(row, dict(source), "rejected-row", "train", assets) is None
-    assert calls == ["f" * 40], "rejected files must not trigger Software Heritage content requests"
+    assert calls == ["f" * 40] * 3, "quality-filtered files must not trigger content requests"
 
 
 def test_source_registry_routes_text_code_and_multimodal_crawlers_to_their_own_notebooks():
