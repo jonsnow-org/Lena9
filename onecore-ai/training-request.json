@@ -2,12 +2,12 @@
   "schema": "onecore-training-request-v1",
   "stage": "train_existing",
   "steps": 150,
-  "purpose": "Continue OneCore v2 from the verified successful session-1 checkpoint in workflow run 44907540935 (artifact onecore-state-train-01, ID 14709144980, 635614781 bytes). Preserve the completed first 15 optimizer steps; do not restart session 1 or random initialization. Reuse the known-good five-family corpus artifact onecore-corpus-final from run 44907540935 (artifact ID 14708864250); the replacement corpus artifact from run 44911215262 was removed by an over-broad cleanup step, now fixed to delete only current-run intermediate snapshots. Re-run the strict data/split gate without crawling or video repair. Resume session 2 with authenticated cross-run checkpoint download, install CPU PyTorch/dependencies before checkpoint verification, and restore the corpus into the separate training runner before training. Then continue the remaining nine sessions (135 steps) to exactly 150 total, preserving model/optimizer/scheduler/RNG/tokenizer lineage. Do not use the incompatible historical synthetic step-210 checkpoint. Keep promotion blocked pending separately approved validation/test thresholds.",
-  "request_id": "onecore-v2-resume-session01-20261121-v37",
+  "purpose": "Continue the same OneCore v2 lineage from the verified checkpoint produced by training session 2 in workflow run 44913492130 (artifact onecore-state-train-02, ID 14712032199, 635812818 bytes). Session 2 successfully completed; do not repeat sessions 1 or 2. Reuse the already validated corpus artifact onecore-corpus-final from the same run (artifact ID 14710984266), run the strict data/split gate against it without crawling or video repair, then resume at session 3 with authenticated artifact download, CPU PyTorch/dependencies and corpus restored before checkpoint verification/training. Execute sessions 3 through 10 only (8 sessions x 15 optimizer updates) to reach exactly 150 cumulative optimizer steps, preserving model weights, AdamW moments, scheduler, RNG, tokenizer and lineage. Never reset step count or use the historical synthetic step-210 checkpoint. Keep promotion blocked pending approved evaluation thresholds.",
+  "request_id": "onecore-v2-resume-session02-20261121-v38",
   "data_profile": "expanded",
-  "base_corpus_run_id": "44907540935",
+  "base_corpus_run_id": "44913492130",
   "start_fresh_joint_training": true,
   "base_corpus_artifact_name": "onecore-corpus-final",
-  "resume_checkpoint_run_id": "44907540935",
-  "resume_checkpoint_artifact_name": "onecore-state-train-01"
+  "resume_checkpoint_run_id": "44913492130",
+  "resume_checkpoint_artifact_name": "onecore-state-train-02"
 }
