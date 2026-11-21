@@ -25,6 +25,7 @@ class ModelConfig:
     audio_group_frames: int = 4
     max_video_frames: int = 4
     dropout: float = 0.05
+    expected_parameter_count: int = 57_579_201
 
     def __post_init__(self) -> None:
         if self.width <= 0 or self.unique_blocks <= 0 or self.recurrent_cycles <= 0:
@@ -74,6 +75,10 @@ class ModelConfig:
             raise ValueError(f"special token offset {offset} is out of range")
         return self.special_start + offset
 
+    @property
+    def hidden_size(self) -> int:
+        return int(self.width * 8 / 3)
+
     def to_dict(self) -> dict[str, Any]:
         return asdict(self) | {"vocab_size": self.vocab_size}
 
@@ -89,7 +94,8 @@ class ModelConfig:
 @dataclass(frozen=True)
 class TrainConfig:
     learning_rate: float = 3e-4
-    weight_decay: float = 0.01
+    weight_decay: float = 0.1
+    adam_betas: tuple[float, float] = (0.9, 0.95)
     gradient_accumulation: int = 4
     max_grad_norm: float = 1.0
     checkpoint_every: int = 25
@@ -102,6 +108,8 @@ class TrainConfig:
     def __post_init__(self) -> None:
         if self.learning_rate <= 0 or self.gradient_accumulation <= 0:
             raise ValueError("learning rate and gradient accumulation must be positive")
+        if len(self.adam_betas) != 2 or not all(0.0 <= value < 1.0 for value in self.adam_betas):
+            raise ValueError("adam_betas must contain two values in [0, 1)")
         if self.max_grad_norm <= 0:
             raise ValueError("max_grad_norm must be positive")
         if self.max_steps_per_job <= 0 or self.checkpoint_every <= 0 or self.total_steps <= 0:
@@ -118,8 +126,26 @@ def load_config(path: str | Path) -> tuple[ModelConfig, TrainConfig, dict[str, A
     raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
     if not isinstance(raw, dict) or not isinstance(raw.get("model"), dict):
         raise ValueError("config must contain a model mapping")
+    required_model = {"expected_parameter_count": 57_579_201}
+    for key, expected in required_model.items():
+        if raw["model"].get(key) != expected:
+            raise ValueError(f"model.{key} must equal {expected} (Corrected Specification v2)")
     model = ModelConfig.from_mapping(raw["model"])
+    if model.vocab_size != 5144:
+        raise ValueError("model vocabulary must be 5144 = 4096+512+256+256+24")
+    if model.hidden_size != 2730:
+        raise ValueError("derived SwiGLU hidden_size must be int(width*8/3) = 2730")
     train_values = raw.get("training", {})
+    required_training = (
+        "warmup_steps", "total_steps", "learning_rate", "weight_decay",
+        "max_grad_norm", "tldm_diffusion_weight", "adam_betas",
+    )
+    for key in required_training:
+        if key not in train_values:
+            raise ValueError(
+                f"training.{key} must be explicit in config; silent defaults are forbidden "
+                "(Corrected Specification v2)"
+            )
     allowed = set(TrainConfig.__dataclass_fields__)
     unknown = set(train_values) - allowed
     if unknown:
