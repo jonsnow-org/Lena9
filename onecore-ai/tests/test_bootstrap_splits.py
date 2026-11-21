@@ -166,8 +166,8 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
     assert "github-token: ${{ github.token }}" in train_action
     assert "repository: ${{ github.repository }}" in train_action
     assert "run-id: ${{ inputs.checkpoint_run_id != '' && inputs.checkpoint_run_id || github.run_id }}" in train_action
-    assert "repository: ${{ github.repository }}" in train_action
     assert "run-id: ${{ inputs.corpus_run_id != '' && inputs.corpus_run_id || github.run_id }}" in train_action
+    assert "ONECORE_PARENT_RUN_ID: ${{ inputs.stage == 'multimodal' && (inputs.checkpoint_run_id != '' && inputs.checkpoint_run_id || github.run_id) || '' }}" in train_action
     assert "resume_checkpoint_session:" in bootstrap
     assert train_job["timeout-minutes"] == 360
     segments = [step for step in train_job["steps"] if str(step.get("id", "")).startswith("train")]
