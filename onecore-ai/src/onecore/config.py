@@ -110,15 +110,37 @@ class ModelConfig:
         return int(self.width * 8 / 3)
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self) | {"vocab_size": self.vocab_size}
+        return asdict(self) | {"vocab_size": self.vocab_size, "hidden_size": self.hidden_size}
 
     @classmethod
     def from_mapping(cls, values: dict[str, Any]) -> "ModelConfig":
+        normalized = dict(values)
+        aliases = {
+            "n_blocks": "unique_blocks",
+            "n_cycles": "recurrent_cycles",
+            "n_heads": "attention_heads",
+        }
+        for alias, target in aliases.items():
+            if alias in normalized:
+                if target in normalized:
+                    raise ValueError(f"specify only one of {alias} or {target}")
+                normalized[target] = normalized.pop(alias)
+        expected_vocab = normalized.pop("vocab_size", None)
+        expected_hidden = normalized.pop("hidden_size", None)
         allowed = set(cls.__dataclass_fields__)
-        unknown = set(values) - allowed
+        unknown = set(normalized) - allowed
         if unknown:
             raise ValueError(f"unknown model config keys: {sorted(unknown)}")
-        return cls(**values)
+        model = cls(**normalized)
+        if expected_vocab is not None and int(expected_vocab) != model.vocab_size:
+            raise ValueError(
+                f"model.vocab_size must equal {model.vocab_size} from the configured vocabulary ranges"
+            )
+        if expected_hidden is not None and int(expected_hidden) != model.hidden_size:
+            raise ValueError(
+                f"model.hidden_size must equal {model.hidden_size} from int(width * 8 / 3)"
+            )
+        return model
 
 
 @dataclass(frozen=True)
