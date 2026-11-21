@@ -2,12 +2,12 @@
   "schema": "onecore-training-request-v1",
   "stage": "train_existing",
   "steps": 150,
-  "purpose": "Continue OneCore v2 from the successful session-2 checkpoint in run 44913492130 (artifact onecore-state-train-02, ID 14712032199, 635812818 bytes). Do not repeat sessions 1 or 2. Reuse the already validated corpus onecore-corpus-final from run 44913492130 (artifact ID 14710984266); repeat only strict integrity/split verification without crawling or video repair. Resume at session 3; restore the corpus and checkpoint cross-run using explicit repository and source run IDs, install CPU dependencies before verification, and record the actual parent run in checkpoint lineage. Run sessions 3–10 only (eight x 15 optimizer updates) to reach exactly 150 cumulative steps. Preserve weights, optimizer moments, scheduler, RNG, tokenizer and all data lineage. Do not reset or use the incompatible synthetic step-210 checkpoint. Keep promotion blocked until approved validation/test criteria pass.",
-  "request_id": "onecore-v2-resume-session02-20261121-v40",
+  "purpose": "Start a clean OneCore v2 joint-training lineage from random initialization using the already validated five-family corpus artifact onecore-corpus-final from run 44917891284. Do not restore or warm-start from any previous checkpoint: the earlier sampler admitted bootstrap and synthetic classes and did not prove external-only optimizer samples. Reuse the existing corpus only; do not crawl, reacquire or repair video. Enforce the external-only sampler and per-session sampled-data-class proof, then run actual independent validation and test evaluation. This is the first 150-update segment of the configured 20,000-step schedule, not a completed full training run. Keep promotion blocked unless the approved evaluation gate passes.",
+  "request_id": "onecore-v2-external-only-clean-init-20261121-v41",
   "data_profile": "expanded",
-  "base_corpus_run_id": "44913492130",
+  "base_corpus_run_id": "44917891284",
   "start_fresh_joint_training": true,
   "base_corpus_artifact_name": "onecore-corpus-final",
-  "resume_checkpoint_run_id": "44913492130",
-  "resume_checkpoint_artifact_name": "onecore-state-train-02"
+  "resume_checkpoint_run_id": "",
+  "resume_checkpoint_artifact_name": ""
 }
