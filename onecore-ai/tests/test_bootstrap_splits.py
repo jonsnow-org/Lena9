@@ -162,9 +162,12 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
     assert "resume_checkpoint_run_id" in bootstrap
     assert "resume_checkpoint_artifact_name" in bootstrap
     assert "checkpoint_run_id" in train_doc["inputs"]
+    assert "corpus_run_id" in train_doc["inputs"]
     assert "github-token: ${{ github.token }}" in train_action
     assert "repository: ${{ github.repository }}" in train_action
     assert "run-id: ${{ inputs.checkpoint_run_id != '' && inputs.checkpoint_run_id || github.run_id }}" in train_action
+    assert "repository: ${{ github.repository }}" in train_action
+    assert "run-id: ${{ inputs.corpus_run_id != '' && inputs.corpus_run_id || github.run_id }}" in train_action
     assert "resume_checkpoint_session:" in bootstrap
     assert train_job["timeout-minutes"] == 360
     segments = [step for step in train_job["steps"] if str(step.get("id", "")).startswith("train")]
@@ -173,6 +176,7 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
         assert f"resume_checkpoint_session == '{index-1}'" in step["if"]
         assert f"resume_checkpoint_session == '{index-1}'" in step["with"]["setup_environment"]
         assert f"resume_checkpoint_session == '{index-1}'" in step["with"]["restore_corpus"]
+        assert "corpus_run_id" in step["with"]
         assert "checkpoint_run_id" in step["with"]
     expected_notebooks = [
         "03_text_pretraining.ipynb", "04_multimodal_curriculum.ipynb",
@@ -193,6 +197,7 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
         else:
             assert f"resume_checkpoint_session == '{index-1}'" in step["with"]["setup_environment"]
             assert f"resume_checkpoint_session == '{index-1}'" in step["with"]["restore_corpus"]
+            assert "corpus_run_id" in step["with"]
             assert "checkpoint_run_id" in step["with"]
     assert "artifact_run_id == github.run_id" in bootstrap
     assert train_job["outputs"]["optimizer_step"] == "${{ steps.train10.outputs.optimizer_step }}"
@@ -209,6 +214,9 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
     for step_name in ("Restore the validated corpus", "Restore the validated corpus snapshot (tar or legacy layout)"):
         step = next(item for item in train_steps if item.get("name") == step_name)
         assert step["if"] == "${{ inputs.restore_corpus == 'true' }}"
+    corpus_download = next(item for item in train_steps if item.get("name") == "Restore the validated corpus")
+    assert corpus_download["with"]["repository"] == "${{ github.repository }}"
+    assert "inputs.corpus_run_id" in corpus_download["with"]["run-id"]
     assert "optimizer_step" in train_action and "checkpoint_sha256" in train_action
     assert "optimizer, scheduler, RNG" in train_action
     assert "text,tool,image,audio,video" in training
