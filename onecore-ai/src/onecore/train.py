@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import random
 from pathlib import Path
@@ -694,6 +695,15 @@ def run_training(
         "last_loss": losses[-1] if losses else None,
         "scheduler_step": scheduler.last_epoch,
     }
+    if stage == "smoke":
+        if first_language_loss is None or not math.isfinite(first_language_loss):
+            raise FloatingPointError("smoke step did not produce a finite first language loss")
+        reference_loss = math.log(cfg.vocab_size)
+        if abs(first_language_loss - reference_loss) > 1.0:
+            raise FloatingPointError(
+                f"random-init language loss {first_language_loss:.4f} is not near "
+                f"ln({cfg.vocab_size})={reference_loss:.4f}; check tokenizer/vocabulary offsets/loss masking"
+            )
     if stage == "joint":
         expected_family_counts = {family: steps for family in JOINT_FAMILY_TASKS}
         if job_sampled_family_counts != expected_family_counts:
