@@ -90,9 +90,10 @@ jobs:
           notebook_source = "\\n".join(
               "".join(cell.get("source", [])) for cell in notebook["cells"] if cell.get("cell_type") == "code"
           )
-          assert 'ONECORE_REQUIRED_TASKS", "text,tool,image,audio,video"' in notebook_source
-          assert 'ONECORE_MIN_TRAIN_RECORDS", "100"' in notebook_source
-          assert 'ONECORE_MIN_HOLDOUT_RECORDS", "10"' in notebook_source
+          assert 'data_gate_config = project_config.get("data_gate", {})' in notebook_source
+          assert 'data_gate_config.get("required_families"' in notebook_source
+          assert 'data_gate_config.get("min_train_per_family", 100)' in notebook_source
+          assert 'data_gate_config.get("min_holdout_per_family", 10)' in notebook_source
           action = yaml.safe_load(Path(".github/actions/onecore-acquire/action.yml").read_text(encoding="utf-8"))
           assert action["inputs"]["required_tasks"]["default"] == "text,tool,image,audio,video"
           assert action["inputs"]["min_train_records"]["default"] == "100"
