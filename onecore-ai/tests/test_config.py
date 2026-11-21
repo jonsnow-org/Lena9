@@ -12,13 +12,20 @@ def test_repository_config_loads_without_undefined_fields():
     from onecore.model import OneCore
     instantiated = OneCore(model)
     count = instantiated.count_parameters()
-    assert 50_000_000 <= count <= 70_000_000, f'initial OneCore research budget out of agreed range: {count:,}'
+    assert count == 57_579_201, f'Corrected Specification v2 exact parameter count changed: {count:,}'
     assert model.vocab_size == (
         model.text_vocab_size + model.vision_codebook_size
         + model.audio_codebook_size + model.motion_codebook_size
         + model.special_tokens
     )
     assert train.gradient_accumulation == 4
+    assert train.weight_decay == 0.1
+    assert tuple(train.adam_betas) == (0.9, 0.95)
+    assert train.warmup_steps == 200
+    assert train.total_steps == 20000
+    assert model.vocab_size == 5144
+    assert model.hidden_size == 2730
+    assert raw['model']['expected_parameter_count'] == 57579201
     assert train.tldm_diffusion_weight == 0.15
     assert train.total_steps > train.warmup_steps
     assert raw["seed"] == 20261115
