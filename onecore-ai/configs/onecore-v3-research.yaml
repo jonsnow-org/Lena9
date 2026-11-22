@@ -12,6 +12,7 @@ model:
   audio_hidden_channels: 256
   audio_codebook_size: 1024
   audio_quantizer_stages: 8
+  audio_channels: 2
   temporal_layers: 2
   max_image_context_tokens: 256
   max_video_context_tokens: 256
@@ -26,7 +27,7 @@ model:
 # production sequence limit until peak-memory and throughput benchmarks exist.
 sequence_policy:
   image: variable_height_width_divisible_by_patch_size
-  audio: variable_sample_length_chunked_by_runtime_budget
+  audio: variable_sample_length_chunked_by_runtime_budget_with_mono_stereo_channel_metadata
   video: variable_frame_count_timestamped
   attention_complexity: quadratic
 training:
