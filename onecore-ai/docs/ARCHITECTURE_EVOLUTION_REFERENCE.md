@@ -160,7 +160,18 @@ Before any v3 training:
 
 **Stop conditions:** Any missing external holdout family, lossy-only source preservation, shape mismatch, unbounded memory growth, codec round-trip failure, temporal discontinuity, audio intelligibility failure, cross-split leakage, or unapproved threshold blocks the relevant phase.
 
-## 9. Immediate implementation log
+## 9. Existing corpus diagnostic (Run #48)
+
+The previously retained diagnostic artifact for corpus Run #48 reports:
+- 58 registered sources; 18 completed, 8 unavailable, 24 pending; `acquisition_complete=false`.
+- Its legacy report still marked `training_ready=true`, but that flag is not trustworthy for the external-only quota until recomputed with the corrected gate.
+- Reported train/validation/test family counts include non-external bootstrap/synthetic rows. In particular, validation and test image-caption counts are each 12, matching the known bootstrap baseline count; this does **not** establish 10 external image holdout records.
+- The executed data-gate notebook's aggregate modality counts also mix provenance classes. Therefore no claim is made that the current corpus passes the corrected external-only 100/10/10 gate.
+- The full corpus artifact is approximately 15.8 GB. The small diagnostic artifact does not contain all manifests/assets, so exact corrected external counts cannot be calculated from it alone.
+
+**Action:** Do not reacquire all sources. Re-run only the corrected provenance/usable-payload audit against the existing full corpus artifact when it is available to the workflow, then resume only missing sources/splits/modalities using stored cursors.
+
+## 10. Immediate implementation log
 
 - [x] Corrected `task_coverage()` to count only `external_record_is_trainable(record)` records with usable payloads.
 - [x] Added regression coverage: valid bootstrap payloads for all five families do not satisfy external quotas; bootstrap-only image payloads cause the gate to fail.
