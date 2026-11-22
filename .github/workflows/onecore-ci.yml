@@ -316,6 +316,13 @@ jobs:
           assert jobs["train_all"]["needs"] == ["dataset_gate", "prepare"]
           assert "resume_checkpoint_run_id" in bootstrap
           assert "resume_checkpoint_artifact_name" in bootstrap
+          train_source = Path("onecore-ai/src/onecore/train.py").read_text(encoding="utf-8")
+          assert 'allowed_data_classes={"external"}' in train_source
+          assert "tokenizer_corpus_data_class_counts" in train_source
+          assert "checkpoint tokenizer corpus provenance is missing or non-external" in train_source
+          train_action_source = Path(".github/actions/onecore-train/action.yml").read_text(encoding="utf-8")
+          assert "tokenizer corpus must contain external records only" in train_action_source
+          assert "checkpoint tokenizer corpus provenance is missing or not external-only" in train_action_source
           train_action_text = Path(".github/actions/onecore-train/action.yml").read_text(encoding="utf-8")
           assert "checkpoint_run_id:" in train_action_text
           assert "github-token:" in train_action_text

@@ -55,7 +55,7 @@ The path adds **zero trainable parameters**. Compressor, thinker, and writer reu
 
 The current deterministic bootstrap contains 360 training, 87 validation, and 87 test records. It exercises the pipeline only and is not broad world knowledge. The training iterator reads only `train.jsonl`; validation/test are separately hashed and checked for record-ID, asset-path, and exact asset-content leakage.
 
-Data classes separate `bootstrap`, `synthetic_unverified`, `synthetic_verified`, `external_reviewed`, `external_staged`, and `owner_curated`. Every usable record in the train split enters tokenizer fitting and optimizer updates, including imported sources, bootstrap examples, synthetic curricula, and owner-created data. Validation and test preserve every available data class while remaining isolated from gradient updates. Reports show per-class contribution counts; promotion depends on independent held-out evaluation, modality coverage, and measured quality thresholds.
+Data classes separate `bootstrap`, `synthetic_unverified`, `synthetic_verified`, `external_reviewed`, `external_staged`, and `owner_curated`. Real tokenizer fitting and optimizer updates are restricted to `external` train records only. Bootstrap, synthetic, and owner-curated records remain available for engineering tests and diagnostics but are excluded from the real tokenizer corpus and optimizer inputs. Validation and test stay in independent manifests and never enter gradient updates. Reports distinguish source inventory, tokenizer-corpus provenance, and actual optimizer contributions.
 
 
 ## GitHub-only training and checkpoint retention
@@ -66,6 +66,6 @@ Artifacts are retained for 90 days. Durable GitHub Release upload currently rece
 
 ## Current research status
 
-The earlier 10-step engineering run and 100-step synthetic-curriculum experiment are historical pipeline diagnostics only. The current data run starts from fresh random initialization and includes all usable records regardless of data class. Evaluation measures held-out codebook usage, entropy, perplexity, dead codes, and max-code concentration; promotion remains blocked until independent modality coverage and calibrated numeric quality thresholds are in place.
+The earlier 10-step engineering run and 100-step synthetic-curriculum experiment are historical pipeline diagnostics only. The clean real-training path is required to use a fresh random initialization and an external-only tokenizer corpus plus external-only optimizer samples. Any checkpoint whose tokenizer-corpus provenance is missing or includes bootstrap/synthetic/owner-curated records is not eligible for continuation in the clean lineage. Evaluation measures held-out codebook usage, entropy, perplexity, dead codes, and max-code concentration; promotion remains blocked until independent modality coverage and approved quality thresholds are in place.
 
 See `docs/corrected-spec-v2.md` for the exact engineering contract; `docs/training-operations.md`, `data/README.md`, and `notebooks/README.md` contain operational details.

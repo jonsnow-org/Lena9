@@ -20,7 +20,7 @@ The manual `OneCore — staged training` workflow remains available for operator
 
 ## Reusing an existing corpus before acquisition
 
-Set `stage` to `train_existing` in `onecore-ai/training-request.json` to validate and train directly from the referenced `base_corpus_run_id` / `base_corpus_artifact_name`. This mode skips the acquisition job entirely. It restores the saved artifact once in the dataset-gate job, checks the five external task families and the independent train/validation/test splits, and proceeds to the existing 150-step from-scratch training chain only when the payload gate passes. If it fails, the gate reports the exact missing family/split counts; switch back to `acquire` only for the missing source families rather than rerunning the entire registry.
+Set `stage` to `train_existing` in `onecore-ai/training-request.json` to reuse the previously validated `base_corpus_run_id` / `base_corpus_artifact_name` without starting acquisition. For an immutable corpus artifact that already passed the five-family 100/10/10 gate, the workflow skips repeating the full payload/split scan and proceeds directly to the selected training lineage. Run the data gate again only when the corpus artifact, manifests, assets, or source revisions have changed. If the original gate failed, repair only the missing family/split or the source-specific decoder rather than rerunning the entire registry.
 
 For a corpus that is complete except for decoded video payloads, set `stage` to `repair_video_existing`. This restores the referenced snapshot and resumes only the saved `videos4camera_bench` cursor for a bounded 20-minute pass; all other crawlers stay skipped. The gate keeps the 100/10/10 thresholds. If more video work is needed, it uploads `onecore-corpus-video-repair-progress` in the current run; point the next request to that run and artifact to continue from the committed cursor. If diagnostics show video decode/conversion errors rather than low volume, retry from the original base artifact after applying the decoder fix, not from a cursor that may have passed unreadable rows.
 
@@ -32,7 +32,7 @@ Each joint optimizer update applies the same objective to the sampled text, tool
 
 ## Initial pipeline baseline
 
-The earlier 10-step and 100-step runs used only synthetic engineering curricula. They remain historical diagnostics. The current all-data experiment starts from random initialization and includes every usable data class after the task-family and split-integrity gates pass.
+The earlier 10-step and 100-step runs used only synthetic engineering curricula. They remain historical diagnostics. The real-training lineage starts from random initialization and is restricted to external records for both tokenizer fitting and optimizer sampling; synthetic/bootstrap/owner-curated classes are excluded.
 
 ## Architecture and expansion
 
@@ -42,11 +42,11 @@ The instantiated architecture is guarded by the exact v2 parameter count; future
 
 ## Dataset stages and isolation
 
-The deterministic engineering bootstrap currently yields 360 training records, 87 validation records, and 87 test records. All are tagged as `bootstrap` data. They exercise the pipeline and now participate in tokenizer fitting and optimizer updates alongside every other usable data class.
+The deterministic engineering bootstrap currently yields 360 training records, 87 validation records, and 87 test records. All are tagged as `bootstrap` data. They exercise the pipeline only and are excluded from real tokenizer fitting and optimizer updates.
 
 Only `train.jsonl` is read by the training iterator. Validation and test manifests are separate, have disjoint record IDs and asset paths, and are checked for identical asset-content hashes across splits. The bootstrap generator adds a missing test manifest without rewriting existing train/validation manifests. Training checkpoint lineage includes both the training-manifest SHA-256 and a fingerprint of the referenced training assets.
 
-All available data classes enter tokenizer fitting and optimizer input when their payloads are usable. Validation and test preserve every available data class and remain isolated from gradient updates.
+Only external records enter tokenizer fitting and optimizer input. Bootstrap, synthetic, and owner-curated classes remain excluded even when their payloads are structurally usable. Validation and test preserve independently held-out records but never enter tokenizer fitting or gradient updates.
 
 ## Multi-terabyte streaming crawlers and notebook resume
 

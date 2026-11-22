@@ -61,7 +61,7 @@ def _load_mel(path: Path, bins: int) -> torch.Tensor:
 def _manifest_corpus(records: list[dict[str, Any]], output: Path) -> list[Path]:
     # The tokenizer is part of the real training pipeline: apply the same
     # external-only provenance filter used by the optimizer before reading text.
-    eligible_records = iter_training_records(records)
+    eligible_records = iter_training_records(records, allowed_data_classes={"external"})
     fields = ("text", "caption", "transcript", "prompt", "response")
     lines: list[str] = []
     for item in eligible_records:
@@ -479,6 +479,10 @@ def run_training(
     data_kind = "synthetic_smoke"
     manifest_sha = None
     tokenizer_sha = None
+    tokenizer_corpus_data_class_counts: dict[str, int] = {
+        str(key): int(value)
+        for key, value in (saved_metadata.get("tokenizer_corpus_data_class_counts") or {}).items()
+    }
     codebook_initialized = bool(saved_metadata.get("codebooks_initialized", False))
     codebook_report = saved_metadata.get("codebook_report", {})
     asset_manifest_sha: str | None = None
@@ -541,7 +545,7 @@ def run_training(
             if data_class != "external" and count > 0
         }
         optimizer_classes = set(optimizer_data_class_counts)
-        data_kind = "all_available_data"
+        data_kind = "external_only"
         real_data = "external" in optimizer_classes
         if resume:
             saved_manifest_sha = saved_metadata.get("manifest_sha256")
@@ -583,18 +587,32 @@ def run_training(
         else:
             asset_lineage_status = "fingerprinted-on-fresh-run"
         if not tokenizer_path.exists():
-            # A smoke checkpoint has no tokenizer and is safe to continue from:
-            # no text IDs were trained in that phase. Any checkpoint that already
-            # records a tokenizer SHA must restore the exact tokenizer artifact.
+            # Fit the real tokenizer only on the external train records used by
+            # the optimizer. Bootstrap/synthetic/owner-curated rows stay excluded.
             if stage not in {"text", "joint"} or (resume and saved_metadata.get("tokenizer_sha256")):
                 raise FileNotFoundError("from-scratch tokenizer is missing for this checkpoint lineage")
+            tokenizer_records = iter_training_records(
+                all_train_records, allowed_data_classes={"external"}
+            )
+            if not tokenizer_records:
+                raise ValueError("cannot fit the OneCore tokenizer without external training records")
+            tokenizer_corpus_data_class_counts = {"external": len(tokenizer_records)}
             corpus_files = _manifest_corpus(
-                read_manifest(root / "data" / "train.jsonl"), out / "tokenizer-corpus.txt"
+                tokenizer_records, out / "tokenizer-corpus.txt"
             )
             train_tokenizer(corpus_files, tokenizer_path, vocab_size=cfg.text_vocab_size)
         tokenizer = load_tokenizer(tokenizer_path)
         tokenizer_sha = sha256_file(tokenizer_path)
         saved_tokenizer_sha = saved_metadata.get("tokenizer_sha256")
+        if resume and saved_tokenizer_sha:
+            if not tokenizer_corpus_data_class_counts or any(
+                key != "external" and int(value) > 0
+                for key, value in tokenizer_corpus_data_class_counts.items()
+            ):
+                raise ValueError(
+                    "checkpoint tokenizer corpus provenance is missing or non-external; "
+                    "start a fresh lineage with an external-only tokenizer"
+                )
         if resume and saved_tokenizer_sha and saved_tokenizer_sha != tokenizer_sha:
             raise ValueError("tokenizer fingerprint differs from the checkpoint; refusing to mix token IDs")
         if stage == "multimodal" and saved_tokenizer_sha != tokenizer_sha:
@@ -686,6 +704,7 @@ def run_training(
             metadata = {
                 "stage": stage, "real_data": real_data, "data_kind": data_kind,
                 "seed": seed, "tokenizer_sha256": tokenizer_sha,
+                "tokenizer_corpus_data_class_counts": tokenizer_corpus_data_class_counts,
                 "manifest_sha256": manifest_sha,
                 "asset_manifest_sha256": asset_manifest_sha,
                 "training_data_fingerprint": training_data_fingerprint,
@@ -717,6 +736,7 @@ def run_training(
     metadata = {
         "stage": stage, "real_data": real_data, "data_kind": data_kind,
         "seed": seed, "tokenizer_sha256": tokenizer_sha,
+        "tokenizer_corpus_data_class_counts": tokenizer_corpus_data_class_counts,
         "manifest_sha256": manifest_sha,
         "asset_manifest_sha256": asset_manifest_sha,
         "training_data_fingerprint": training_data_fingerprint,
@@ -786,6 +806,7 @@ def run_training(
         "last_loss": losses[-1] if losses else None,
         "learning_rate": scheduler.get_last_lr()[0],
         "tokenizer_sha256": tokenizer_sha,
+        "tokenizer_corpus_data_class_counts": tokenizer_corpus_data_class_counts,
         "manifest_sha256": manifest_sha,
         "asset_manifest_sha256": asset_manifest_sha,
         "training_data_fingerprint": training_data_fingerprint,

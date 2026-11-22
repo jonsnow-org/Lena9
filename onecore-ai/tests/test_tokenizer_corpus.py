@@ -3,7 +3,7 @@ from pathlib import Path
 from onecore.train import _manifest_corpus
 
 
-def test_tokenizer_corpus_includes_every_available_data_class(tmp_path: Path) -> None:
+def test_tokenizer_corpus_includes_external_records_only(tmp_path: Path) -> None:
     records = [
         {
             "id": "bootstrap-1",
@@ -53,6 +53,29 @@ def test_tokenizer_corpus_includes_every_available_data_class(tmp_path: Path) ->
     assert "authentic imported external text" in corpus
     assert "external tool prompt" in corpus
     assert "external tool response" in corpus
-    assert "synthetic bootstrap sentinel" in corpus
-    assert "verified synthetic sentinel" in corpus
-    assert "locally authored owner data sentinel" in corpus
+    assert "synthetic bootstrap sentinel" not in corpus
+    assert "verified synthetic sentinel" not in corpus
+    assert "locally authored owner data sentinel" not in corpus
+
+
+
+def test_tokenizer_corpus_rejects_when_only_non_external_text_is_available(tmp_path: Path) -> None:
+    records = [
+        {
+            "id": "bootstrap-1",
+            "split": "train",
+            "data_class": "bootstrap",
+            "text": "bootstrap-only tokenizer text",
+        },
+        {
+            "id": "synthetic-1",
+            "split": "train",
+            "data_class": "synthetic",
+            "text": "synthetic-only tokenizer text",
+        },
+    ]
+
+    import pytest
+
+    with pytest.raises(ValueError, match="no text fields"):
+        _manifest_corpus(records, tmp_path / "tokenizer-corpus.txt")

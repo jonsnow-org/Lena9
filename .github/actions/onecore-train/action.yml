@@ -120,6 +120,16 @@ runs:
         if int(payload.get("step", 0)) > 0 and not payload.get("optimizer", {}).get("state"):
             raise ValueError("checkpoint has no optimizer moments")
         metadata = payload.get("metadata", {})
+        tokenizer_classes = metadata.get("tokenizer_corpus_data_class_counts", {})
+        if payload.get("step", 0) > 0 and (
+            not tokenizer_classes
+            or int(tokenizer_classes.get("external", 0)) <= 0
+            or any(key != "external" and int(value) > 0 for key, value in tokenizer_classes.items())
+        ):
+            raise ValueError(
+                "checkpoint tokenizer corpus provenance is missing or not external-only; "
+                "refusing to continue this lineage"
+            )
         print(json.dumps({
             "optimizer_step": payload["step"],
             "checkpoint_sha256": digest,
@@ -127,6 +137,7 @@ runs:
             "lineage_id": metadata.get("lineage_id"),
             "parent_checkpoint_sha256": metadata.get("parent_checkpoint_sha256"),
             "codebooks_initialized": metadata.get("codebooks_initialized"),
+            "tokenizer_corpus_data_class_counts": tokenizer_classes,
         }, ensure_ascii=False, indent=2))
         PY
 
@@ -167,6 +178,16 @@ runs:
         print(f"steps_in_this_job={int(report['steps_in_this_job'])}")
         print(f"lineage_id={report.get('lineage_id', '')}")
         if os.environ.get("ONECORE_EXPECTED_STAGE") in {"joint", "multimodal"}:
+            tokenizer_classes = report.get("tokenizer_corpus_data_class_counts", {})
+            if (
+                not tokenizer_classes
+                or int(tokenizer_classes.get("external", 0)) <= 0
+                or any(key != "external" and int(value) > 0 for key, value in tokenizer_classes.items())
+            ):
+                raise ValueError(
+                    "tokenizer corpus must contain external records only: "
+                    f"{tokenizer_classes}"
+                )
             expected_samples = 5 * int(os.environ["ONECORE_EXPECTED_STEPS"])
             sampled_classes = report.get("sampled_data_class_counts_in_this_job", {})
             if sampled_classes != {"external": expected_samples}:
