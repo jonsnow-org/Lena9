@@ -11,10 +11,11 @@ professional output quality.
   back to the exact source dimensions.
 - `audio.py`: trainable convolutional waveform encoder/decoder with multi-stage
   residual vector quantization. It accepts mono or stereo waveforms, records the
-  original channel count and optional sample-rate metadata, accepts variable sample
-  lengths, and trims reconstruction to the exact source length. It does not resample
-  audio or condition its weights on sample rate; training batches must normalize rates
-  explicitly. The codec is untrained.
+  original channel count, accepts variable sample lengths, and trims reconstruction
+  to the exact source length. Training input is strictly normalized to 24 kHz; raw-media
+  ingestion preserves the source and creates a polyphase-resampled 24 kHz WAV derivative
+  with source/target metadata. The neural codec rejects other rates rather than silently
+  treating them as 24 kHz. The codec is untrained.
 - `video.py`: encodes every supplied frame, accepts variable frame counts and
   timestamps, and applies causal temporal attention per spatial patch.
 - `core.py`: integrates text, image, waveform audio and video latents with a recurrent
@@ -75,7 +76,8 @@ or memory improvement until benchmarked.
 3. Add paired cross-modal alignment and text-conditioned generation objectives.
 4. Preserve raw source assets and metadata (native image dimensions, video timestamps,
    frame rate/duration/audio track, audio sample rate/channels/duration); implement an
-   explicit sample-rate normalization/conditioning policy before mixed-rate training.
+   explicit canonical-rate normalization policy before mixed-rate training; the current
+   policy is polyphase resampling to 24 kHz while preserving the raw source.
 5. Convert existing corpora without reacquiring completed sources; validate immutable
    external provenance and 100/10/10 per-family quotas after corrected gate.
 6. Benchmark peak activation/optimizer memory, FLOPs, CPU/GPU wall-clock, and scaling
