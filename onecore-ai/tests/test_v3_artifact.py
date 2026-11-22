@@ -80,3 +80,73 @@ def test_artifact_extractor_uses_explicit_ranges_for_signed_blob_url(monkeypatch
     assert result["full_archive_downloaded"] is False
     assert (tmp_path / "data" / "train.jsonl").read_bytes() == payloads["data/train.jsonl"]
     assert (tmp_path / "data" / "acquisition-report.json").read_bytes() == payloads["data/acquisition-report.json"]
+
+
+
+def test_artifact_extractor_reads_manifests_from_stored_corpus_tar(monkeypatch, tmp_path):
+    import io
+    import tarfile
+    import zipfile
+    from types import SimpleNamespace
+
+    import onecore.v3.artifact as artifact
+
+    payloads = {
+        "train.jsonl": b'{"id":"train"}\n',
+        "validation.jsonl": b'{"id":"validation"}\n',
+        "test.jsonl": b'{"id":"test"}\n',
+        "acquisition-report.json": b'{"source_revisions":{}}',
+    }
+    tar_buffer = io.BytesIO()
+    with tarfile.open(fileobj=tar_buffer, mode="w") as tar:
+        for name, payload in payloads.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(payload)
+            tar.addfile(info, io.BytesIO(payload))
+    tar_bytes = tar_buffer.getvalue()
+
+    class RedirectResponse:
+        status_code = 302
+        headers = {"Location": "https://signed.example/artifact.zip"}
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(artifact.requests, "get", lambda *args, **kwargs: RedirectResponse())
+    calls = {}
+
+    class FakeRemoteZip:
+        def __init__(self, url, **kwargs):
+            calls["url"] = url
+            calls["kwargs"] = kwargs
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def namelist(self):
+            return ["onecore-corpus.tar"]
+
+        def getinfo(self, member):
+            assert member == "onecore-corpus.tar"
+            return SimpleNamespace(compress_type=zipfile.ZIP_STORED)
+
+        def open(self, member):
+            assert member == "onecore-corpus.tar"
+            return io.BytesIO(tar_bytes)
+
+    monkeypatch.setattr(artifact, "RemoteZip", FakeRemoteZip)
+    result = artifact.extract_v2_artifact_manifests(
+        "jonsnow-org/Lena9", 14715699177, "test-token", tmp_path
+    )
+
+    assert calls["url"] == "https://signed.example/artifact.zip"
+    assert calls["kwargs"]["support_suffix_range"] is False
+    assert result["container_layout"] == "stored-tar"
+    assert result["container_member"] == "onecore-corpus.tar"
+    assert result["range_download"] is True
+    assert result["full_archive_downloaded"] is False
+    for name, payload in payloads.items():
+        assert (tmp_path / "data" / name).read_bytes() == payload
