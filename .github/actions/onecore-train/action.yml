@@ -298,6 +298,84 @@ runs:
         }, ensure_ascii=False, indent=2))
         PY
 
+    - name: Prepare compact checkpoint evidence for inspection
+      shell: bash
+      env:
+        OUTPUT_ARTIFACT_NAME: ${{ inputs.output_artifact_name }}
+        WORKFLOW_RUN_ID: ${{ github.run_id }}
+      run: |
+        python - <<'PY'
+        import json, os
+        from pathlib import Path
+
+        root = Path("onecore-ai/run-state")
+        checkpoint = root / "checkpoint.pt"
+        report = json.loads((root / "train_result.json").read_text(encoding="utf-8"))
+        checkpoint_report = report.get("checkpoint") or {}
+        checkpoint_bytes = checkpoint.stat().st_size
+        if checkpoint_bytes <= 0 or checkpoint_bytes != int(checkpoint_report.get("bytes", -1)):
+            raise ValueError("checkpoint byte size differs from train_result.json")
+        if not checkpoint_report.get("sha256"):
+            raise ValueError("checkpoint SHA-256 is missing from train_result.json")
+        if int(report.get("optimizer_step", -1)) <= 0:
+            raise ValueError("checkpoint evidence requires a positive optimizer step")
+        if int(report.get("parameter_count", -1)) != 57579201:
+            raise ValueError("checkpoint evidence parameter count differs from the OneCore specification")
+        tokenizer_classes = report.get("tokenizer_corpus_data_class_counts") or {}
+        if (
+            not tokenizer_classes
+            or int(tokenizer_classes.get("external", 0)) <= 0
+            or any(key != "external" and int(value) > 0 for key, value in tokenizer_classes.items())
+        ):
+            raise ValueError(f"checkpoint tokenizer provenance is not external-only: {tokenizer_classes}")
+        steps = int(report.get("steps_in_this_job", 0))
+        expected_families = {name: steps for name in ("text", "tool", "image", "audio", "video")}
+        if report.get("sampled_family_counts_in_this_job") != expected_families:
+            raise ValueError("checkpoint evidence does not show one sample from each family per optimizer step")
+        if report.get("sampled_data_class_counts_in_this_job") != {"external": 5 * steps}:
+            raise ValueError("checkpoint evidence shows non-external or incomplete joint samples")
+        evidence = {
+            "schema": "onecore-checkpoint-evidence-v1",
+            "workflow_run_id": int(os.environ["WORKFLOW_RUN_ID"]),
+            "checkpoint_artifact_name": os.environ["OUTPUT_ARTIFACT_NAME"],
+            "checkpoint_sha256": checkpoint_report["sha256"],
+            "checkpoint_bytes": checkpoint_bytes,
+            "optimizer_step": int(report["optimizer_step"]),
+            "steps_in_this_job": steps,
+            "parent_optimizer_step": report.get("parent_optimizer_step"),
+            "parent_checkpoint_sha256": report.get("parent_checkpoint_sha256"),
+            "lineage_id": report.get("lineage_id"),
+            "parameter_count": int(report["parameter_count"]),
+            "tokenizer_sha256": report.get("tokenizer_sha256"),
+            "tokenizer_corpus_data_class_counts": tokenizer_classes,
+            "manifest_sha256": report.get("manifest_sha256"),
+            "asset_manifest_sha256": report.get("asset_manifest_sha256"),
+            "training_data_fingerprint": report.get("training_data_fingerprint"),
+            "sampled_family_counts": report.get("sampled_family_counts"),
+            "sampled_family_counts_in_this_job": report.get("sampled_family_counts_in_this_job"),
+            "sampled_data_class_counts": report.get("sampled_data_class_counts"),
+            "sampled_data_class_counts_in_this_job": report.get("sampled_data_class_counts_in_this_job"),
+            "optimizer_data_class_counts": report.get("optimizer_data_class_counts"),
+            "native_tldm": report.get("native_tldm"),
+        }
+        (root / "checkpoint-evidence.json").write_text(
+            json.dumps(evidence, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        print(json.dumps(evidence, ensure_ascii=False, indent=2))
+        PY
+
+    - name: Upload compact checkpoint evidence before parent cleanup
+      uses: actions/upload-artifact@v6
+      with:
+        name: ${{ inputs.output_artifact_name }}-evidence
+        path: |
+          onecore-ai/run-state/checkpoint-evidence.json
+          onecore-ai/run-state/train_result.json
+          onecore-ai/run-state/acquisition-report.json
+        if-no-files-found: error
+        retention-days: 90
+        compression-level: 9
+
     - name: Remove superseded checkpoint after the new checkpoint is safely uploaded
       if: ${{ inputs.previous_checkpoint_artifact_name != '' }}
       shell: bash

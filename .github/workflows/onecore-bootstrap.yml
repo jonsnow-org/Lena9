@@ -945,11 +945,11 @@ jobs:
           thresholds = root / "configs" / "promotion-thresholds.json"
           validation = evaluate_checkpoint(
               root, config, checkpoint, tokenizer, thresholds,
-              root / "run-state" / "evaluation.validation.json", split="validation",
+              root / "run-state" / "evaluation.validation.json", split="validation", data_classes={"external"},
           )
           test = evaluate_checkpoint(
               root, config, checkpoint, tokenizer, thresholds,
-              root / "run-state" / "evaluation.test.json", split="test",
+              root / "run-state" / "evaluation.test.json", split="test", data_classes={"external"},
           )
           required = {"text_loss", "tool_use", "image_reconstruction", "audio_reconstruction", "video_sequence"}
           for label, result in (("validation", validation), ("test", test)):

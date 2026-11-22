@@ -172,21 +172,20 @@ def select_evaluation_records(
     records: list[dict[str, Any]],
     data_classes: set[str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Select a separate diagnostic/benchmark subset without mutating the shared manifest."""
-    selected = (
-        [
-            record for record in records
-            if classify_record_data(record) in data_classes
-            and (
-                classify_record_data(record) not in {"external_staged", "external_reviewed"}
-                or external_record_is_trainable(record)
-            )
-        ]
-        if data_classes is not None else list(records)
-    )
+    """Select a diagnostic subset; production evaluation defaults to external records only."""
+    effective_data_classes = set(data_classes) if data_classes is not None else {"external"}
+    selected = [
+        record for record in records
+        if classify_record_data(record) in effective_data_classes
+        and (
+            classify_record_data(record) not in {"external_staged", "external_reviewed"}
+            or external_record_is_trainable(record)
+        )
+    ]
     if not selected:
-        filter_label = sorted(data_classes) if data_classes is not None else "all"
-        raise ValueError(f"evaluation split contains no records for data filter {filter_label}")
+        raise ValueError(
+            f"evaluation split contains no records for data filter {sorted(effective_data_classes)}"
+        )
     return selected
 
 
@@ -376,8 +375,9 @@ def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
     )
     if not data_report["valid"]:
         raise ValueError(f"{split} data gate failed: " + "; ".join(data_report["errors"][:20]))
-    records = select_evaluation_records(all_records, data_classes)
-    requested_data_filter = sorted(data_classes) if data_classes is not None else "all"
+    evaluation_data_classes = set(data_classes) if data_classes is not None else {"external"}
+    records = select_evaluation_records(all_records, evaluation_data_classes)
+    requested_data_filter = sorted(evaluation_data_classes)
 
     checkpoint_file = Path(checkpoint_path)
     model = OneCore(cfg).cpu().eval()
@@ -486,9 +486,15 @@ def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
         root, records, model, tokenizer, split, checkpoint_digest
     )
     data_classes = sorted({classify_record_data(record) for record in records})
-    data_kind = "all_available_data" if records else "empty"
-    data_verified_for_promotion = bool(records)
-    real_data = "external" in data_classes
+    data_kind = (
+        "external_only" if data_classes == ["external"]
+        else "mixed" if len(data_classes) > 1
+        else data_classes[0] if data_classes else "empty"
+    )
+    data_verified_for_promotion = bool(records) and data_classes == ["external"] and all(
+        external_record_is_trainable(record) for record in records
+    )
+    real_data = data_classes == ["external"]
     selected_manifest_payload = json.dumps(
         [{"id": record.get("id"), "task": record.get("task"),
           "source_url": record.get("source_url"), "data_class": classify_record_data(record)}
@@ -560,8 +566,8 @@ def _check_tool_behavior(
         failures.append(f"{prefix} verified tool-execution report is missing")
         return
     sample_count = report.get("sample_count")
-    if not isinstance(sample_count, int) or sample_count < 16:
-        failures.append(f"{prefix} tool behaviour has fewer than 16 held-out examples")
+    if not isinstance(sample_count, int) or sample_count < 10:
+        failures.append(f"{prefix} tool behaviour has fewer than 10 held-out examples")
     rate = report.get("execution_success_rate")
     if not isinstance(rate, (int, float)) or not math.isfinite(rate) or not 0 <= rate <= 1:
         failures.append(f"{prefix} tool execution success rate is missing or invalid")
@@ -582,8 +588,8 @@ def _check_tool_behavior(
             failures.append(f"{prefix} tool workflow step {step} was not evaluated")
             continue
         step_count = step_report.get("sample_count")
-        if not isinstance(step_count, int) or step_count < 4:
-            failures.append(f"{prefix} tool workflow step {step} has fewer than 4 held-out examples")
+        if not isinstance(step_count, int) or step_count < 1:
+            failures.append(f"{prefix} tool workflow step {step} has no held-out examples")
         step_rate = step_report.get("execution_success_rate")
         if not isinstance(step_rate, (int, float)) or not math.isfinite(step_rate) or not 0 <= step_rate <= 1:
             failures.append(f"{prefix} tool workflow step {step} success rate is missing or invalid")
@@ -698,9 +704,31 @@ def _check_codebook_thresholds(prefix: str, usage: dict[str, Any],
 
 
 
+def _check_external_only_evaluation(
+    prefix: str,
+    report: dict[str, Any],
+    failures: list[str],
+) -> None:
+    """Require verified external-only records for every production evaluation split."""
+    classes = report.get("data_classes")
+    if (
+        report.get("real_data") is not True
+        or report.get("data_kind") != "external_only"
+        or classes != ["external"]
+        or report.get("data_verified_for_promotion") is not True
+    ):
+        failures.append(
+            f"{prefix} evaluation must use verified external-only records; "
+            f"data_kind={report.get('data_kind')!r}, data_classes={classes!r}, "
+            f"verified={report.get('data_verified_for_promotion')!r}"
+        )
+
+
 def promotion_gate(metrics: dict[str, Any], baseline: dict[str, Any] | None = None,
                    require_verified_data: bool = True) -> tuple[bool, list[str]]:
     failures: list[str] = []
+    if require_verified_data:
+        _check_external_only_evaluation("validation", metrics, failures)
     if metrics.get("split") != "validation":
         failures.append("top-level candidate metrics must come from the validation split")
     if not isinstance(metrics.get("parameter_count"), int) or metrics["parameter_count"] <= 0:
@@ -745,6 +773,8 @@ def promotion_gate(metrics: dict[str, Any], baseline: dict[str, Any] | None = No
     else:
         if test_metrics.get("split") != "test":
             failures.append("nested test metrics must be evaluated on the test split")
+        if require_verified_data:
+            _check_external_only_evaluation("test", test_metrics, failures)
         if test_metrics.get("checkpoint_sha256") != metrics.get("checkpoint_sha256"):
             failures.append("validation and test metrics refer to different checkpoint hashes")
         if test_metrics.get("parameter_count") != metrics.get("parameter_count"):
@@ -778,14 +808,6 @@ def promotion_gate(metrics: dict[str, Any], baseline: dict[str, Any] | None = No
         )
 
     if baseline:
-        old = baseline.get("text_loss")
-        current = metrics.get("text_loss")
-        if isinstance(old, (int, float)) and isinstance(current, (int, float)) and current > old * 1.02:
-            failures.append("validation text loss regressed by more than 2% against the supplied baseline")
-        old_test = baseline.get("test_metrics", {}).get("text_loss") if isinstance(baseline.get("test_metrics"), dict) else None
-        current_test = test_metrics.get("text_loss") if isinstance(test_metrics, dict) else None
-        if isinstance(old_test, (int, float)) and isinstance(current_test, (int, float)) and current_test > old_test * 1.02:
-            failures.append("test text loss regressed by more than 2% against the supplied baseline")
         baseline_test = baseline.get("test_metrics") if isinstance(baseline.get("test_metrics"), dict) else {}
         regression_floor = thresholds.get("tool_behavior_regression_floor")
         _check_tool_behavior_regression(

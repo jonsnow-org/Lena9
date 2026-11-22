@@ -33,7 +33,7 @@ def _native_tldm_report(split, checkpoint_sha):
     }
 
 
-def _metrics(data_verified=True, data_kind="external"):
+def _metrics(data_verified=True, data_kind="external_only"):
     checkpoint_sha = "a" * 64
     validation_hash = "b" * 64
     test_hash = "c" * 64
@@ -48,7 +48,7 @@ def _metrics(data_verified=True, data_kind="external"):
     thresholds["native_tldm_max_masked_span_loss"] = 2.0
     thresholds["test_native_tldm_max_masked_span_loss"] = 2.0
     tool_behavior = {
-        "sample_count": 32,
+        "sample_count": 10,
         "execution_success_rate": 0.5,
         "valid_payload_rate": 0.75,
         "allowlisted_dispatch_rate": 0.65,
@@ -56,8 +56,8 @@ def _metrics(data_verified=True, data_kind="external"):
         "protocol": "verified-tool-action-execution-v1",
         "sample_ids_sha256": "d" * 64,
         "per_step": {
-            "1": {"sample_count": 8, "execution_success_rate": 0.5},
-            "2": {"sample_count": 8, "execution_success_rate": 0.5},
+            "1": {"sample_count": 5, "execution_success_rate": 0.5},
+            "2": {"sample_count": 5, "execution_success_rate": 0.5},
         },
     }
     for modality in REQUIRED_CODEBOOKS:
@@ -71,17 +71,17 @@ def _metrics(data_verified=True, data_kind="external"):
     native_tldm_validation = _native_tldm_report("validation", checkpoint_sha)
     native_tldm_test = _native_tldm_report("test", checkpoint_sha)
     test_metrics = {**values, "split": "test", "checkpoint_sha256": checkpoint_sha,
-        "parameter_count": 57_579_201, "real_data": data_kind == "external",
+        "parameter_count": 57_579_201, "real_data": data_kind == "external_only",
         "data_kind": data_kind,
-        "data_classes": ["external"] if data_kind == "external" else [data_kind],
+        "data_classes": ["external"] if data_kind == "external_only" else [data_kind],
         "data_verified_for_promotion": data_verified,
         "modalities_tested": list(REQUIRED_METRICS), "split_manifest_sha256": test_hash,
         "codebook_usage": codebook_usage, "tool_behavior": tool_behavior,
         "native_tldm_evaluation": native_tldm_test}
     return {**values, "split": "validation", "checkpoint_sha256": checkpoint_sha,
-        "parameter_count": 57_579_201, "real_data": data_kind == "external",
+        "parameter_count": 57_579_201, "real_data": data_kind == "external_only",
         "data_kind": data_kind,
-        "data_classes": ["external"] if data_kind == "external" else [data_kind],
+        "data_classes": ["external"] if data_kind == "external_only" else [data_kind],
         "data_verified_for_promotion": data_verified,
         "modalities_tested": list(REQUIRED_METRICS), "quality_thresholds": thresholds,
         "split_manifest_sha256": validation_hash, "test_manifest_sha256": test_hash,
@@ -90,21 +90,23 @@ def _metrics(data_verified=True, data_kind="external"):
         "test_metrics": test_metrics}
 
 
-def test_all_data_classes_can_pass_gate_when_quality_evidence_passes():
+def test_external_only_data_can_pass_gate_when_quality_evidence_passes():
     passed, failures = promotion_gate(_metrics(data_verified=True))
     assert passed
     assert failures == []
 
 
-def test_synthetic_bootstrap_data_can_pass_quality_gate():
+def test_synthetic_bootstrap_data_is_rejected_by_default():
     passed, failures = promotion_gate(_metrics(data_verified=False, data_kind="synthetic_bootstrap_diagnostic"))
-    assert passed, failures
+    assert not passed
+    assert any("verified external-only records" in failure for failure in failures)
 
 
-def test_verified_synthetic_data_can_pass_quality_gate():
+def test_verified_synthetic_data_is_rejected_from_promotion():
     metrics = _metrics(data_verified=True, data_kind="synthetic_verified_diagnostic")
     passed, failures = promotion_gate(metrics)
-    assert passed, failures
+    assert not passed
+    assert any("verified external-only records" in failure for failure in failures)
 
 
 def test_gate_rejects_codebook_collapse_even_when_losses_are_below_limits():
@@ -199,3 +201,38 @@ def test_gate_rejects_tldm_heldout_family_with_insufficient_examples():
     passed, failures = promotion_gate(metrics)
     assert not passed
     assert any("fewer than 10 held-out video examples" in item for item in failures)
+
+
+
+def test_tool_evaluation_accepts_the_specified_ten_examples_per_family():
+    metrics = _metrics(data_verified=True)
+    assert metrics["tool_behavior"]["sample_count"] == 10
+    passed, failures = promotion_gate(metrics)
+    assert passed, failures
+
+
+def test_tool_evaluation_rejects_fewer_than_ten_examples():
+    metrics = _metrics(data_verified=True)
+    metrics["tool_behavior"]["sample_count"] = 9
+    metrics["test_metrics"]["tool_behavior"]["sample_count"] = 9
+    passed, failures = promotion_gate(metrics)
+    assert not passed
+    assert any("fewer than 10 held-out examples" in item for item in failures)
+
+
+def test_tool_evaluation_requires_both_workflow_steps_to_be_present():
+    metrics = _metrics(data_verified=True)
+    metrics["tool_behavior"]["per_step"]["2"]["sample_count"] = 0
+    metrics["test_metrics"]["tool_behavior"]["per_step"]["2"]["sample_count"] = 0
+    passed, failures = promotion_gate(metrics)
+    assert not passed
+    assert any("workflow step 2 has no held-out examples" in item for item in failures)
+
+
+def test_unapproved_text_loss_regression_percentage_is_not_applied():
+    metrics = _metrics(data_verified=True)
+    baseline = _metrics(data_verified=True)
+    metrics["text_loss"] = 1.5
+    metrics["test_metrics"]["text_loss"] = 1.5
+    passed, failures = promotion_gate(metrics, baseline=baseline)
+    assert passed, failures

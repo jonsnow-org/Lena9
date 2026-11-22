@@ -40,6 +40,15 @@ def test_evaluation_can_select_any_available_data_class():
     assert [item["id"] for item in owner] == ["owner-local"]
 
 
+def test_evaluation_defaults_to_external_records_only():
+    records = [
+        {"id": "bootstrap-text", "task": "text", "data_class": "bootstrap"},
+        {"id": "external-text", "task": "text", "data_class": "external"},
+        {"id": "owner-local", "task": "text", "data_class": "owner_curated"},
+    ]
+    assert [item["id"] for item in select_evaluation_records(records)] == ["external-text"]
+
+
 def test_evaluation_filter_rejects_empty_subsets():
     with pytest.raises(ValueError, match="contains no records"):
         select_evaluation_records(
