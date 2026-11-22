@@ -4,7 +4,7 @@ import pytest
 import torch
 
 from onecore.evaluate import (
-    _tldm_masked_span_loss, codebook_assignment_report,
+    _text_language_bucket, _tldm_masked_span_loss, codebook_assignment_report,
     select_evaluation_records, select_tldm_evaluation_records,
 )
 from onecore.config import ModelConfig
@@ -84,3 +84,31 @@ def test_tldm_masked_span_evaluation_is_deterministic():
     assert first[1] > 0
     assert first[0] == pytest.approx(second[0])
     assert first[1] == second[1]
+
+
+
+def test_text_language_bucket_prefers_explicit_arabic_and_english_metadata():
+    assert _text_language_bucket({"task": "text", "language": "ar", "text": "Hello"}) == (
+        "arabic", "metadata"
+    )
+    assert _text_language_bucket({"task": "text", "lang": "en-US", "text": "مرحبا"}) == (
+        "english", "metadata"
+    )
+
+
+def test_text_language_bucket_reports_unlabeled_script_without_claiming_language():
+    assert _text_language_bucket({"task": "text", "text": "مرحبا بالعالم"}) == (
+        "arabic_script_unlabeled", "unicode_script"
+    )
+    assert _text_language_bucket({"task": "text", "text": "Hello world"}) == (
+        "latin_script_unlabeled", "unicode_script"
+    )
+    assert _text_language_bucket({"task": "text", "text": "Hello مرحبا"}) == (
+        "mixed_or_unknown", "unicode_script"
+    )
+
+
+def test_text_language_bucket_excludes_tagged_code_from_natural_language_metrics():
+    assert _text_language_bucket({
+        "task": "text", "code_language": "Python", "text": "print('hello')"
+    }) == ("code_excluded", "metadata")

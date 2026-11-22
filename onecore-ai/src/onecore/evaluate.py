@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +31,42 @@ T_LDM_FAMILY_TASKS = {
     "audio": {"audio_text", "audio_reconstruction"},
     "video": {"video_caption", "video_reconstruction"},
 }
+
+
+def _text_language_bucket(record: dict[str, Any]) -> tuple[str, str]:
+    """Classify natural-language text conservatively for held-out language metrics.
+
+    Explicit language metadata is authoritative. When it is absent, Unicode
+    script is reported as an unlabeled proxy rather than asserted to be a
+    language. Code records are excluded from natural-language buckets.
+    """
+    if str(record.get("code_language") or "").strip():
+        return "code_excluded", "metadata"
+
+    explicit = str(record.get("language") or record.get("lang") or "").strip().casefold()
+    primary = explicit.replace("_", "-").split("-", 1)[0]
+    if primary in {"ar", "arabic"}:
+        return "arabic", "metadata"
+    if primary in {"en", "english"}:
+        return "english", "metadata"
+    if primary and primary not in {"und", "unknown", "unk", "none", "null"}:
+        return "other_language_metadata", "metadata"
+
+    arabic_letters = 0
+    latin_letters = 0
+    for character in str(record.get("text") or ""):
+        if not character.isalpha():
+            continue
+        unicode_name = unicodedata.name(character, "")
+        if "ARABIC" in unicode_name:
+            arabic_letters += 1
+        elif "LATIN" in unicode_name:
+            latin_letters += 1
+    if arabic_letters and not latin_letters:
+        return "arabic_script_unlabeled", "unicode_script"
+    if latin_letters and not arabic_letters:
+        return "latin_script_unlabeled", "unicode_script"
+    return "mixed_or_unknown", "unicode_script"
 
 
 def _asset_manifest_sha256(root: Path, records: list[dict[str, Any]]) -> str:
@@ -358,6 +395,11 @@ def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
     aux_sum: dict[str, float] = {}
     counts: dict[str, int] = {}
     token_counts: dict[str, int] = {}
+    language_loss_sum: dict[str, float] = {}
+    language_counts: dict[str, int] = {}
+    language_token_counts: dict[str, int] = {}
+    language_detection_methods: dict[str, dict[str, int]] = {}
+    language_code_excluded = 0
     with torch.no_grad():
         for record in records:
             sequence, aux_loss, task = _record_sequence(record, model, tokenizer, root)
@@ -366,16 +408,41 @@ def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
             loss = torch.nn.functional.cross_entropy(
                 logits.reshape(-1, logits.shape[-1]), targets.reshape(-1), reduction="mean"
             )
-            loss_sum[task] = loss_sum.get(task, 0.0) + float(loss)
+            loss_value = float(loss)
+            loss_sum[task] = loss_sum.get(task, 0.0) + loss_value
             aux_sum[task] = aux_sum.get(task, 0.0) + float(aux_loss)
             counts[task] = counts.get(task, 0) + 1
-            token_counts[task] = token_counts.get(task, 0) + int(targets.numel())
+            target_count = int(targets.numel())
+            token_counts[task] = token_counts.get(task, 0) + target_count
+            if task == "text":
+                language_bucket, detection_method = _text_language_bucket(record)
+                if language_bucket == "code_excluded":
+                    language_code_excluded += 1
+                else:
+                    language_loss_sum[language_bucket] = (
+                        language_loss_sum.get(language_bucket, 0.0) + loss_value
+                    )
+                    language_counts[language_bucket] = language_counts.get(language_bucket, 0) + 1
+                    language_token_counts[language_bucket] = (
+                        language_token_counts.get(language_bucket, 0) + target_count
+                    )
+                    methods = language_detection_methods.setdefault(language_bucket, {})
+                    methods[detection_method] = methods.get(detection_method, 0) + 1
 
     def mean(source: dict[str, float], task: str) -> float | None:
         return source[task] / counts[task] if task in counts and counts[task] else None
 
     per_task_loss = {task: mean(loss_sum, task) for task in counts}
     per_task_aux = {task: mean(aux_sum, task) for task in counts}
+    text_language_metrics = {
+        bucket: {
+            "records": language_counts[bucket],
+            "target_tokens": language_token_counts[bucket],
+            "mean_loss": language_loss_sum[bucket] / language_counts[bucket],
+            "detection_method_counts": language_detection_methods.get(bucket, {}),
+        }
+        for bucket in sorted(language_counts)
+    }
     modalities_tested: list[str] = []
     metric_groups = {
         "text_loss": {"text"},
@@ -409,7 +476,10 @@ def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
          for record in records],
         ensure_ascii=False, sort_keys=True, separators=(",", ":"),
     ).encode("utf-8")
-    split_manifest_sha256 = hashlib.sha256(selected_manifest_payload).hexdigest()
+    selected_records_sha256 = hashlib.sha256(selected_manifest_payload).hexdigest()
+    # Bind evaluation to the exact manifest bytes, including payload text,
+    # language metadata, source revisions, row hashes and attribution fields.
+    split_manifest_sha256 = sha256_file(split_manifest)
     metrics = {
         "evaluation_id": f"{split}-step-{step}-{sha256_file(checkpoint_file)[:12]}",
         "split": split,
@@ -434,6 +504,9 @@ def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
         ),
         "per_task_loss": per_task_loss,
         "per_task_auxiliary_loss": per_task_aux,
+        "text_language_metrics": text_language_metrics,
+        "text_language_code_records_excluded": language_code_excluded,
+        "selected_records_sha256": selected_records_sha256,
         "per_task_counts": counts,
         "per_task_target_tokens": token_counts,
         "modalities_tested": modalities_tested,
