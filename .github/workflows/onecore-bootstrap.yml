@@ -470,8 +470,10 @@ jobs:
         with:
           setup_environment: "true"
           restore_corpus: "true"
-          corpus_artifact_name: onecore-corpus-final
-          corpus_run_id: ""
+          corpus_artifact_name: ${{ needs.prepare.outputs.base_corpus_artifact_name }}
+          # The fresh session must restore the immutable corpus from its source run,
+          # not from this new training workflow's empty artifact namespace.
+          corpus_run_id: ${{ needs.prepare.outputs.base_corpus_run_id }}
           checkpoint_artifact_name: ""
           previous_checkpoint_artifact_name: ""
           stage: "joint"
