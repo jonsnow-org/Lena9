@@ -18,14 +18,14 @@ def _external(source_id, row_id):
 
 def _records(root):
     rows = []
-    for split in ("train", "validation", "test"):
+    for split_index, split in enumerate(("train", "validation", "test")):
         assets = root / split
         (assets / "raw").mkdir(parents=True)
         (assets / "frames").mkdir()
-        Image.new("RGB", (16, 16), (1, 2, 3)).save(assets / "raw/image.png")
+        Image.new("RGB", (16, 16), (split_index + 1, 2, 3)).save(assets / "raw/image.png")
         (assets / "raw/audio.wav").write_bytes(f"audio-{split}".encode())
-        Image.new("RGB", (16, 16), (4, 5, 6)).save(assets / "frames/0.png")
-        Image.new("RGB", (16, 16), (7, 8, 9)).save(assets / "frames/1.png")
+        Image.new("RGB", (16, 16), (4, split_index + 5, 6)).save(assets / "frames/0.png")
+        Image.new("RGB", (16, 16), (7, 8, split_index + 9)).save(assets / "frames/1.png")
         rows.extend([
             {**_external(f"{split}-text", f"{split}-text-row"), "id": f"{split}-text",
              "split": split, "task": "text", "text": "A sufficiently long external text sample."},
