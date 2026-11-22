@@ -361,3 +361,17 @@ The V3 branch remains isolated. `main` was last observed at `0b5ec69e839bfc6086a
 Added an integration regression on `research/onecore-v3-implementation` at commit `136e1eca8eca25f19e85746492a9a7343e602034`. It sends 13 timestamped frames through `OneCoreV3.forward_video_chunks()` with a five-frame chunk size and asserts chunk lengths `[5, 5, 3]`, exact reconstructed frame count/order shape, and finite output values. This exercises the integrated shared-core/video-codec path across multiple temporal windows, not only the standalone codec. The test is committed but has not yet been executed by a confirmed CI run; retain that distinction.
 
 The next unstarted media-codec investigation is stereo/channel-aware audio plus explicit sample-rate handling. Do not silently assume 16 kHz or label the current mono-only codec as universal. Any channel/sample-rate change requires a versioned config, round-trip tests, and an updated exact parameter report before training.
+
+
+### V3 stereo audio codec extension — 2026-11-22
+
+Implemented on `research/onecore-v3-implementation` as a sequence of file commits, with the last code/test commit currently `09064ce4bd4243a545b87525a13fedd80c5d635d`:
+- `NeuralAudioCodec` now has an explicit channel count (prototype-2 default: stereo/2 channels), accepts mono input by channel expansion and downmixes reconstruction back to mono when the source was mono.
+- Audio encodings preserve original channel count and optional sample-rate metadata; `OneCoreV3.forward_audio(..., sample_rate=...)` carries the metadata through the shared semantic path.
+- V3Config and research YAML now fingerprint `audio_channels=2`; integration generation expects stereo output.
+- Added codec tests for stereo shape preservation, mono compatibility, sample-rate metadata and invalid channel/sample-rate rejection.
+- The codec does **not** resample waveforms or condition its neural weights on sample rate. The metadata is provenance/contract information only. A deliberate resampling or sample-rate-conditioning design is still required before mixing arbitrary rates in training. Do not imply that 44.1/48 kHz inputs are normalized merely because their metadata is stored.
+
+**Verification:** No confirmed CI result is yet available for the final code/test commit. The README documents the exact limitation. Prototype-1 parameter counts and prototype-2 counts from before this channel change are not valid for the current config; rerun the exact parameter report and record the new config fingerprint after CI.
+
+**Next:** verify final CI and inspect any failure logs; then add an explicit audio sample-rate normalization policy and raw-media converter without reacquiring completed text/tool sources. Keep V3 isolated and do not train/merge until data gate, resource budget, checkpoint/resume and full CI pass.
