@@ -2,7 +2,7 @@ name: OneCore — CI and notebook integrity
 
 on:
   push:
-    branches: [research/onecore-foundation]
+    branches: [research/onecore-foundation, research/onecore-v3-implementation]
     paths:
       - "onecore-ai/**"
       - ".github/workflows/onecore-ci.yml"
