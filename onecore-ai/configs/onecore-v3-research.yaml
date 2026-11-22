@@ -27,7 +27,10 @@ sequence_policy:
   video: variable_frame_count_timestamped
   attention_complexity: quadratic
 training:
-  status: not_implemented
+  status: joint_objective_and_single_step_prototype_available
+  multi_session_workflow: not_implemented
+  checkpoint_resume: not_implemented
+  discriminator_optimizer_schedule: not_implemented
   optimizer: null
   total_steps: null
   loss_profiles:

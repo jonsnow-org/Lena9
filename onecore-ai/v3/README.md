@@ -15,7 +15,12 @@ professional output quality.
 - `video.py`: encodes every supplied frame, accepts variable frame counts and
   timestamps, and applies causal temporal attention per spatial patch.
 - `core.py`: integrates text, image, waveform audio and video latents with one
-  shared Transformer semantic core and explicit modality embeddings.
+  shared Transformer semantic core and explicit modality embeddings; includes
+  conditional rectified-flow objectives and variable-shape latent samplers.
+- `losses.py`: multi-scale image reconstruction, multi-resolution STFT/waveform,
+  video temporal consistency, paired cross-modal alignment, and image/audio GAN losses.
+- `training.py`: joint text/tool/image/audio/video objective and an optimizer-step
+  helper, plus a separate discriminator update helper.
 
 ## Current limits (do not hide these)
 
@@ -35,8 +40,11 @@ professional output quality.
   fixed 512-position table. Attention is still quadratic; this is not proof of
   efficient long-context scaling. Benchmark memory, throughput, and long-context
   retrieval before selecting production sequence lengths.
-- There is no v3 training loop, dataset converter, inference API, checkpoint format,
-  quality benchmark suite, or promotion threshold yet.
+- A joint v3 objective and one-step optimizer helper now exist, but there is no
+  multi-session training workflow, dataset converter, checkpoint/resume format,
+  production inference API, quality benchmark suite, or promotion threshold yet.
+- The optional GAN discriminators require a separately configured discriminator
+  optimizer and stable alternating updates; this is not yet a full adversarial trainer.
 
 ## Next required engineering gates
 
