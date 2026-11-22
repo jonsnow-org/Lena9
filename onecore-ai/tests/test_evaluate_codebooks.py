@@ -4,7 +4,7 @@ import pytest
 import torch
 
 from onecore.evaluate import (
-    _text_language_bucket, _tldm_masked_span_loss, codebook_assignment_report,
+    _text_language_bucket, _token_weighted_mean_loss, _tldm_masked_span_loss, codebook_assignment_report,
     select_evaluation_records, select_tldm_evaluation_records,
 )
 from onecore.config import ModelConfig
@@ -112,3 +112,17 @@ def test_text_language_bucket_excludes_tagged_code_from_natural_language_metrics
     assert _text_language_bucket({
         "task": "text", "code_language": "Python", "text": "print('hello')"
     }) == ("code_excluded", "metadata")
+
+
+
+def test_language_loss_is_weighted_by_target_tokens_not_record_count():
+    # The longer second record contributes three times as many target tokens.
+    assert _token_weighted_mean_loss([2.0, 4.0], [10, 30]) == pytest.approx(3.5)
+    assert _token_weighted_mean_loss([2.0, 4.0], [10, 30]) != pytest.approx(3.0)
+
+
+def test_token_weighted_language_loss_rejects_invalid_inputs():
+    with pytest.raises(ValueError, match="matching lengths"):
+        _token_weighted_mean_loss([2.0], [10, 20])
+    with pytest.raises(ValueError, match="positive target-token counts"):
+        _token_weighted_mean_loss([2.0], [0])

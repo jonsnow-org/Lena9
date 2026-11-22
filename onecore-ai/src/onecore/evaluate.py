@@ -69,6 +69,16 @@ def _text_language_bucket(record: dict[str, Any]) -> tuple[str, str]:
     return "mixed_or_unknown", "unicode_script"
 
 
+def _token_weighted_mean_loss(record_losses: list[float], record_token_counts: list[int]) -> float:
+    """Aggregate per-record mean cross-entropy weighted by target-token count."""
+    if len(record_losses) != len(record_token_counts):
+        raise ValueError("record losses and token counts must have matching lengths")
+    if not record_losses or any(count <= 0 for count in record_token_counts):
+        raise ValueError("token-weighted loss requires records with positive target-token counts")
+    total_tokens = sum(record_token_counts)
+    return sum(loss * count for loss, count in zip(record_losses, record_token_counts)) / total_tokens
+
+
 def _asset_manifest_sha256(root: Path, records: list[dict[str, Any]]) -> str:
     assets_root = (root / "data" / "assets").resolve()
     paths: set[str] = set()
@@ -398,6 +408,8 @@ def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
     language_loss_sum: dict[str, float] = {}
     language_counts: dict[str, int] = {}
     language_token_counts: dict[str, int] = {}
+    language_record_losses: dict[str, list[float]] = {}
+    language_record_token_counts: dict[str, list[int]] = {}
     language_detection_methods: dict[str, dict[str, int]] = {}
     language_code_excluded = 0
     with torch.no_grad():
@@ -426,6 +438,8 @@ def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
                     language_token_counts[language_bucket] = (
                         language_token_counts.get(language_bucket, 0) + target_count
                     )
+                    language_record_losses.setdefault(language_bucket, []).append(loss_value)
+                    language_record_token_counts.setdefault(language_bucket, []).append(target_count)
                     methods = language_detection_methods.setdefault(language_bucket, {})
                     methods[detection_method] = methods.get(detection_method, 0) + 1
 
@@ -438,7 +452,10 @@ def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
         bucket: {
             "records": language_counts[bucket],
             "target_tokens": language_token_counts[bucket],
-            "mean_loss": language_loss_sum[bucket] / language_counts[bucket],
+            "mean_loss": _token_weighted_mean_loss(
+                language_record_losses[bucket], language_record_token_counts[bucket]
+            ),
+            "mean_record_loss": language_loss_sum[bucket] / language_counts[bucket],
             "detection_method_counts": language_detection_methods.get(bucket, {}),
         }
         for bucket in sorted(language_counts)
