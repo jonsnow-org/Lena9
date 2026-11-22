@@ -586,3 +586,24 @@ GitHub Actions Run #579 (ID `45058144645`) is in progress on that exact commit. 
 **Next:** obtain #579 Verify result; after it passes, ensure the separate CPU-index TorchCodec installation and import preflight succeed. Only then proceed to the pinned artifact range extraction and V3 media converter. Inspect the final report for source-row rehydration, raw files, 24 kHz audio derivatives, frame counts, and actual external-only 100/10/10 coverage. A green job without a full manifest gate is not a corpus pass.
 
 The CPU wheel requirement is also documented by TorchCodec's upstream installation guidance; the generic PyPI build in this run demonstrably loaded CUDA's `libnvrtc` and was rejected. Do not install CUDA packages or add CUDA libraries just to satisfy a CPU pipeline.
+
+
+### Run #579 CPU-only decoder preflight passed; V3 real-corpus conversion active
+
+Follow-up to the previous note: Run #579 (ID `45058144645`) is now progressing on V3 commit `26d00bf3bc37007e424c0f338635b8f3ca07d04e`.
+
+**Verify job completed successfully** with all expected stages: compile, exact V3 parameter report, full regression tests, V2 specification/FLOPs checks, architecture notebook, safe notebook preflights, one-step text smoke, random-init smoke, FineWeb-2 exact cursor resume, notebook validation and workflow isolation. V3 remains at **39,906,568 parameters** and config SHA-256 `6c879331c75da434c58680050f94035dc15626e7af4847db1b36e055c47d7708`.
+
+**Restore job progress:**
+- FFmpeg system libraries: success.
+- CPU-only PyTorch: success.
+- OneCore + corpus-restore dependencies: success.
+- TorchCodec CPU wheels from the PyTorch CPU index: success.
+- Runtime preflight: success — `torch.version.cuda is None`, Datasets reports TorchCodec available, and `AudioDecoder` plus `VideoDecoder` import successfully.
+- Exact V2 source registry snapshot restored: success.
+- `Convert the existing corpus with HTTP range reads`: currently in progress.
+- No conversion report or V3 corpus artifact exists yet.
+
+This is the first run in which the decoder preflight is successful and the pinned V2 media converter has actually started. Keep the V3 branch frozen until Run #579 concludes. Inspect the JSON report and independently confirm all five family/split quotas, raw media paths, 24 kHz derivatives, SHA256 integrity, and split disjointness before acknowledging corpus promotion. If any family fails, use the report's exact source errors to fix only the affected media adapter; do not reacquire completed text/tool data.
+
+Run #55 (ID `45017683783`) continues its independent validation/test evaluation-only job, with no optimizer updates. `main` remains `0b5ec69e839bfc6086a358511b54649b03c7be9a`.
