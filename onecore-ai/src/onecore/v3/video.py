@@ -28,13 +28,16 @@ class TemporalVideoCodec(nn.Module):
     """
 
     def __init__(self, width: int = 512, patch_size: int = 16,
-                 temporal_layers: int = 2, attention_heads: int = 8) -> None:
+                 temporal_layers: int = 2, attention_heads: int = 8,
+                 temporal_window_frames: int = 32, temporal_memory_frames: int = 4) -> None:
         super().__init__()
         if width % attention_heads:
             raise ValueError("width must be divisible by attention_heads")
-        if temporal_layers < 1:
-            raise ValueError("temporal_layers must be positive")
+        if temporal_layers < 1 or temporal_window_frames < 1 or temporal_memory_frames < 0:
+            raise ValueError("temporal layer/window must be positive and memory non-negative")
         self.width = width
+        self.temporal_window_frames = temporal_window_frames
+        self.temporal_memory_frames = temporal_memory_frames
         self.image_codec = VariableResolutionImageCodec(width, patch_size)
         layer = nn.TransformerEncoderLayer(
             d_model=width, nhead=attention_heads, dim_feedforward=4 * width,
@@ -77,7 +80,26 @@ class TemporalVideoCodec(nn.Module):
             torch.ones(frames, frames, device=video.device, dtype=torch.bool),
             diagonal=1,
         )
-        temporal_tokens = self.temporal(spatial_tokens, mask=causal_mask)
+        if frames <= self.temporal_window_frames:
+            temporal_tokens = self.temporal(spatial_tokens, mask=causal_mask)
+        else:
+            chunks = []
+            memory = None
+            for start in range(0, frames, self.temporal_window_frames):
+                current = spatial_tokens[:, start:start + self.temporal_window_frames]
+                combined = current if memory is None else torch.cat((memory, current), dim=1)
+                mask = torch.triu(
+                    torch.ones(
+                        combined.shape[1], combined.shape[1],
+                        device=video.device, dtype=torch.bool,
+                    ),
+                    diagonal=1,
+                )
+                processed = self.temporal(combined, mask=mask)
+                chunks.append(processed[:, -current.shape[1]:])
+                if self.temporal_memory_frames:
+                    memory = processed[:, -self.temporal_memory_frames:].detach()
+            temporal_tokens = torch.cat(chunks, dim=1)
         temporal_tokens = temporal_tokens.reshape(
             batch, tokens.shape[2], frames, self.width
         ).permute(0, 2, 1, 3)

@@ -69,9 +69,9 @@ def test_v3_flow_matching_and_variable_shape_generation_paths():
         image = model.generate_image(31, 47, condition_ids=torch.randint(0, 128, (1, 4)), steps=2)
         audio = model.generate_audio(1001, condition_ids=torch.randint(0, 128, (1, 4)), steps=2)
         video = model.generate_video(
-            5, 31, 47, condition_ids=torch.randint(0, 128, (1, 4)), steps=2
+            13, 31, 47, condition_ids=torch.randint(0, 128, (1, 4)), steps=2, chunk_frames=4
         )
 
     assert image.shape == (1, 3, 31, 47)
     assert audio.shape == (1, 1, 1001)
-    assert video.shape == (1, 5, 3, 31, 47)
+    assert video.shape == (1, 13, 3, 31, 47)

@@ -52,14 +52,14 @@ def test_v3_video_codec_keeps_all_frames_and_variable_timestamps():
     codec = TemporalVideoCodec(
         width=32, patch_size=8, temporal_layers=1, attention_heads=4
     ).eval()
-    video = torch.rand(1, 5, 3, 32, 48)
-    timestamps = torch.tensor([[0.0, 0.04, 0.12, 0.20, 0.31]])
+    video = torch.rand(1, 37, 3, 32, 48)
+    timestamps = torch.arange(37, dtype=torch.float32).unsqueeze(0) / 24.0
 
     with torch.no_grad():
         reconstruction, encoding = codec(video, timestamps=timestamps)
 
-    assert encoding.frame_count == 5
-    assert encoding.tokens.shape == (1, 5, 24, 32)
+    assert encoding.frame_count == 37
+    assert encoding.tokens.shape == (1, 37, 24, 32)
     assert torch.equal(encoding.timestamps, timestamps)
     assert reconstruction.shape == video.shape
 
@@ -71,10 +71,10 @@ def test_v3_video_temporal_attention_is_causal():
     ).eval()
     original = torch.rand(1, 5, 3, 32, 32)
     changed_future = original.clone()
-    changed_future[:, 4] = torch.rand_like(changed_future[:, 4])
+    changed_future[:, -1] = torch.rand_like(changed_future[:, -1])
 
     with torch.no_grad():
         first = codec.encode(original)
         second = codec.encode(changed_future)
 
-    assert torch.allclose(first.tokens[:, :4], second.tokens[:, :4], atol=1e-6, rtol=1e-6)
+    assert torch.allclose(first.tokens[:, :-1], second.tokens[:, :-1], atol=1e-6, rtol=1e-6)

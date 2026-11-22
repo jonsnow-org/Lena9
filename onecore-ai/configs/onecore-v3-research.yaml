@@ -13,6 +13,11 @@ model:
   audio_quantizer_stages: 8
   temporal_layers: 2
   max_image_context_tokens: 256
+  max_video_context_tokens: 256
+  max_flow_context_tokens: 256
+  temporal_window_frames: 32
+  temporal_memory_frames: 4
+  video_generation_chunk_frames: 8
   dropout: 0.0
 # The current shared attention is quadratic in token count. Do not set a
 # production sequence limit until peak-memory and throughput benchmarks exist.

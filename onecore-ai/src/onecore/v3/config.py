@@ -22,6 +22,11 @@ class V3Config:
     audio_quantizer_stages: int = 8
     temporal_layers: int = 2
     max_image_context_tokens: int = 256
+    max_video_context_tokens: int = 256
+    max_flow_context_tokens: int = 256
+    temporal_window_frames: int = 32
+    temporal_memory_frames: int = 4
+    video_generation_chunk_frames: int = 8
     dropout: float = 0.0
 
     def __post_init__(self) -> None:
@@ -35,7 +40,9 @@ class V3Config:
             self.audio_latent_channels, self.audio_hidden_channels,
             self.audio_codebook_size, self.audio_quantizer_stages, self.layers,
             self.temporal_layers, self.max_image_context_tokens,
-        ) < 1:
+            self.max_video_context_tokens, self.max_flow_context_tokens,
+            self.temporal_window_frames, self.video_generation_chunk_frames,
+        ) < 1 or self.temporal_memory_frames < 0:
             raise ValueError("codec and layer dimensions must be positive")
         if not 0.0 <= self.dropout < 1.0:
             raise ValueError("dropout must be in [0, 1)")
