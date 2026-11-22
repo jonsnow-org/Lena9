@@ -444,3 +444,8 @@ Implemented on `research/onecore-v3-implementation`; latest branch commit at thi
 **CI:** Run #553 (ID `45038253364`) is queued for current converter commit and must finish before the converter code is accepted. Intermediate runs #549–#552 were cancelled as later commits superseded them; do not count them as failures or passes. Run #540 is the confirmed passing baseline before converter changes.
 
 **Data status:** The converter is implemented and fixture-tested only when Run #553 passes. It has not been run on the full 15.8 GB corpus. Do not claim external-only 100/10/10 coverage or start training. The next data task is to execute the converter against the exact saved corpus artifact and pinned sources, preserve the report, and resolve missing/disabled/gated media sources without repeating text/tool acquisition.
+
+
+### Current converter verification checkpoint — Run #554
+
+Run #554 (ID `45038258359`) is the active CI run for V3 branch head `e5cd116164e6b67ffe397e10af9b9251b9e5ff85`. Confirmed successful steps so far: dependency installation, compile, exact parameter report, complete unit/regression suite (including the new converter fixtures), V2 architecture/FLOP contract, exact architecture notebook, safe notebook preflights, text-training one-step smoke, and random-init smoke gate. FineWeb-2 streaming/cursor-resume is currently in progress; notebook validation and workflow-isolation checks remain pending. Do not mark Run #554 passed until all remaining steps complete. No additional V3 commits should be pushed while this run is active, to avoid cancelling it.
