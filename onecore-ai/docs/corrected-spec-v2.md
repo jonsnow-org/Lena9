@@ -50,7 +50,7 @@ The trainer records per-step and total FLOPs using the actual sequence length of
 
 ## Evaluation and promotion
 
-Promotion is checkpoint-specific and remains blocked while `configs/promotion-thresholds.json` is `not-approved`. The only currently defined floor is tool-behavior regression 0.9. Do not invent loss, codebook, or T-LDM thresholds. Measure them independently on validation and test with the exact checkpoint, tokenizer, and manifest lineage, then approve the numeric thresholds.
+Promotion is checkpoint-specific and remains blocked while `configs/promotion-thresholds.json` is `not-approved`. The v2 pack explicitly requires two regression guards: text loss must remain at or below **1.02×** its baseline on the identical tokenizer, manifest, and selected held-out records; tool execution success must retain at least **0.9×** its baseline on the same verified cases. Tool evidence must contain at least **16 examples overall** and at least **4 examples for each workflow step**. These are regression/evidence requirements, not substitutes for approval of absolute text/tool/image/audio/video losses, codebook usage/entropy, or T-LDM masked-span thresholds. Those absolute quality thresholds remain unapproved and must be measured rather than invented.
 
 The first random-initialization language-loss reference is `ln(5144) = 8.5456` nats. The one-step smoke gate rejects a value more than 1.0 nat from that reference; this is a tokenizer/vocabulary/loss-integrity sanity check, not a model-quality threshold.
 
