@@ -248,3 +248,24 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
     assert "text,tool,image,audio,video" in training
     assert "cancel-in-progress: false" in bootstrap and "cancel-in-progress: false" in training
     assert "gh workflow run onecore-training.yml" not in bootstrap
+
+def test_checkpoint_parent_is_deleted_only_after_uploaded_child_artifact_is_verified():
+    repository = Path(__file__).resolve().parents[2]
+    action = (repository / ".github" / "actions" / "onecore-train" / "action.yml").read_text(encoding="utf-8")
+
+    upload = action.index("name: Upload resumable model, optimizer, scheduler, RNG and tokenizer state")
+    verify = action.index("name: Verify uploaded child checkpoint artifact before deleting its parent")
+    delete = action.index("name: Remove superseded checkpoint after the new checkpoint is safely uploaded")
+
+    assert upload < verify < delete
+    verification = action[verify:delete]
+    for required in (
+        "EXPECTED_ARTIFACT_NAME",
+        "size_in_bytes",
+        "expired",
+        "workflow_run",
+        "digest",
+        "sha256:",
+    ):
+        assert required in verification
+    assert "gh api -X DELETE" in action[delete:]

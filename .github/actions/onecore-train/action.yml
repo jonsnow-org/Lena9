@@ -235,6 +235,47 @@ runs:
         retention-days: 90
         compression-level: 1
 
+    - name: Verify uploaded child checkpoint artifact before deleting its parent
+      shell: bash
+      env:
+        EXPECTED_ARTIFACT_NAME: ${{ inputs.output_artifact_name }}
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        artifact_json="$(gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts" \
+          --paginate --jq '.artifacts[] | select(.name == env.EXPECTED_ARTIFACT_NAME)' | head -n 1)"
+        if [[ -z "${artifact_json}" ]]; then
+          echo "::error::Uploaded child checkpoint artifact was not found; preserving parent checkpoint."
+          exit 1
+        fi
+        ARTIFACT_JSON="${artifact_json}" python - <<'PY'
+        import json
+        import os
+        import re
+
+        artifact = json.loads(os.environ["ARTIFACT_JSON"])
+        expected_name = os.environ["EXPECTED_ARTIFACT_NAME"]
+        if artifact.get("name") != expected_name:
+            raise ValueError(f"uploaded checkpoint name mismatch: {artifact.get('name')!r}")
+        if artifact.get("expired") is not False:
+            raise ValueError("uploaded checkpoint artifact is expired or has unknown expiry state")
+        if int(artifact.get("size_in_bytes", 0)) <= 0:
+            raise ValueError("uploaded checkpoint artifact is empty")
+        workflow_run = artifact.get("workflow_run") or {}
+        if int(workflow_run.get("id", -1)) != int(os.environ["GITHUB_RUN_ID"]):
+            raise ValueError("uploaded checkpoint belongs to a different workflow run")
+        digest = artifact.get("digest")
+        if not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+            raise ValueError("GitHub did not return a valid SHA-256 digest for the uploaded checkpoint artifact")
+        print(json.dumps({
+            "verified_artifact_id": artifact["id"],
+            "verified_artifact_name": expected_name,
+            "verified_artifact_size_bytes": artifact["size_in_bytes"],
+            "verified_artifact_digest": digest,
+            "workflow_run_id": workflow_run["id"],
+        }, ensure_ascii=False, indent=2))
+        PY
+
     - name: Remove superseded checkpoint after the new checkpoint is safely uploaded
       if: ${{ inputs.previous_checkpoint_artifact_name != '' }}
       shell: bash
