@@ -47,7 +47,7 @@ The following are code facts observed on `research/onecore-foundation`:
 3. The video branch in `_record_sequence` rejects records with more than `cfg.max_video_frames`; current config sets this to 4. It encodes frames and simple adjacent-frame pixel differences, not a temporal generative model.
 4. `onecore-ai/src/onecore/config.py::ModelConfig` fixes image size, patch size, audio group size and max video frames as architecture dimensions. The image codec input width is derived from `patch_size² × 3`; changing patch size changes parameter shapes.
 5. `onecore-ai/src/onecore/audio.py::log_mel_to_waveform` is pseudoinverse + Griffin–Lim, and `decode_audio_codes` calls that approximate helper.
-6. `onecore-ai/src/onecore/acquire.py::task_coverage` currently counts records with usable payloads but does not filter by `classify_record_data(record) == "external"`. This allows bootstrap/synthetic records to satisfy a quota explicitly defined as external in the specification. The optimizer and tokenizer do apply external-only filtering, so the acquisition gate and actual training population can disagree.
+6. `onecore-ai/src/onecore/acquire.py::task_coverage` is now corrected on the current branch: it requires `external_record_is_trainable(record)` as well as a usable payload. That correction was not present in the code used by Run #48 (`5489900`) or Run #51 (`4186226`). Run #48's green 100/10/10 gate therefore counted usable bootstrap/synthetic rows and is not evidence of external-only quotas. Run #51's `train.py` did restrict tokenizer and optimizer inputs to `external`, but its `train_existing` path skipped the corrected dataset gate. The optimizer lineage is external-only; the corpus's per-family 100/10/10 eligibility remains unproven until audited with the corrected code.
 7. Existing `data.py` already exposes `classify_record_data` and immutable provenance checks; use those shared definitions rather than inventing a second provenance classifier.
 8. Current `expected_parameter_count` is shape-derived and strictly checked. Any architecture version that changes dimensions must calculate a new exact parameter count, config hash and checkpoint lineage.
 
@@ -162,21 +162,24 @@ Before any v3 training:
 
 ## 9. Existing corpus diagnostic (Run #48)
 
-The previously retained diagnostic artifact for corpus Run #48 reports:
+The retained diagnostic for corpus Run #48 and its completed gate logs establish the following:
 - 58 registered sources; 18 completed, 8 unavailable, 24 pending; `acquisition_complete=false`.
-- Its legacy report still marked `training_ready=true`, but that flag is not trustworthy for the external-only quota until recomputed with the corrected gate.
-- Reported train/validation/test family counts include non-external bootstrap/synthetic rows. In particular, validation and test image-caption counts are each 12, matching the known bootstrap baseline count; this does **not** establish 10 external image holdout records.
-- The executed data-gate notebook's aggregate modality counts also mix provenance classes. Therefore no claim is made that the current corpus passes the corrected external-only 100/10/10 gate.
-- The full corpus artifact is approximately 15.8 GB. The small diagnostic artifact does not contain all manifests/assets, so exact corrected external counts cannot be calculated from it alone.
+- The legacy report marked `training_ready=true`, but Run #48 used the pre-fix `task_coverage()` implementation. Its green gate counted any usable payload, including bootstrap/synthetic rows.
+- The mixed-class diagnostic reported validation and test image counts of 12 each, exactly matching the bootstrap baseline count. Those values do **not** establish 10 external image holdouts.
+- Run #51 resumed from the same corpus. Its training code filtered tokenizer and optimizer inputs to `external`, and all ten 150-step sessions completed; however, the corrected 100/10/10 gate was not run in that `train_existing` path. Do not infer external holdout sufficiency from the successful optimizer sessions.
+- The full corpus artifact is approximately 15.8 GB. The 15 KB diagnostic artifact does not contain all manifests/assets, so corrected per-family external counts cannot be derived from it alone.
+- As of 2026-11-22 13:45 UTC, Run #52 is performing evaluation-only work on the saved train-10 checkpoint; its workflow intentionally skips the corpus gate. Run #55 is queued with a revised evaluation-only request. Neither run performs optimizer updates, and neither status alone proves the corpus quotas.
 
-**Action:** Do not reacquire all sources. Re-run only the corrected provenance/usable-payload audit against the existing full corpus artifact when it is available to the workflow, then resume only missing sources/splits/modalities using stored cursors.
+**Action:** Do not reacquire the corpus wholesale. Audit the existing full artifact with the corrected external-only coverage/provenance code when the evaluation lock is free. If and only if the audit identifies missing quotas, resume only the relevant saved source/split cursors; do not restart completed sources.
 
 ## 10. Immediate implementation log
 
-- [x] Corrected `task_coverage()` to count only `external_record_is_trainable(record)` records with usable payloads.
-- [x] Added regression coverage: valid bootstrap payloads for all five families do not satisfy external quotas; bootstrap-only image payloads cause the gate to fail.
-- [ ] Run focused tests and full CI on the updated branch; connector commit inspection confirms the intended diff, but no test run is claimed yet.
-- [ ] Re-audit the existing corpus artifact with the corrected gate; do not repeat acquisition or training blindly.
-- [ ] Begin v3 architecture implementation as separate versioned change sets after architecture decisions and resource benchmarks.
+- [x] Corrected `task_coverage()` to require `external_record_is_trainable(record)` and a usable payload.
+- [x] Added regression tests proving bootstrap payloads cannot satisfy any external family quota and bootstrap-only image payloads fail the gate.
+- [x] Verified the correction and current architecture/config/FLOPs suite in CI Run #456 on commit `2de04ec` (success).
+- [x] Confirmed Run #51 training code enforced external-only tokenizer/optimizer inputs and completed ten 150-step sessions; final checkpoint artifact `onecore-state-train-10` was uploaded before the evaluation step was cancelled.
+- [ ] Re-audit the existing 15.8 GB corpus artifact with the corrected external-only gate; Run #52/#55 are evaluation-only and do not establish this quota.
+- [ ] Resume only missing external source/split cursors if the corrected audit proves a quota gap; preserve all existing source provenance and artifacts.
+- [ ] Begin v3 architecture implementation only after the current checkpoint/corpus evidence is reconciled and resource estimates are measured.
 
 This file is the durable session handoff. Every future OneCore session must read it before modifying architecture, corpus, training workflows or checkpoint lineage, then update the implementation log with commit/test evidence.
