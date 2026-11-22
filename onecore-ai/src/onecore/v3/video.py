@@ -76,11 +76,11 @@ class TemporalVideoCodec(nn.Module):
         spatial_tokens = tokens.permute(0, 2, 1, 3).reshape(
             batch * tokens.shape[2], frames, self.width
         )
-        causal_mask = torch.triu(
-            torch.ones(frames, frames, device=video.device, dtype=torch.bool),
-            diagonal=1,
-        )
         if frames <= self.temporal_window_frames:
+            causal_mask = torch.triu(
+                torch.ones(frames, frames, device=video.device, dtype=torch.bool),
+                diagonal=1,
+            )
             temporal_tokens = self.temporal(spatial_tokens, mask=causal_mask)
         else:
             chunks = []

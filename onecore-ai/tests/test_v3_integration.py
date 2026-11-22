@@ -8,7 +8,9 @@ def _tiny_v3():
         text_vocab_size=128, width=32, layers=1, attention_heads=4,
         patch_size=8, audio_latent_channels=16, audio_hidden_channels=24,
         audio_codebook_size=32, audio_quantizer_stages=3,
-        temporal_layers=1, max_image_context_tokens=16, dropout=0.0,
+        temporal_layers=1, max_image_context_tokens=16, max_video_context_tokens=16,
+        max_flow_context_tokens=16, temporal_window_frames=8, temporal_memory_frames=2,
+        video_generation_chunk_frames=4, dropout=0.0,
     )
 
 

@@ -27,10 +27,10 @@ professional output quality.
   from Griffin–Lim, but it is not a neural speech/music system until trained on
   licensed high-quality audio with spectral, waveform, perceptual and adversarial
   objectives and listening evaluations.
-- Video quality is unmeasured. Variable duration is represented without truncating
-  frames in this module, but the temporal attention is quadratic in frame count per
-  spatial location. Long clips need chunked temporal memory/KV caching, motion
-  objectives, synchronization data, and temporal consistency evaluation.
+- Video quality is unmeasured. Variable duration is processed in bounded temporal
+  windows with detached latent memory, and generation can yield decoded chunks.
+  Cross-window memory is truncated, not full KV-cache attention; long clips still
+  need synchronization data, motion objectives, and temporal consistency evaluation.
 - The shared core creates dynamic sinusoidal positions and removes the learned
   fixed 512-position table. Attention is still quadratic; this is not proof of
   efficient long-context scaling. Benchmark memory, throughput, and long-context

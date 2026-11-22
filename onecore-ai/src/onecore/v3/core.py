@@ -352,7 +352,7 @@ class OneCoreV3(nn.Module):
             current_timestamps = timestamps[:, start:stop]
             time_tokens = self.video_codec.time_projection(
                 current_timestamps.to(self.text_embedding.weight.dtype).unsqueeze(-1)
-            ).repeat_interleave(patches, dim=1)
+            )
             condition_parts = [part for part in (condition, memory, time_tokens) if part is not None]
             current_condition = torch.cat(condition_parts, dim=1)
             current_frames = stop - start
