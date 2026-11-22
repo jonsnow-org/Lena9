@@ -281,3 +281,8 @@ A direct source inspection of `src/onecore/acquire.py` confirms:
 - `_video_frames()` and `_write_frames()` default to and enforce a four-frame sample.
 
 Therefore the V2 acquired media assets are lossy derivatives for V3 purposes; they are not sufficient source masters for native-resolution image, waveform codec, or variable-duration video training. Do not silently treat the V2 media corpus as V3 raw data. Reuse its text/tool records and immutable source registry/cursors where valid, but selectively re-read only the media rows needed to preserve raw source assets at the same pinned immutable revisions. This is a targeted media-source recovery, not a full corpus rediscovery or text/tool reacquisition.
+
+
+### V3 raw-data gate and provenance validation — commit `a2093329d2424553098f4f956526e7588ad449e5`
+
+Added `src/onecore/v3/manifest.py` to require immutable external provenance, pinned source revisions, preserved raw media assets, asset SHA-256 verification, source-row and asset split-disjointness, and per-family train/validation/test quotas. Bootstrap/synthetic records are explicitly excluded from external counts. Tests cover successful external coverage, bootstrap exclusion, cross-split asset leakage, and missing raw media. CI Run #490 is pending.
