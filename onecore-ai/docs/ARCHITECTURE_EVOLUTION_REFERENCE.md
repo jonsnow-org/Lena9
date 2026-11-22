@@ -244,3 +244,14 @@ The V3 temporal path now processes video in causal windows (default 32 frames) w
 Run #480 has passed compilation, the full unit/regression suite, and the v2 architecture/FLOPs checks; the remaining notebook and streaming checks are still running. The preceding #477 CI run passed all 173 tests and all workflow/notebook checks.
 
 This is bounded-window temporal processing, not full-context KV caching. The detached memory intentionally truncates backpropagation across windows; quality and long-range temporal consistency remain unmeasured.
+
+
+### V3 joint training objective — commit `095b1a7a8eebe05e27104edebe2ea7d61a2398e9`
+
+Added `src/onecore/v3/training.py`:
+- Joint objective for causal text/tool prediction, image flow + reconstruction, audio flow + multi-resolution STFT/waveform + RVQ commitment, and video flow + reconstruction + temporal consistency.
+- Paired text-to-modality contrastive alignment where paired condition IDs are supplied.
+- `train_v3_step()` with optimizer zeroing, backpropagation, gradient clipping and parameter update.
+- A separate discriminator-step helper for optional image/audio hinge discriminators.
+
+This is a single-step training prototype, not yet a durable multi-session training workflow. V3 checkpoint save/restore, optimizer/scheduler resume, dataset conversion, alternating discriminator orchestration, quality benchmarks and promotion gates remain incomplete. The current v3 CI run is pending.
