@@ -958,7 +958,7 @@ def _append_manifests(project_root: Path, rows_by_split: dict[str, list[dict[str
     return counts
 
 def task_coverage(project_root: str | Path) -> dict[str, dict[str, int]]:
-    """Count usable records with decoded payloads; exclude metadata-only rows."""
+    """Count only usable external records with decoded payloads; exclude bootstrap/synthetic and metadata-only rows."""
     root = Path(project_root).resolve()
     assets_root = (root / "data" / "assets").resolve()
     task_groups = {
@@ -978,6 +978,7 @@ def task_coverage(project_root: str | Path) -> dict[str, dict[str, int]]:
         usable = [
             record for record in records
             if str(record.get("split", "")) == split
+            and external_record_is_trainable(record)
             and _external_record_has_usable_payload(record, assets_root)
         ]
         coverage[split] = {
