@@ -168,7 +168,7 @@ def preserve_image_payload(value: Any, assets_root: str | Path, record_id: str,
         elif value.get("src") or value.get("url"):
             temp = _download_to_temp(str(value.get("src") or value.get("url")), ".img", max_bytes)
         elif value.get("array") is not None:
-            value = value["array"]
+            return preserve_image_payload(value["array"], assets_root, record_id, max_bytes)
         else:
             raise ValueError("image payload dict must contain path, bytes, URL, or array")
         try:
