@@ -158,6 +158,8 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
     assert "./.github/actions/onecore-acquire" in bootstrap
     assert "./.github/actions/onecore-train" in bootstrap
     assert "steps: ${{ needs.prepare.outputs.steps_per_job }}" in bootstrap
+    ci_guard = (repo_root / ".github" / "workflows" / "onecore-ci.yml").read_text(encoding="utf-8")
+    assert 'step["with"]["steps"] == "$" + "{{ needs.prepare.outputs.steps_per_job }}"' in ci_guard
     assert bootstrap.count("steps: ${{ needs.prepare.outputs.steps_per_job }}") == 10
     assert "not 1 <= per_job_steps <= 250" in bootstrap
     assert "sessions_to_run * per_job_steps" in bootstrap

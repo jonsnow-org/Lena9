@@ -345,7 +345,7 @@ jobs:
           for index, step in enumerate(train_steps, 1):
               assert step["id"] == f"train{index:02d}"
               assert step["uses"] == "./.github/actions/onecore-train"
-              assert step["with"]["steps"] == "${{ needs.prepare.outputs.steps_per_job }}"
+              assert step["with"]["steps"] == "$" + "{{ needs.prepare.outputs.steps_per_job }}"
               assert step["with"]["notebook"] == expected_notebooks[index - 1]
               if index == 1:
                   assert step["with"]["setup_environment"] == "true"
