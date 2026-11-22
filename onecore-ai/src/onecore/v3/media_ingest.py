@@ -1,7 +1,7 @@
 """Loss-preserving source-media ingestion for OneCore v3.
 
-Unlike the v2 acquisition adapter, these helpers never resize images or cap video
-frame counts. They retain the original source file and emit explicit metadata.
+These helpers never resize images or cap video frame counts. They retain the
+original source file and emit explicit metadata for reproducible preprocessing.
 """
 from __future__ import annotations
 
@@ -33,7 +33,8 @@ def _copy_source(source: str | Path, assets_root: str | Path, record_id: str,
     target_dir.mkdir(parents=True, exist_ok=True)
     suffix = source_path.suffix.lower() or ".bin"
     target = target_dir / f"{_safe_id(record_id)}{suffix}"
-    shutil.copy2(source_path, target)
+    if source_path != target.resolve():
+        shutil.copy2(source_path, target)
     return target, target.relative_to(root).as_posix()
 
 
@@ -67,7 +68,7 @@ def preserve_audio_source(source: str | Path, assets_root: str | Path,
 
 def preserve_video_source(source: str | Path, assets_root: str | Path,
                           record_id: str) -> dict[str, Any]:
-    """Preserve the original video and stream every decoded frame to lossless PNG."""
+    """Preserve original video and stream every decoded frame to lossless PNG."""
     target, relative = _copy_source(source, assets_root, record_id, "video")
     metadata = iio.immeta(target)
     fps_value = metadata.get("fps", metadata.get("framerate"))
@@ -77,6 +78,8 @@ def preserve_video_source(source: str | Path, assets_root: str | Path,
         fps = 0.0
     frame_dir = Path(assets_root).resolve() / "frames" / _safe_id(record_id)
     frame_dir.mkdir(parents=True, exist_ok=True)
+    for stale in frame_dir.glob("*.png"):
+        stale.unlink()
     frame_paths: list[str] = []
     width = height = None
     for index, frame in enumerate(iio.imiter(target)):
