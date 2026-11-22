@@ -11,8 +11,15 @@ import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Iterable
 
-import requests
-from remotezip import RemoteZip
+try:
+    import requests
+except ImportError:  # pragma: no cover - corpus-restore extra supplies requests
+    requests = None
+
+try:
+    from remotezip import RemoteZip
+except ImportError:  # optional outside the explicit corpus-restore workflow
+    RemoteZip = None
 
 REQUIRED_MEMBERS = (
     "train.jsonl",
@@ -46,6 +53,11 @@ def extract_v2_artifact_manifests(
     output_root: str | Path,
 ) -> dict[str, object]:
     """Range-extract only three manifests and acquisition report from a GH artifact."""
+    if requests is None or RemoteZip is None:
+        raise RuntimeError(
+            "range artifact extraction requires the optional dependency group: "
+            "pip install -e 'onecore-ai[corpus-restore]'"
+        )
     if not github_token.strip():
         raise ValueError("GITHUB_TOKEN is required to read the existing workflow artifact")
     if artifact_id < 1:

@@ -150,3 +150,25 @@ def test_artifact_extractor_reads_manifests_from_stored_corpus_tar(monkeypatch, 
     assert result["full_archive_downloaded"] is False
     for name, payload in payloads.items():
         assert (tmp_path / "data" / name).read_bytes() == payload
+
+
+
+def test_artifact_manifest_helpers_import_without_optional_range_dependency():
+    # The standard dev extra intentionally does not install RemoteZip; helper
+    # functions and converter fixture tests must remain usable without corpus-restore.
+    from onecore.v3 import artifact
+
+    assert artifact.REQUIRED_MEMBERS == (
+        "train.jsonl", "validation.jsonl", "test.jsonl", "acquisition-report.json"
+    )
+    assert callable(artifact.select_artifact_members)
+
+
+def test_artifact_range_extraction_fails_fast_without_optional_dependency(monkeypatch, tmp_path):
+    import onecore.v3.artifact as artifact
+
+    monkeypatch.setattr(artifact, "RemoteZip", None)
+    with pytest.raises(RuntimeError, match="corpus-restore"):
+        artifact.extract_v2_artifact_manifests(
+            "jonsnow-org/Lena9", 14715699177, "test-token", tmp_path
+        )
