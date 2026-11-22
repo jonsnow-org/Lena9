@@ -306,3 +306,10 @@ The default `onecore-v3-prototype-1` config was instantiated in CI and reported:
 - Image/video/flow global context budgets: 256 tokens each; temporal windows 32 frames with 4-frame detached memory; video generation chunk default 8 frames.
 
 CI Run #494 passed all 182 tests (12 warnings), the exact V3 parameter report, V2 architecture/FLOP checks, all notebook and smoke checks, and workflow isolation. This is an exact parameter/storage report, not a peak-memory benchmark or quality result.
+
+
+### V3 streamed video input and duplicate-sample protection — commit `e79c5e4b0d297fefd5ef79556a8fbb89cff900c8`
+
+The video codec now exposes `iter_encode()`, which encodes frames in bounded chunks and carries a detached temporal memory between chunks; `OneCoreV3.forward_video_chunks()` yields decoded input-video chunks without requiring a full latent tensor. The convenience `forward_video()` reuses the streamed encodings rather than encoding the source twice.
+
+The V3 manifest gate was tightened to reject duplicate source rows even within one split and duplicate asset hashes reused by different records within a split; repeated identical frames within the same video record remain allowed. CI verification is pending.
