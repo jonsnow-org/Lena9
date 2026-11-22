@@ -123,9 +123,12 @@ class OneCoreV3Objective(nn.Module):
         if sample is not None:
             waveform = sample["waveform"]
             condition = self.model.text_condition(sample.get("condition_ids"))
-            encoding = self.model.audio_codec.encode(waveform)
+            sample_rate = int(sample.get("sample_rate", 0))
+            if sample_rate < 1:
+                raise ValueError("audio batch requires explicit normalized sample_rate metadata")
+            encoding = self.model.audio_codec.encode(waveform, sample_rate=sample_rate)
             shared_latents = self.model.audio_to_shared(encoding.quantized).transpose(1, 2)
-            reconstruction, _ = self.model.forward_audio(waveform)
+            reconstruction, _ = self.model.forward_audio(waveform, sample_rate=sample_rate)
             flow = self.model.flow_matching_loss(shared_latents, 2, condition)
             recon = audio_multiresolution_stft_loss(reconstruction, waveform)
             losses["audio_flow_loss"] = flow
