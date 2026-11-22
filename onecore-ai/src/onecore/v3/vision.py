@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 import torch
 from torch import nn
+from torch.nn import functional as F
 
 
 @dataclass(frozen=True)
@@ -63,12 +64,10 @@ class VariableResolutionImageCodec(nn.Module):
         _, _, height, width = images.shape
         if height < self.patch_size or width < self.patch_size:
             raise ValueError("image dimensions must be at least one patch")
-        if height % self.patch_size or width % self.patch_size:
-            raise ValueError(
-                f"image dimensions must be divisible by patch_size={self.patch_size}; "
-                "preserve aspect ratio and pad/crop explicitly in the data pipeline"
-            )
-        features = self.encoder(images)
+        padded_height = ((height + self.patch_size - 1) // self.patch_size) * self.patch_size
+        padded_width = ((width + self.patch_size - 1) // self.patch_size) * self.patch_size
+        padded = F.pad(images, (0, padded_width - width, 0, padded_height - height))
+        features = self.encoder(padded)
         grid_height, grid_width = features.shape[-2:]
         tokens = features.flatten(2).transpose(1, 2)
         positions = _sincos_2d(
@@ -92,7 +91,10 @@ class VariableResolutionImageCodec(nn.Module):
         features = tokens.transpose(1, 2).reshape(
             tokens.shape[0], self.width, grid_height, grid_width
         )
-        return self.decoder(features)
+        decoded = self.decoder(features)
+        if isinstance(encoding, ImageEncoding):
+            decoded = decoded[..., :encoding.image_height, :encoding.image_width]
+        return decoded
 
     def forward(self, images: torch.Tensor) -> tuple[torch.Tensor, ImageEncoding]:
         encoded = self.encode(images)
