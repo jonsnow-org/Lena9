@@ -266,3 +266,8 @@ CI Run #483 completed successfully:
 - Architecture notebook, safe notebook preflights, text one-step smoke, random-init smoke gate, FineWeb-2 cursor-resume smoke, notebook validation, and workflow-isolation checks all passed.
 
 This verifies the prototype code paths and regression suite, not model quality or production training. V3 has not been trained on a real corpus; no generated sample has been evaluated for human quality.
+
+
+### V3 raw payload ingestion — commit `8a9f42be9a44e750eabeb7d1a343207fb78f4a2b`
+
+The V3 media ingestion adapter now accepts source values in common dataset forms: original file paths, HTTP(S) URLs, encoded bytes, decoded PIL images/NumPy image arrays, audio arrays with sample-rate metadata, and complete frame lists with optional timestamps. It preserves the original encoded source where supplied, enforces configurable download-size ceilings, and writes every supplied video frame without a fixed frame-count cap. Tests cover byte/array image and audio payloads and a nine-frame video sequence. CI Run #486 is pending.
