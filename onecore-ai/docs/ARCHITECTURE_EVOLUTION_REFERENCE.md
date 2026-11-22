@@ -480,3 +480,22 @@ The diagnostic report exposes the previous data-gate false positive:
 - The V3 converter now has a targeted missing-media quota pass: it can fetch only the 10 missing image rows from each native validation/test split at that exact pinned revision, then restore matching existing V2 media rows. It does not reacquire text/tool records or fabricate examples.
 
 **Current execution:** Run #566 (ID `45039655675`) is executing the optional one-time V3 corpus-restore job, triggered by commit `f76e9972b7f588567f3dc86ca4cd3ce6af05ef70`. The job uses the verified artifact ID, range extraction, the exact V2 source-registry snapshot, pinned revisions from the artifact report, and only uploads the converted corpus if the external-only gate passes. Do not start V3 training while this is running or before the gate report is inspected.
+
+
+### V3 nested-tar range restore investigation — 2026-11-22
+
+The real V2 artifact layout was inspected from the existing acquisition workflow before changing the converter. The artifact is uploaded as a single `onecore-corpus.tar` file with `compression-level: 0`; the outer GitHub Actions artifact is therefore a ZIP wrapper containing a stored TAR member, not a ZIP containing `data/train.jsonl` directly. The TAR itself writes the four required files first (`train.jsonl`, `validation.jsonl`, `test.jsonl`, `acquisition-report.json`), followed by assets/metadata. This ordering permits bounded streaming of only the manifests and report without fetching the 15.8 GB asset payload.
+
+**Failure evidence and corrections:**
+- Run #566 (ID `45039655675`) failed in the converter because `RemoteZip`'s default suffix range request was not supported by the signed artifact storage URL (`RangeNotSupported`). The Verify job passed; no conversion report/corpus artifact was produced.
+- Run #568 (ID `45039853193`) repeated the same range failure after resolving the signed URL directly. This proved that redirect handling alone was not the cause.
+- V3 commit `f26654e3512b6afdf5f70ec10cbf88e683ccb90c` changed `RemoteZip` to use `support_suffix_range=False`, which uses HEAD plus an explicit start/end byte range. Run #569 (ID `45045556387`) passed the Verify job and advanced beyond the range error, then failed because the converter assumed flat JSONL members instead of the actual nested TAR layout.
+- V3 commit `174c4650e1fd65799c53c89d68b6e49aeb9c2737` now detects the single `onecore-corpus.tar` member, requires it to be `ZIP_STORED`, and streams only the four required TAR files into temporary files before atomic replacement. It does not download or expand the full corpus. A regression fixture builds the same stored-ZIP/TAR shape and verifies extraction plus the explicit-range option.
+
+**Current verification state:** Run #570 (ID `45045979340`) is active on V3 commit `174c4650e1fd65799c53c89d68b6e49aeb9c2737`. The Verify job has passed compile, exact parameter report and unit/regression tests; the V2 FLOP check is in progress. The corpus-restore job has reached the real converter step. Do not claim converter success, external-only coverage, or a V3 corpus artifact until the job publishes its manifest-gate report and artifact list. Do not push another V3 commit while #570 is active.
+
+The confirmed V3 prototype-2 parameter/config report remains **39,906,568 trainable parameters** and config SHA-256 `6c879331c75da434c58680050f94035dc15626e7af4847db1b36e055c47d7708` from Run #540; the current converter commits do not alter the model config. These are not peak-memory or quality measurements. CPU peak memory/throughput, V3 checkpoint save/restore lineage, and multi-session V3 training remain unimplemented/unverified; no V3 training may start before the corpus gate, benchmarks, and checkpoint design pass.
+
+**V2 evaluation continuity:** Run #52 (ID `45015944155`) was cancelled during independent validation/test; its evaluation evidence artifact was not uploaded. Run #55 (ID `45017683783`) is now in progress in the evaluation-only job, currently restoring the exact corpus; it has no optimizer-update job active and no artifacts visible at this inspection. Do not start a competing V2 training/evaluation run or infer evaluation completion. The V2 checkpoint remains the previously verified train-10 lineage at optimizer step 1,500; no new step is claimed.
+
+V3 remains isolated at `174c4650e1fd65799c53c89d68b6e49aeb9c2737`. Foundation is being updated only with this continuity record; `main` remains `0b5ec69e839bfc6086a358511b54649b03c7be9a`. No PR or merge was created.
