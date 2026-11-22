@@ -31,7 +31,7 @@ def test_v3_shared_core_integrates_text_image_audio_and_video():
     image_reconstruction, image_state = model.forward_image(image)
     hook.remove()
     assert observed_core_lengths[0] <= 16
-    audio_reconstruction, audio_state = model.forward_audio(audio)
+    audio_reconstruction, audio_state = model.forward_audio(audio, sample_rate=24_000)
     video_reconstruction, video_state = model.forward_video(video, timestamps)
 
     assert text_logits.shape == (2, 11, 128)
