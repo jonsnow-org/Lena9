@@ -10,10 +10,11 @@ from .core import OneCoreV3
 
 @dataclass(frozen=True)
 class V3Config:
-    architecture_version: str = "onecore-v3-prototype-1"
+    architecture_version: str = "onecore-v3-prototype-2"
     text_vocab_size: int = 32_000
     width: int = 512
-    layers: int = 8
+    layers: int = 4
+    cycles: int = 3
     attention_heads: int = 8
     patch_size: int = 16
     audio_latent_channels: int = 128
@@ -30,7 +31,7 @@ class V3Config:
     dropout: float = 0.0
 
     def __post_init__(self) -> None:
-        if self.architecture_version != "onecore-v3-prototype-1":
+        if self.architecture_version != "onecore-v3-prototype-2":
             raise ValueError("unknown OneCore v3 architecture version")
         if self.text_vocab_size < 2 or self.width < 4 or self.width % 4:
             raise ValueError("invalid vocabulary or shared width")
@@ -39,7 +40,7 @@ class V3Config:
         if self.patch_size < 2 or min(
             self.audio_latent_channels, self.audio_hidden_channels,
             self.audio_codebook_size, self.audio_quantizer_stages, self.layers,
-            self.temporal_layers, self.max_image_context_tokens,
+            self.temporal_layers, self.cycles, self.max_image_context_tokens,
             self.max_video_context_tokens, self.max_flow_context_tokens,
             self.temporal_window_frames, self.video_generation_chunk_frames,
         ) < 1 or self.temporal_memory_frames < 0:
