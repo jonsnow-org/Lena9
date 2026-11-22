@@ -449,3 +449,20 @@ Implemented on `research/onecore-v3-implementation`; latest branch commit at thi
 ### Current converter verification checkpoint — Run #554
 
 Run #554 (ID `45038258359`) is the active CI run for V3 branch head `e5cd116164e6b67ffe397e10af9b9251b9e5ff85`. Confirmed successful steps so far: dependency installation, compile, exact parameter report, complete unit/regression suite (including the new converter fixtures), V2 architecture/FLOP contract, exact architecture notebook, safe notebook preflights, text-training one-step smoke, and random-init smoke gate. FineWeb-2 streaming/cursor-resume is currently in progress; notebook validation and workflow-isolation checks remain pending. Do not mark Run #554 passed until all remaining steps complete. No additional V3 commits should be pushed while this run is active, to avoid cancelling it.
+
+
+### V3 selective corpus converter CI fully passed — Run #554
+
+Run #554 (ID `45038258359`) completed with **success** on V3 branch head `e5cd116164e6b67ffe397e10af9b9251b9e5ff85`.
+- Compile passed.
+- Exact parameter report passed.
+- **198 tests passed, 9 warnings** (including all converter fixture tests).
+- Corrected Specification v2 values/FLOPs passed.
+- Exact architecture notebook, safe notebook preflights, text one-step smoke, random-init smoke, FineWeb-2 streaming/cursor resume, notebook validation, and workflow isolation/single-lock checks all passed.
+- Exact V3 report repeated: 39,906,568 parameters; config SHA-256 `6c879331c75da434c58680050f94035dc15626e7af4847db1b36e055c47d7708`; 123 state tensors; FP32 159,626,272 bytes; FP16 79,813,136 bytes; AdamW moments estimate 319,252,544 bytes. No quality certification and no peak-memory benchmark.
+
+**Converter state:** implementation and fixture CI are complete, but no conversion of the real 15.8 GB corpus has run. The converter is designed to re-use V2 text/tool rows, rehydrate only media rows from pinned revisions by exact source-row hashes, preserve full media, and enforce external-only 100/10/10. The next blocker is safe access to the existing corpus artifact and a controlled execution path. Do not re-crawl text/tool or claim the quotas pass before the actual converter/gate report exists.
+
+**V2 checkpoint:** Run #52 (ID `45015944155`) remains in progress at independent validation/held-out test with no optimizer updates; restored checkpoint/corpus/lineage steps are successful. Do not start a competing run.
+
+**Branch protection check:** `main` remains at `0b5ec69e839bfc6086a358511b54649b03c7be9a`. V3 remains isolated at `e5cd116164e6b67ffe397e10af9b9251b9e5ff85`; no PR or merge was created. Foundation reference branch head before this update: `14124f7e1dc43ae1955c93c460d7059d196dd692`.
