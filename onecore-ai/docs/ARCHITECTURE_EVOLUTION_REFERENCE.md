@@ -567,3 +567,22 @@ The V3 restore workflow has a separate optional install `onecore-ai[dev,corpus-r
 **Next:** wait for #577 Verify. If it passes, follow the conditional restore job through optional dependency install, CPU TorchCodec/FFmpeg preflight, range extraction, and converter. Inspect uploaded JSON conversion report even if workflow succeeds. Do not promote the corpus unless all five families pass external 100/10/10, assets exist, provenance is immutable, and split leakage checks pass.
 
 V3 branch latest commit at this note: `e83b624a6c195d697275bc4d2dcb43448a812f37`. V3 model parameters/config remain 39,906,568 / `6c879331c75da434c58680050f94035dc15626e7af4847db1b36e055c47d7708`. `main` remained `0b5ec69e839bfc6086a358511b54649b03c7be9a` at latest verification. V2 Run #55 continues evaluation-only; no optimizer updates are running.
+
+
+### V3 TorchCodec CPU wheel correction — 2026-11-22
+
+Run #577 (ID `45057766456`) passed the full Verify job (205 tests; V2 contract/FLOPs, exact architecture notebook, notebook preflights, training smoke, random-init smoke, FineWeb-2 cursor resume, notebook validation, and workflow-isolation checks). The restore job progressed through FFmpeg, CPU PyTorch and optional dependency installs, but its TorchCodec preflight **failed** before fetching manifests.
+
+Root cause from the exact job log: TorchCodec 0.17 was installed from the default PyPI index and its native library attempted to load `libnvrtc.so.13`. That is a CUDA-linked build, incompatible with our CPU-only runner. No V2 artifact was downloaded and no audio/video media was converted in #577.
+
+Fix committed on V3 as `26d00bf3bc37007e424c0f338635b8f3ca07d04e`:
+- Removed TorchCodec from the `corpus-restore` PyPI optional dependency list; it now contains only requests and RemoteZip.
+- Added a distinct `Install CPU-only TorchCodec wheels` step using the official PyTorch CPU wheel index (`https://download.pytorch.org/whl/cpu`).
+- Kept a runtime preflight that asserts CUDA is absent, Datasets reports TorchCodec availability, and both AudioDecoder and VideoDecoder import successfully.
+- This prevents a CUDA-linked PyPI package from silently entering the CPU-only workflow.
+
+GitHub Actions Run #579 (ID `45058144645`) is in progress on that exact commit. At last observation the Verify job was installing CPU-only PyTorch; no new test, report, or restore conclusion yet.
+
+**Next:** obtain #579 Verify result; after it passes, ensure the separate CPU-index TorchCodec installation and import preflight succeed. Only then proceed to the pinned artifact range extraction and V3 media converter. Inspect the final report for source-row rehydration, raw files, 24 kHz audio derivatives, frame counts, and actual external-only 100/10/10 coverage. A green job without a full manifest gate is not a corpus pass.
+
+The CPU wheel requirement is also documented by TorchCodec's upstream installation guidance; the generic PyPI build in this run demonstrably loaded CUDA's `libnvrtc` and was rejected. Do not install CUDA packages or add CUDA libraries just to satisfy a CPU pipeline.
