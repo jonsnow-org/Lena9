@@ -115,7 +115,6 @@ def _rehydrate_record(record: dict[str, Any], row: dict[str, Any],
     for obsolete in ("image", "audio_features", "frames", "asset_content_group_ids"):
         result.pop(obsolete, None)
     record_id = str(record["id"])
-    adapter = str(source.get("adapter", ""))
 
     if family == "image":
         value = _nested(row, str(source.get("image_field") or "image"))
@@ -222,7 +221,12 @@ def restore_v2_media_records(
         if len(row_hash) != 64:
             skipped["invalid_source_row_hash"] += 1
             continue
-        pending[(source_id, revision)][row_hash] = record
+        group = pending[(source_id, revision)]
+        if row_hash in group:
+            skipped["duplicate_source_row_hash"] += 1
+            errors.append(f"{record_id}: duplicate source row hash in the V2 manifests")
+            continue
+        group[row_hash] = record
 
     for (source_id, revision), targets in pending.items():
         source = source_map[source_id]
@@ -286,6 +290,7 @@ def restore_v2_media_records(
         "target_audio_rate": target_audio_rate,
         "source_restore_mode": "pinned_revision_streaming_row_hash_lookup",
         "synthetic_records_added": 0,
+        "blocked": bool(errors or skipped.get("duplicate_source_row_hash")),
     }
     return ordered, report
 
