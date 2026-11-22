@@ -669,3 +669,16 @@ Targeted fix committed on V3: 1cc8571c278b4b163e457a8440efe2b6b91ce63b.
 Run #586 (ID 45080869616) is now running on 1cc8571c278b4b163e457a8440efe2b6b91ce63b. Its latest status must be inspected before claiming test success. The restore job is gated behind Verify, so no new real-corpus conversion has started yet. The known FLEURS Arabic train split has a Dataset Viewer scan-size failure for row-group ranges 0–1999 (the viewer returns 500/502); offset 2000 succeeds. If #586 reaches conversion and that source blocks the audio gate, add a pinned FLEURS tar-stream fallback for only the matched WAV basenames rather than downloading/reacquiring the full corpus.
 
 No V3 training has started. The data gate, CPU peak-memory/throughput benchmark, and checkpoint save/restore continuity remain incomplete. main remains 0b5ec69e839bfc6086a358511b54649b03c7be9a; no V3 PR or merge was created.
+
+
+### Run #586 V3 verification passed; pinned-media restore is active — 2026-11-23
+
+Run #586 (ID 45080869616) on V3 commit 1cc8571c278b4b163e457a8440efe2b6b91ce63b has completed its entire Verify job successfully:
+- 211 tests passed, 9 warnings.
+- Compile, exact parameter report, Corrected Specification v2/FLOPs checks, architecture notebook, safe preflights, one-step text smoke, random-init smoke, FineWeb-2 cursor-resume, notebook validation, and workflow isolation all passed.
+- The exact architecture report remains onecore-v3-prototype-2 with 39,906,568 trainable parameters and config SHA-256 6c879331c75da434c58680050f94035dc15626e7af4847db1b36e055c47d7708; 123 state tensors; FP32 159,626,272 bytes; FP16 79,813,136 bytes; AdamW moments estimate 319,252,544 bytes. These are storage estimates only.
+- The text smoke completed one optimizer step (loss 8.374492645263672); this is a smoke test, not V3 training or quality evidence.
+
+The separate corpus-restore job in the same Run #586 is now active. FFmpeg installation is in progress; CPU PyTorch, CPU TorchCodec, registry restore, HTTP-range manifest extraction and the real converter have not yet been verified in this run. No conversion report or V3 corpus artifact is available yet. Do not repeat acquisition or start V3 training. Inspect the converter report after it completes; specifically verify that image/audio/video raw assets, hashes, canonical 24 kHz audio derivatives, provenance and external-only 100/10/10 coverage pass. The FLEURS Arabic train Dataset Viewer row endpoint has a known scan-size failure for early row groups; if the real conversion confirms this blocks audio, use the pinned train.tar.gz streaming fallback only for the matched WAV basenames.
+
+V3 head: 1cc8571c278b4b163e457a8440efe2b6b91ce63b. Foundation reference head before this note: 95447e2f2f6eaebf50f73b9a62410f4419d0b22b. main remains 0b5ec69e839bfc6086a358511b54649b03c7be9a. No V3 training, PR or merge.
