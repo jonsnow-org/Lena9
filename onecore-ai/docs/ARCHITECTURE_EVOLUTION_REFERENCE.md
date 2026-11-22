@@ -365,7 +365,7 @@ The next unstarted media-codec investigation is stereo/channel-aware audio plus 
 
 ### V3 stereo audio codec extension — 2026-11-22
 
-Implemented on `research/onecore-v3-implementation` as a sequence of file commits, with the last code/test commit currently `09064ce4bd4243a545b87525a13fedd80c5d635d`:
+Implemented on `research/onecore-v3-implementation` as a sequence of file commits, with the last code/test commit currently `fbf1bf114dbd65fdaa004fe1b426cade6a2f6de1`:
 - `NeuralAudioCodec` now has an explicit channel count (prototype-2 default: stereo/2 channels), accepts mono input by channel expansion and downmixes reconstruction back to mono when the source was mono.
 - Audio encodings preserve original channel count and optional sample-rate metadata; `OneCoreV3.forward_audio(..., sample_rate=...)` carries the metadata through the shared semantic path.
 - V3Config and research YAML now fingerprint `audio_channels=2`; integration generation expects stereo output.
@@ -375,3 +375,6 @@ Implemented on `research/onecore-v3-implementation` as a sequence of file commit
 **Verification:** No confirmed CI result is yet available for the final code/test commit. The README documents the exact limitation. Prototype-1 parameter counts and prototype-2 counts from before this channel change are not valid for the current config; rerun the exact parameter report and record the new config fingerprint after CI.
 
 **Next:** verify final CI and inspect any failure logs; then add an explicit audio sample-rate normalization policy and raw-media converter without reacquiring completed text/tool sources. Keep V3 isolated and do not train/merge until data gate, resource budget, checkpoint/resume and full CI pass.
+
+
+**Stereo codec follow-up — validation hardening:** The codec and V3Config now explicitly restrict configured channel counts to mono (1) or stereo (2); unsupported multichannel configurations fail fast. Regression coverage includes the invalid three-channel constructor. Latest V3 code/test commit: `fbf1bf114dbd65fdaa004fe1b426cade6a2f6de1`. CI remains unverified for this exact commit until a run/check is surfaced. Sample-rate metadata remains informational only: no resampling or learned sample-rate conditioning is implemented.
