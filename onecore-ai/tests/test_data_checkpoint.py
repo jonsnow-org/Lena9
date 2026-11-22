@@ -257,3 +257,55 @@ def test_bootstrap_training_and_heldout_evaluation_use_separate_jobs():
     assert 'ONECORE_EXECUTE_EVALUATION: "1"' in evaluation_job
     assert "needs.prepare.outputs.base_corpus_run_id" in evaluation_job
     assert "onecore-evaluation-${{ github.run_id }}" in evaluation_job
+
+
+def test_external_manifest_records_require_immutable_row_provenance():
+    from onecore.data import validate_manifest
+
+    valid = {
+        "id": "external-row-1",
+        "task": "text",
+        "source_url": "https://example.org/dataset",
+        "split": "train",
+        "data_class": "external",
+        "source_id": "dataset-a",
+        "source_revision": "a" * 40,
+        "source_row_id_sha256": "b" * 64,
+        "text": "A real external training example with immutable provenance.",
+    }
+    assert validate_manifest([valid], ".")["valid"] is True
+
+    invalid = {**valid, "source_row_id_sha256": ""}
+    report = validate_manifest([invalid], ".")
+    assert report["valid"] is False
+    assert any("immutable source_revision" in error for error in report["errors"])
+
+
+def test_split_disjointness_rejects_same_external_source_row_in_two_splits(tmp_path):
+    from onecore.data import DatasetError, validate_split_disjointness
+
+    data_root = tmp_path / "data"
+    (data_root / "assets").mkdir(parents=True)
+    shared = {
+        "source_id": "dataset-a",
+        "source_revision": "a" * 40,
+        "source_row_id_sha256": "b" * 64,
+        "source_url": "https://example.org/dataset",
+        "data_class": "external",
+        "task": "text",
+        "text": "same source row copied across splits",
+    }
+    manifests = {
+        "train": [{**shared, "id": "train-row", "split": "train"}],
+        "validation": [{**shared, "id": "validation-row", "split": "validation"}],
+        "test": [{"id": "test-row", "task": "text", "source_url": "local://onecore-bootstrap",
+                  "data_class": "bootstrap", "split": "test", "text": "engineering-only"}],
+    }
+    for split, records in manifests.items():
+        (data_root / f"{split}.jsonl").write_text(
+            "\n".join(json.dumps(record) for record in records) + "\n",
+            encoding="utf-8",
+        )
+
+    with pytest.raises(DatasetError, match="identical source-row provenance leakage"):
+        validate_split_disjointness(tmp_path)
