@@ -152,12 +152,15 @@ class OneCoreV3(nn.Module):
         shared = self.shared_core(
             shared + self.modality_embedding.weight[2], causal=False
         ).transpose(1, 2)
-        decoded_latents = self.shared_to_audio(shared.transpose(1, 2))
+        decoded_latents = self.shared_to_audio(shared)
         processed = AudioEncoding(
             encoding.codes, decoded_latents, encoding.commitment_loss,
             encoding.original_samples, encoding.padded_samples,
         )
-        return self.audio_codec.decode(processed), processed
+        reconstruction = self.audio_codec.decode(processed)
+        if waveform.ndim == 2:
+            reconstruction = reconstruction.squeeze(1)
+        return reconstruction, processed
 
     def forward_video(self, video: torch.Tensor,
                       timestamps: torch.Tensor | None = None) -> tuple[torch.Tensor, VideoEncoding]:
