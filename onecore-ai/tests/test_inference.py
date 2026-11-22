@@ -150,3 +150,19 @@ def test_load_inference_session_rejects_architecture_config_mismatch(tmp_path):
 
     with pytest.raises(RuntimeError):
         load_inference_session(config_path, checkpoint_path, tokenizer_path, device="cpu")
+
+
+def test_griffin_lim_reconstruction_is_repeatable_without_global_rng_side_effects():
+    from onecore.audio import log_mel_to_waveform
+
+    generator = torch.Generator(device="cpu").manual_seed(1729)
+    features = torch.randn((8, 8), generator=generator)
+    global_rng_before = torch.random.get_rng_state().clone()
+
+    first = log_mel_to_waveform(features, n_iter=2)
+    global_rng_after = torch.random.get_rng_state().clone()
+    second = log_mel_to_waveform(features, n_iter=2)
+
+    assert torch.equal(global_rng_before, global_rng_after)
+    assert torch.equal(first, second)
+    assert torch.isfinite(first).all()

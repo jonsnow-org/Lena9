@@ -51,7 +51,7 @@ def save_log_mel_npy(waveform_path: str, output_path: str, sample_rate: int = 16
 
 def log_mel_to_waveform(log_mel: torch.Tensor, sample_rate: int = 16000,
                         n_fft: int = 400, hop_length: int = 160,
-                        n_iter: int = 24) -> torch.Tensor:
+                        n_iter: int = 24, seed: int = 0) -> torch.Tensor:
     """Approximate waveform reconstruction with a pseudoinverse mel bank + Griffin-Lim.
 
     This is a deterministic, dependency-light decoder for research smoke tests.
@@ -62,6 +62,8 @@ def log_mel_to_waveform(log_mel: torch.Tensor, sample_rate: int = 16000,
         raise ValueError("log_mel must have shape [frames, at least 8 mel bins]")
     if n_iter < 1:
         raise ValueError("n_iter must be positive")
+    if isinstance(seed, bool) or not isinstance(seed, int):
+        raise ValueError("seed must be an integer")
     device = log_mel.device
     n_mels = log_mel.shape[1]
     frequencies = torch.linspace(0, sample_rate / 2, n_fft // 2 + 1, device=device)
@@ -79,7 +81,12 @@ def log_mel_to_waveform(log_mel: torch.Tensor, sample_rate: int = 16000,
     mel_power = log_mel.float().T.exp()
     linear_power = (torch.linalg.pinv(bank) @ mel_power).clamp_min(1e-8)
     magnitude = linear_power.sqrt()
-    phase = torch.exp(2j * math.pi * torch.rand(magnitude.shape, device=device))
+    generator = torch.Generator(device=device)
+    generator.manual_seed(seed)
+    phase_angles = 2.0 * math.pi * torch.rand(
+        magnitude.shape, device=device, generator=generator,
+    )
+    phase = torch.polar(torch.ones_like(magnitude), phase_angles)
     spectrum = magnitude.to(torch.complex64) * phase
     window = torch.hann_window(n_fft, device=device)
     length = max(1, (log_mel.shape[0] - 1) * hop_length)
