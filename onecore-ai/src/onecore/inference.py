@@ -2,18 +2,21 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable
 
 import torch
 from PIL import Image
 from tokenizers import Tokenizer
 
 from .audio import log_mel_to_waveform
+from .checkpoint import load_checkpoint, sha256_file
+from .config import load_config
 from .model import (
     AUDIO_END, AUDIO_START, BOS, EOS, IMAGE_END, IMAGE_START, MOTION_START,
     TEXT_START, TOOL_START, VIDEO_END, VIDEO_FRAME, VIDEO_START, OneCore,
 )
 from .tool_runtime import ToolRuntime
+from .tokenizer import load_tokenizer
 
 
 class InferenceSession:
@@ -262,3 +265,77 @@ class InferenceSession:
             generated = generated[:generated.index(eos)]
         generated = [token for token in generated if token < self.cfg.text_vocab_size]
         return self.tokenizer.decode(generated, skip_special_tokens=True)
+
+
+
+def load_inference_session(
+    config_path: str | Path,
+    checkpoint_path: str | Path,
+    tokenizer_path: str | Path,
+    device: str = "cpu",
+    tools: ToolRuntime | None = None,
+) -> tuple[InferenceSession, dict[str, Any]]:
+    """Load one verified OneCore checkpoint/tokenizer pair for CPU inference.
+
+    The checkpoint, its adjacent train_result.json, model configuration, and
+    tokenizer fingerprint are checked before returning a usable session.
+    """
+    if device != "cpu":
+        raise ValueError("OneCore inference currently supports the CPU device only")
+
+    cfg, _, _ = load_config(config_path)
+    checkpoint_file = Path(checkpoint_path)
+    tokenizer_file = Path(tokenizer_path)
+    report_file = checkpoint_file.with_name("train_result.json")
+    if not report_file.is_file():
+        raise FileNotFoundError(
+            f"training report is required alongside the checkpoint: {report_file}"
+        )
+
+    report = json.loads(report_file.read_text(encoding="utf-8"))
+    checkpoint_sha = sha256_file(checkpoint_file)
+    expected_checkpoint_sha = (
+        report.get("checkpoint", {}).get("sha256")
+        if isinstance(report.get("checkpoint"), dict) else None
+    )
+    if not expected_checkpoint_sha or checkpoint_sha != expected_checkpoint_sha:
+        raise ValueError("checkpoint SHA-256 does not match train_result.json")
+
+    model = OneCore(cfg)
+    step, payload = load_checkpoint(
+        checkpoint_file, model, optimizer=None, scheduler=None, map_location="cpu"
+    )
+    reported_step = report.get("optimizer_step")
+    if reported_step is None or int(reported_step) != step:
+        raise ValueError("checkpoint optimizer step does not match train_result.json")
+
+    saved_model_config = (payload.get("config") or {}).get("model")
+    if not isinstance(saved_model_config, dict):
+        raise ValueError("checkpoint does not contain its model configuration")
+    for key, expected in cfg.to_dict().items():
+        if key not in saved_model_config or saved_model_config[key] != expected:
+            raise ValueError(
+                f"checkpoint model configuration mismatch for {key}: "
+                f"saved={saved_model_config.get(key)!r}, current={expected!r}"
+            )
+
+    tokenizer_sha = sha256_file(tokenizer_file)
+    metadata = payload.get("metadata") or {}
+    expected_tokenizer_sha = metadata.get("tokenizer_sha256")
+    if not expected_tokenizer_sha or tokenizer_sha != expected_tokenizer_sha:
+        raise ValueError("tokenizer fingerprint differs from the checkpoint lineage")
+
+    tokenizer = load_tokenizer(tokenizer_file)
+    if tokenizer.get_vocab_size() > cfg.text_vocab_size:
+        raise ValueError("tokenizer vocabulary exceeds the configured text-token range")
+
+    model.to(torch.device(device))
+    session = InferenceSession(model, tokenizer, tools=tools)
+    info = {
+        "optimizer_step": step,
+        "checkpoint_sha256": checkpoint_sha,
+        "tokenizer_sha256": tokenizer_sha,
+        "lineage_id": metadata.get("lineage_id"),
+        "parameter_count": model.count_parameters(),
+    }
+    return session, info
