@@ -48,7 +48,7 @@ def _metrics(data_verified=True, data_kind="external_only"):
     thresholds["native_tldm_max_masked_span_loss"] = 2.0
     thresholds["test_native_tldm_max_masked_span_loss"] = 2.0
     tool_behavior = {
-        "sample_count": 10,
+        "sample_count": 16,
         "execution_success_rate": 0.5,
         "valid_payload_rate": 0.75,
         "allowlisted_dispatch_rate": 0.65,
@@ -56,8 +56,8 @@ def _metrics(data_verified=True, data_kind="external_only"):
         "protocol": "verified-tool-action-execution-v1",
         "sample_ids_sha256": "d" * 64,
         "per_step": {
-            "1": {"sample_count": 5, "execution_success_rate": 0.5},
-            "2": {"sample_count": 5, "execution_success_rate": 0.5},
+            "1": {"sample_count": 8, "execution_success_rate": 0.5},
+            "2": {"sample_count": 8, "execution_success_rate": 0.5},
         },
     }
     for modality in REQUIRED_CODEBOOKS:
@@ -72,6 +72,7 @@ def _metrics(data_verified=True, data_kind="external_only"):
     native_tldm_test = _native_tldm_report("test", checkpoint_sha)
     test_metrics = {**values, "split": "test", "checkpoint_sha256": checkpoint_sha,
         "parameter_count": 57_579_201, "real_data": data_kind == "external_only",
+        "tokenizer_sha256": "f" * 64, "selected_records_sha256": "e" * 64,
         "data_kind": data_kind,
         "data_classes": ["external"] if data_kind == "external_only" else [data_kind],
         "data_verified_for_promotion": data_verified,
@@ -80,18 +81,21 @@ def _metrics(data_verified=True, data_kind="external_only"):
         "native_tldm_evaluation": native_tldm_test}
     return {**values, "split": "validation", "checkpoint_sha256": checkpoint_sha,
         "parameter_count": 57_579_201, "real_data": data_kind == "external_only",
+        "tokenizer_sha256": "f" * 64, "selected_records_sha256": "d" * 64,
         "data_kind": data_kind,
         "data_classes": ["external"] if data_kind == "external_only" else [data_kind],
         "data_verified_for_promotion": data_verified,
         "modalities_tested": list(REQUIRED_METRICS), "quality_thresholds": thresholds,
         "split_manifest_sha256": validation_hash, "test_manifest_sha256": test_hash,
+        "text_loss_regression_max": 1.02,
         "codebook_usage": codebook_usage, "tool_behavior": tool_behavior,
         "native_tldm_evaluation": native_tldm_validation,
         "test_metrics": test_metrics}
 
 
 def test_external_only_data_can_pass_gate_when_quality_evidence_passes():
-    passed, failures = promotion_gate(_metrics(data_verified=True))
+    metrics = _metrics(data_verified=True)
+    passed, failures = promotion_gate(metrics, baseline=_metrics(data_verified=True))
     assert passed
     assert failures == []
 
@@ -204,20 +208,21 @@ def test_gate_rejects_tldm_heldout_family_with_insufficient_examples():
 
 
 
-def test_tool_evaluation_accepts_the_specified_ten_examples_per_family():
+def test_tool_evaluation_accepts_the_specified_sixteen_examples_and_four_per_step():
     metrics = _metrics(data_verified=True)
-    assert metrics["tool_behavior"]["sample_count"] == 10
-    passed, failures = promotion_gate(metrics)
+    assert metrics["tool_behavior"]["sample_count"] == 16
+    assert metrics["tool_behavior"]["per_step"]["1"]["sample_count"] == 8
+    passed, failures = promotion_gate(metrics, baseline=_metrics(data_verified=True))
     assert passed, failures
 
 
-def test_tool_evaluation_rejects_fewer_than_ten_examples():
+def test_tool_evaluation_rejects_fewer_than_sixteen_examples():
     metrics = _metrics(data_verified=True)
     metrics["tool_behavior"]["sample_count"] = 9
     metrics["test_metrics"]["tool_behavior"]["sample_count"] = 9
     passed, failures = promotion_gate(metrics)
     assert not passed
-    assert any("fewer than 10 held-out examples" in item for item in failures)
+    assert any("fewer than 16 held-out examples" in item for item in failures)
 
 
 def test_tool_evaluation_requires_both_workflow_steps_to_be_present():
@@ -226,13 +231,20 @@ def test_tool_evaluation_requires_both_workflow_steps_to_be_present():
     metrics["test_metrics"]["tool_behavior"]["per_step"]["2"]["sample_count"] = 0
     passed, failures = promotion_gate(metrics)
     assert not passed
-    assert any("workflow step 2 has no held-out examples" in item for item in failures)
+    assert any("workflow step 2 has fewer than 4 held-out examples" in item for item in failures)
 
 
-def test_unapproved_text_loss_regression_percentage_is_not_applied():
+def test_text_loss_regression_allows_exactly_two_percent_but_rejects_more():
     metrics = _metrics(data_verified=True)
     baseline = _metrics(data_verified=True)
-    metrics["text_loss"] = 1.5
-    metrics["test_metrics"]["text_loss"] = 1.5
+    metrics["text_loss"] = 1.02
+    metrics["test_metrics"]["text_loss"] = 1.02
     passed, failures = promotion_gate(metrics, baseline=baseline)
     assert passed, failures
+
+    metrics["text_loss"] = 1.021
+    metrics["test_metrics"]["text_loss"] = 1.021
+    passed, failures = promotion_gate(metrics, baseline=baseline)
+    assert not passed
+    assert any("validation text loss" in item and "exceeds 1.02" in item for item in failures)
+    assert any("test text loss" in item and "exceeds 1.02" in item for item in failures)
