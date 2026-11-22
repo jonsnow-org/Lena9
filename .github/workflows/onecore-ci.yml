@@ -282,10 +282,10 @@ jobs:
           assert "./.github/actions/onecore-train" in bootstrap
           assert "onecore-corpus-final" in bootstrap
           assert "onecore-state-train-10" in bootstrap
-          assert "Notebook order: 03, 04, 03, 04, 03, 04, 03, 04, 03, 04" in bootstrap
-          assert "OneCore final checkpoint — 1,500 optimizer steps" in bootstrap
-          assert "- Optimizer steps: 1,500" in bootstrap
-          assert "- Training sessions: 10 × 150 steps" in bootstrap
+          assert "Notebook cycle: 03/04 alternating; resume continues from the supplied checkpoint" in bootstrap
+          assert "OneCore checkpoint — ${EXPECTED_FINAL_OPTIMIZER_STEP} optimizer steps" in bootstrap
+          assert "- Cumulative optimizer steps: ${EXPECTED_FINAL_OPTIMIZER_STEP}" in bootstrap
+          assert "- Training sessions: 10 × ${PER_JOB_STEPS} steps" in bootstrap
           import yaml
           workflow = yaml.safe_load(bootstrap)
           jobs = workflow["jobs"]
@@ -316,6 +316,10 @@ jobs:
           assert jobs["train_all"]["needs"] == ["dataset_gate", "prepare"]
           assert "resume_checkpoint_run_id" in bootstrap
           assert "resume_checkpoint_artifact_name" in bootstrap
+          assert "resume_checkpoint_session == '10'" in bootstrap
+          assert "expected_final_optimizer_step" in bootstrap
+          assert "not 1 <= per_job_steps <= 250" in bootstrap
+          assert "not 1 <= expected_final_step <= 20000" in bootstrap
           train_source = Path("onecore-ai/src/onecore/train.py").read_text(encoding="utf-8")
           assert 'allowed_data_classes={"external"}' in train_source
           assert "tokenizer_corpus_data_class_counts" in train_source
@@ -325,6 +329,8 @@ jobs:
           assert "checkpoint tokenizer corpus provenance is missing or not external-only" in train_action_source
           train_action_text = Path(".github/actions/onecore-train/action.yml").read_text(encoding="utf-8")
           assert "checkpoint_run_id:" in train_action_text
+          assert "expected_resume_optimizer_step:" in train_action_text
+          assert "Verify uploaded child checkpoint artifact before deleting its parent" in train_action_text
           assert "github-token:" in train_action_text
           assert jobs["train_all"]["timeout-minutes"] == 360
           train_steps = [step for step in jobs["train_all"]["steps"] if str(step.get("id", "")).startswith("train")]
@@ -339,7 +345,7 @@ jobs:
           for index, step in enumerate(train_steps, 1):
               assert step["id"] == f"train{index:02d}"
               assert step["uses"] == "./.github/actions/onecore-train"
-              assert step["with"]["steps"] == "150"
+              assert step["with"]["steps"] == "${{ needs.prepare.outputs.steps_per_job }}"
               assert step["with"]["notebook"] == expected_notebooks[index - 1]
               if index == 1:
                   assert step["with"]["setup_environment"] == "true"
@@ -360,7 +366,7 @@ jobs:
           assert "onecore-state-train-10" in bootstrap
           assert "native_tldm" in bootstrap
           assert "diffusion_loss_weight" in bootstrap
-          assert "Expected 7,500 native diffusion updates" in bootstrap
+          assert "expected_updates = 5 * expected_steps" in bootstrap
           phone_config = yaml.safe_load(Path("onecore-ai/configs/phone-research.yaml").read_text(encoding="utf-8"))
           assert phone_config["training"]["tldm_diffusion_weight"] == 0.15
           dataset_gate_steps = jobs["dataset_gate"]["steps"]
@@ -370,7 +376,7 @@ jobs:
           assert "GITHUB_STEP_SUMMARY" in diagnostic_run
           assert '>> "$GITHUB_OUTPUT"' not in diagnostic_run
           evaluate = jobs["evaluate"]
-          assert evaluate["needs"] == "train_all"
+          assert evaluate["needs"] == ["train_all", "prepare"]
           assert sum(1 for step in evaluate["steps"] if step.get("uses", "").startswith("actions/download-artifact@")) == 2
           assert not any("onecore-corpus-final" in str(step.get("with", {})) for step in evaluate["steps"]), "evaluation must reuse the already-restored training workspace results"
           import yaml
