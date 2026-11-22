@@ -413,3 +413,34 @@ The exact parameter report produced by Run #538 (before tests stopped the job):
 These values are now the current prototype-2 baseline for the config fingerprint above, but rerun/record them again after any further architecture/config change. They are not a peak RAM or quality measurement.
 
 The audio rate policy is now canonical 24 kHz with source-preserving polyphase conversion. The V3 codec strictly rejects non-24 kHz input; preprocessing preserves the original file and hashes the separate normalized training derivative in the manifest. The V3 branch remains isolated and unmerged.
+
+
+### V3 canonical audio CI passed — Run #540
+
+Run #540 (ID `45037557167`) passed on commit `bfa2950a8ab874e4bd55893fe372323900109339`:
+- Compile passed.
+- Exact parameter report passed.
+- **192 tests passed, 9 warnings**.
+- Corrected Specification v2 architecture/FLOP check passed.
+- Exact architecture notebook and safe notebook preflights passed.
+- Text-training notebook one-step smoke and random-init smoke passed.
+- FineWeb-2 streaming/cursor-resume smoke passed.
+- All notebooks validated.
+- Workflow isolation and single training lock passed.
+
+Exact report repeated in this run: **39,906,568 trainable parameters**, config SHA-256 `6c879331c75da434c58680050f94035dc15626e7af4847db1b36e055c47d7708`, 123 state-dict tensors, FP32 parameters 159,626,272 bytes, FP16 parameters 79,813,136 bytes, AdamW FP32 moments estimate 319,252,544 bytes. These are parameter/storage figures, not peak RAM, inference speed or quality evidence.
+
+### V3 selective V2 corpus converter — implementation and pending CI
+
+Implemented on `research/onecore-v3-implementation`; latest branch commit at this checkpoint: `e5cd116164e6b67ffe397e10af9b9251b9e5ff85`.
+- New `converter.py` reuses immutable external text/tool records without reacquisition.
+- For media records, it groups by source ID and pinned revision, streams only the registry-declared source splits, matches the exact V2 `source_row_id_sha256` using the same row-identity function, and restores only the matching media rows.
+- Image assets are preserved at native dimensions; audio preserves the source and creates a canonical 24 kHz polyphase derivative; video keeps every frame/timestamp and requires `frame_limit_applied=false`.
+- Disabled sources, revision gaps, source-row misses, adapter mismatches, duplicate source-row hashes and restore errors are reported/blocked. No synthetic rows are added.
+- Atomic split-manifest writer and orchestration call the external-only V3 gate (100 train / 10 validation / 10 test per family by default).
+- Added fixture tests for image rehydration, 44.1 kHz stereo audio conversion, all-frame video restore, disabled-source behavior, atomic split writes and full converter/gate orchestration.
+- V2 64x64 images, old audio features and four-frame video derivatives are explicitly removed from converted records; they are never mislabelled as raw media.
+
+**CI:** Run #553 (ID `45038253364`) is queued for current converter commit and must finish before the converter code is accepted. Intermediate runs #549–#552 were cancelled as later commits superseded them; do not count them as failures or passes. Run #540 is the confirmed passing baseline before converter changes.
+
+**Data status:** The converter is implemented and fixture-tested only when Run #553 passes. It has not been run on the full 15.8 GB corpus. Do not claim external-only 100/10/10 coverage or start training. The next data task is to execute the converter against the exact saved corpus artifact and pinned sources, preserve the report, and resolve missing/disabled/gated media sources without repeating text/tool acquisition.
