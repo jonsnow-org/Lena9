@@ -51,6 +51,9 @@ def _metrics(data_verified=True, data_kind="external_only"):
     thresholds["native_tldm_max_masked_span_loss"] = 2.0
     thresholds["test_native_tldm_max_masked_span_loss"] = 2.0
     tool_behavior = {
+        "data_class": "synthetic_verified",
+        "evaluation_role": "engineering_only",
+        "split": "validation",
         "sample_count": 16,
         "execution_success_rate": 0.5,
         "valid_payload_rate": 0.75,
@@ -62,6 +65,11 @@ def _metrics(data_verified=True, data_kind="external_only"):
             "1": {"sample_count": 8, "execution_success_rate": 0.5},
             "2": {"sample_count": 8, "execution_success_rate": 0.5},
         },
+    }
+    test_tool_behavior = {
+        **tool_behavior,
+        "split": "test",
+        "sample_ids_sha256": "e" * 64,
     }
     for modality in REQUIRED_CODEBOOKS:
         thresholds[f"min_{modality}_usage_fraction"] = 0.1
@@ -81,7 +89,7 @@ def _metrics(data_verified=True, data_kind="external_only"):
         "data_classes": ["external"] if data_kind == "external_only" else [data_kind],
         "data_verified_for_promotion": data_verified,
         "modalities_tested": list(REQUIRED_METRICS), "split_manifest_sha256": test_hash,
-        "codebook_usage": codebook_usage, "tool_behavior": tool_behavior,
+        "codebook_usage": codebook_usage, "tool_behavior": test_tool_behavior,
         "native_tldm_evaluation": native_tldm_test}
     return {**values, "split": "validation", "checkpoint_sha256": checkpoint_sha,
         "parameter_count": 57_579_201, "real_data": data_kind == "external_only",
