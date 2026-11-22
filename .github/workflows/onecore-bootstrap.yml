@@ -712,7 +712,8 @@ jobs:
         env:
           PYTHONPATH: onecore-ai/src
         run: python -m onecore.artifacts restore --root onecore-ai --artifact-dir onecore-ai/run-state/corpus-artifact
-      - name: Restore the final session checkpoint        uses: actions/download-artifact@v7
+      - name: Restore the final session checkpoint
+        uses: actions/download-artifact@v7
         with:
           name: onecore-state-train-10
           path: onecore-ai/run-state
