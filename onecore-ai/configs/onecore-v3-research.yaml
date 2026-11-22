@@ -1,0 +1,31 @@
+# OneCore v3 research prototype. All dimensions are versioned and fingerprinted.
+# This config is not a claim of production quality or a frozen production budget.
+architecture_version: onecore-v3-prototype-1
+model:
+  text_vocab_size: 32000
+  width: 512
+  layers: 8
+  attention_heads: 8
+  patch_size: 16
+  audio_latent_channels: 128
+  audio_hidden_channels: 256
+  audio_codebook_size: 1024
+  audio_quantizer_stages: 8
+  temporal_layers: 2
+  dropout: 0.0
+# The current shared attention is quadratic in token count. Do not set a
+# production sequence limit until peak-memory and throughput benchmarks exist.
+sequence_policy:
+  image: variable_height_width_divisible_by_patch_size
+  audio: variable_sample_length_chunked_by_runtime_budget
+  video: variable_frame_count_timestamped
+  attention_complexity: quadratic
+training:
+  status: not_implemented
+  optimizer: null
+  total_steps: null
+  loss_profiles:
+    image: perceptual_plus_diffusion_or_flow_plus_reconstruction
+    audio: multiresolution_stft_plus_waveform_perceptual_plus_adversarial
+    video: latent_flow_or_diffusion_plus_temporal_consistency_plus_sync
+    alignment: paired_cross_modal_contrastive_or_matching
