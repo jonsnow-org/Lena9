@@ -76,8 +76,10 @@ class NeuralAudioCodec(nn.Module):
                  codebook_size: int = 1024, quantizer_stages: int = 8,
                  channels: int = 2) -> None:
         super().__init__()
-        if min(latent_channels, hidden_channels, channels) < 1:
-            raise ValueError("channel dimensions must be positive")
+        if min(latent_channels, hidden_channels) < 1:
+            raise ValueError("latent and hidden channel dimensions must be positive")
+        if channels not in (1, 2):
+            raise ValueError("audio codec supports mono (1) or stereo (2) channels")
         self.latent_channels = latent_channels
         self.channels = channels
         self.downsample_factor = 16
