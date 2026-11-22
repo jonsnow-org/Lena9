@@ -7,11 +7,14 @@ professional output quality.
 ## Implemented building blocks
 
 - `vision.py`: variable-height/width patch tokenization; original aspect ratio and
-  dimensions are preserved. Inputs must be divisible by the patch size; padding or
-  cropping must be explicit and recorded by the data pipeline.
+  dimensions are preserved; edge padding is applied to the patch grid and cropped
+  back to the exact source dimensions.
 - `audio.py`: trainable convolutional waveform encoder/decoder with multi-stage
-  residual vector quantization. The codec accepts variable sample lengths and trims
-  reconstruction to the exact source length. The code is untrained.
+  residual vector quantization. It accepts mono or stereo waveforms, records the
+  original channel count and optional sample-rate metadata, accepts variable sample
+  lengths, and trims reconstruction to the exact source length. It does not resample
+  audio or condition its weights on sample rate; training batches must normalize rates
+  explicitly. The codec is untrained.
 - `video.py`: encodes every supplied frame, accepts variable frame counts and
   timestamps, and applies causal temporal attention per spatial patch.
 - `core.py`: integrates text, image, waveform audio and video latents with a recurrent
@@ -71,7 +74,8 @@ or memory improvement until benchmarked.
    objective; video latent denoising/flow + temporal consistency and sync objectives.
 3. Add paired cross-modal alignment and text-conditioned generation objectives.
 4. Preserve raw source assets and metadata (native image dimensions, video timestamps,
-   frame rate/duration/audio track, audio sample rate/channels/duration).
+   frame rate/duration/audio track, audio sample rate/channels/duration); implement an
+   explicit sample-rate normalization/conditioning policy before mixed-rate training.
 5. Convert existing corpora without reacquiring completed sources; validate immutable
    external provenance and 100/10/10 per-family quotas after corrected gate.
 6. Benchmark peak activation/optimizer memory, FLOPs, CPU/GPU wall-clock, and scaling
