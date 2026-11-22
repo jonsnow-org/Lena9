@@ -255,3 +255,14 @@ Added `src/onecore/v3/training.py`:
 - A separate discriminator-step helper for optional image/audio hinge discriminators.
 
 This is a single-step training prototype, not yet a durable multi-session training workflow. V3 checkpoint save/restore, optimizer/scheduler resume, dataset conversion, alternating discriminator orchestration, quality benchmarks and promotion gates remain incomplete. The current v3 CI run is pending.
+
+
+### V3 training-step verification — commit `095b1a7a8eebe05e27104edebe2ea7d61a2398e9`
+
+CI Run #483 completed successfully:
+- 175 tests passed (12 warnings) in 5.29 seconds.
+- Package compilation passed.
+- Corrected Specification v2 parameter/FLOP verification passed.
+- Architecture notebook, safe notebook preflights, text one-step smoke, random-init smoke gate, FineWeb-2 cursor-resume smoke, notebook validation, and workflow-isolation checks all passed.
+
+This verifies the prototype code paths and regression suite, not model quality or production training. V3 has not been trained on a real corpus; no generated sample has been evaluated for human quality.
