@@ -129,5 +129,9 @@ class NeuralAudioCodec(nn.Module):
         return waveform[..., :original_samples]
 
     def forward(self, waveform: torch.Tensor) -> tuple[torch.Tensor, AudioEncoding]:
+        squeeze_channel = waveform.ndim == 2
         encoding = self.encode(waveform)
-        return self.decode(encoding), encoding
+        reconstruction = self.decode(encoding)
+        if squeeze_channel:
+            reconstruction = reconstruction.squeeze(1)
+        return reconstruction, encoding
