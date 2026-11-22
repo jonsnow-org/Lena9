@@ -245,6 +245,9 @@ def test_bootstrap_training_and_heldout_evaluation_use_separate_jobs():
     workflow = (repository_root / ".github" / "workflows" / "onecore-bootstrap.yml").read_text(
         encoding="utf-8"
     )
+    import yaml
+
+    yaml.safe_load(workflow)
     training_job = workflow.split("  train_all:\n", 1)[1].split("\n  evaluate:\n", 1)[0]
     evaluation_job = workflow.split("\n  evaluate:\n", 1)[1].split("\n  evaluate_existing:\n", 1)[0]
 
