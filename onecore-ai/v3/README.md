@@ -21,6 +21,9 @@ professional output quality.
   video temporal consistency, paired cross-modal alignment, and image/audio GAN losses.
 - `training.py`: joint text/tool/image/audio/video objective and an optimizer-step
   helper, plus a separate discriminator update helper.
+- `manifest.py`: external-only per-family quotas, immutable provenance, source-row and
+  asset SHA-256 split-integrity checks, and required raw-media payload validation.
+- `report.py`: exact instantiated parameter count, config fingerprint and storage-only estimates.
 
 ## Current limits (do not hide these)
 
@@ -45,6 +48,8 @@ professional output quality.
   production inference API, quality benchmark suite, or promotion threshold yet.
 - The optional GAN discriminators require a separately configured discriminator
   optimizer and stable alternating updates; this is not yet a full adversarial trainer.
+- The V3 manifest gate is implemented but has not yet been run against the complete
+  recovered external media corpus.
 
 ## Next required engineering gates
 

@@ -54,6 +54,9 @@ jobs:
       - name: Compile package
         run: python -m compileall -q onecore-ai/src
 
+      - name: Report exact OneCore v3 parameter budget
+        run: python -m onecore.v3.report
+
       - name: Run unit and regression tests
         run: pytest -q onecore-ai/tests
 
