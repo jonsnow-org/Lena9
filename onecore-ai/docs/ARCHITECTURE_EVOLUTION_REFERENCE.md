@@ -162,10 +162,10 @@ Before any v3 training:
 
 ## 9. Immediate implementation log
 
-- [ ] Correct `task_coverage()` to count external records only.
-- [ ] Add a regression test proving valid bootstrap payloads cannot satisfy external quotas.
-- [ ] Re-run focused tests and full CI.
-- [ ] Re-audit existing corpus artifact; no blind reacquisition or retraining.
-- [ ] Then begin v3 architecture implementation as a separate versioned change set.
+- [x] Corrected `task_coverage()` to count only `external_record_is_trainable(record)` records with usable payloads.
+- [x] Added regression coverage: valid bootstrap payloads for all five families do not satisfy external quotas; bootstrap-only image payloads cause the gate to fail.
+- [ ] Run focused tests and full CI on the updated branch; connector commit inspection confirms the intended diff, but no test run is claimed yet.
+- [ ] Re-audit the existing corpus artifact with the corrected gate; do not repeat acquisition or training blindly.
+- [ ] Begin v3 architecture implementation as separate versioned change sets after architecture decisions and resource benchmarks.
 
 This file is the durable session handoff. Every future OneCore session must read it before modifying architecture, corpus, training workflows or checkpoint lineage, then update the implementation log with commit/test evidence.
