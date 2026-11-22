@@ -543,3 +543,27 @@ The exact V3 report remains unchanged because this commit only changes source lo
 The conditional `v3-corpus-restore` job in the same Run #574 is now **in progress** and depends on the passing verify job. It is reusing the existing V2 corpus artifact and exact pinned source registry. Its report artifact and final manifest gate have not yet been produced. Do not claim audio/video conversion or external 100/10/10 success until that job completes and its report is inspected.
 
 Latest V3 commit: `8d0c84407ae8cb66be9c5e55fc39b9eeef2392b9`. Latest foundation reference commit before this note: `d43db600549781a969f9f48d37de7e7841d7430f`. `main` remains `0b5ec69e839bfc6086a358511b54649b03c7be9a`. Run #55 remains evaluation-only in independent validation/test, with no optimizer update.
+
+
+### V3 artifact restore CLI recovery and optional-dependency correction — 2026-11-22
+
+**Run #574 (ID `45057213347`) verification passed** (202 tests; 9 warnings), but its restore job could not start conversion because the workflow invoked `python -m onecore.v3.cli` while `cli.py` and the range extraction module had disappeared from the V3 tree. No conversion report or corpus artifact was created in #574.
+
+The missing modules and corresponding tests were restored in commit `9f6b6eb92d966c87223eb094239363f7c406c8c0`:
+- `onecore/v3/cli.py` invokes the V2-to-V3 converter and reads pinned source revisions from the acquired report.
+- `onecore/v3/artifact.py` performs authenticated GitHub Actions artifact redirect resolution and HTTP byte-range reads. It extracts only the first four required members from the stored outer TAR (or the supported legacy flat ZIP layout); it does not download the 15.8 GB corpus ZIP or expand its media assets.
+- `test_v3_artifact.py` restores the range, stored-TAR, and required-member fixture coverage.
+- `pyproject.toml` registers `onecore-v3-convert` and a separate `corpus-restore` optional dependency group.
+
+Run #576 (ID `45057592878`) then failed during standard CI test collection because `artifact.py` imported `remotezip` at module import time, while the Verify job intentionally installs only `[dev]`. The range extraction code itself had not run. Fix on commit `e83b624a6c195d697275bc4d2dcb43448a812f37`:
+- `requests` and `RemoteZip` are now imported optionally; helper/fixture tests remain usable without the range-download extra.
+- Calling real range extraction without `[corpus-restore]` fails immediately with an actionable installation error.
+- Added regression tests for standard-dev import and fail-fast behavior without RemoteZip.
+
+The V3 restore workflow has a separate optional install `onecore-ai[dev,corpus-restore]`; it also verifies the CPU-only TorchCodec/FFmpeg decode runtime before opening the pinned media streams. The converter's default streaming loader still requests `decode(False)` so raw encoded paths/bytes, rather than implicit decoded objects, flow into OneCore's source-preserving ingestion. This makes missing decoder support explicit and keeps the media ingest path deterministic.
+
+**Current CI:** Run #577 (ID `45057766456`) is running on commit `e83b624a6c195d697275bc4d2dcb43448a812f37`. Latest observed status was Python setup in progress; compile, tests, exact parameter report, and corpus restore are not yet proven. Do not push another V3 commit while #577 is running.
+
+**Next:** wait for #577 Verify. If it passes, follow the conditional restore job through optional dependency install, CPU TorchCodec/FFmpeg preflight, range extraction, and converter. Inspect uploaded JSON conversion report even if workflow succeeds. Do not promote the corpus unless all five families pass external 100/10/10, assets exist, provenance is immutable, and split leakage checks pass.
+
+V3 branch latest commit at this note: `e83b624a6c195d697275bc4d2dcb43448a812f37`. V3 model parameters/config remain 39,906,568 / `6c879331c75da434c58680050f94035dc15626e7af4847db1b36e055c47d7708`. `main` remained `0b5ec69e839bfc6086a358511b54649b03c7be9a` at latest verification. V2 Run #55 continues evaluation-only; no optimizer updates are running.
