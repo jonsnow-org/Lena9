@@ -317,4 +317,4 @@ The V3 manifest gate was tightened to reject duplicate source rows even within o
 
 ### Latest verification — V3 streaming and manifest hardening
 
-At V3 commit `e79c5e4b0d297fefd5ef79556a8fbb89cff900c8`, CI Run #498 has passed compile, exact parameter report, all 184? (unit test count to be confirmed from completed log) unit/regression tests, v2 architecture/FLOP verification, exact notebook and safe preflights, and one-step smoke training. The FineWeb-2 cursor-resume smoke and final notebook/workflow-isolation checks were still in progress at the time of this update. Do not mark Run #498 fully successful until the run concludes.
+At V3 commit `e79c5e4b0d297fefd5ef79556a8fbb89cff900c8`, CI Run #498 has passed compile, exact parameter report, the complete unit/regression test suite, v2 architecture/FLOP verification, exact notebook and safe preflights, and one-step smoke training. The FineWeb-2 cursor-resume smoke and final notebook/workflow-isolation checks were still in progress at the time of this update. Do not mark Run #498 fully successful until the run concludes.
