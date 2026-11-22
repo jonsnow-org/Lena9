@@ -223,3 +223,15 @@ The v3 prototype now also includes:
 CI Run #470 exposed two audio integration defects (waveform rank and Conv1d channel ordering). Both were corrected in subsequent commits. Run #475 on the corrected branch has passed package compilation, the complete unit/regression test suite, and v2 architecture/FLOPs checks; notebook preflight and remaining CI steps were still running at the time of this update.
 
 Do not claim generation quality from these untrained flow samplers. The v3 trainer, dataset conversion, perceptual/adversarial audio/image losses, temporal synchronization objectives, long-video chunked attention, checkpointing, inference serving, and evaluation/promotion thresholds remain outstanding.
+
+
+### V3 loss and media-ingest extension — commit `6823c8c34671d85e22a5baae14cbae787af74c04`
+
+Added `src/onecore/v3/losses.py` with:
+- multi-scale image reconstruction and spatial-gradient loss;
+- multi-resolution STFT + waveform loss for audio;
+- temporal-difference consistency loss for video;
+- symmetric paired-embedding contrastive alignment loss;
+- patch-image and multi-scale waveform discriminators with hinge objectives.
+
+Added tests for all these loss paths and a seven-frame GIF ingestion test proving the video source adapter saves all seven frames and does not apply a four-frame cap. CI Run #477 is executing against this commit; results are pending.
