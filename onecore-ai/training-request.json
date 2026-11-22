@@ -2,14 +2,14 @@
   "schema": "onecore-training-request-v1",
   "stage": "train_existing",
   "steps": 150,
-  "purpose": "Resume the existing clean external-only OneCore v2 lineage from the verified session-6 checkpoint onecore-state-train-06 in workflow run 44925751665 (six successful 150-step sessions; expected parent optimizer step 900). Preserve all model, optimizer, scheduler, RNG, tokenizer, and lineage state. Continue only sessions 7–10 for 600 more optimizer updates, reaching 1,500 cumulative steps. Reuse the already validated onecore-corpus-final artifact from the same run 44925751665; do not re-crawl, re-download, re-package, or repeat the already-passed five-family data gate. Do not restart from random initialization. Run independent validation and test after session 10 and keep promotion blocked unless the approved quality gate passes. 1,500 steps is still only 7.5% of the configured 20,000-step schedule.",
-  "request_id": "onecore-v2-resume-session06-to-1500-20261122-v43",
+  "purpose": "Start a clean external-only OneCore v2 joint-training lineage from random initialization. Reuse the already validated, unchanged five-family corpus artifact onecore-corpus-final from workflow run 44925751665; do not re-acquire, download, re-package, or repeat the successful data gate. Do not restore any checkpoint: the previous session-6 continuation used a tokenizer without external-only provenance and is disqualified from the official clean lineage. The corrected trainer now fits the tokenizer only on external train records, records tokenizer_corpus_data_class_counts in checkpoint metadata and train_result.json, and rejects any resumed checkpoint missing or violating that provenance. Run ten sequential 150-step sessions (1,500 cumulative optimizer updates), each update sampling one external micro-batch from each of text/tool/image/audio/video. Then perform actual independent validation and held-out test, recording checkpoint/tokenizer/manifest hashes. Keep promotion blocked unless the approved quality gate passes. This is only the first 1,500-update segment (7.5% of the configured 20,000-step schedule), not training completion.",
+  "request_id": "onecore-v2-fresh-external-tokenizer-1500-20261122-v44",
   "data_profile": "expanded",
   "base_corpus_run_id": "44925751665",
   "start_fresh_joint_training": true,
   "base_corpus_artifact_name": "onecore-corpus-final",
-  "resume_checkpoint_run_id": "44925751665",
-  "resume_checkpoint_artifact_name": "onecore-state-train-06",
+  "resume_checkpoint_run_id": "",
+  "resume_checkpoint_artifact_name": "",
   "jobs": 10,
   "total_optimizer_steps": 1500
 }
