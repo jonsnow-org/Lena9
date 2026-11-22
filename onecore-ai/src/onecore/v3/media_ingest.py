@@ -16,6 +16,7 @@ from typing import Any
 import imageio.v3 as iio
 import numpy as np
 import soundfile as sf
+from scipy.signal import resample_poly
 from PIL import Image
 
 
@@ -210,7 +211,12 @@ def preserve_audio_payload(value: Any, assets_root: str | Path, record_id: str,
             temp = _download_to_temp(str(value.get("src") or value.get("url")), ".audio", max_bytes)
         elif value.get("array") is not None:
             array = np.asarray(value["array"])
-            sample_rate = int(value.get("sampling_rate") or value.get("sample_rate") or 16000)
+            raw_sample_rate = value.get("sampling_rate") or value.get("sample_rate")
+            if raw_sample_rate is None:
+                raise ValueError("audio array payload must include its original sample_rate")
+            sample_rate = int(raw_sample_rate)
+            if sample_rate < 1:
+                raise ValueError("audio array sample_rate must be positive")
             handle = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
             temp = Path(handle.name)
             handle.close()
@@ -310,3 +316,52 @@ def preserve_video_payload(value: Any, assets_root: str | Path, record_id: str,
                 temp.unlink(missing_ok=True)
         return preserve_video_source(value, assets_root, record_id)
     raise ValueError(f"unsupported video payload type: {type(value).__name__}")
+
+
+def resample_audio_source(source: str | Path, assets_root: str | Path, record_id: str,
+                          target_sample_rate: int = 24_000) -> dict[str, Any]:
+    """Create a canonical-rate training derivative while preserving the raw source.
+
+    The original file remains under raw/audio. The derived WAV is resampled with
+    polyphase FIR filtering and carries both source and target rate metadata.
+    """
+    if target_sample_rate < 1:
+        raise ValueError("target_sample_rate must be positive")
+    raw_report = preserve_audio_source(source, assets_root, record_id)
+    root = Path(assets_root).resolve()
+    raw_path = root / raw_report["source_asset"]
+    waveform, source_rate = sf.read(str(raw_path), dtype="float32", always_2d=True)
+    if source_rate < 1 or waveform.shape[0] < 1:
+        raise ValueError("audio source must contain samples at a valid sample rate")
+    if source_rate == target_sample_rate:
+        return {
+            **raw_report,
+            "training_asset": raw_report["source_asset"],
+            "training_sample_rate": target_sample_rate,
+            "resampled": False,
+            "resampler": "identity",
+        }
+    from math import gcd
+    divisor = gcd(int(source_rate), int(target_sample_rate))
+    up = target_sample_rate // divisor
+    down = int(source_rate) // divisor
+    normalized = resample_poly(waveform, up, down, axis=0).astype(np.float32, copy=False)
+    derived_dir = root / "processed" / "audio"
+    derived_dir.mkdir(parents=True, exist_ok=True)
+    derived = derived_dir / f"{_safe_id(record_id)}-{target_sample_rate}hz.wav"
+    temp = derived.with_suffix(".wav.tmp")
+    try:
+        sf.write(str(temp), normalized, target_sample_rate, subtype="PCM_24", format="WAV")
+        temp.replace(derived)
+    finally:
+        temp.unlink(missing_ok=True)
+    return {
+        **raw_report,
+        "training_asset": derived.relative_to(root).as_posix(),
+        "training_sample_rate": target_sample_rate,
+        "training_channels": int(normalized.shape[1]),
+        "training_samples": int(normalized.shape[0]),
+        "resampled": True,
+        "resampler": "scipy.signal.resample_poly",
+        "resample_ratio": {"up": up, "down": down},
+    }
