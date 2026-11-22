@@ -2,21 +2,25 @@
 
 ## Single source of truth and isolation
 
-The only working branch is `research/onecore-foundation` in `jonsnow-org/Lena9`. All training, data generation, checkpointing, evaluation, and model-registry work runs on GitHub Actions CPU runners. Do not touch `main`, the Lena9 application, Ttbik, or any Sham model. The bootstrap and manually dispatched training workflows share the `onecore-training-v2` concurrency group. The bootstrap cancels an older in-progress bootstrap when a newer training request is submitted, preventing stale acquisition cycles from continuing in parallel.
+The only working branch is `research/onecore-foundation` in `jonsnow-org/Lena9`. All training, data generation, checkpointing, evaluation, and model-registry work runs on GitHub Actions CPU runners. Do not touch `main`, the Lena9 application, Ttbik, or any Sham model. The bootstrap and manually dispatched training workflows share the `onecore-training-v2` concurrency group with `cancel-in-progress: false`. A new request waits for the active run to release the lock; it must not cancel or overlap a training lineage.
 
-## Staged request-file workflow
+## Request-file bootstrap and checkpointed training
 
-The scheduled supervisor changes `onecore-ai/training-request.json` on the research branch. That file alone triggers `OneCore — staged GitHub training`; the workflow checks out the exact triggering commit SHA, validates the request, restores the referenced checkpoint, verifies its hash and optimizer/scheduler state, and runs the full CI suite before training.
+A commit that changes `onecore-ai/training-request.json` triggers `OneCore — bounded acquisition and alternating CPU training` (`.github/workflows/onecore-bootstrap.yml`) on the research branch. The workflow checks out the triggering commit SHA, validates the request and corpus reference, and runs the compile/test/notebook/serialization preflight before any optimizer step. The `train_all` job has an explicit success guard: it starts only when `prepare` succeeded and either the dataset gate succeeded or it was intentionally skipped for `train_existing`.
 
 Request fields:
-- `stage`: `text`, `multimodal`, or `evaluate`.
-- `steps`: 1–250 optimizer steps per bounded segment.
-- `resume_run_id`: numeric GitHub Actions run ID whose artifact is the parent checkpoint.
-- `parent_run_id`: provenance run ID, normally the same as `resume_run_id`.
+- `stage`: `acquire`, `train_existing`, or `repair_video_existing`.
+- `base_corpus_run_id` and `base_corpus_artifact_name`: the exact previously validated corpus snapshot.
+- `start_fresh_joint_training`: `true` for the clean random-initialized lineage; the first session has no parent checkpoint.
+- `steps`: the request-file bootstrap currently fixes this at 150 optimizer steps per session; every job remains below the 250-step ceiling.
+- `jobs` and `total_optimizer_steps`: currently 10 sequential sessions and 1,500 optimizer updates per request.
+- `resume_checkpoint_run_id` and `resume_checkpoint_artifact_name`: optional paired values for resuming an interrupted request from its last completed session artifact.
 
-Each segment runs notebooks 00, 01, and 02 as gates. A text segment executes notebook 03; a multimodal segment executes notebook 04; notebook 05 evaluates validation and independent test splits after non-smoke training. The same shared model, optimizer, scheduler, tokenizer, RNG states, and checkpoint lineage continue across stages.
+The current bootstrap executes ten sequential sessions on one persistent CPU runner. Session 1 uses the joint stage and Notebook 03; sessions 2–10 use the multimodal stage while alternating Notebooks 04 and 03. Every joint/multimodal optimizer update contains one external micro-batch from each family: text, tool, image, audio, and video. `gradient_accumulation=4` applies only to text/smoke and does not replace the five micro-batches in a joint update. The current request is a 1,500-update segment, not completion of the 20,000-step schedule. After session 10, Notebook 05 evaluates independent validation and held-out test splits from the same checkpoint/corpus; a separate job verifies the final optimizer step, checkpoint SHA-256, five-family counts, external-only optimizer classes, parameter count, and T-LDM update count. Promotion remains blocked unless the independent quality gate passes.
 
-The manual `OneCore — staged training` workflow remains available for operator use. It is serialized with the same lock and runs CI and checkpoint verification before executing notebooks.
+The current workflow can resume an interrupted request from a checkpoint in sessions 1–9, but it cannot yet start a new segment from a completed `onecore-state-train-10` checkpoint. That post-session-10 continuation path remains a required engineering task before the full 20,000-step schedule can be completed. Do not reinitialize the lineage or reuse a checkpoint whose tokenizer provenance is missing or non-external.
+
+The manual `OneCore — staged training` workflow remains available for operator use. It is distinct from the request-file bootstrap and uses the same non-cancelling lock.
 
 ## Reusing an existing corpus before acquisition
 
@@ -36,7 +40,7 @@ The earlier 10-step and 100-step runs used only synthetic engineering curricula.
 
 ## Architecture and expansion
 
-The instantiated architecture is guarded by the exact v2 parameter count; future scaling is allowed only with complete recomputation and retraining. The instantiated `phone-research.yaml` model is **57,579,201 parameters**, including all trainable image/audio/motion encoders and decoders and counting the tied token embedding/output weight once. This is 8,192 below the earlier approximate the discarded approximate parameter estimate target and remains within the agreed range; CI asserts the exact current count.
+The instantiated architecture is guarded by the exact v2 parameter count; future scaling is allowed only with complete recomputation and retraining. The instantiated `phone-research.yaml` model is **57,579,201 parameters**, including all trainable image/audio/motion encoders and decoders and counting the tied token embedding/output weight once. This is 8,192 below the earlier approximate estimate; CI asserts the exact current count.
 
 100–150M is a later research phase, not a final ceiling. Expansion above 150M remains possible only after quality, data coverage, compute, and checkpoint-lineage evidence justify it. Do not resize or migrate weights silently.
 
@@ -77,7 +81,7 @@ The bootstrap separates **training readiness** from **source exhaustion**. A fir
 
 ## Checkpoint integrity and retention
 
-Checkpoint verification checks the internal SHA-256 against `train_result.json`, optimizer step and state, scheduler state, exact parameter count, tokenizer hash, manifest hash, asset hash, and parent checkpoint/run metadata. The initial legacy checkpoint did not record an asset fingerprint; the first continuation established one while preserving the old manifest hash.
+Checkpoint verification checks the internal SHA-256 against `train_result.json`, optimizer step and state, scheduler state, exact parameter count, tokenizer hash and tokenizer-corpus class counts, train-manifest hash, asset-manifest hash, combined training-data fingerprint, and parent checkpoint/run metadata. A legacy checkpoint without external-only tokenizer provenance is not eligible for the clean lineage. A checkpoint missing an asset fingerprint is not resumed unless an append-only importer proves continuity from the exact parent manifest and asset fingerprint.
 
 Artifacts are retained for 90 days and remain the immediate resume source. Durable GitHub Release upload currently returns `403 Resource not accessible by integration` when using the repository `GITHUB_TOKEN`. The release step is therefore skipped unless the secret `ONECORE_RELEASE_TOKEN` is configured with repository `contents:write` access (or repository/org Actions settings permit release writes). No paid or external training host is involved.
 

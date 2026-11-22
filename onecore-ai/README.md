@@ -2,7 +2,7 @@
 
 **One unified, multimodal research model initialized randomly from scratch.** No pretrained model weights, adapters, teacher-model outputs, or model downloads are used.
 
-OneCore is isolated under `onecore-ai/` in `jonsnow-org/Lena9` and developed only on `research/onecore-foundation`. Workflows are path-filtered, pinned to their triggering commit, and serialized with the non-cancelling `onecore-training` lock.
+OneCore is isolated under `onecore-ai/` in `jonsnow-org/Lena9` and developed only on `research/onecore-foundation`. Workflows are path-filtered and pinned to their triggering commit. The request-file training workflow uses the shared, non-cancelling `onecore-training-v2` lock; a newer request does not cancel an active training lineage.
 
 ## Research hypothesis
 
@@ -34,7 +34,7 @@ A compact model may spend parameters more efficiently by combining a shared recu
 
 ## First architecture budget and future expansion
 
-The instantiated architecture is guarded by the exact v2 parameter count; future scaling is allowed only with complete recomputation and retraining. The instantiated `phone-research.yaml` model is **57,579,201 parameters**, including all trainable image/audio/motion modules and counting the tied token embedding/output weight once. This is 8,192 below the earlier approximate target of the discarded approximate parameter estimate and is protected by an exact CI regression test.
+The instantiated architecture is guarded by the exact v2 parameter count; future scaling is allowed only with complete recomputation and retraining. The instantiated `phone-research.yaml` model is **57,579,201 parameters**, including all trainable image/audio/motion modules and counting the tied token embedding/output weight once. This is 8,192 below the earlier approximate estimate; CI asserts the exact current count.
 
 Configuration: width 1024, four unique recurrent blocks, three recurrent cycles (12 block applications), eight attention heads, 4,096 text-token slots plus learned modality code ranges/special tokens, 8×8 RGB image patches, and 80-bin log-mel frames grouped by four.
 
@@ -60,7 +60,7 @@ Data classes separate `bootstrap`, `synthetic_unverified`, `synthetic_verified`,
 
 ## GitHub-only training and checkpoint retention
 
-Training runs in bounded segments of up to 250 optimizer steps per job. The request-file workflow is triggered by a commit changing `onecore-ai/training-request.json`; it pins the exact commit, runs CI, restores model/optimizer/scheduler/RNG/tokenizer state, and executes the selected notebook stage followed by validation/test evaluation. Checkpoints are Actions artifacts, not Git objects. The same job reruns `compileall`, the full pytest suite, six-notebook integrity validation, and workflow isolation/serialization checks before any optimizer step; a failed preflight blocks training.
+The request-file workflow is triggered only by a commit changing `onecore-ai/training-request.json` on `research/onecore-foundation`. It checks out that exact commit and uses the non-cancelling `onecore-training-v2` lock; a newer request does not interrupt an active lineage. The prepare job runs `compileall`, the full pytest suite, six-notebook integrity validation, and workflow isolation/serialization checks before any optimizer step. The current bootstrap uses ten sequential 150-step sessions (1,500 optimizer updates) on one persistent CPU runner. With `stage: train_existing`, it reuses the already-validated corpus and skips acquisition and the already-passed data gate. A clean lineage starts from random weights and fits its tokenizer from external train records only. Each session uploads model, optimizer, scheduler, RNG, and tokenizer state; the next session verifies the parent checkpoint hash, optimizer step, and provenance before continuing. The parent artifact is removed only after its successor has been uploaded. The final session runs independent validation and held-out test, and a separate check verifies the checkpoint hash, five-family counts, external-only optimizer counts, parameter count, and T-LDM updates. This 1,500-step request is only 7.5% of the configured 20,000-step schedule. The current workflow can resume an interrupted request within its ten sessions, but it cannot yet start a new segment from a completed `onecore-state-train-10` checkpoint; that continuation path remains required before the full schedule can be completed. The manual staged workflow retains the 250-step per-job ceiling. Checkpoints are Actions artifacts, not Git objects.
 
 Artifacts are retained for 90 days. Durable GitHub Release upload currently receives `403 Resource not accessible by integration` from the repository `GITHUB_TOKEN`; a release is skipped unless `ONECORE_RELEASE_TOKEN` is configured with `contents:write` access or repository/org Actions settings permit release writes. Training itself remains GitHub Actions-only and does not use paid/external hosts.
 
