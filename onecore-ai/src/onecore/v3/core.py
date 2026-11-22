@@ -87,7 +87,8 @@ class OneCoreV3(nn.Module):
                  layers: int = 4, cycles: int = 3, attention_heads: int = 8, patch_size: int = 16,
                  audio_latent_channels: int = 128, audio_hidden_channels: int = 256,
                  audio_codebook_size: int = 1024, audio_quantizer_stages: int = 8,
-                 audio_channels: int = 2, temporal_layers: int = 2, dropout: float = 0.0,
+                 audio_channels: int = 2, audio_sample_rate: int = 24_000,
+                 temporal_layers: int = 2, dropout: float = 0.0,
                  max_image_context_tokens: int = 256, max_video_context_tokens: int = 256,
                  max_flow_context_tokens: int = 256, temporal_window_frames: int = 32,
                  temporal_memory_frames: int = 4, video_generation_chunk_frames: int = 8) -> None:
@@ -117,7 +118,7 @@ class OneCoreV3(nn.Module):
         self.image_codec = VariableResolutionImageCodec(width, patch_size)
         self.audio_codec = NeuralAudioCodec(
             audio_latent_channels, audio_hidden_channels,
-            audio_codebook_size, audio_quantizer_stages, audio_channels,
+            audio_codebook_size, audio_quantizer_stages, audio_channels, audio_sample_rate,
         )
         self.audio_to_shared = nn.Conv1d(audio_latent_channels, width, kernel_size=1)
         self.shared_to_audio = nn.Conv1d(width, audio_latent_channels, kernel_size=1)
@@ -164,7 +165,7 @@ class OneCoreV3(nn.Module):
         )
         return self.image_codec.decode(processed), processed
 
-    def forward_audio(self, waveform: torch.Tensor, *, sample_rate: int | None = None) -> tuple[torch.Tensor, AudioEncoding]:
+    def forward_audio(self, waveform: torch.Tensor, *, sample_rate: int) -> tuple[torch.Tensor, AudioEncoding]:
         encoding = self.audio_codec.encode(waveform, sample_rate=sample_rate)
         shared = self.audio_to_shared(encoding.quantized).transpose(1, 2)
         shared = self.shared_core(
