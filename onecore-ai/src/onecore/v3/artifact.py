@@ -58,14 +58,16 @@ def extract_v2_artifact_manifests(
         "X-GitHub-Api-Version": "2022-11-28",
     }
     response = requests.get(
-        api_url, headers=headers, allow_redirects=True, stream=True, timeout=60
+        api_url, headers=headers, allow_redirects=False, stream=True, timeout=60
     )
     try:
-        if response.status_code != 200:
+        if response.status_code not in (301, 302, 303, 307, 308):
             raise RuntimeError(
-                f"GitHub artifact download URL resolution failed: HTTP {response.status_code}"
+                f"GitHub artifact endpoint did not return a signed redirect: HTTP {response.status_code}"
             )
-        signed_url = response.url
+        signed_url = response.headers.get("Location")
+        if not signed_url:
+            raise RuntimeError("GitHub artifact endpoint omitted the signed download Location header")
     finally:
         response.close()
 
