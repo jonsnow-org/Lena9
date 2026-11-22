@@ -195,9 +195,14 @@ def restore_v2_media_records(
         record_id = str(record.get("id", "")).strip()
         if not record_id or record_id in converted:
             skipped["missing_or_duplicate_id"] += 1
+            errors.append("input V2 row has a missing or duplicate record ID")
             continue
-        if not external_record_is_trainable(record) or not has_immutable_external_provenance(record):
+        if not external_record_is_trainable(record):
+            skipped["not_external_data_class"] += 1
+            continue
+        if not has_immutable_external_provenance(record):
             skipped["not_immutable_external"] += 1
+            errors.append(f"{record_id}: external V2 row lacks immutable provenance")
             continue
         task = str(record.get("task", ""))
         if task in {"text", "tool_use"}:
@@ -205,6 +210,7 @@ def restore_v2_media_records(
             continue
         if task not in MEDIA_TASKS:
             skipped["unsupported_task"] += 1
+            errors.append(f"{record_id}: unsupported V2 task {task!r}")
             continue
         source_id = str(record.get("source_id", ""))
         revision = str(record.get("source_revision", ""))
@@ -299,7 +305,11 @@ def restore_v2_media_records(
         "target_audio_rate": target_audio_rate,
         "source_restore_mode": "pinned_revision_streaming_row_hash_lookup",
         "synthetic_records_added": 0,
-        "blocked": bool(errors or skipped.get("duplicate_source_row_hash")),
+        "blocked": bool(errors or any(skipped.get(key, 0) for key in (
+            "missing_or_duplicate_id", "source_not_in_registry", "source_disabled",
+            "source_adapter_mismatch", "source_revision_not_pinned", "invalid_source_row_hash",
+            "duplicate_source_row_hash", "source_repo_missing", "pinned_source_row_not_found",
+        ))),
     }
     return ordered, report
 
