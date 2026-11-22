@@ -214,6 +214,8 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
         if index == 1:
             assert step["with"]["setup_environment"] == "true"
             assert step["with"]["restore_corpus"] == "true"
+            assert step["with"]["corpus_artifact_name"] == "${{ needs.prepare.outputs.base_corpus_artifact_name }}"
+            assert step["with"]["corpus_run_id"] == "${{ needs.prepare.outputs.base_corpus_run_id }}"
         else:
             assert f"resume_checkpoint_session == '{index-1}'" in step["with"]["setup_environment"]
             assert f"resume_checkpoint_session == '{index-1}'" in step["with"]["restore_corpus"]
