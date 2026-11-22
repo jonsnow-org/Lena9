@@ -335,7 +335,7 @@ def test_external_provenance_audit_checks_all_splits_without_rehashing_assets(tm
     }
     for split, records in manifests.items():
         (data_root / f"{split}.jsonl").write_text(
-            "\\n".join(json.dumps(record) for record in records) + "\\n",
+            "\n".join(json.dumps(record) for record in records) + "\n",
             encoding="utf-8",
         )
 
@@ -347,7 +347,7 @@ def test_external_provenance_audit_checks_all_splits_without_rehashing_assets(tm
 
     manifests["test"][0]["source_row_id_sha256"] = "b" * 64
     (data_root / "test.jsonl").write_text(
-        json.dumps(manifests["test"][0]) + "\\n", encoding="utf-8"
+        json.dumps(manifests["test"][0]) + "\n", encoding="utf-8"
     )
     with pytest.raises(DatasetError, match="identical external source row"):
         validate_external_provenance_disjointness(tmp_path)
