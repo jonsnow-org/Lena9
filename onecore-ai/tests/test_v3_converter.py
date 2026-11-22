@@ -6,7 +6,7 @@ import yaml
 from PIL import Image
 
 from onecore.acquire import _row_identity
-from onecore.v3.converter import restore_v2_media_records, write_v3_manifests
+from onecore.v3.converter import convert_v2_corpus, restore_v2_media_records, write_v3_manifests
 
 
 REVISION = "a" * 40
@@ -157,3 +157,29 @@ def test_v3_manifest_writer_atomically_writes_three_split_files(tmp_path):
     assert '"id": "train-1"' in (tmp_path / "data/train.jsonl").read_text()
     assert '"id": "val-1"' in (tmp_path / "data/validation.jsonl").read_text()
     assert '"id": "test-1"' in (tmp_path / "data/test.jsonl").read_text()
+
+
+
+def test_v3_corpus_conversion_writes_all_splits_and_reports_manifest_gate(tmp_path):
+    v2 = tmp_path / "v2-data"
+    v2.mkdir()
+    for split in ("train", "validation", "test"):
+        record = {
+            "id": f"{split}-text", "source_id": "text-source", "source_revision": REVISION,
+            "source_row_id_sha256": hashlib.sha256(f"{split}-row".encode()).hexdigest(),
+            "source_url": "https://example.org/text", "split": split,
+            "data_class": "external", "task": "text",
+            "text": "A sufficiently long existing text sample.",
+        }
+        (v2 / f"{split}.jsonl").write_text(yaml.safe_dump(record).replace("---\n", "").strip() and
+            __import__("json").dumps(record) + "\n", encoding="utf-8")
+    registry = tmp_path / "sources.yaml"
+    _write_registry(registry, [])
+    report = convert_v2_corpus(
+        v2, registry, tmp_path / "v3", minimum_train=0, minimum_holdout=0,
+    )
+    assert report["converted_records"] == 3
+    assert report["manifest_gate"]["passed"] is True
+    assert report["blocked"] is False
+    for split in ("train", "validation", "test"):
+        assert (tmp_path / "v3" / "data" / f"{split}.jsonl").is_file()
