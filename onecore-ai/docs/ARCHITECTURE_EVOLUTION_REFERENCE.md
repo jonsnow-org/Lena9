@@ -526,3 +526,20 @@ Change:
 **Verification:** CI Run #572 (ID `45057049451`) is in progress on this exact commit; the latest observed job reached the exact V3 parameter report step after installing CPU PyTorch and project dependencies. Do not claim the tests passed until this run completes.
 
 **Next required sequence:** once #572 passes, trigger the existing conditional `v3-corpus-restore` job using the required commit-message marker `[onecore-v3-corpus-restore]`. Inspect its new report artifact. Only if all five family gates pass and raw media hashes/provenance are sound may the V3 corpus artifact be uploaded. Do not start V3 training before that. Run #55 (ID `45017683783`) remains evaluation-only and active; no optimizer-update job is running. `main` remains at `0b5ec69e839bfc6086a358511b54649b03c7be9a`.
+
+
+### V3 media decoder fix — verification passed; real corpus restore running
+
+CI Run #574 (ID `45057213347`) passed its entire `verify` job on V3 commit `8d0c84407ae8cb66be9c5e55fc39b9eeef2392b9`:
+- compile passed;
+- exact V3 parameter report passed;
+- **202 tests passed, 9 warnings**;
+- Corrected Specification v2 parameter/FLOPs checks passed;
+- architecture notebook, safe notebook preflights, one-step text smoke, random-init smoke, FineWeb-2 cursor resume, all notebook validation, and workflow-isolation checks passed.
+- The only observed warning cluster is the known PyTorch nested-tensor optimization warning in temporal video Transformer; it did not fail tests.
+
+The exact V3 report remains unchanged because this commit only changes source loading and a stale test expectation: **39,906,568 trainable parameters**, config SHA-256 `6c879331c75da434c58680050f94035dc15626e7af4847db1b36e055c47d7708`, 123 state tensors, FP32 159,626,272 bytes, FP16 79,813,136 bytes, AdamW moments estimate 319,252,544 bytes. These are parameter/storage quantities, not peak RAM or quality measurements.
+
+The conditional `v3-corpus-restore` job in the same Run #574 is now **in progress** and depends on the passing verify job. It is reusing the existing V2 corpus artifact and exact pinned source registry. Its report artifact and final manifest gate have not yet been produced. Do not claim audio/video conversion or external 100/10/10 success until that job completes and its report is inspected.
+
+Latest V3 commit: `8d0c84407ae8cb66be9c5e55fc39b9eeef2392b9`. Latest foundation reference commit before this note: `d43db600549781a969f9f48d37de7e7841d7430f`. `main` remains `0b5ec69e839bfc6086a358511b54649b03c7be9a`. Run #55 remains evaluation-only in independent validation/test, with no optimizer update.
