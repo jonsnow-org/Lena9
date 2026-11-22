@@ -7,7 +7,7 @@ import yaml
 from PIL import Image
 
 from onecore.acquire import _row_identity
-from onecore.v3.converter import convert_v2_corpus, restore_v2_media_records, write_v3_manifests
+from onecore.v3.converter import (\n    acquire_missing_media_rows, convert_v2_corpus, restore_v2_media_records, write_v3_manifests,\n)
 
 
 REVISION = "a" * 40
@@ -183,3 +183,41 @@ def test_v3_corpus_conversion_writes_all_splits_and_reports_manifest_gate(tmp_pa
     assert report["blocked"] is False
     for split in ("train", "validation", "test"):
         assert (tmp_path / "v3" / "data" / f"{split}.jsonl").is_file()
+
+
+
+def test_v3_converter_acquires_only_missing_image_holdouts_from_pinned_native_splits(tmp_path):
+    validation_row = {"id": "image-validation-01", "image": Image.new("RGB", (40, 30), (1, 2, 3))}
+    test_row = {"id": "image-test-01", "image": Image.new("RGB", (50, 35), (4, 5, 6))}
+    registry = tmp_path / "sources.yaml"
+    _write_registry(registry, [{
+        "id": "openimages", "repo": "finedet/openimages", "config": "default",
+        "hf_splits": ["train", "validation", "test"], "adapter": "image",
+        "image_field": "image", "split_strategy": "preserve", "enabled": True,
+    }])
+    calls = []
+
+    def loader(repo, config, split, revision):
+        calls.append((repo, config, split, revision))
+        return [validation_row] if split == "validation" else [test_row] if split == "test" else []
+
+    records, report = acquire_missing_media_rows(
+        [], registry, {"openimages": REVISION},
+        minimum_train=0, minimum_holdout=1, source_loader=loader,
+    )
+    assert [row["split"] for row in records] == ["validation", "test"]
+    assert all(row["source_hf_split"] == row["split"] for row in records)
+    assert report["added_by_family_split"]["image"]["validation"] == 1
+    assert report["added_by_family_split"]["image"]["test"] == 1
+    assert report["synthetic_records_added"] == 0
+    assert calls == [
+        ("finedet/openimages", "default", "validation", REVISION),
+        ("finedet/openimages", "default", "test", REVISION),
+    ]
+
+    restored, restore_report = restore_v2_media_records(
+        records, registry, tmp_path / "assets", source_loader=loader,
+    )
+    assert len(restored) == 2
+    assert all(row["assets"]["image"]["source_asset"] for row in restored)
+    assert restore_report["converted_records"] == 2
