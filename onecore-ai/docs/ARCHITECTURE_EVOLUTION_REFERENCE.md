@@ -286,3 +286,10 @@ Therefore the V2 acquired media assets are lossy derivatives for V3 purposes; th
 ### V3 raw-data gate and provenance validation — commit `a2093329d2424553098f4f956526e7588ad449e5`
 
 Added `src/onecore/v3/manifest.py` to require immutable external provenance, pinned source revisions, preserved raw media assets, asset SHA-256 verification, source-row and asset split-disjointness, and per-family train/validation/test quotas. Bootstrap/synthetic records are explicitly excluded from external counts. Tests cover successful external coverage, bootstrap exclusion, cross-split asset leakage, and missing raw media. CI Run #490 is pending.
+
+
+### V3 external-manifest gate verification — commit `a30e215d35c4b1537713ce7acefffaf31be5ba02`
+
+CI Run #493 completed successfully with 182 tests passed (12 warnings) and all compile, v2 architecture/FLOP, notebook, smoke-training and workflow-isolation checks passing. The V3 manifest tests verify that bootstrap images do not count, raw assets must exist, immutable provenance is required, and assets cannot leak between splits. The image payload adapter's decoded-array branch was also fixed and covered by regression tests.
+
+The V3 manifest gate is code-tested only on fixtures. It has not yet audited the full 15.8 GB Run #48 corpus or a recovered V3 raw-media corpus.
