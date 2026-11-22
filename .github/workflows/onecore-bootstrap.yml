@@ -11,7 +11,7 @@ permissions:
 
 concurrency:
   group: onecore-training-v2
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   HF_TOKEN: ${{ secrets.HF_TOKEN }}
@@ -216,7 +216,7 @@ jobs:
   dataset_gate:
     name: Final multimodal coverage and split-integrity gate
     needs: finalize_acquisition
-    if: ${{ always() && needs.finalize_acquisition.result == 'success' && needs.finalize_acquisition.outputs.complete == 'true' }}
+    if: ${{ always() && needs.finalize_acquisition.result == 'success' && needs.finalize_acquisition.outputs.complete == 'true' && needs.finalize_acquisition.outputs.request_stage != 'train_existing' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 330
     steps:
@@ -453,7 +453,7 @@ jobs:
   train_all:
     name: Ten sequential 150-step CPU training sessions on one persistent runner
     needs: [dataset_gate, prepare]
-    if: ${{ always() && needs.dataset_gate.result == 'success' }}
+    if: ${{ always() && (needs.dataset_gate.result == 'success' || (needs.dataset_gate.result == 'skipped' && needs.prepare.outputs.request_stage == 'train_existing')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 360
     outputs:
@@ -763,8 +763,8 @@ jobs:
             gh release upload "$tag" onecore-ai/run-state/onecore-final-state.zip --clobber
           else
             gh release create "$tag" onecore-ai/run-state/onecore-final-state.zip \
-              --title "OneCore final checkpoint — 150 optimizer steps" \
-              --notes "OneCore initialized from random weights and trained in ten sequential 15-step sessions on one persistent CPU runner; the validated corpus was restored once. Every optimizer update samples text, tool, image, audio and video. The checkpoint contains model, optimizer, scheduler, RNG and tokenizer state. Commit: ${GITHUB_SHA}." \
+              --title "OneCore final checkpoint — 1,500 optimizer steps" \
+              --notes "OneCore initialized from random weights and trained in ten sequential 150-step sessions on one persistent CPU runner; the validated corpus was restored once. Every optimizer update samples text, tool, image, audio and video. The checkpoint contains model, optimizer, scheduler, RNG and tokenizer state. Commit: ${GITHUB_SHA}." \
               --target "${GITHUB_SHA}"
           fi
       - name: Publish final training and evaluation summary
@@ -772,8 +772,8 @@ jobs:
         shell: bash
         run: |
           echo "## OneCore persistent-runner CPU training" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Optimizer steps: 150" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Training sessions: 10 × 15 steps on one CPU runner" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Optimizer steps: 1,500" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Training sessions: 10 × 150 steps on one CPU runner" >> "$GITHUB_STEP_SUMMARY"
           echo "- Notebook order: 03, 04, 03, 04, 03, 04, 03, 04, 03, 04" >> "$GITHUB_STEP_SUMMARY"
           echo "- Checkpoint release: onecore-run-${GITHUB_RUN_ID}" >> "$GITHUB_STEP_SUMMARY"
           [[ ! -f onecore-ai/run-state/train_result.json ]] || cat onecore-ai/run-state/train_result.json >> "$GITHUB_STEP_SUMMARY"

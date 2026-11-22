@@ -106,7 +106,9 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
     assert bootstrap_doc["jobs"]["finalize_acquisition"]["outputs"]["complete"].startswith("${{")
     assert bootstrap_doc["jobs"]["dataset_gate"]["if"].startswith("${{")
     assert "always() && needs.finalize_acquisition.result == 'success' && needs.finalize_acquisition.outputs.complete == 'true'" in bootstrap
-    assert "always() && needs.dataset_gate.result == 'success'" in bootstrap
+    assert "dataset_gate.result == 'success'" in bootstrap
+    assert "dataset_gate.result == 'skipped' && needs.prepare.outputs.request_stage == 'train_existing'" in bootstrap
+    assert "needs.finalize_acquisition.outputs.request_stage != 'train_existing'" in bootstrap
     assert "always() && needs.train_all.result == 'success'" in bootstrap
     assert 'ONECORE_EXECUTE_EVALUATION: "1"' in bootstrap
     assert "Require complete validation and test metrics" in bootstrap
@@ -163,11 +165,18 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
     assert 'sampled_data_class_counts") != {"external": 7500}' in bootstrap
     assert "onecore-state-train-10" in bootstrap
     assert "Notebook order: 03, 04, 03, 04, 03, 04, 03, 04, 03, 04" in bootstrap
+    assert "OneCore final checkpoint — 1,500 optimizer steps" in bootstrap
+    assert "- Optimizer steps: 1,500" in bootstrap
+    assert "- Training sessions: 10 × 150 steps" in bootstrap
     jobs = bootstrap_doc["jobs"]
     assert "train_all" in jobs
     assert not any(f"train_{index:02d}" in jobs for index in range(1, 11))
     train_job = jobs["train_all"]
     assert train_job["needs"] == ["dataset_gate", "prepare"]
+    assert "dataset_gate.result == 'skipped'" in train_job["if"]
+    assert "request_stage == 'train_existing'" in train_job["if"]
+    assert "cancel-in-progress: false" in bootstrap
+    assert "cancel-in-progress: false" in training
     assert "resume_checkpoint_run_id" in bootstrap
     assert "resume_checkpoint_artifact_name" in bootstrap
     assert "checkpoint_run_id" in train_doc["inputs"]

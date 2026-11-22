@@ -276,13 +276,16 @@ jobs:
           bootstrap = (Path(".github/workflows") / "onecore-bootstrap.yml").read_text(encoding="utf-8")
           assert "gh workflow run onecore-training.yml" not in bootstrap, "training must not dispatch a workflow absent from the default branch"
           assert "Start fresh random-initialized OneCore joint multimodal training in the same CPU job" not in bootstrap
-          assert "cancel-in-progress: true" in bootstrap
+          assert "cancel-in-progress: false" in bootstrap and "cancel-in-progress: false" in (Path(".github/workflows") / "onecore-training.yml").read_text(encoding="utf-8")
           assert "timeout-minutes: 330" in bootstrap
           assert "./.github/actions/onecore-acquire" in bootstrap
           assert "./.github/actions/onecore-train" in bootstrap
           assert "onecore-corpus-final" in bootstrap
           assert "onecore-state-train-10" in bootstrap
           assert "Notebook order: 03, 04, 03, 04, 03, 04, 03, 04, 03, 04" in bootstrap
+          assert "OneCore final checkpoint — 1,500 optimizer steps" in bootstrap
+          assert "- Optimizer steps: 1,500" in bootstrap
+          assert "- Training sessions: 10 × 150 steps" in bootstrap
           import yaml
           workflow = yaml.safe_load(bootstrap)
           jobs = workflow["jobs"]
@@ -294,7 +297,8 @@ jobs:
           assert "train_existing" in bootstrap, "existing-corpus training must bypass acquisition"
           assert "needs.prepare.outputs.request_stage == 'acquire'" in bootstrap
           assert "always() && needs.finalize_acquisition.result == 'success' && needs.finalize_acquisition.outputs.complete == 'true'" in bootstrap
-          assert "always() && needs.dataset_gate.result == 'success'" in bootstrap
+          assert "dataset_gate.result == 'success'" in bootstrap and "dataset_gate.result == 'skipped' && needs.prepare.outputs.request_stage == 'train_existing'" in bootstrap
+          assert "needs.finalize_acquisition.outputs.request_stage != 'train_existing'" in bootstrap
           assert "always() && needs.train_all.result == 'success'" in bootstrap
           assert "REQUEST_STAGE" in bootstrap
           assert 'print(f"request_stage={stage}")' in bootstrap
