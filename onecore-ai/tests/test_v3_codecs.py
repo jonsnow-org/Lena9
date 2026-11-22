@@ -55,6 +55,8 @@ def test_v3_video_codec_keeps_all_frames_and_variable_timestamps():
     video = torch.rand(1, 37, 3, 32, 48)
     timestamps = torch.arange(37, dtype=torch.float32).unsqueeze(0) / 24.0
 
+    chunks = list(codec.iter_encode(video, timestamps=timestamps))
+    assert [chunk.frame_count for chunk in chunks] == [32, 5]
     with torch.no_grad():
         reconstruction, encoding = codec(video, timestamps=timestamps)
 

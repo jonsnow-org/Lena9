@@ -48,8 +48,10 @@ class TemporalVideoCodec(nn.Module):
             nn.Linear(1, width), nn.SiLU(), nn.Linear(width, width)
         )
 
-    def encode(self, video: torch.Tensor,
-               timestamps: torch.Tensor | None = None) -> VideoEncoding:
+    def iter_encode(self, video: torch.Tensor,
+                    timestamps: torch.Tensor | None = None,
+                    frame_chunk_size: int | None = None):
+        """Yield bounded-memory temporal encodings while retaining every frame."""
         if video.ndim != 5 or video.shape[2] != 3:
             raise ValueError("video must have shape [B,T,3,H,W]")
         batch, frames, _, height, width = video.shape
@@ -63,49 +65,67 @@ class TemporalVideoCodec(nn.Module):
             raise ValueError("timestamps must have shape [B,T]")
         if not torch.isfinite(timestamps).all():
             raise ValueError("timestamps must be finite")
-        flat_frames = video.reshape(batch * frames, 3, height, width)
-        image_encoding = self.image_codec.encode(flat_frames)
-        tokens = image_encoding.tokens.reshape(
-            batch, frames, image_encoding.grid_height * image_encoding.grid_width,
-            self.width,
-        )
-        time_features = self.time_projection(timestamps.to(video.dtype).unsqueeze(-1))
-        tokens = tokens + time_features.unsqueeze(2)
-
-        # Temporal attention is causal for every spatial patch location.
-        spatial_tokens = tokens.permute(0, 2, 1, 3).reshape(
-            batch * tokens.shape[2], frames, self.width
-        )
-        if frames <= self.temporal_window_frames:
-            causal_mask = torch.triu(
-                torch.ones(frames, frames, device=video.device, dtype=torch.bool),
+        if frames > 1 and torch.any(timestamps[:, 1:] <= timestamps[:, :-1]):
+            raise ValueError("video timestamps must be strictly increasing")
+        chunk_size = self.temporal_window_frames if frame_chunk_size is None else int(frame_chunk_size)
+        if chunk_size < 1:
+            raise ValueError("frame_chunk_size must be positive")
+        chunk_size = min(chunk_size, self.temporal_window_frames)
+        memory = None
+        for start in range(0, frames, chunk_size):
+            stop = min(frames, start + chunk_size)
+            current_frames = stop - start
+            flat_frames = video[:, start:stop].reshape(
+                batch * current_frames, 3, height, width
+            )
+            image_encoding = self.image_codec.encode(flat_frames)
+            tokens = image_encoding.tokens.reshape(
+                batch, current_frames,
+                image_encoding.grid_height * image_encoding.grid_width,
+                self.width,
+            )
+            current_timestamps = timestamps[:, start:stop]
+            time_features = self.time_projection(
+                current_timestamps.to(video.dtype).unsqueeze(-1)
+            )
+            tokens = tokens + time_features.unsqueeze(2)
+            spatial_tokens = tokens.permute(0, 2, 1, 3).reshape(
+                batch * tokens.shape[2], current_frames, self.width
+            )
+            combined = spatial_tokens if memory is None else torch.cat(
+                (memory, spatial_tokens), dim=1
+            )
+            mask = torch.triu(
+                torch.ones(
+                    combined.shape[1], combined.shape[1],
+                    device=video.device, dtype=torch.bool,
+                ),
                 diagonal=1,
             )
-            temporal_tokens = self.temporal(spatial_tokens, mask=causal_mask)
-        else:
-            chunks = []
-            memory = None
-            for start in range(0, frames, self.temporal_window_frames):
-                current = spatial_tokens[:, start:start + self.temporal_window_frames]
-                combined = current if memory is None else torch.cat((memory, current), dim=1)
-                mask = torch.triu(
-                    torch.ones(
-                        combined.shape[1], combined.shape[1],
-                        device=video.device, dtype=torch.bool,
-                    ),
-                    diagonal=1,
-                )
-                processed = self.temporal(combined, mask=mask)
-                chunks.append(processed[:, -current.shape[1]:])
-                if self.temporal_memory_frames:
-                    memory = processed[:, -self.temporal_memory_frames:].detach()
-            temporal_tokens = torch.cat(chunks, dim=1)
-        temporal_tokens = temporal_tokens.reshape(
-            batch, tokens.shape[2], frames, self.width
-        ).permute(0, 2, 1, 3)
+            processed = self.temporal(combined, mask=mask)
+            current_processed = processed[:, -current_frames:]
+            if self.temporal_memory_frames:
+                memory = processed[:, -self.temporal_memory_frames:].detach()
+            else:
+                memory = None
+            temporal_tokens = current_processed.reshape(
+                batch, tokens.shape[2], current_frames, self.width
+            ).permute(0, 2, 1, 3)
+            yield VideoEncoding(
+                temporal_tokens, image_encoding.grid_height, image_encoding.grid_width,
+                current_frames, height, width, current_timestamps,
+            )
+
+    def encode(self, video: torch.Tensor,
+               timestamps: torch.Tensor | None = None) -> VideoEncoding:
+        chunks = list(self.iter_encode(video, timestamps=timestamps))
+        first = chunks[0]
         return VideoEncoding(
-            temporal_tokens, image_encoding.grid_height, image_encoding.grid_width,
-            frames, height, width, timestamps,
+            torch.cat([chunk.tokens for chunk in chunks], dim=1),
+            first.grid_height, first.grid_width,
+            sum(chunk.frame_count for chunk in chunks),
+            first.image_height, first.image_width,
+            torch.cat([chunk.timestamps for chunk in chunks], dim=1),
         )
 
     def decode_frames(self, encoding: VideoEncoding) -> torch.Tensor:

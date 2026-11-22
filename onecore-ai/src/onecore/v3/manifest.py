@@ -55,8 +55,8 @@ def validate_v3_manifest(records: Iterable[dict[str, Any]], assets_root: str | P
     coverage = {split: {group: 0 for group in TASK_GROUPS} for split in SPLITS}
     errors: list[str] = []
     seen_ids: set[str] = set()
-    source_splits: dict[str, str] = {}
-    asset_splits: dict[str, str] = {}
+    source_splits: dict[str, tuple[str, str]] = {}
+    asset_splits: dict[str, tuple[str, str]] = {}
     asset_hashes: dict[str, str] = {}
     accepted = 0
 
@@ -83,9 +83,13 @@ def validate_v3_manifest(records: Iterable[dict[str, Any]], assets_root: str | P
             errors.append(f"record {record_id}: external source_url is invalid")
             continue
         source_row_hash = str(record["source_row_id_sha256"]).lower()
-        previous_split = source_splits.get(source_row_hash)
-        if previous_split is not None and previous_split != split:
-            errors.append(f"record {record_id}: source row leaks across {previous_split}/{split}")
+        previous_source = source_splits.get(source_row_hash)
+        if previous_source is not None:
+            previous_split, previous_record = previous_source
+            errors.append(
+                f"record {record_id}: duplicate source row from {previous_record} "
+                f"({previous_split}/{split})"
+            )
             continue
 
         task = str(record.get("task", ""))
@@ -111,17 +115,22 @@ def validate_v3_manifest(records: Iterable[dict[str, Any]], assets_root: str | P
                 valid_assets = False
                 continue
             digest = _sha256(asset_path)
-            prior_split = asset_splits.get(digest)
-            if prior_split is not None and prior_split != split:
-                errors.append(f"record {record_id}: asset hash leaks across {prior_split}/{split}")
+            prior_asset = asset_splits.get(digest)
+            if prior_asset is not None and prior_asset[1] != record_id:
+                prior_split, prior_record = prior_asset
+                reason = "leaks across splits" if prior_split != split else "is duplicated within split"
+                errors.append(
+                    f"record {record_id}: asset hash {reason} from {prior_record} "
+                    f"({prior_split}/{split})"
+                )
                 valid_assets = False
                 continue
-            asset_splits[digest] = split
+            asset_splits[digest] = (split, record_id)
             asset_hashes[relative] = digest
         if not valid_assets:
             continue
 
-        source_splits[source_row_hash] = split
+        source_splits[source_row_hash] = (split, record_id)
         coverage[split][group] += 1
         accepted += 1
 

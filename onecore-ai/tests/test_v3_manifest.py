@@ -81,3 +81,22 @@ def test_v3_manifest_rejects_missing_raw_media(tmp_path):
         assert_v3_external_coverage(
             records, tmp_path, minimum_train=1, minimum_holdout=1
         )
+
+
+
+def test_v3_manifest_rejects_duplicate_source_rows_within_same_split(tmp_path):
+    records = _records(tmp_path)
+    duplicate = dict(records[0])
+    duplicate["id"] = "train-text-duplicate"
+    records.append(duplicate)
+    report = validate_v3_manifest(records, tmp_path, minimum_train=1, minimum_holdout=1)
+    assert not report["passed"]
+    assert any("duplicate source row" in error for error in report["errors"])
+
+
+def test_v3_manifest_rejects_duplicate_assets_within_same_split(tmp_path):
+    records = _records(tmp_path)
+    records[3]["assets"] = records[2]["assets"]
+    report = validate_v3_manifest(records, tmp_path, minimum_train=1, minimum_holdout=1)
+    assert not report["passed"]
+    assert any("duplicated within split" in error for error in report["errors"])

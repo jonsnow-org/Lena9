@@ -169,29 +169,54 @@ class OneCoreV3(nn.Module):
             reconstruction = reconstruction.squeeze(1)
         return reconstruction, processed
 
-    def forward_video(self, video: torch.Tensor,
-                      timestamps: torch.Tensor | None = None) -> tuple[torch.Tensor, VideoEncoding]:
-        encoding = self.video_codec.encode(video, timestamps=timestamps)
-        batch, frames, patches, width = encoding.tokens.shape
-        local = encoding.tokens.reshape(batch, frames * patches, width)
-        context = F.adaptive_avg_pool1d(
-            local.transpose(1, 2), min(self.max_video_context_tokens, local.shape[1])
-        ).transpose(1, 2)
-        shared_context = self.shared_core(
-            context + self.modality_embedding.weight[3], causal=True
-        )
-        broadcast = F.interpolate(
-            shared_context.transpose(1, 2), size=local.shape[1],
-            mode="linear", align_corners=False,
-        ).transpose(1, 2)
-        shared = (local + broadcast).reshape(batch, frames, patches, width)
-        processed = VideoEncoding(
-            shared, encoding.grid_height, encoding.grid_width,
-            encoding.frame_count, encoding.image_height, encoding.image_width,
-            encoding.timestamps,
-        )
-        return self.video_codec.decode_frames(processed), processed
+    def forward_video_chunks(self, video: torch.Tensor,
+                             timestamps: torch.Tensor | None = None,
+                             frame_chunk_size: int | None = None):
+        """Yield decoded input-video chunks with bounded temporal/global context."""
+        memory = None
+        for encoding in self.video_codec.iter_encode(
+            video, timestamps=timestamps, frame_chunk_size=frame_chunk_size
+        ):
+            batch, frames, patches, width = encoding.tokens.shape
+            local = encoding.tokens.reshape(batch, frames * patches, width)
+            context = F.adaptive_avg_pool1d(
+                local.transpose(1, 2),
+                min(self.max_video_context_tokens, local.shape[1]),
+            ).transpose(1, 2)
+            context = context + self.modality_embedding.weight[3]
+            sequence = context if memory is None else torch.cat((memory, context), dim=1)
+            shared_sequence = self.shared_core(sequence, causal=True)
+            current_shared = shared_sequence[:, -context.shape[1]:]
+            broadcast = F.interpolate(
+                current_shared.transpose(1, 2), size=local.shape[1],
+                mode="linear", align_corners=False,
+            ).transpose(1, 2)
+            processed_tokens = (local + broadcast).reshape(
+                batch, frames, patches, width
+            )
+            processed = VideoEncoding(
+                processed_tokens, encoding.grid_height, encoding.grid_width,
+                encoding.frame_count, encoding.image_height, encoding.image_width,
+                encoding.timestamps,
+            )
+            yield self.video_codec.decode_frames(processed)
+            history = current_shared if memory is None else torch.cat(
+                (memory, current_shared), dim=1
+            )
+            memory = F.adaptive_avg_pool1d(
+                history.transpose(1, 2), min(32, history.shape[1])
+            ).transpose(1, 2).detach()
 
+    def forward_video(self, video: torch.Tensor,
+                      timestamps: torch.Tensor | None = None,
+                      frame_chunk_size: int | None = None) -> tuple[torch.Tensor, VideoEncoding]:
+        chunks = list(self.forward_video_chunks(
+            video, timestamps=timestamps, frame_chunk_size=frame_chunk_size
+        ))
+        reconstruction = torch.cat(chunks, dim=1)
+        encoding = self.video_codec.encode(video, timestamps=timestamps,
+                                           frame_chunk_size=frame_chunk_size)
+        return reconstruction, encoding
 
     def text_condition(self, token_ids: torch.Tensor | None) -> torch.Tensor | None:
         if token_ids is None:
