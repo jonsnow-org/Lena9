@@ -210,3 +210,16 @@ Tests added:
 **Strict current scope:** These are architecture/codecs and forward-path prototypes, not quality-certified generators. No diffusion/flow image generation objective, production audio perceptual/adversarial training, video long-context memory/chunking, cross-modal paired alignment objective, full v3 training loop, inference/checkpoint format, or promotion gates are complete. Current Transformer attention remains quadratic; the 256-token global visual context bounds image global attention, but video temporal attention and full shared sequences still require resource benchmarks and chunked memory design.
 
 The v3 CI workflow was explicitly extended to run on this isolated branch. Its result is pending until Run #470 completes. Do not merge or train V3 until tests pass, exact parameter/resource reports are captured, and the remaining training/evaluation components are implemented.
+
+
+### V3 implementation update — commit `a0fcd8674d3288a2059686a9852decb37766ade3`
+
+The v3 prototype now also includes:
+- Rectified-flow velocity prediction and an MSE flow-matching objective over continuous modality latents.
+- Euler latent samplers and untrained generation entry points for variable-size images, variable-duration waveforms, and variable-frame video.
+- A configurable cap of 256 global visual-context tokens; local patch features are retained and the global context is broadcast back to them. This bounds global image attention but is not a substitute for full perceptual high-resolution generation training.
+- Lossless source ingestion for images/audio/video; the original source file and media metadata are preserved, and all decoded video frames are exported without a fixed four-frame cap.
+
+CI Run #470 exposed two audio integration defects (waveform rank and Conv1d channel ordering). Both were corrected in subsequent commits. Run #475 on the corrected branch has passed package compilation, the complete unit/regression test suite, and v2 architecture/FLOPs checks; notebook preflight and remaining CI steps were still running at the time of this update.
+
+Do not claim generation quality from these untrained flow samplers. The v3 trainer, dataset conversion, perceptual/adversarial audio/image losses, temporal synchronization objectives, long-video chunked attention, checkpointing, inference serving, and evaluation/promotion thresholds remain outstanding.
