@@ -222,6 +222,10 @@ def test_manifest_file_validation_streams_rows_without_read_manifest(tmp_path, m
         "task": "text",
         "source_url": "https://example.org/source",
         "split": "train",
+        "data_class": "external",
+        "source_id": "streamed-source",
+        "source_revision": "c" * 40,
+        "source_row_id_sha256": "d" * 64,
         "text": "This is a streamed manifest record with enough text content.",
     }
     (data_root / "train.jsonl").write_text(json.dumps(record) + "\n", encoding="utf-8")
