@@ -50,7 +50,7 @@ def test_v3_shared_core_integrates_text_image_audio_and_video():
         + video_reconstruction.square().mean()
     )
     objective.backward()
-    assert model.shared_core.layers.layers[0].self_attn.in_proj_weight.grad is not None
+    assert model.shared_core.layers[0].self_attn.in_proj_weight.grad is not None
     assert model.image_codec.encoder.weight.grad is not None
     assert model.audio_codec.encoder[0].weight.grad is not None
     assert model.video_codec.temporal.layers[0].self_attn.in_proj_weight.grad is not None
@@ -65,7 +65,11 @@ def test_v3_flow_matching_and_variable_shape_generation_paths():
     loss = model.flow_matching_loss(clean, modality=1, condition_tokens=condition)
     loss.backward()
     assert torch.isfinite(loss)
-    assert model.flow_velocity_head.weight.grad is not None
+    assert model.flow_velocity_heads["image"].weight.grad is not None
+    assert model.flow_velocity_heads["audio"].weight.grad is None
+    assert model.flow_velocity_heads["video"].weight.grad is None
+    assert model.shared_core.cycles == 3
+    assert len(model.shared_core.layers) == 1
 
     with torch.no_grad():
         image = model.generate_image(31, 47, condition_ids=torch.randint(0, 128, (1, 4)), steps=2)
@@ -77,3 +81,30 @@ def test_v3_flow_matching_and_variable_shape_generation_paths():
     assert image.shape == (1, 3, 31, 47)
     assert audio.shape == (1, 1, 1001)
     assert video.shape == (1, 13, 3, 31, 47)
+
+def test_v3_uses_distinct_flow_heads_for_each_modality():
+    torch.manual_seed(31)
+    model = _tiny_v3()
+    clean = torch.randn(1, 5, 32)
+    for modality, name in ((1, "image"), (2, "audio"), (3, "video")):
+        model.zero_grad(set_to_none=True)
+        loss = model.flow_matching_loss(
+            clean, modality=modality,
+            noise=torch.zeros_like(clean),
+            times=torch.full((1,), 0.5),
+        )
+        loss.backward()
+        assert model.flow_velocity_heads[name].weight.grad is not None
+        for other in {"image", "audio", "video"} - {name}:
+            assert model.flow_velocity_heads[other].weight.grad is None
+
+
+def test_v3_recurrent_core_reuses_the_same_unique_blocks_across_cycles():
+    from onecore.v3.core import SharedSemanticCore
+
+    torch.manual_seed(37)
+    core = SharedSemanticCore(width=32, layers=2, cycles=3, attention_heads=4)
+    assert len(core.layers) == 2
+    assert core.cycles == 3
+    output = core(torch.randn(1, 7, 32), causal=True)
+    assert output.shape == (1, 7, 32)
