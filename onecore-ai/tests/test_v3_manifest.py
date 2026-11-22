@@ -24,6 +24,8 @@ def _records(root):
         (assets / "frames").mkdir()
         Image.new("RGB", (16, 16), (split_index + 1, 2, 3)).save(assets / "raw/image.png")
         (assets / "raw/audio.wav").write_bytes(f"audio-{split}".encode())
+        (assets / "processed").mkdir()
+        (assets / "processed/audio.wav").write_bytes(f"normalized-audio-{split}".encode())
         Image.new("RGB", (16, 16), (4, split_index + 5, 6)).save(assets / "frames/0.png")
         Image.new("RGB", (16, 16), (7, 8, split_index + 9)).save(assets / "frames/1.png")
         rows.extend([
@@ -37,7 +39,7 @@ def _records(root):
              "assets": {"image": {"source_asset": f"{split}/raw/image.png"}}},
             {**_external(f"{split}-audio", f"{split}-audio-row"), "id": f"{split}-audio",
              "split": split, "task": "audio_text",
-             "assets": {"audio": {"source_asset": f"{split}/raw/audio.wav"}}},
+             "assets": {"audio": {"source_asset": f"{split}/raw/audio.wav",\n                                  "training_asset": f"{split}/processed/audio.wav"}}},
             {**_external(f"{split}-video", f"{split}-video-row"), "id": f"{split}-video",
              "split": split, "task": "video_caption",
              "assets": {"video": {"frames": [f"{split}/frames/0.png", f"{split}/frames/1.png"]}}},
@@ -52,7 +54,7 @@ def test_v3_manifest_requires_external_provenance_raw_assets_and_disjoint_splits
     )
     assert report["passed"]
     assert report["accepted_external_records"] == 15
-    assert report["coverage"]["validation"]["image"] == 1
+    assert report["coverage"]["validation"]["image"] == 1\n    assert f"train/processed/audio.wav" in report["asset_hashes"]
 
 
 def test_v3_manifest_does_not_count_bootstrap_media(tmp_path):
