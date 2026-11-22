@@ -805,6 +805,8 @@ def test_imported_record_needs_no_policy_metadata(tmp_path: Path) -> None:
     record = {
         "id": "imported-record", "task": "text", "text": "An imported sample.",
         "source_url": "https://example.org/data", "split": "train", "data_class": "external",
+        "source_id": "imported-source", "source_revision": "e" * 40,
+        "source_row_id_sha256": hashlib.sha256(b"imported-row").hexdigest(),
     }
     assert validate_manifest([record], tmp_path, expected_split="train")["valid"]
 
