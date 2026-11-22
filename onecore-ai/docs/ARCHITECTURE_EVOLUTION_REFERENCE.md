@@ -378,3 +378,20 @@ Implemented on `research/onecore-v3-implementation` as a sequence of file commit
 
 
 **Stereo codec follow-up — validation hardening:** The codec and V3Config now explicitly restrict configured channel counts to mono (1) or stereo (2); unsupported multichannel configurations fail fast. Regression coverage includes the invalid three-channel constructor. Latest V3 code/test commit: `fbf1bf114dbd65fdaa004fe1b426cade6a2f6de1`. CI remains unverified for this exact commit until a run/check is surfaced. Sample-rate metadata remains informational only: no resampling or learned sample-rate conditioning is implemented.
+
+
+### V3 canonical audio-rate normalization — 2026-11-22
+
+Implemented on `research/onecore-v3-implementation`; latest commit in this slice: `3ba175fe2ae2bd2ee2260eeb50dc8f49d5045cb0`.
+
+- The V3 audio training contract is now explicit: mono/stereo input only, normalized to **24,000 Hz** before entering the neural codec. `NeuralAudioCodec.encode/forward` and `OneCoreV3.forward_audio` require a sample-rate argument and reject any rate other than the configured canonical rate; they no longer silently accept 44.1/48 kHz data as if it were 24 kHz.
+- `preserve_audio_payload` no longer invents 16 kHz for arrays that omit sample-rate metadata; it raises and requires the original rate.
+- `resample_audio_source` preserves the original file in `raw/audio` and creates a separate 24 kHz WAV training derivative using `scipy.signal.resample_poly`. It records original/target rates, channels, sample counts, duration and rational resampling ratio. Already-canonical audio uses the source file without a needless rewrite.
+- Added SciPy as an explicit dependency, added sample-rate enforcement to the model config fingerprint, and required explicit normalized sample-rate metadata in joint audio training batches.
+- The V3 manifest now hashes both `source_asset` and `training_asset`, so processed training derivatives are covered by missing-file, duplicate-asset and cross-split leakage checks. Regression tests cover omitted source rates, 44.1 kHz stereo → 24 kHz stereo resampling, canonical-rate identity, and processed-asset hashing.
+
+**Verification:** GitHub Actions Run #538 (ID `45037417319`) is running on the exact latest commit `3ba175fe...`. At last inspection, CPU PyTorch installation succeeded and project/test dependency installation was in progress; compile, exact parameter report and tests had not started. Run #537 (ID `45037398886`) was cancelled when the next commit superseded it; do not count it as a pass. No new parameter count or config fingerprint is claimed until Run #538 completes and its report is inspected.
+
+**V2 evaluation:** Run #52 (ID `45015944155`) remains active in independent validation/test with no optimizer updates. Its corpus/checkpoint restoration and lineage verification succeeded. Do not launch a competing run. Run #55 remains queued with no jobs visible.
+
+**Remaining gates:** inspect Run #538 through completion and repair any failing step; record exact V3 parameter count/config fingerprint; build a selective V3 corpus converter that reuses validated text/tool records and only restores missing original media; run the full external-only 100/10/10 manifest gate; benchmark CPU peak memory/throughput; implement durable V3 checkpoint/resume before any V3 training. No PR merge or promotion yet. `main` remains at `0b5ec69e839bfc6086a358511b54649b03c7be9a`.
