@@ -352,3 +352,12 @@ Run #52 (`45015944155`) is still active in this inspection. It successfully rest
 7. Benchmark peak CPU memory, throughput and sequence scaling before creating a V3 multi-session training workflow. No V3 training, PR merge or promotion until CI, raw-media data gate, resource budget and checkpoint/resume design pass.
 
 The V3 branch remains isolated. `main` was last observed at `0b5ec69e839bfc6086a358511b54649b03c7be9a`; do not modify or merge it.
+
+
+
+
+### V3 full-model multi-window video regression — 2026-11-22
+
+Added an integration regression on `research/onecore-v3-implementation` at commit `136e1eca8eca25f19e85746492a9a7343e602034`. It sends 13 timestamped frames through `OneCoreV3.forward_video_chunks()` with a five-frame chunk size and asserts chunk lengths `[5, 5, 3]`, exact reconstructed frame count/order shape, and finite output values. This exercises the integrated shared-core/video-codec path across multiple temporal windows, not only the standalone codec. The test is committed but has not yet been executed by a confirmed CI run; retain that distinction.
+
+The next unstarted media-codec investigation is stereo/channel-aware audio plus explicit sample-rate handling. Do not silently assume 16 kHz or label the current mono-only codec as universal. Any channel/sample-rate change requires a versioned config, round-trip tests, and an updated exact parameter report before training.
