@@ -18,7 +18,7 @@ import yaml
 from datasets import load_dataset
 from huggingface_hub import hf_hub_download
 
-from onecore.acquire import _nested, _resolve_video_asset, _row_identity
+from onecore.acquire import _first_text, _nested, _resolve_video_asset, _row_identity
 from onecore.data import external_record_is_trainable, has_immutable_external_provenance, iter_manifest
 from .manifest import validate_v3_manifest
 from .media_ingest import (
@@ -157,6 +157,193 @@ def _rehydrate_record(record: dict[str, Any], row: dict[str, Any],
     return result
 
 
+
+def _source_hf_split(record: dict[str, Any], source: dict[str, Any]) -> str:
+    available = source.get("hf_splits") or ["train"]
+    if isinstance(available, str):
+        available = [available]
+    explicit = str(record.get("source_hf_split", ""))
+    if explicit in available:
+        return explicit
+    output_split = str(record.get("split", ""))
+    if output_split in available:
+        return output_split
+    if "train" in available:
+        return "train"
+    return str(available[0])
+
+
+def acquire_missing_media_rows(
+    records: Iterable[dict[str, Any]],
+    sources_registry: str | Path,
+    source_revisions: dict[str, str],
+    *,
+    minimum_train: int = 100,
+    minimum_holdout: int = 10,
+    source_loader: Callable[[str, str | None, str, str], Iterable[dict[str, Any]]] | None = None,
+    max_scan_rows_per_source_split: int = 50_000,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Fill only deficient media-family/split quotas from pinned native source splits.
+
+    Text/tool acquisition is never performed here. Sources must be enabled,
+    pinned in the existing acquisition report, and available without a gated token.
+    Only exact missing quotas are sampled; existing row identities are excluded.
+    """
+    if min(minimum_train, minimum_holdout, max_scan_rows_per_source_split) < 0:
+        raise ValueError("quota and scan limits must be non-negative")
+    registry = yaml.safe_load(Path(sources_registry).read_text(encoding="utf-8"))
+    source_items = registry.get("sources", [])
+    source_map = {str(item["id"]): item for item in source_items if item.get("id")}
+    if len(source_map) != len(source_items):
+        raise ValueError("source registry contains missing or duplicate source IDs")
+    loader = source_loader or _default_source_loader
+    output = [dict(item) for item in records]
+    family_tasks = {
+        "image": {"image_caption", "image_reconstruction"},
+        "audio": {"audio_text", "audio_reconstruction"},
+        "video": {"video_caption", "video_reconstruction"},
+    }
+    family_adapters = {
+        "image": {"image", "image_url", "image_base64"},
+        "audio": {"audio"},
+        "video": {"video", "video_url", "video_repo_file"},
+    }
+    counts = {
+        family: {
+            split: sum(
+                1 for row in output
+                if row.get("split") == split
+                and row.get("task") in tasks
+                and external_record_is_trainable(row)
+                and has_immutable_external_provenance(row)
+            )
+            for split in ("train", "validation", "test")
+        }
+        for family, tasks in family_tasks.items()
+    }
+    seen = {
+        (str(row.get("source_id", "")), str(row.get("source_row_id_sha256", "")).lower())
+        for row in output
+        if external_record_is_trainable(row) and row.get("source_row_id_sha256")
+    }
+    report: dict[str, Any] = {
+        "counts_before": counts,
+        "added_by_family_split": {family: {split: 0 for split in ("train", "validation", "test")} for family in family_tasks},
+        "sources_scanned": [],
+        "skipped_sources": {},
+        "errors": [],
+        "synthetic_records_added": 0,
+        "scan_limit_per_source_split": max_scan_rows_per_source_split,
+    }
+
+    for family, adapters in family_adapters.items():
+        for split in ("train", "validation", "test"):
+            minimum = minimum_train if split == "train" else minimum_holdout
+            deficit = max(0, minimum - counts[family][split])
+            if not deficit:
+                continue
+            for source in source_items:
+                source_id = str(source.get("id", ""))
+                adapter = str(source.get("adapter", ""))
+                if adapter not in adapters or not source.get("enabled", True):
+                    continue
+                if source.get("requires_access"):
+                    report["skipped_sources"][source_id] = "access-restricted source not auto-fetched"
+                    continue
+                hf_splits = source.get("hf_splits") or ["train"]
+                if isinstance(hf_splits, str):
+                    hf_splits = [hf_splits]
+                if split not in hf_splits:
+                    continue
+                revision = str(source_revisions.get(source_id) or source.get("revision") or "")
+                if len(revision) not in (40, 64) or any(ch not in "0123456789abcdef" for ch in revision.lower()):
+                    report["skipped_sources"][source_id] = "no immutable revision in acquisition report"
+                    continue
+                repo = str(source.get("repo", "")).strip()
+                if not repo:
+                    report["skipped_sources"][source_id] = "missing repository identifier"
+                    continue
+                scanned = 0
+                added = 0
+                try:
+                    stream = loader(repo, source.get("config"), split, revision)
+                    for index, row in enumerate(stream):
+                        scanned += 1
+                        if scanned > max_scan_rows_per_source_split:
+                            break
+                        if not isinstance(row, dict):
+                            continue
+                        row_id = _row_identity(row, source_id, index)
+                        row_hash = _sha256_text(row_id)
+                        identity = (source_id, row_hash)
+                        if identity in seen:
+                            continue
+                        if family == "image":
+                            value = _nested(row, str(source.get("image_field") or "image"))
+                        elif family == "audio":
+                            value = _nested(row, str(source.get("audio_field") or "audio"))
+                        else:
+                            value = _nested(row, str(source.get("video_field") or "video"))
+                        if value is None:
+                            continue
+                        text = _first_text(row, list(source.get("text_fields") or []))
+                        task = {
+                            "image": "image_caption" if text else "image_reconstruction",
+                            "audio": "audio_text" if text else "audio_reconstruction",
+                            "video": "video_caption" if text else "video_reconstruction",
+                        }[family]
+                        record_id = f"hf-{source_id}-{row_hash[:24]}"
+                        record = {
+                            "id": record_id,
+                            "source_id": source_id,
+                            "source_revision": revision,
+                            "source_row_id_sha256": row_hash,
+                            "source_url": str(source.get("url") or f"https://huggingface.co/datasets/{repo}"),
+                            "source_hf_split": split,
+                            "split": split,
+                            "data_class": "external",
+                            "task": task,
+                        }
+                        if family == "image" and text:
+                            record["caption"] = text[:700]
+                        elif family == "audio" and text:
+                            record["transcript"] = text[:900]
+                        elif family == "video" and text:
+                            record["caption"] = text[:700]
+                        output.append(record)
+                        seen.add(identity)
+                        added += 1
+                        counts[family][split] += 1
+                        report["added_by_family_split"][family][split] += 1
+                        deficit -= 1
+                        if deficit <= 0:
+                            break
+                except Exception as exc:
+                    report["errors"].append(
+                        f"{source_id}/{split}@{revision[:12]}: "
+                        f"{type(exc).__name__}: {str(exc)[:240]}"
+                    )
+                report["sources_scanned"].append({
+                    "source_id": source_id, "family": family, "split": split,
+                    "revision": revision, "rows_scanned": min(scanned, max_scan_rows_per_source_split),
+                    "records_added": added,
+                })
+                if deficit <= 0:
+                    break
+    report["counts_after"] = counts
+    report["remaining_deficits"] = {
+        family: {
+            split: max(0, (minimum_train if split == "train" else minimum_holdout) - counts[family][split])
+            for split in ("train", "validation", "test")
+        }
+        for family in family_tasks
+    }
+    report["blocked"] = bool(report["errors"]) or any(
+        value > 0 for family in report["remaining_deficits"].values() for value in family.values()
+    )
+    return output, report
+
+
 def restore_v2_media_records(
     records: Iterable[dict[str, Any]],
     sources_registry: str | Path,
@@ -185,7 +372,7 @@ def restore_v2_media_records(
 
     converted: dict[str, dict[str, Any]] = {}
     input_records = 0
-    pending: dict[tuple[str, str], dict[str, dict[str, Any]]] = defaultdict(dict)
+    pending: dict[tuple[str, str, str], dict[str, dict[str, Any]]] = defaultdict(dict)
     skipped: Counter[str] = Counter()
     errors: list[str] = []
 
@@ -236,54 +423,57 @@ def restore_v2_media_records(
         if len(row_hash) != 64:
             skipped["invalid_source_row_hash"] += 1
             continue
-        group = pending[(source_id, revision)]
+        hf_split = _source_hf_split(record, source)
+        available_splits = source.get("hf_splits") or ["train"]
+        if isinstance(available_splits, str):
+            available_splits = [available_splits]
+        if hf_split not in available_splits:
+            skipped["source_split_not_available"] += 1
+            errors.append(f"{record_id}: inferred source split {hf_split!r} is unavailable")
+            continue
+        record["source_hf_split"] = hf_split
+        group = pending[(source_id, revision, hf_split)]
         if row_hash in group:
             skipped["duplicate_source_row_hash"] += 1
             errors.append(f"{record_id}: duplicate source row hash in the V2 manifests")
             continue
         group[row_hash] = record
 
-    for (source_id, revision), targets in pending.items():
+    for (source_id, revision, hf_split), targets in pending.items():
         source = source_map[source_id]
         repo = str(source.get("repo", "")).strip()
         if not repo:
             skipped["source_repo_missing"] += len(targets)
             continue
         found: set[str] = set()
-        splits = source.get("hf_splits") or ["train"]
-        if isinstance(splits, str):
-            splits = [splits]
-        for hf_split in splits:
-            try:
-                stream = loader(repo, source.get("config"), str(hf_split), revision)
-                for index, row in enumerate(stream):
-                    if not isinstance(row, dict):
-                        continue
-                    row_id = _row_identity(row, source_id, index)
-                    row_hash = _sha256_text(row_id)
-                    if row_hash not in targets or row_hash in found:
-                        continue
-                    record = targets[row_hash]
-                    try:
-                        converted_record = _rehydrate_record(
-                            record, row, source, root, target_audio_rate
-                        )
-                        converted[record["id"]] = converted_record
-                        found.add(row_hash)
-                    except Exception as exc:
-                        errors.append(
-                            f"{record['id']}: media restore failed "
-                            f"({type(exc).__name__}: {str(exc)[:240]})"
-                        )
-                    if len(found) == len(targets):
-                        break
-            except Exception as exc:
-                errors.append(
-                    f"{source_id}/{hf_split}@{revision[:12]}: source stream failed "
-                    f"({type(exc).__name__}: {str(exc)[:240]})"
-                )
-            if len(found) == len(targets):
-                break
+        try:
+            stream = loader(repo, source.get("config"), hf_split, revision)
+            for index, row in enumerate(stream):
+                if not isinstance(row, dict):
+                    continue
+                row_id = _row_identity(row, source_id, index)
+                row_hash = _sha256_text(row_id)
+                if row_hash not in targets or row_hash in found:
+                    continue
+                record = targets[row_hash]
+                try:
+                    converted_record = _rehydrate_record(
+                        record, row, source, root, target_audio_rate
+                    )
+                    converted[record["id"]] = converted_record
+                    found.add(row_hash)
+                except Exception as exc:
+                    errors.append(
+                        f"{record['id']}: media restore failed "
+                        f"({type(exc).__name__}: {str(exc)[:240]})"
+                    )
+                if len(found) == len(targets):
+                    break
+        except Exception as exc:
+            errors.append(
+                f"{source_id}/{hf_split}@{revision[:12]}: source stream failed "
+                f"({type(exc).__name__}: {str(exc)[:240]})"
+            )
         missing = len(targets) - len(found)
         if missing:
             skipped["pinned_source_row_not_found"] += missing
@@ -363,6 +553,9 @@ def convert_v2_corpus(
     minimum_train: int = 100,
     minimum_holdout: int = 10,
     source_loader: Callable[[str, str | None, str, str], Iterable[dict[str, Any]]] | None = None,
+    source_revisions: dict[str, str] | None = None,
+    fill_missing_media: bool = True,
+    max_scan_rows_per_source_split: int = 50_000,
 ) -> dict[str, Any]:
     """Convert existing V2 split manifests and run the complete V3 external gate.
 
@@ -379,6 +572,14 @@ def convert_v2_corpus(
             raise FileNotFoundError(f"V2 {split} manifest not found: {manifest}")
         records.extend(iter_manifest(manifest))
 
+    acquisition_report: dict[str, Any] | None = None
+    if fill_missing_media and source_revisions is not None:
+        records, acquisition_report = acquire_missing_media_rows(
+            records, sources_registry, source_revisions,
+            minimum_train=minimum_train, minimum_holdout=minimum_holdout,
+            source_loader=source_loader,
+            max_scan_rows_per_source_split=max_scan_rows_per_source_split,
+        )
     destination = Path(output_root).resolve()
     assets_root = destination / "data" / "assets"
     converted, report = restore_v2_media_records(
@@ -393,6 +594,7 @@ def convert_v2_corpus(
     report.update({
         "manifest_paths": manifest_paths,
         "manifest_gate": gate,
-        "blocked": bool(report.get("blocked")) or not bool(gate["passed"]),
+        "missing_media_acquisition": acquisition_report,
+        "blocked": bool(report.get("blocked")) or bool(acquisition_report and acquisition_report.get("blocked")) or not bool(gate["passed"]),
     })
     return report
