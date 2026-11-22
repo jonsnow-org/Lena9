@@ -395,3 +395,21 @@ Implemented on `research/onecore-v3-implementation`; latest commit in this slice
 **V2 evaluation:** Run #52 (ID `45015944155`) remains active in independent validation/test with no optimizer updates. Its corpus/checkpoint restoration and lineage verification succeeded. Do not launch a competing run. Run #55 remains queued with no jobs visible.
 
 **Remaining gates:** inspect Run #538 through completion and repair any failing step; record exact V3 parameter count/config fingerprint; build a selective V3 corpus converter that reuses validated text/tool records and only restores missing original media; run the full external-only 100/10/10 manifest gate; benchmark CPU peak memory/throughput; implement durable V3 checkpoint/resume before any V3 training. No PR merge or promotion yet. `main` remains at `0b5ec69e839bfc6086a358511b54649b03c7be9a`.
+
+
+### V3 audio normalization CI evidence and regression correction — 2026-11-22
+
+Run #538 (ID `45037417319`) on V3 commit `3ba175fe2ae2bd2ee2260eeb50dc8f49d5045cb0` completed with **failure** in the unit/regression step: **191 passed, 1 failed**. Compile and exact-parameter report both passed. The only failure was a stale assertion in `test_v3_audio_codec_preserves_stereo_channels_and_sample_rate_metadata` that still expected `encoding.sample_rate is None`; the implementation correctly returned the configured canonical rate 24,000 Hz. Corrected that assertion on the V3 branch in commit `bfa2950a8ab874e4bd55893fe372323900109339`. This is a test expectation correction, not an implementation rollback. A new CI run for the correction must pass before the audio policy is accepted.
+
+The exact parameter report produced by Run #538 (before tests stopped the job):
+- Architecture: `onecore-v3-prototype-2`
+- Trainable parameters: **39,906,568**
+- Config SHA-256: `6c879331c75da434c58680050f94035dc15626e7af4847db1b36e055c47d7708`
+- State-dict tensors: 123
+- FP32 parameter storage: 159,626,272 bytes
+- FP16 parameter storage: 79,813,136 bytes
+- AdamW FP32 moments estimate: 319,252,544 bytes (moments only; not peak memory)
+- Context budgets: image/video/flow 256 tokens; temporal window 32 frames, detached memory 4 frames; generated video chunks 8 frames.
+These values are now the current prototype-2 baseline for the config fingerprint above, but rerun/record them again after any further architecture/config change. They are not a peak RAM or quality measurement.
+
+The audio rate policy is now canonical 24 kHz with source-preserving polyphase conversion. The V3 codec strictly rejects non-24 kHz input; preprocessing preserves the original file and hashes the separate normalized training derivative in the manifest. The V3 branch remains isolated and unmerged.
