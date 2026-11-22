@@ -94,6 +94,8 @@ class OneCoreV3(nn.Module):
         self.shared_core = SharedSemanticCore(width, layers, attention_heads, dropout)
         self.text_head = nn.Linear(width, text_vocab_size, bias=False)
         self.text_head.weight = self.text_embedding.weight
+        self.flow_time = nn.Sequential(nn.Linear(1, width), nn.SiLU(), nn.Linear(width, width))
+        self.flow_velocity_head = nn.Linear(width, width)
 
         self.image_codec = VariableResolutionImageCodec(width, patch_size)
         self.audio_codec = NeuralAudioCodec(
@@ -172,3 +174,139 @@ class OneCoreV3(nn.Module):
             encoding.timestamps,
         )
         return self.video_codec.decode_frames(processed), processed
+
+
+    def text_condition(self, token_ids: torch.Tensor | None) -> torch.Tensor | None:
+        if token_ids is None:
+            return None
+        if token_ids.ndim != 2 or token_ids.dtype not in (torch.int32, torch.int64):
+            raise ValueError("condition token_ids must be an integer tensor [B,T]")
+        return self.text_embedding(token_ids) + self.modality_embedding.weight[0]
+
+    def predict_flow_velocity(self, noisy_latents: torch.Tensor, times: torch.Tensor,
+                              modality: int,
+                              condition_tokens: torch.Tensor | None = None) -> torch.Tensor:
+        """Predict the flow-matching velocity for one modality's continuous latents."""
+        if noisy_latents.ndim != 3 or noisy_latents.shape[-1] != self.width:
+            raise ValueError("noisy_latents must have shape [B,N,shared_width]")
+        if not 1 <= modality <= 3:
+            raise ValueError("flow modality must be image=1, audio=2, or video=3")
+        batch = noisy_latents.shape[0]
+        times = torch.as_tensor(times, device=noisy_latents.device, dtype=noisy_latents.dtype)
+        if times.ndim == 0:
+            times = times.expand(batch)
+        if times.shape != (batch,):
+            raise ValueError("times must be scalar or shape [B]")
+        if condition_tokens is None:
+            condition_tokens = noisy_latents.new_zeros((batch, 0, self.width))
+        if condition_tokens.ndim != 3 or condition_tokens.shape[0] != batch or condition_tokens.shape[2] != self.width:
+            raise ValueError("condition_tokens must have shape [B,C,shared_width]")
+        time_features = self.flow_time(times.reshape(batch, 1)).unsqueeze(1)
+        modality_features = self.modality_embedding.weight[modality].view(1, 1, -1)
+        target_tokens = noisy_latents + time_features + modality_features
+        sequence = torch.cat((condition_tokens, target_tokens), dim=1)
+        hidden = self.shared_core(sequence, causal=False)
+        return self.flow_velocity_head(hidden[:, condition_tokens.shape[1]:])
+
+    def flow_matching_loss(self, clean_latents: torch.Tensor, modality: int,
+                           condition_tokens: torch.Tensor | None = None,
+                           noise: torch.Tensor | None = None,
+                           times: torch.Tensor | None = None) -> torch.Tensor:
+        """Rectified-flow objective; training data and modality-specific sampling remain external."""
+        if clean_latents.ndim != 3 or clean_latents.shape[-1] != self.width:
+            raise ValueError("clean_latents must have shape [B,N,shared_width]")
+        if noise is None:
+            noise = torch.randn_like(clean_latents)
+        if noise.shape != clean_latents.shape:
+            raise ValueError("noise shape must match clean_latents")
+        if times is None:
+            times = torch.rand(clean_latents.shape[0], device=clean_latents.device,
+                               dtype=clean_latents.dtype)
+        times = torch.as_tensor(times, device=clean_latents.device, dtype=clean_latents.dtype)
+        if times.ndim == 0:
+            times = times.expand(clean_latents.shape[0])
+        if times.shape != (clean_latents.shape[0],):
+            raise ValueError("times must be scalar or shape [B]")
+        noisy = clean_latents * (1.0 - times[:, None, None]) + noise * times[:, None, None]
+        target_velocity = noise - clean_latents
+        predicted = self.predict_flow_velocity(noisy, times, modality, condition_tokens)
+        return torch.nn.functional.mse_loss(predicted, target_velocity)
+
+    @torch.no_grad()
+    def sample_flow_latents(self, shape: tuple[int, int, int], modality: int,
+                            condition_tokens: torch.Tensor | None = None,
+                            steps: int = 32, generator: torch.Generator | None = None,
+                            device: torch.device | str | None = None) -> torch.Tensor:
+        """Euler sampler for a trained rectified-flow head; untrained output is noise-like."""
+        if len(shape) != 3 or min(shape) < 1 or shape[-1] != self.width:
+            raise ValueError("shape must be positive [B,N,shared_width]")
+        if steps < 1:
+            raise ValueError("steps must be positive")
+        if modality not in (1, 2, 3):
+            raise ValueError("flow modality must be image=1, audio=2, or video=3")
+        if device is None:
+            device = self.text_embedding.weight.device
+        sample = torch.randn(shape, device=device, dtype=self.text_embedding.weight.dtype,
+                             generator=generator)
+        for index in range(steps):
+            time_value = 1.0 - index / steps
+            times = torch.full((shape[0],), time_value, device=sample.device,
+                               dtype=sample.dtype)
+            velocity = self.predict_flow_velocity(sample, times, modality, condition_tokens)
+            sample = sample - velocity / steps
+        return sample
+
+    @torch.no_grad()
+    def generate_image(self, height: int, width: int, condition_ids: torch.Tensor | None = None,
+                       steps: int = 32) -> torch.Tensor:
+        if min(height, width) < 1:
+            raise ValueError("image height and width must be positive")
+        patch = self.image_codec.patch_size
+        grid_height = (height + patch - 1) // patch
+        grid_width = (width + patch - 1) // patch
+        condition = self.text_condition(condition_ids)
+        batch = 1 if condition is None else condition.shape[0]
+        latents = self.sample_flow_latents(
+            (batch, grid_height * grid_width, self.width), 1, condition, steps
+        )
+        return self.image_codec.decode(
+            ImageEncoding(latents, grid_height, grid_width, height, width)
+        )
+
+    @torch.no_grad()
+    def generate_audio(self, samples: int, condition_ids: torch.Tensor | None = None,
+                       steps: int = 32) -> torch.Tensor:
+        if samples < 1:
+            raise ValueError("samples must be positive")
+        latent_length = (samples + self.audio_codec.downsample_factor - 1) // self.audio_codec.downsample_factor
+        condition = self.text_condition(condition_ids)
+        batch = 1 if condition is None else condition.shape[0]
+        shared_latents = self.sample_flow_latents(
+            (batch, latent_length, self.width), 2, condition, steps
+        )
+        audio_latents = self.shared_to_audio(shared_latents.transpose(1, 2))
+        return self.audio_codec.decode(audio_latents, original_samples=samples)
+
+    @torch.no_grad()
+    def generate_video(self, frames: int, height: int, width: int,
+                       condition_ids: torch.Tensor | None = None,
+                       timestamps: torch.Tensor | None = None,
+                       steps: int = 32) -> torch.Tensor:
+        if min(frames, height, width) < 1:
+            raise ValueError("video frames, height, and width must be positive")
+        patch = self.video_codec.image_codec.patch_size
+        grid_height = (height + patch - 1) // patch
+        grid_width = (width + patch - 1) // patch
+        patches = grid_height * grid_width
+        condition = self.text_condition(condition_ids)
+        batch = 1 if condition is None else condition.shape[0]
+        latents = self.sample_flow_latents(
+            (batch, frames * patches, self.width), 3, condition, steps
+        ).reshape(batch, frames, patches, self.width)
+        if timestamps is None:
+            timestamps = torch.arange(frames, device=latents.device, dtype=latents.dtype)
+            timestamps = timestamps.unsqueeze(0).expand(batch, -1)
+        encoding = VideoEncoding(
+            latents, grid_height, grid_width, frames, height, width, timestamps
+        )
+        return self.video_codec.decode_frames(encoding)
