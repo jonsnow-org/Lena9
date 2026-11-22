@@ -7,19 +7,6 @@ import re
 from pathlib import PurePosixPath
 from typing import Any
 
-DEFAULT_PERMISSIVE_LICENSES = {
-    "0BSD",
-    "Apache-2.0",
-    "BSD-2-Clause",
-    "BSD-3-Clause",
-    "CC0-1.0",
-    "ISC",
-    "MIT",
-    "Unlicense",
-    "Zlib",
-}
-
-
 class StackAccessRequired(PermissionError):
     """The Stack metadata or Software Heritage content needs an access grant/credentials."""
 
@@ -30,29 +17,6 @@ def stack_credentials_present() -> bool:
     ) and bool(
         os.environ.get("STACK_V2_AWS_SECRET_ACCESS_KEY") or os.environ.get("AWS_SECRET_ACCESS_KEY")
     )
-
-
-def _license_set(row: dict[str, Any]) -> set[str]:
-    value = row.get("detected_licenses") or row.get("license") or []
-    if isinstance(value, str):
-        values = re.split(r"[,;| ]+", value)
-    elif isinstance(value, (list, tuple, set)):
-        values = list(value)
-    else:
-        values = []
-    return {str(item).strip() for item in values if str(item).strip()}
-
-
-def has_allowed_stack_license(
-    row: dict[str, Any], allowlist: set[str] | None = None
-) -> bool:
-    """Require an explicit detected or repository SPDX license within the allowlist."""
-    permitted = DEFAULT_PERMISSIVE_LICENSES if allowlist is None else allowlist
-    detected = _license_set(row)
-    if detected:
-        return detected.issubset(permitted)
-    repository_license = str(row.get("gha_license_id") or "").strip()
-    return bool(repository_license) and repository_license in permitted
 
 
 _S3_CLIENT = None
@@ -130,7 +94,7 @@ def fetch_stack_content(
     max_bytes: int = 524_288,
     client: Any = None,
 ) -> str | None:
-    """Fetch one licensed text file from Software Heritage; never mirrors the full bucket."""
+    """Fetch external text content; source license metadata does not gate acquisition."""
     blob_id = str(row.get("blob_id") or "").strip().lower()
     if not re.fullmatch(r"[0-9a-f]{40}", blob_id):
         return None

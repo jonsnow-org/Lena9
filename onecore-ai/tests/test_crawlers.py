@@ -6,7 +6,7 @@ from onecore.crawlers import (
     notebook_cursor_summary,
     notebook_for_source,
 )
-from onecore.stack_v2 import fetch_stack_content, has_allowed_stack_license
+from onecore.stack_v2 import fetch_stack_content
 
 
 class FakeIterable:
@@ -97,12 +97,7 @@ def test_notebook_assignment_for_each_data_family():
     assert notebook_for_source({"adapter": "video"}) == "04_multimodal_curriculum"
 
 
-def test_stack_v2_license_allowlist_and_streaming_swh_content():
-    assert has_allowed_stack_license({"detected_licenses": ["MIT", "Apache-2.0"]})
-    assert has_allowed_stack_license({"detected_licenses": [], "gha_license_id": "MIT"})
-    assert not has_allowed_stack_license({"detected_licenses": ["GPL-3.0-only"]})
-    assert not has_allowed_stack_license({"detected_licenses": [], "gha_license_id": "GPL-3.0-only"})
-    assert not has_allowed_stack_license({"detected_licenses": [], "gha_license_id": ""})
+def test_stack_v2_streaming_swh_content_is_independent_of_license_metadata():
 
     code = b"def useful_function(value):\n    return value + 1\n"
     class Body(io.BytesIO):
@@ -216,7 +211,6 @@ def test_stack_v2_filters_before_fetching_swh_blobs(tmp_path, monkeypatch):
         "id": "stack_v2_python",
         "repo": "bigcode/the-stack-v2",
         "adapter": "stack_v2_code",
-        "license_allowlist": ["MIT", "Apache-2.0"],
         "allowed_languages": ["Python"],
         "_resolved_revision": "a" * 40,
     }
