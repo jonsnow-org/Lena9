@@ -293,3 +293,16 @@ Added `src/onecore/v3/manifest.py` to require immutable external provenance, pin
 CI Run #493 completed successfully with 182 tests passed (12 warnings) and all compile, v2 architecture/FLOP, notebook, smoke-training and workflow-isolation checks passing. The V3 manifest tests verify that bootstrap images do not count, raw assets must exist, immutable provenance is required, and assets cannot leak between splits. The image payload adapter's decoded-array branch was also fixed and covered by regression tests.
 
 The V3 manifest gate is code-tested only on fixtures. It has not yet audited the full 15.8 GB Run #48 corpus or a recovered V3 raw-media corpus.
+
+
+### V3 exact parameter budget — commit `16f475f2ef5c7d514cea1f0f4c190c8c0cc33c38`
+
+The default `onecore-v3-prototype-1` config was instantiated in CI and reported:
+- **51,986,695 trainable parameters**
+- Config SHA-256: `355e281c3a049a745f0f5a0c593faffab0d28fc917b5e2492dba5357d68a2617`
+- FP32 parameter storage: 207,946,780 bytes (~198.2 MiB)
+- FP16 parameter storage: 103,973,390 bytes (~99.1 MiB)
+- AdamW FP32 moment storage estimate: 415,893,560 bytes (~396.5 MiB), excluding weights, gradients, activations, runtime buffers and allocator overhead.
+- Image/video/flow global context budgets: 256 tokens each; temporal windows 32 frames with 4-frame detached memory; video generation chunk default 8 frames.
+
+CI Run #494 passed all 182 tests (12 warnings), the exact V3 parameter report, V2 architecture/FLOP checks, all notebook and smoke checks, and workflow isolation. This is an exact parameter/storage report, not a peak-memory benchmark or quality result.
