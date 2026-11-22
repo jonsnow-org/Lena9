@@ -28,6 +28,9 @@ professional output quality.
   helper, plus a separate discriminator update helper.
 - `manifest.py`: external-only per-family quotas, immutable provenance, source-row and
   asset SHA-256 split-integrity checks, and required raw-media payload validation.
+- `converter.py`: selectively reuses V2 text/tool rows and rehydrates only media rows
+  by matching row hashes against pinned source revisions; preserves raw assets, builds
+  24 kHz audio derivatives, writes split manifests atomically, and runs the V3 gate.
 - `report.py`: exact instantiated parameter count, config fingerprint and storage-only estimates.
 
 ## Architecture revision 2
@@ -58,9 +61,11 @@ or memory improvement until benchmarked.
   fixed 512-position table. Attention is still quadratic; this is not proof of
   efficient long-context scaling. Benchmark memory, throughput, and long-context
   retrieval before selecting production sequence lengths.
-- A joint v3 objective and one-step optimizer helper now exist, but there is no
-  multi-session training workflow, dataset converter, checkpoint/resume format,
-  production inference API, quality benchmark suite, or promotion threshold yet.
+- A joint v3 objective, one-step optimizer helper, and selective V2-to-V3 converter
+  now exist. The converter has fixture coverage but has **not** yet been run against
+  the recovered 15.8 GB corpus. There is no multi-session training workflow,
+  checkpoint/resume format, production inference API, quality benchmark suite, or
+  promotion threshold yet.
 - The optional GAN discriminators require a separately configured discriminator
   optimizer and stable alternating updates; this is not yet a full adversarial trainer.
 - The V3 manifest gate is implemented but has not yet been run against the complete
@@ -78,8 +83,9 @@ or memory improvement until benchmarked.
    frame rate/duration/audio track, audio sample rate/channels/duration); implement an
    explicit canonical-rate normalization policy before mixed-rate training; the current
    policy is polyphase resampling to 24 kHz while preserving the raw source.
-5. Convert existing corpora without reacquiring completed sources; validate immutable
-   external provenance and 100/10/10 per-family quotas after corrected gate.
+5. Run the selective converter on the existing corpus: reuse text/tool rows and
+   rehydrate only missing raw image/audio/video rows from their pinned source revisions.
+   Validate immutable provenance and external-only 100/10/10 per-family quotas.
 6. Benchmark peak activation/optimizer memory, FLOPs, CPU/GPU wall-clock, and scaling
    at multiple image sizes, clip durations, and audio lengths.
 7. Add round-trip, variable-length, streaming, long-context, and quality evaluations.
