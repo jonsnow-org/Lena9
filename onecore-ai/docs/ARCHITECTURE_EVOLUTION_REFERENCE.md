@@ -619,3 +619,28 @@ The completed Verify job in Run #579 (ID `45058144645`, V3 head `26d00bf3bc37007
 - Compile, 6 notebooks checks/preflights, smoke training, workflow isolation all passed.
 
 The same Run #579 restore job has successfully passed FFmpeg install, CPU-only PyTorch install, optional dependency install, TorchCodec CPU-wheel installation, decoder preflight (`torch.cuda` absent; both decoder classes importable), and pinned source-registry restore. The real V2-to-V3 corpus conversion is still in progress at step 10. No report artifact or V3 corpus artifact is yet available; no external 100/10/10 media-gate success is claimed.
+
+
+### V3 pinned-media hydration correction — commit `8c20497e905f6b9381d7e3d3916986a694f5ba71` (2026-11-23)
+
+Run #579 (ID `45058144645`) completed with a failed corpus gate. The Verify job itself passed (208 tests; 9 warnings), but the real conversion report artifact `onecore-v3-conversion-report-45058144645` (artifact ID `14775377606`, SHA-256 `52fadc66cc8d88670aa790cc78989827b3ece10abd181dd9ef6e1a1c1144756e`) proves that raw media was not restored:
+
+- 655,427 input records; 651,635 converted; 1,302 non-external rows excluded; 2,490 pinned source-row matches remained unresolved.
+- 1,433 media failures were `FileNotFoundError` from local paths embedded in streamed rows: 700 FLEURS Arabic, 413 Arabic Speech Corpus, 300 WavCaps, and 20 OpenImages rows.
+- 120 Videos4CameraBench rows reached FFmpeg/ImageIO with extensionless `.bin` copies; extension-based plugin selection could not open them.
+- The manifest report contains no media asset hashes and zero usable image/audio/video coverage in every split. The converter correctly blocked the corpus. No V3 corpus artifact was promoted.
+
+The acquisition report confirms the exact immutable source revisions used by those rows: FLEURS `70bb2e84b976b7e960aa89f1c648e09c59f894dd`; Arabic Speech Corpus `30aa0f8d6ab14c52a360fa2b6e6e319d258fcf69`; WavCaps `f10da99095b2d1b1d956e9057917410189ede0c1`; OpenImages `d492ad4d6c43af64c27bad62a1cdd6a39c6efaa7`; Videos4CameraBench `1ec8d55f8c380abbb6ea7087e64778f0ca76a68f`.
+
+**Correction committed on V3 as `8c20497e905f6b9381d7e3d3916986a694f5ba71`:**
+- Added a bounded (100-row page) Hugging Face Dataset Viewer fallback for missing local media paths. It uses the already-matched streaming row index and source split, caches pages per repository/config/split, checks stable row identity where available, requires HTTPS on a Hugging Face host, and rejects any media URL whose path does not contain the exact pinned source revision.
+- Added `source_hf_row_index` and a reproducible `source_media_locator` to records restored through that fallback; the signed URL itself is not persisted because it expires.
+- Kept text/tool records unchanged and reused the existing V2 manifests and acquisition report; no corpus acquisition or synthetic rows were added.
+- Forced ImageIO to use the FFmpeg plugin for video metadata/frame iteration, allowing the decoder to inspect extensionless temporary `.bin` source paths by content.
+- Added regression tests for pinned viewer media fallback, rejection of a different revision, and explicit FFmpeg selection for extensionless video.
+
+**Verification state:** Run #584 (ID `45080540084`) was queued on this commit at the last check. Its CI and corpus-restore job have not yet been verified; do not claim the converter fix or any media quota passed until its report is inspected. The exact V3 parameter/config report has not been rerun after this converter-only change; the prior report was 39,906,568 parameters and config SHA-256 `6c879331c75da434c58680050f94035dc15626e7af4847db1b36e055c47d7708`, which remains the last measured value, not a new measurement.
+
+**V2 evaluation note:** Run #52 (ID `45015944155`) ended cancelled without an evaluation artifact. Run #55 (ID `45017683783`) failed during its independent validation/test job because the external validation result omitted `image_reconstruction`. This is consistent with the already-proven absence of usable external image holdout assets in the old corpus; it is not a reason to weaken the modality requirement or claim V2 evaluation success. No optimizer updates occurred in #52 or #55.
+
+V3 training remains blocked pending a successful external-only media gate, measured CPU peak memory/throughput, and checkpoint save/restore continuity. `main` remains at `0b5ec69e839bfc6086a358511b54649b03c7be9a`; no PR or merge was created.
