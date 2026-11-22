@@ -13,6 +13,8 @@ import json
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Callable, Iterable
+from urllib.parse import unquote, urlencode, urlparse
+from urllib.request import Request, urlopen
 
 import yaml
 from datasets import load_dataset
@@ -40,6 +42,168 @@ MEDIA_TASKS = {
 
 def _sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8", errors="replace")).hexdigest()
+
+
+_DATASET_VIEWER_ROWS_URL = "https://datasets-server.huggingface.co/rows"
+_DATASET_VIEWER_PAGE_SIZE = 100
+
+
+def _default_dataset_viewer_row_loader(
+    repo: str, config: str, split: str, offset: int, length: int,
+) -> dict[str, Any]:
+    """Fetch one bounded slice from the official Hub Dataset Viewer rows API."""
+    query = urlencode({
+        "dataset": repo, "config": config, "split": split,
+        "offset": int(offset), "length": min(int(length), _DATASET_VIEWER_PAGE_SIZE),
+    })
+    request = Request(
+        f"{_DATASET_VIEWER_ROWS_URL}?{query}",
+        headers={"User-Agent": "OneCore-v3-pinned-media-restore/1.0"},
+    )
+    with urlopen(request, timeout=45) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    if not isinstance(payload, dict) or not isinstance(payload.get("rows"), list):
+        raise RuntimeError("Hugging Face Dataset Viewer returned an invalid rows payload")
+    return payload
+
+
+def _find_media_source_url(value: Any) -> str | None:
+    if isinstance(value, str):
+        return value if value.startswith(("https://", "http://")) else None
+    if isinstance(value, dict):
+        for key in ("src", "url"):
+            candidate = value.get(key)
+            if isinstance(candidate, str) and candidate.startswith(("https://", "http://")):
+                return candidate
+        for child in value.values():
+            candidate = _find_media_source_url(child)
+            if candidate:
+                return candidate
+    elif isinstance(value, (list, tuple)):
+        for child in value:
+            candidate = _find_media_source_url(child)
+            if candidate:
+                return candidate
+    return None
+
+
+def _row_primary_key(row: dict[str, Any]) -> tuple[str, str] | None:
+    for key in (
+        "id", "sample_id", "__key__", "blob_id", "content_id", "image_name",
+        "filename", "file", "url", "path", "video_id", "videoid", "clip_id", "img_id",
+    ):
+        value = row.get(key)
+        if value is None or not str(value).strip():
+            continue
+        normalized = str(value).strip()
+        if key in {"file", "path"}:
+            normalized = normalized.replace("\\", "/").rsplit("/", 1)[-1]
+        return key, normalized
+    return None
+
+
+def _viewer_row_matches_source(
+    source_row: dict[str, Any], viewer_row: dict[str, Any], media_field: str,
+) -> bool:
+    """Guard the row-index lookup with stable row identity where available."""
+    source_key = _row_primary_key(source_row)
+    viewer_key = _row_primary_key(viewer_row)
+    if source_key is not None or viewer_key is not None:
+        return source_key == viewer_key
+    source_rest = {key: value for key, value in source_row.items() if key != media_field}
+    viewer_rest = {key: value for key, value in viewer_row.items() if key != media_field}
+    return json.dumps(source_rest, ensure_ascii=False, sort_keys=True, default=str) == json.dumps(
+        viewer_rest, ensure_ascii=False, sort_keys=True, default=str
+    )
+
+
+def _validate_pinned_media_url(url: str, revision: str) -> str:
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme != "https" or not (
+        host == "huggingface.co" or host.endswith(".huggingface.co")
+    ):
+        raise ValueError("Dataset Viewer media URL must use HTTPS on a Hugging Face host")
+    path = unquote(parsed.path)
+    if f"/--/{revision}/--/" not in path and f"/resolve/{revision}/" not in path:
+        raise ValueError("Dataset Viewer media URL does not match the pinned source revision")
+    return url
+
+
+def _dataset_viewer_media_value(
+    source_row: dict[str, Any],
+    source: dict[str, Any],
+    family: str,
+    revision: str,
+    split: str,
+    row_index: int | None,
+    *,
+    viewer_row_loader: Callable[[str, str, str, int, int], dict[str, Any]] | None = None,
+    viewer_row_cache: dict[tuple[str, str, str, int], dict[int, dict[str, Any]]] | None = None,
+) -> dict[str, str]:
+    """Resolve a missing local path to the same pinned source row's cached raw-media URL."""
+    if row_index is None or row_index < 0:
+        raise ValueError("pinned media fallback requires the source row index")
+    repo = str(source.get("repo") or "").strip()
+    config = str(source.get("config") or "default")
+    if not repo:
+        raise ValueError("pinned media fallback requires a source repository")
+    page_start = (int(row_index) // _DATASET_VIEWER_PAGE_SIZE) * _DATASET_VIEWER_PAGE_SIZE
+    cache = viewer_row_cache if viewer_row_cache is not None else {}
+    cache_key = (repo, config, split, page_start)
+    if cache_key not in cache:
+        loader = viewer_row_loader or _default_dataset_viewer_row_loader
+        payload = loader(repo, config, split, page_start, _DATASET_VIEWER_PAGE_SIZE)
+        rows = payload.get("rows") if isinstance(payload, dict) else None
+        if not isinstance(rows, list):
+            raise RuntimeError("Dataset Viewer rows response omitted the row slice")
+        page: dict[int, dict[str, Any]] = {}
+        for item in rows:
+            if not isinstance(item, dict) or not isinstance(item.get("row"), dict):
+                continue
+            try:
+                page[int(item.get("row_idx", -1))] = item["row"]
+            except (TypeError, ValueError):
+                continue
+        cache[cache_key] = page
+    viewer_row = cache[cache_key].get(int(row_index))
+    if viewer_row is None:
+        raise FileNotFoundError(
+            f"Dataset Viewer did not return row {row_index} for {repo}/{config}/{split}"
+        )
+    media_field = str(source.get(f"{family}_field") or {
+        "image": "image", "audio": "audio", "video": "video",
+    }[family])
+    if not _viewer_row_matches_source(source_row, viewer_row, media_field):
+        raise ValueError("Dataset Viewer row identity does not match the pinned streaming source row")
+    media_value = _nested(viewer_row, media_field)
+    media_url = _find_media_source_url(media_value)
+    if not media_url:
+        raise ValueError(f"Dataset Viewer row {row_index} has no usable {family} media URL")
+    return {"src": _validate_pinned_media_url(media_url, revision)}
+
+
+def _needs_dataset_viewer_fallback(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, dict):
+        if value.get("bytes") is not None or value.get("array") is not None:
+            return False
+        if _find_media_source_url(value):
+            return False
+        path = value.get("path")
+        if isinstance(path, str):
+            return not (
+                path.startswith(("https://", "http://")) or Path(path).is_file()
+            )
+        return True
+    if isinstance(value, str):
+        return not (
+            value.startswith(("https://", "http://")) or Path(value).is_file()
+        )
+    if isinstance(value, (list, tuple)):
+        return len(value) == 0
+    return False
 
 
 def _default_source_loader(repo: str, config: str | None, split: str, revision: str):
@@ -121,25 +285,56 @@ def _video_value(row: dict[str, Any], source: dict[str, Any], revision: str) -> 
     return value
 
 
-def _rehydrate_record(record: dict[str, Any], row: dict[str, Any],
-                      source: dict[str, Any], assets_root: Path,
-                      target_audio_rate: int) -> dict[str, Any]:
+def _rehydrate_record(
+    record: dict[str, Any],
+    row: dict[str, Any],
+    source: dict[str, Any],
+    assets_root: Path,
+    target_audio_rate: int,
+    *,
+    source_row_index: int | None = None,
+    source_hf_split: str | None = None,
+    viewer_row_loader: Callable[[str, str, str, int, int], dict[str, Any]] | None = None,
+    viewer_row_cache: dict[tuple[str, str, str, int], dict[int, dict[str, Any]]] | None = None,
+) -> dict[str, Any]:
     task = str(record["task"])
     family = MEDIA_TASKS[task]
     result = {key: value for key, value in record.items() if not key.startswith("_")}
     for obsolete in ("image", "audio_features", "frames", "asset_content_group_ids"):
         result.pop(obsolete, None)
     record_id = str(record["id"])
+    source_split = str(source_hf_split or record.get("source_hf_split") or record.get("split") or "")
+    if source_row_index is not None:
+        result["source_hf_row_index"] = int(source_row_index)
+    if source_split:
+        result["source_hf_split"] = source_split
+    used_dataset_viewer = False
+
+    def viewer_value(media_family: str) -> dict[str, str]:
+        nonlocal used_dataset_viewer
+        value = _dataset_viewer_media_value(
+            row, source, media_family, str(record["source_revision"]), source_split,
+            source_row_index, viewer_row_loader=viewer_row_loader,
+            viewer_row_cache=viewer_row_cache,
+        )
+        used_dataset_viewer = True
+        return value
 
     if family == "image":
         value = _nested(row, str(source.get("image_field") or "image"))
         value = _safe_image_value(value, source)
+        if _needs_dataset_viewer_fallback(value):
+            value = viewer_value("image")
         metadata = preserve_image_payload(value, assets_root, record_id)
         result["assets"] = {"image": metadata}
-        return result
 
-    if family == "audio":
+    elif family == "audio":
         value = _nested(row, str(source.get("audio_field") or "audio"))
+        if isinstance(value, (list, tuple)):
+            media_url = _find_media_source_url(value)
+            value = {"src": media_url} if media_url else value
+        if _needs_dataset_viewer_fallback(value):
+            value = viewer_value("audio")
         raw = preserve_audio_payload(value, assets_root, record_id)
         raw_path = assets_root / raw["source_asset"]
         normalized = resample_audio_source(
@@ -161,13 +356,28 @@ def _rehydrate_record(record: dict[str, Any], row: dict[str, Any],
                 "resample_ratio": normalized.get("resample_ratio"),
             }
         }
-        return result
 
-    value = _video_value(row, source, str(record["source_revision"]))
-    metadata = preserve_video_payload(value, assets_root, record_id)
-    if metadata.get("frame_limit_applied") is not False:
-        raise ValueError("video preservation must prove that no frame limit was applied")
-    result["assets"] = {"video": metadata}
+    else:
+        try:
+            value = _video_value(row, source, str(record["source_revision"]))
+        except Exception:
+            value = viewer_value("video")
+        else:
+            if _needs_dataset_viewer_fallback(value):
+                value = viewer_value("video")
+        metadata = preserve_video_payload(value, assets_root, record_id)
+        if metadata.get("frame_limit_applied") is not False:
+            raise ValueError("video preservation must prove that no frame limit was applied")
+        result["assets"] = {"video": metadata}
+
+    if used_dataset_viewer:
+        result["source_media_locator"] = {
+            "provider": "huggingface-datasets-server",
+            "config": str(source.get("config") or "default"),
+            "split": source_split,
+            "row_index": source_row_index,
+            "revision": str(record["source_revision"]),
+        }
     return result
 
 
@@ -365,6 +575,7 @@ def restore_v2_media_records(
     *,
     target_audio_rate: int = 24_000,
     source_loader: Callable[[str, str | None, str, str], Iterable[dict[str, Any]]] | None = None,
+    viewer_row_loader: Callable[[str, str, str, int, int], dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Reuse external text/tool rows and selectively restore only V2 media rows.
 
@@ -389,6 +600,7 @@ def restore_v2_media_records(
     pending: dict[tuple[str, str, str], dict[str, dict[str, Any]]] = defaultdict(dict)
     skipped: Counter[str] = Counter()
     errors: list[str] = []
+    viewer_row_cache: dict[tuple[str, str, str, int], dict[int, dict[str, Any]]] = {}
 
     for item in records:
         input_records += 1
@@ -476,7 +688,11 @@ def restore_v2_media_records(
                     record = targets[row_hash]
                     try:
                         converted_record = _rehydrate_record(
-                            record, row, source, root, target_audio_rate
+                            record, row, source, root, target_audio_rate,
+                            source_row_index=index,
+                            source_hf_split=str(source_split),
+                            viewer_row_loader=viewer_row_loader,
+                            viewer_row_cache=viewer_row_cache,
                         )
                         converted[record["id"]] = converted_record
                         found.add(row_hash)
@@ -513,7 +729,10 @@ def restore_v2_media_records(
         "skipped": dict(skipped),
         "errors": errors,
         "target_audio_rate": target_audio_rate,
-        "source_restore_mode": "pinned_revision_streaming_row_hash_lookup",
+        "source_restore_mode": "pinned_revision_streaming_row_hash_lookup_with_dataset_viewer_media_fallback",
+        "dataset_viewer_media_restored_records": sum(
+            1 for row in ordered if isinstance(row.get("source_media_locator"), dict)
+        ),
         "synthetic_records_added": 0,
         "blocked": bool(errors or any(skipped.get(key, 0) for key in (
             "missing_or_duplicate_id", "source_not_in_registry", "source_disabled",
@@ -573,6 +792,7 @@ def convert_v2_corpus(
     minimum_train: int = 100,
     minimum_holdout: int = 10,
     source_loader: Callable[[str, str | None, str, str], Iterable[dict[str, Any]]] | None = None,
+    viewer_row_loader: Callable[[str, str, str, int, int], dict[str, Any]] | None = None,
     source_revisions: dict[str, str] | None = None,
     fill_missing_media: bool = True,
     max_scan_rows_per_source_split: int = 50_000,
@@ -605,6 +825,7 @@ def convert_v2_corpus(
     converted, report = restore_v2_media_records(
         records, sources_registry, assets_root,
         target_audio_rate=target_audio_rate, source_loader=source_loader,
+        viewer_row_loader=viewer_row_loader,
     )
     manifest_paths = write_v3_manifests(converted, destination)
     gate = validate_v3_manifest(

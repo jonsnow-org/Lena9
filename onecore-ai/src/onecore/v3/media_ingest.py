@@ -74,7 +74,9 @@ def preserve_video_source(source: str | Path, assets_root: str | Path,
                           record_id: str) -> dict[str, Any]:
     """Preserve original video and stream every decoded frame to lossless PNG."""
     target, relative = _copy_source(source, assets_root, record_id, "video")
-    metadata = iio.immeta(target)
+    # Force FFmpeg so extensionless/temporary .bin source paths are decoded
+    # by content instead of failing ImageIO's extension-based plugin selection.
+    metadata = iio.immeta(target, plugin="FFMPEG")
     fps_value = metadata.get("fps", metadata.get("framerate"))
     try:
         fps = float(fps_value) if fps_value is not None else 0.0
@@ -86,7 +88,7 @@ def preserve_video_source(source: str | Path, assets_root: str | Path,
         stale.unlink()
     frame_paths: list[str] = []
     width = height = None
-    for index, frame in enumerate(iio.imiter(target)):
+    for index, frame in enumerate(iio.imiter(target, plugin="FFMPEG")):
         array = np.asarray(frame)
         if array.ndim != 3 or array.shape[2] not in (3, 4):
             raise ValueError(f"unsupported decoded video frame shape: {array.shape}")

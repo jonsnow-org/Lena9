@@ -2,8 +2,10 @@ import numpy as np
 import soundfile as sf
 from PIL import Image
 
+from onecore.v3 import media_ingest as media_ingest_module
 from onecore.v3.media_ingest import (
-    preserve_audio_payload, preserve_audio_source, preserve_image_source, resample_audio_source,
+    preserve_audio_payload, preserve_audio_source, preserve_image_source,
+    preserve_video_source, resample_audio_source,
 )
 
 
@@ -68,3 +70,27 @@ def test_v3_audio_resampling_uses_identity_for_canonical_rate(tmp_path):
     report = resample_audio_source(source, tmp_path / "assets", "already-canonical")
     assert report["training_asset"] == report["source_asset"]
     assert report["resampled"] is False
+
+
+
+def test_v3_video_ingest_forces_ffmpeg_for_extensionless_source_paths(tmp_path, monkeypatch):
+    source = tmp_path / "camera-clip.bin"
+    source.write_bytes(b"test-video-container")
+    calls = []
+
+    def fake_immeta(path, plugin=None):
+        calls.append(("meta", plugin))
+        return {"fps": 2.0, "duration": 0.5}
+
+    def fake_imiter(path, plugin=None):
+        calls.append(("iter", plugin))
+        yield np.zeros((3, 4, 3), dtype=np.uint8)
+
+    monkeypatch.setattr(media_ingest_module.iio, "immeta", fake_immeta)
+    monkeypatch.setattr(media_ingest_module.iio, "imiter", fake_imiter)
+    report = preserve_video_source(source, tmp_path / "assets", "camera-clip")
+
+    assert calls == [("meta", "FFMPEG"), ("iter", "FFMPEG")]
+    assert report["frame_count"] == 1
+    assert report["frame_limit_applied"] is False
+    assert (tmp_path / "assets" / report["source_asset"]).is_file()

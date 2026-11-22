@@ -292,3 +292,109 @@ def test_v3_default_source_loader_fails_closed_without_stream_decode_control(mon
         assert "decode(False)" in str(exc)
     else:
         raise AssertionError("source loader must not silently invoke automatic TorchCodec decoding")
+
+
+def test_v3_converter_restores_missing_local_media_path_from_pinned_dataset_viewer(tmp_path, monkeypatch):
+    row = {
+        "id": "audio-viewer-001",
+        "audio": {"path": "/runner/work/missing-audio.wav", "bytes": None},
+        "transcription": "A pinned audio example.",
+    }
+    record = _record(
+        "audio-source", row, "audio_text", "audio-viewer-001",
+        transcript="A pinned audio example.", audio_features="legacy.npy",
+    )
+    registry = tmp_path / "sources.yaml"
+    _write_registry(registry, [{
+        "id": "audio-source", "repo": "org/audio-data", "config": "default",
+        "hf_splits": ["train"], "adapter": "audio", "audio_field": "audio",
+        "text_fields": ["transcription"], "enabled": True,
+    }])
+    media_url = (
+        "https://datasets-server.huggingface.co/cached-assets/org/audio-data/"
+        f"--/{REVISION}/--/default/train/0/audio/audio.wav?Expires=9999999999&Signature=test"
+    )
+    viewer_row = {
+        "id": "audio-viewer-001",
+        "audio": [{"src": media_url, "type": "audio/wav"}],
+        "transcription": "A pinned audio example.",
+    }
+    viewer_calls = []
+    payload_calls = []
+
+    def viewer_loader(repo, config, split, offset, length):
+        viewer_calls.append((repo, config, split, offset, length))
+        return {"rows": [{"row_idx": 0, "row": viewer_row}], "partial": False}
+
+    def fake_preserve_audio_payload(value, assets_root, record_id):
+        payload_calls.append(value)
+        return {
+            "source_asset": "raw/audio/source.wav", "sample_rate": 16000,
+            "channels": 1, "samples": 160, "duration_seconds": 0.01,
+        }
+
+    def fake_resample_audio_source(source, assets_root, record_id, target_sample_rate):
+        return {
+            "training_asset": "processed/audio/source-24000hz.wav",
+            "training_sample_rate": target_sample_rate, "training_channels": 1,
+            "training_samples": 240, "resampled": True,
+            "resampler": "scipy.signal.resample_poly", "resample_ratio": {"up": 3, "down": 2},
+        }
+
+    monkeypatch.setattr(converter_module, "preserve_audio_payload", fake_preserve_audio_payload)
+    monkeypatch.setattr(converter_module, "resample_audio_source", fake_resample_audio_source)
+    restored, report = restore_v2_media_records(
+        [record], registry, tmp_path / "assets",
+        source_loader=lambda *_: [row], viewer_row_loader=viewer_loader,
+    )
+
+    assert len(restored) == 1
+    assert payload_calls == [{"src": media_url}]
+    assert viewer_calls == [("org/audio-data", "default", "train", 0, 100)]
+    assert restored[0]["source_hf_row_index"] == 0
+    assert restored[0]["source_media_locator"] == {
+        "provider": "huggingface-datasets-server", "config": "default",
+        "split": "train", "row_index": 0, "revision": REVISION,
+    }
+    assert report["dataset_viewer_media_restored_records"] == 1
+
+
+def test_v3_converter_rejects_dataset_viewer_media_from_a_different_revision(tmp_path, monkeypatch):
+    row = {
+        "id": "audio-viewer-wrong-revision",
+        "audio": {"path": "/runner/work/missing-audio.wav", "bytes": None},
+        "transcription": "Pinned row.",
+    }
+    record = _record(
+        "audio-source", row, "audio_text", "audio-viewer-wrong-revision",
+        transcript="Pinned row.", audio_features="legacy.npy",
+    )
+    registry = tmp_path / "sources.yaml"
+    _write_registry(registry, [{
+        "id": "audio-source", "repo": "org/audio-data", "config": "default",
+        "hf_splits": ["train"], "adapter": "audio", "audio_field": "audio",
+        "text_fields": ["transcription"], "enabled": True,
+    }])
+    other_revision = "b" * 40
+    viewer_row = {
+        "id": "audio-viewer-wrong-revision",
+        "audio": [{
+            "src": (
+                "https://datasets-server.huggingface.co/cached-assets/org/audio-data/"
+                f"--/{other_revision}/--/default/train/0/audio/audio.wav?Signature=test"
+            )
+        }],
+        "transcription": "Pinned row.",
+    }
+    monkeypatch.setattr(
+        converter_module, "preserve_audio_payload",
+        lambda *_: (_ for _ in ()).throw(AssertionError("unpinned media must not be opened")),
+    )
+    restored, report = restore_v2_media_records(
+        [record], registry, tmp_path / "assets",
+        source_loader=lambda *_: [row],
+        viewer_row_loader=lambda *_: {"rows": [{"row_idx": 0, "row": viewer_row}]},
+    )
+    assert restored == []
+    assert report["blocked"] is True
+    assert any("does not match the pinned source revision" in error for error in report["errors"])
