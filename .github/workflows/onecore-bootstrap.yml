@@ -678,55 +678,6 @@ jobs:
           notebook: "04_multimodal_curriculum.ipynb"
           steps: ${{ needs.prepare.outputs.steps_per_job }}
           output_artifact_name: onecore-state-train-10
-      - name: Execute independent validation and held-out test on the same restored corpus
-        shell: bash
-        env:
-          PYTHONPATH: onecore-ai/src
-          ONECORE_EXECUTE_EVALUATION: "1"
-        run: |
-          mkdir -p onecore-ai/run-state/executed-notebooks
-          jupyter nbconvert --to notebook --execute onecore-ai/notebooks/05_evaluation_and_promotion.ipynb \
-            --output 05_evaluation_and_promotion.executed.ipynb \
-            --output-dir onecore-ai/run-state/executed-notebooks \
-            --ExecutePreprocessor.timeout=-1
-      - name: Require complete validation and test metrics
-        shell: bash
-        run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
-
-          root = Path("onecore-ai/run-state")
-          required = {
-              "evaluation.json": "combined",
-              "evaluation.validation.json": "validation",
-              "evaluation.test.json": "test",
-          }
-          for filename, split in required.items():
-              path = root / filename
-              if not path.is_file():
-                  raise FileNotFoundError(
-                      f"actual evaluation did not produce required {split} metrics: {path}"
-                  )
-              payload = json.loads(path.read_text(encoding="utf-8"))
-              if not isinstance(payload, dict) or not payload:
-                  raise ValueError(f"evaluation output is empty or invalid: {path}")
-              print(f"VERIFIED {split} evaluation: {filename} ({len(payload)} fields)")
-          PY
-
-      - name: Upload scientific evaluation results
-        uses: actions/upload-artifact@v6
-        with:
-          name: onecore-evaluation-${{ github.run_id }}
-          path: |
-            onecore-ai/run-state/evaluation.json
-            onecore-ai/run-state/evaluation.validation.json
-            onecore-ai/run-state/evaluation.test.json
-            onecore-ai/run-state/model-registry.json
-            onecore-ai/run-state/train_result.json
-          if-no-files-found: error
-          retention-days: 90
-          compression-level: 1
 
   evaluate:
     name: Independent validation, test and checkpoint report
@@ -738,15 +689,32 @@ jobs:
       - uses: actions/checkout@v5
         with:
           ref: ${{ github.sha }}
-      - name: Restore the final session checkpoint
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: onecore-ai/pyproject.toml
+      - name: Install CPU-only PyTorch and evaluation dependencies
+        run: |
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --upgrade pip
+          python -m pip install -e "onecore-ai[dev]"
+      - name: Restore the immutable validated corpus
         uses: actions/download-artifact@v7
+        with:
+          name: ${{ needs.prepare.outputs.base_corpus_artifact_name }}
+          path: onecore-ai/run-state/corpus-artifact
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ needs.prepare.outputs.base_corpus_run_id }}
+      - name: Expand the validated corpus snapshot
+        shell: bash
+        env:
+          PYTHONPATH: onecore-ai/src
+        run: python -m onecore.artifacts restore --root onecore-ai --artifact-dir onecore-ai/run-state/corpus-artifact
+      - name: Restore the final session checkpoint        uses: actions/download-artifact@v7
         with:
           name: onecore-state-train-10
-          path: onecore-ai/run-state
-      - name: Restore scientific evaluation results
-        uses: actions/download-artifact@v7
-        with:
-          name: onecore-evaluation-${{ github.run_id }}
           path: onecore-ai/run-state
       - name: Confirm cumulative optimizer steps and five-family balance
         shell: bash
@@ -805,6 +773,55 @@ jobs:
               "native_tldm": native,
           }, ensure_ascii=False, indent=2))
           PY
+      - name: Execute independent validation and held-out test on the same restored corpus
+        shell: bash
+        env:
+          PYTHONPATH: onecore-ai/src
+          ONECORE_EXECUTE_EVALUATION: "1"
+        run: |
+          mkdir -p onecore-ai/run-state/executed-notebooks
+          jupyter nbconvert --to notebook --execute onecore-ai/notebooks/05_evaluation_and_promotion.ipynb \
+            --output 05_evaluation_and_promotion.executed.ipynb \
+            --output-dir onecore-ai/run-state/executed-notebooks \
+            --ExecutePreprocessor.timeout=-1
+      - name: Require complete validation and test metrics
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("onecore-ai/run-state")
+          required = {
+              "evaluation.json": "combined",
+              "evaluation.validation.json": "validation",
+              "evaluation.test.json": "test",
+          }
+          for filename, split in required.items():
+              path = root / filename
+              if not path.is_file():
+                  raise FileNotFoundError(
+                      f"actual evaluation did not produce required {split} metrics: {path}"
+                  )
+              payload = json.loads(path.read_text(encoding="utf-8"))
+              if not isinstance(payload, dict) or not payload:
+                  raise ValueError(f"evaluation output is empty or invalid: {path}")
+              print(f"VERIFIED {split} evaluation: {filename} ({len(payload)} fields)")
+          PY
+
+      - name: Upload scientific evaluation results
+        uses: actions/upload-artifact@v6
+        with:
+          name: onecore-evaluation-${{ github.run_id }}
+          path: |
+            onecore-ai/run-state/evaluation.json
+            onecore-ai/run-state/evaluation.validation.json
+            onecore-ai/run-state/evaluation.test.json
+            onecore-ai/run-state/model-registry.json
+            onecore-ai/run-state/train_result.json
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 1
       - name: Create durable versioned checkpoint release
         env:
           GH_TOKEN: ${{ secrets.ONECORE_RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
