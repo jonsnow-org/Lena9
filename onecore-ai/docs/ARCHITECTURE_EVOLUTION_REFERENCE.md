@@ -271,3 +271,13 @@ This verifies the prototype code paths and regression suite, not model quality o
 ### V3 raw payload ingestion — commit `8a9f42be9a44e750eabeb7d1a343207fb78f4a2b`
 
 The V3 media ingestion adapter now accepts source values in common dataset forms: original file paths, HTTP(S) URLs, encoded bytes, decoded PIL images/NumPy image arrays, audio arrays with sample-rate metadata, and complete frame lists with optional timestamps. It preserves the original encoded source where supplied, enforces configurable download-size ceilings, and writes every supplied video frame without a fixed frame-count cap. Tests cover byte/array image and audio payloads and a nine-frame video sequence. CI Run #486 is pending.
+
+
+### V2 corpus reusability finding — media source preservation
+
+A direct source inspection of `src/onecore/acquire.py` confirms:
+- `_save_image()` resizes every source image to 64×64 before saving.
+- `_save_audio_features()` converts the waveform to 16 kHz mono log-mel features and saves only the feature tensor.
+- `_video_frames()` and `_write_frames()` default to and enforce a four-frame sample.
+
+Therefore the V2 acquired media assets are lossy derivatives for V3 purposes; they are not sufficient source masters for native-resolution image, waveform codec, or variable-duration video training. Do not silently treat the V2 media corpus as V3 raw data. Reuse its text/tool records and immutable source registry/cursors where valid, but selectively re-read only the media rows needed to preserve raw source assets at the same pinned immutable revisions. This is a targeted media-source recovery, not a full corpus rediscovery or text/tool reacquisition.
