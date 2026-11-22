@@ -8,7 +8,7 @@ def _tiny_v3():
         text_vocab_size=128, width=32, layers=1, attention_heads=4,
         patch_size=8, audio_latent_channels=16, audio_hidden_channels=24,
         audio_codebook_size=32, audio_quantizer_stages=3,
-        temporal_layers=1, dropout=0.0,
+        temporal_layers=1, max_image_context_tokens=16, dropout=0.0,
     )
 
 
@@ -22,7 +22,13 @@ def test_v3_shared_core_integrates_text_image_audio_and_video():
     timestamps = torch.tensor([[0.0, 0.1, 0.25, 0.4, 0.8]])
 
     text_logits = model.forward_text(text)
+    observed_core_lengths = []
+    hook = model.shared_core.register_forward_pre_hook(
+        lambda _module, args: observed_core_lengths.append(args[0].shape[1])
+    )
     image_reconstruction, image_state = model.forward_image(image)
+    hook.remove()
+    assert observed_core_lengths[0] <= 16
     audio_reconstruction, audio_state = model.forward_audio(audio)
     video_reconstruction, video_state = model.forward_video(video, timestamps)
 
@@ -46,3 +52,26 @@ def test_v3_shared_core_integrates_text_image_audio_and_video():
     assert model.image_codec.encoder.weight.grad is not None
     assert model.audio_codec.encoder[0].weight.grad is not None
     assert model.video_codec.temporal.layers[0].self_attn.in_proj_weight.grad is not None
+
+
+
+def test_v3_flow_matching_and_variable_shape_generation_paths():
+    torch.manual_seed(29)
+    model = _tiny_v3()
+    clean = torch.randn(2, 7, 32)
+    condition = model.text_condition(torch.randint(0, 128, (2, 5)))
+    loss = model.flow_matching_loss(clean, modality=1, condition_tokens=condition)
+    loss.backward()
+    assert torch.isfinite(loss)
+    assert model.flow_velocity_head.weight.grad is not None
+
+    with torch.no_grad():
+        image = model.generate_image(31, 47, condition_ids=torch.randint(0, 128, (1, 4)), steps=2)
+        audio = model.generate_audio(1001, condition_ids=torch.randint(0, 128, (1, 4)), steps=2)
+        video = model.generate_video(
+            5, 31, 47, condition_ids=torch.randint(0, 128, (1, 4)), steps=2
+        )
+
+    assert image.shape == (1, 3, 31, 47)
+    assert audio.shape == (1, 1, 1001)
+    assert video.shape == (1, 5, 3, 31, 47)
