@@ -20,15 +20,13 @@ def test_v3_image_codec_preserves_variable_resolution_and_aspect_ratio():
     assert torch.isfinite(portrait.grad).all()
 
 
-def test_v3_image_codec_rejects_implicit_resize_or_crop():
+def test_v3_image_codec_preserves_arbitrary_native_dimensions():
     codec = VariableResolutionImageCodec(width=32, patch_size=8)
-    with torch.no_grad():
-        try:
-            codec.encode(torch.rand(1, 3, 31, 48))
-        except ValueError as exc:
-            assert "preserve aspect ratio" in str(exc)
-        else:
-            raise AssertionError("non-divisible input must not be silently resized")
+    image = torch.rand(1, 3, 63, 47)
+    reconstruction, encoding = codec(image)
+    assert encoding.grid_height == 8
+    assert encoding.grid_width == 6
+    assert reconstruction.shape == image.shape
 
 
 def test_v3_neural_audio_codec_handles_variable_duration_and_exact_length():
