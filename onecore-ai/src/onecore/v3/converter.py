@@ -18,7 +18,7 @@ import yaml
 from datasets import load_dataset
 from huggingface_hub import hf_hub_download
 
-from onecore.acquire import _first_text, _nested, _resolve_video_asset, _row_identity
+from onecore.acquire import _nested, _resolve_video_asset, _row_identity
 from onecore.data import external_record_is_trainable, has_immutable_external_provenance
 from .media_ingest import (
     preserve_audio_payload,
@@ -112,6 +112,8 @@ def _rehydrate_record(record: dict[str, Any], row: dict[str, Any],
     task = str(record["task"])
     family = MEDIA_TASKS[task]
     result = {key: value for key, value in record.items() if not key.startswith("_")}
+    for obsolete in ("image", "audio_features", "frames", "asset_content_group_ids"):
+        result.pop(obsolete, None)
     record_id = str(record["id"])
     adapter = str(source.get("adapter", ""))
 
@@ -182,11 +184,13 @@ def restore_v2_media_records(
     root.mkdir(parents=True, exist_ok=True)
 
     converted: dict[str, dict[str, Any]] = {}
+    input_records = 0
     pending: dict[tuple[str, str], dict[str, dict[str, Any]]] = defaultdict(dict)
     skipped: Counter[str] = Counter()
     errors: list[str] = []
 
     for item in records:
+        input_records += 1
         record = {key: value for key, value in item.items() if not key.startswith("_")}
         record_id = str(record.get("id", "")).strip()
         if not record_id or record_id in converted:
@@ -274,7 +278,7 @@ def restore_v2_media_records(
         for split in ("train", "validation", "test")
     }
     report = {
-        "input_external_text_tool_and_media_rows": sum(1 for _ in []),  # replaced below
+        "input_records": input_records,
         "converted_records": len(ordered),
         "converted_by_split_and_task": counts,
         "skipped": dict(skipped),
