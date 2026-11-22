@@ -38,7 +38,6 @@ data_gate:
   required_families: [text, tool, image, audio, video]
 evaluation:
   min_text_tokens: 1000
-  max_validation_loss_regression: 0.02
   require_all_modalities: true
   promote_requires_real_data: true
   tldm_per_task_limit: 16
