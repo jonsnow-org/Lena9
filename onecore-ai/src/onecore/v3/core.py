@@ -169,10 +169,9 @@ class OneCoreV3(nn.Module):
             reconstruction = reconstruction.squeeze(1)
         return reconstruction, processed
 
-    def forward_video_chunks(self, video: torch.Tensor,
-                             timestamps: torch.Tensor | None = None,
-                             frame_chunk_size: int | None = None):
-        """Yield decoded input-video chunks with bounded temporal/global context."""
+    def _iter_forward_video_chunks(self, video: torch.Tensor,
+                                   timestamps: torch.Tensor | None = None,
+                                   frame_chunk_size: int | None = None):
         memory = None
         for encoding in self.video_codec.iter_encode(
             video, timestamps=timestamps, frame_chunk_size=frame_chunk_size
@@ -199,7 +198,7 @@ class OneCoreV3(nn.Module):
                 encoding.frame_count, encoding.image_height, encoding.image_width,
                 encoding.timestamps,
             )
-            yield self.video_codec.decode_frames(processed)
+            yield self.video_codec.decode_frames(processed), processed
             history = current_shared if memory is None else torch.cat(
                 (memory, current_shared), dim=1
             )
@@ -207,16 +206,31 @@ class OneCoreV3(nn.Module):
                 history.transpose(1, 2), min(32, history.shape[1])
             ).transpose(1, 2).detach()
 
+    def forward_video_chunks(self, video: torch.Tensor,
+                             timestamps: torch.Tensor | None = None,
+                             frame_chunk_size: int | None = None):
+        """Yield decoded input-video chunks with bounded temporal/global context."""
+        for reconstruction, _encoding in self._iter_forward_video_chunks(
+            video, timestamps=timestamps, frame_chunk_size=frame_chunk_size
+        ):
+            yield reconstruction
+
     def forward_video(self, video: torch.Tensor,
                       timestamps: torch.Tensor | None = None,
                       frame_chunk_size: int | None = None) -> tuple[torch.Tensor, VideoEncoding]:
-        chunks = list(self.forward_video_chunks(
+        chunks = list(self._iter_forward_video_chunks(
             video, timestamps=timestamps, frame_chunk_size=frame_chunk_size
         ))
-        reconstruction = torch.cat(chunks, dim=1)
-        encoding = self.video_codec.encode(video, timestamps=timestamps,
-                                           frame_chunk_size=frame_chunk_size)
-        return reconstruction, encoding
+        reconstructions, encodings = zip(*chunks, strict=True)
+        first = encodings[0]
+        encoding = VideoEncoding(
+            torch.cat([chunk.tokens for chunk in encodings], dim=1),
+            first.grid_height, first.grid_width,
+            sum(chunk.frame_count for chunk in encodings),
+            first.image_height, first.image_width,
+            torch.cat([chunk.timestamps for chunk in encodings], dim=1),
+        )
+        return torch.cat(reconstructions, dim=1), encoding
 
     def text_condition(self, token_ids: torch.Tensor | None) -> torch.Tensor | None:
         if token_ids is None:
