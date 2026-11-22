@@ -7,6 +7,7 @@ from onecore.evaluate import (
     _check_text_loss_regression, _check_tool_behavior, _text_language_bucket,
     _token_weighted_mean_loss, _tldm_masked_span_loss, codebook_assignment_report,
     select_evaluation_records, select_tldm_evaluation_records,
+    select_verified_tool_evaluation_records, _check_tool_behavior_regression,
 )
 from onecore.config import ModelConfig
 from onecore.model import OneCore
@@ -207,3 +208,55 @@ def test_text_loss_regression_rejects_different_tokenizer_or_manifest():
     failures = []
     _check_text_loss_regression("test", current, baseline, 1.02, failures)
     assert any("does not match current tokenizer_sha256" in failure for failure in failures)
+
+
+def test_tool_behavior_selection_uses_only_verified_synthetic_engineering_examples(tmp_path):
+    from onecore.data import read_manifest
+    from onecore.tool_episodes import generate_tool_episodes
+
+    root = tmp_path / "onecore-ai"
+    data = root / "data"
+    data.mkdir(parents=True)
+    (data / "assets").mkdir()
+    for split in ("train", "validation", "test"):
+        (data / f"{split}.jsonl").write_text("", encoding="utf-8")
+    generate_tool_episodes(root, {"train": 1, "validation": 8, "test": 8})
+    records = read_manifest(data / "validation.jsonl")
+    external = {
+        **records[0],
+        "id": "external-tool-row",
+        "data_class": "external",
+        "source_id": "external-tools",
+        "source_revision": "a" * 40,
+        "source_row_id_sha256": "b" * 64,
+        "source_url": "https://example.org/tools",
+    }
+    selected = select_verified_tool_evaluation_records(records + [external])
+
+    assert len(selected) == 16
+    assert all(record["data_class"] == "synthetic_verified" for record in selected)
+    assert all(record["id"] != "external-tool-row" for record in selected)
+
+
+def test_tool_regression_requires_engineering_only_verified_metadata():
+    report = {
+        "protocol": "verified-tool-action-execution-v1",
+        "data_class": "synthetic_verified",
+        "evaluation_role": "engineering_only",
+        "split": "validation",
+        "sample_ids_sha256": "a" * 64,
+        "sample_count": 16,
+        "execution_success_rate": 0.95,
+        "per_step": {
+            "1": {"sample_count": 8, "execution_success_rate": 0.95},
+            "2": {"sample_count": 8, "execution_success_rate": 0.95},
+        },
+    }
+    failures = []
+    _check_tool_behavior_regression("validation", report, dict(report), 0.9, failures)
+    assert failures == []
+
+    wrong_class = dict(report, data_class="external")
+    failures = []
+    _check_tool_behavior_regression("validation", wrong_class, report, 0.9, failures)
+    assert any("data class must be synthetic_verified" in item for item in failures)
