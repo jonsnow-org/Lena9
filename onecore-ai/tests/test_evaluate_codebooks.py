@@ -126,3 +126,9 @@ def test_token_weighted_language_loss_rejects_invalid_inputs():
         _token_weighted_mean_loss([2.0], [10, 20])
     with pytest.raises(ValueError, match="positive target-token counts"):
         _token_weighted_mean_loss([2.0], [0])
+
+
+
+def test_token_weighted_language_loss_rejects_non_finite_losses():
+    with pytest.raises(ValueError, match="record losses must be finite"):
+        _token_weighted_mean_loss([float("nan")], [10])
