@@ -39,7 +39,8 @@ def _records(root):
              "assets": {"image": {"source_asset": f"{split}/raw/image.png"}}},
             {**_external(f"{split}-audio", f"{split}-audio-row"), "id": f"{split}-audio",
              "split": split, "task": "audio_text",
-             "assets": {"audio": {"source_asset": f"{split}/raw/audio.wav",\n                                  "training_asset": f"{split}/processed/audio.wav"}}},
+             "assets": {"audio": {"source_asset": f"{split}/raw/audio.wav",
+                                  "training_asset": f"{split}/processed/audio.wav"}}},
             {**_external(f"{split}-video", f"{split}-video-row"), "id": f"{split}-video",
              "split": split, "task": "video_caption",
              "assets": {"video": {"frames": [f"{split}/frames/0.png", f"{split}/frames/1.png"]}}},
@@ -54,7 +55,8 @@ def test_v3_manifest_requires_external_provenance_raw_assets_and_disjoint_splits
     )
     assert report["passed"]
     assert report["accepted_external_records"] == 15
-    assert report["coverage"]["validation"]["image"] == 1\n    assert f"train/processed/audio.wav" in report["asset_hashes"]
+    assert report["coverage"]["validation"]["image"] == 1
+    assert "train/processed/audio.wav" in report["asset_hashes"]
 
 
 def test_v3_manifest_does_not_count_bootstrap_media(tmp_path):
