@@ -76,7 +76,10 @@ def extract_v2_artifact_manifests(
     data_root.mkdir(parents=True, exist_ok=True)
     temporary: list[Path] = []
     extracted: dict[str, str] = {}
-    with RemoteZip(signed_url) as archive:
+    # GitHub's signed artifact blob accepts explicit byte ranges, but its
+    # storage endpoint may ignore suffix ranges. Force RemoteZip to use HEAD
+    # plus an explicit bytes=start-end request instead of bytes=-N.
+    with RemoteZip(signed_url, support_suffix_range=False) as archive:
         members = select_artifact_members(archive.namelist())
         try:
             for filename, member in members.items():
