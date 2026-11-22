@@ -365,7 +365,7 @@ def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
                         split: str = "validation",
                         data_classes: set[str] | None = None) -> dict[str, Any]:
     root = Path(project_root).resolve()
-    cfg, _, _ = load_config(config_path)
+    cfg, _, raw_cfg = load_config(config_path)
     if split not in {"validation", "test"}:
         raise ValueError("evaluation split must be validation or test")
     split_manifest = root / "data" / f"{split}.jsonl"
@@ -536,6 +536,7 @@ def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
         "per_task_target_tokens": token_counts,
         "modalities_tested": modalities_tested,
         "quality_thresholds": threshold_doc.get("thresholds", {}),
+        "text_loss_regression_max": raw_cfg.get("evaluation", {}).get("text_loss_regression_max"),
         "split_manifest_sha256": split_manifest_sha256,
         "split_manifest_records": len(records),
         "total_manifest_records": data_report["records"],
@@ -566,8 +567,8 @@ def _check_tool_behavior(
         failures.append(f"{prefix} verified tool-execution report is missing")
         return
     sample_count = report.get("sample_count")
-    if not isinstance(sample_count, int) or sample_count < 10:
-        failures.append(f"{prefix} tool behaviour has fewer than 10 held-out examples")
+    if not isinstance(sample_count, int) or sample_count < 16:
+        failures.append(f"{prefix} tool behaviour has fewer than 16 held-out examples")
     rate = report.get("execution_success_rate")
     if not isinstance(rate, (int, float)) or not math.isfinite(rate) or not 0 <= rate <= 1:
         failures.append(f"{prefix} tool execution success rate is missing or invalid")
@@ -588,8 +589,8 @@ def _check_tool_behavior(
             failures.append(f"{prefix} tool workflow step {step} was not evaluated")
             continue
         step_count = step_report.get("sample_count")
-        if not isinstance(step_count, int) or step_count < 1:
-            failures.append(f"{prefix} tool workflow step {step} has no held-out examples")
+        if not isinstance(step_count, int) or step_count < 4:
+            failures.append(f"{prefix} tool workflow step {step} has fewer than 4 held-out examples")
         step_rate = step_report.get("execution_success_rate")
         if not isinstance(step_rate, (int, float)) or not math.isfinite(step_rate) or not 0 <= step_rate <= 1:
             failures.append(f"{prefix} tool workflow step {step} success rate is missing or invalid")
@@ -662,6 +663,42 @@ def _check_tool_behavior_regression(
             before.get("execution_success_rate"),
         )
 
+
+
+def _check_text_loss_regression(
+    prefix: str,
+    current: dict[str, Any] | None,
+    baseline: dict[str, Any] | None,
+    max_ratio: Any,
+    failures: list[str],
+) -> None:
+    """Enforce the v2 text-loss ceiling against the same held-out examples."""
+    if not isinstance(current, dict) or not isinstance(baseline, dict):
+        failures.append(f"{prefix} text-loss baseline/current evaluation is missing")
+        return
+    if current.get("split") != baseline.get("split"):
+        failures.append(f"{prefix} text-loss baseline uses a different split")
+        return
+    for key in ("tokenizer_sha256", "split_manifest_sha256", "selected_records_sha256"):
+        value = current.get(key)
+        if not isinstance(value, str) or not value or baseline.get(key) != value:
+            failures.append(f"{prefix} text-loss baseline does not match current {key}")
+    current_loss = current.get("text_loss")
+    baseline_loss = baseline.get("text_loss")
+    if not isinstance(max_ratio, (int, float)) or not math.isfinite(max_ratio) or max_ratio < 1:
+        failures.append("evaluation.text_loss_regression_max must be a finite ratio >= 1")
+        return
+    if not isinstance(current_loss, (int, float)) or not math.isfinite(current_loss) or current_loss <= 0:
+        failures.append(f"{prefix} current text loss is missing or invalid")
+        return
+    if not isinstance(baseline_loss, (int, float)) or not math.isfinite(baseline_loss) or baseline_loss <= 0:
+        failures.append(f"{prefix} baseline text loss is missing or invalid")
+        return
+    if current_loss > baseline_loss * float(max_ratio) + 1e-12:
+        failures.append(
+            f"{prefix} text loss {current_loss:.6g} exceeds "
+            f"{float(max_ratio):.4g} × baseline {baseline_loss:.6g}"
+        )
 
 def _check_codebook_thresholds(prefix: str, usage: dict[str, Any],
                                thresholds: dict[str, Any], failures: list[str],
@@ -807,9 +844,19 @@ def promotion_gate(metrics: dict[str, Any], baseline: dict[str, Any] | None = No
             "test_min_tool_execution_success_rate", failures,
         )
 
-    if baseline:
-        baseline_test = baseline.get("test_metrics") if isinstance(baseline.get("test_metrics"), dict) else {}
+    if not isinstance(baseline, dict):
+        failures.append("an approved-comparison baseline evaluation is required for text-loss and tool-regression checks")
+    else:
+        baseline_test = baseline.get("test_metrics") if isinstance(baseline.get("test_metrics"), dict) else None
         regression_floor = thresholds.get("tool_behavior_regression_floor")
+        text_regression_max = metrics.get("text_loss_regression_max")
+        _check_text_loss_regression(
+            "validation", metrics, baseline, text_regression_max, failures,
+        )
+        _check_text_loss_regression(
+            "test", test_metrics if isinstance(test_metrics, dict) else None,
+            baseline_test, text_regression_max, failures,
+        )
         _check_tool_behavior_regression(
             "validation", metrics.get("tool_behavior"), baseline.get("tool_behavior"),
             regression_floor, failures,
@@ -817,7 +864,8 @@ def promotion_gate(metrics: dict[str, Any], baseline: dict[str, Any] | None = No
         _check_tool_behavior_regression(
             "test",
             test_metrics.get("tool_behavior") if isinstance(test_metrics, dict) else None,
-            baseline_test.get("tool_behavior"), regression_floor, failures,
+            baseline_test.get("tool_behavior") if isinstance(baseline_test, dict) else None,
+            regression_floor, failures,
         )
     return not failures, failures
 
