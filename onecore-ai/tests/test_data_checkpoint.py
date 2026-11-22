@@ -316,7 +316,7 @@ def test_split_disjointness_rejects_same_external_source_row_in_two_splits(tmp_p
 
 
 def test_external_provenance_audit_checks_all_splits_without_rehashing_assets(tmp_path):
-    from onecore.data import validate_external_provenance_disjointness
+    from onecore.data import DatasetError, validate_external_provenance_disjointness
 
     data_root = tmp_path / "data"
     (data_root / "assets").mkdir(parents=True)
@@ -349,5 +349,5 @@ def test_external_provenance_audit_checks_all_splits_without_rehashing_assets(tm
     (data_root / "test.jsonl").write_text(
         json.dumps(manifests["test"][0]) + "\\n", encoding="utf-8"
     )
-    with pytest.raises(Exception, match="identical external source row"):
+    with pytest.raises(DatasetError, match="identical external source row"):
         validate_external_provenance_disjointness(tmp_path)

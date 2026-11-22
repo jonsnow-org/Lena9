@@ -188,7 +188,7 @@ def validate_external_provenance_disjointness(project_root: str | Path) -> dict[
 
     if errors:
         raise DatasetError(
-            "external source-row provenance audit failed:\\n- " + "\\n- ".join(errors[:50])
+            "external source-row provenance audit failed:\n- " + "\n- ".join(errors[:50])
         )
     return {
         "valid": True,

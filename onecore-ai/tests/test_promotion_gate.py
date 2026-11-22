@@ -104,6 +104,12 @@ def _metrics(data_verified=True, data_kind="external_only"):
         "data_kind": data_kind,
         "data_classes": ["external"] if data_kind == "external_only" else [data_kind],
         "data_verified_for_promotion": data_verified,
+        "external_provenance_audit": {
+            "valid": True,
+            "external_records_by_split": {"train": 100, "validation": 10, "test": 10},
+            "unique_source_rows": 120,
+            "cross_split_source_row_overlaps": 0,
+        },
         "modalities_tested": list(REQUIRED_METRICS), "quality_thresholds": thresholds,
         "split_manifest_sha256": validation_hash, "test_manifest_sha256": test_hash,
         "text_loss_regression_max": 1.02,
@@ -312,3 +318,11 @@ def test_text_loss_regression_allows_exactly_two_percent_but_rejects_more():
     assert not passed
     assert any("validation text loss" in item and "exceeds 1.02" in item for item in failures)
     assert any("test text loss" in item and "exceeds 1.02" in item for item in failures)
+
+
+def test_promotion_requires_external_source_row_provenance_audit():
+    metrics = _metrics(data_verified=True)
+    metrics.pop("external_provenance_audit")
+    passed, failures = promotion_gate(metrics, baseline=_metrics(data_verified=True))
+    assert not passed
+    assert any("external source-row provenance audit is missing or invalid" in item for item in failures)
