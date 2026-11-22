@@ -107,3 +107,8 @@ Tool inference now permits the trained `TOOL_END` and `EOS` markers and stops ge
 ### Fixed-case regression gate for tool training
 
 When a prior full evaluation is preserved as `run-state/evaluation.baseline.json`, promotion compares the candidate and baseline on the exact same deterministic held-out tool examples. The sample-set fingerprint, protocol, sample count, and per-step sample counts must match. Overall execution success and each step's success rate must retain at least 90% of the baseline; otherwise promotion is blocked even when language loss passes. The first from-scratch run can be evaluated without a baseline, but later candidate checkpoints should carry the previous approved evaluation into this path.
+
+
+### Verified tool regression is an engineering-only track
+
+Validation/test loss, language, modality, reconstruction and T-LDM metrics remain external-only. The tool-execution regression check is deliberately separate: it uses deterministic `synthetic_verified` two-step episodes solely as an engineering test, never as optimizer input or as external quality data. The report labels this track `data_class=synthetic_verified` and `evaluation_role=engineering_only`; its 0.9 regression floor compares the same fixed sample IDs and both workflow steps across checkpoints.
