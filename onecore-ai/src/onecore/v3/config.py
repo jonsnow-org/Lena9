@@ -21,6 +21,7 @@ class V3Config:
     audio_codebook_size: int = 1024
     audio_quantizer_stages: int = 8
     temporal_layers: int = 2
+    max_image_context_tokens: int = 256
     dropout: float = 0.0
 
     def __post_init__(self) -> None:
@@ -33,7 +34,7 @@ class V3Config:
         if self.patch_size < 2 or min(
             self.audio_latent_channels, self.audio_hidden_channels,
             self.audio_codebook_size, self.audio_quantizer_stages, self.layers,
-            self.temporal_layers,
+            self.temporal_layers, self.max_image_context_tokens,
         ) < 1:
             raise ValueError("codec and layer dimensions must be positive")
         if not 0.0 <= self.dropout < 1.0:
