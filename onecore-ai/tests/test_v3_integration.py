@@ -108,3 +108,19 @@ def test_v3_recurrent_core_reuses_the_same_unique_blocks_across_cycles():
     assert core.cycles == 3
     output = core(torch.randn(1, 7, 32), causal=True)
     assert output.shape == (1, 7, 32)
+
+def test_v3_streams_full_model_video_across_multiple_temporal_windows():
+    torch.manual_seed(41)
+    model = _tiny_v3()
+    video = torch.rand(1, 13, 3, 24, 32)
+    timestamps = torch.arange(13, dtype=torch.float32).unsqueeze(0) / 12.0
+
+    chunks = list(model.forward_video_chunks(
+        video, timestamps=timestamps, frame_chunk_size=5
+    ))
+
+    assert [chunk.shape[1] for chunk in chunks] == [5, 5, 3]
+    reconstructed = torch.cat(chunks, dim=1)
+    assert reconstructed.shape == video.shape
+    assert sum(chunk.shape[1] for chunk in chunks) == 13
+    assert all(torch.isfinite(chunk).all() for chunk in chunks)
