@@ -22,7 +22,6 @@ on:
 
 permissions:
   contents: read
-  actions: read
 
 concurrency:
   group: onecore-ci-${{ github.ref }}
@@ -411,89 +410,3 @@ jobs:
           assert "setup_environment" in str(train_action_steps)
           print("OneCore uses one persistent training runner, one corpus restore, ten durable chained sessions, and an isolated five-family data gate.")
           PY
-
-
-  v3-corpus-restore:
-    name: Restore and validate V3 corpus from existing V2 artifact
-    if: github.ref == 'refs/heads/research/onecore-v3-implementation' && contains(github.event.head_commit.message, '[onecore-v3-corpus-restore]')
-    runs-on: ubuntu-24.04
-    timeout-minutes: 330
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-        with:
-          ref: ${{ github.ref }}
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
-
-      - name: Install CPU-only PyTorch
-        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
-
-      - name: Install OneCore and range-archive dependencies
-        run: python -m pip install --upgrade pip && python -m pip install -e "onecore-ai[dev]"
-
-      - name: Restore the exact V2 source registry snapshot
-        run: |
-          git fetch --no-tags --depth=1 origin 5489900c3662082ad39efbfac5b6a2c7d22a7c4c
-          git show 5489900c3662082ad39efbfac5b6a2c7d22a7c4c:onecore-ai/data/sources.yaml > "$RUNNER_TEMP/onecore-v2-sources.yaml"
-
-      - name: Convert the existing corpus with HTTP range reads
-        env:
-          PYTHONPATH: onecore-ai/src
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HF_HUB_DISABLE_TELEMETRY: "1"
-        run: |
-          python -m onecore.v3.cli \
-            --artifact-id 14715699177 \
-            --github-repo jonsnow-org/Lena9 \
-            --source-registry "$RUNNER_TEMP/onecore-v2-sources.yaml" \
-            --output-root "$RUNNER_TEMP/onecore-v3-corpus" \
-            --report-output "$RUNNER_TEMP/onecore-v3-conversion-report.json" \
-            --max-scan-rows-per-source-split 100000
-
-      - name: Publish conversion gate result
-        id: conversion-summary
-        if: always()
-        run: |
-          python - <<'PY'
-          import json, os
-          from pathlib import Path
-          path = Path(os.environ["RUNNER_TEMP"]) / "onecore-v3-conversion-report.json"
-          passed = False
-          if path.is_file():
-              report = json.loads(path.read_text(encoding="utf-8"))
-              passed = bool(report.get("manifest_gate", {}).get("passed")) and not bool(report.get("blocked"))
-              print({
-                  "blocked": report.get("blocked"),
-                  "converted_records": report.get("converted_records"),
-                  "gate_passed": passed,
-                  "coverage": report.get("manifest_gate", {}).get("coverage"),
-                  "missing_media": report.get("missing_media_acquisition", {}).get("remaining_deficits")
-                      if report.get("missing_media_acquisition") else None,
-              })
-          else:
-              print("Conversion report was not produced.")
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
-              handle.write(f"gate_passed={str(passed).lower()}\n")
-          PY
-
-      - name: Upload V3 conversion report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: onecore-v3-conversion-report-${{ github.run_id }}
-          path: ${{ runner.temp }}/onecore-v3-conversion-report.json
-          if-no-files-found: warn
-          retention-days: 30
-
-      - name: Upload V3 corpus only after external-only gate passes
-        if: steps.conversion-summary.outputs.gate_passed == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: onecore-v3-corpus-${{ github.run_id }}
-          path: ${{ runner.temp }}/onecore-v3-corpus/v3
-          if-no-files-found: error
-          retention-days: 30

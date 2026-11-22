@@ -43,12 +43,26 @@ def _sha256_text(value: str) -> str:
 
 
 def _default_source_loader(repo: str, config: str | None, split: str, revision: str):
+    """Open a pinned streaming split without invoking TorchCodec media decoders.
+
+    The converter needs original encoded bytes/paths, not in-memory decoded
+    AudioDecoder or VideoDecoder objects. IterableDataset.decode(False) returns
+    those source payloads and keeps decoding under OneCore's explicit ingest
+    pipeline (soundfile/resample_poly for audio; imageio/FFmpeg for video).
+    """
     kwargs: dict[str, Any] = {
         "path": repo, "split": split, "streaming": True, "revision": revision,
     }
     if config:
         kwargs["name"] = config
-    return load_dataset(**kwargs)
+    stream = load_dataset(**kwargs)
+    disable_decoding = getattr(stream, "decode", None)
+    if not callable(disable_decoding):
+        raise RuntimeError(
+            "pinned Hugging Face source must be a streaming IterableDataset "
+            "that supports decode(False); refusing an implicit TorchCodec decode"
+        )
+    return disable_decoding(False)
 
 
 def _safe_image_value(value: Any, source: dict[str, Any]) -> Any:

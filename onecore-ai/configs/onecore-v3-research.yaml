@@ -35,8 +35,6 @@ training:
   status: joint_objective_and_single_step_prototype_available
   multi_session_workflow: not_implemented
   checkpoint_resume: not_implemented
-  corpus_converter: selective_pinned_source_v2_to_v3_implemented_not_run
-  external_only_100_10_10_gate: implemented_not_run_on_full_corpus
   discriminator_optimizer_schedule: not_implemented
   optimizer: null
   total_steps: null

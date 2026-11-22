@@ -7,8 +7,10 @@ import yaml
 from PIL import Image
 
 from onecore.acquire import _row_identity
+from onecore.v3 import converter as converter_module
 from onecore.v3.converter import (
-    acquire_missing_media_rows, convert_v2_corpus, restore_v2_media_records, write_v3_manifests,
+    _default_source_loader, acquire_missing_media_rows, convert_v2_corpus,
+    restore_v2_media_records, write_v3_manifests,
 )
 
 
@@ -248,3 +250,45 @@ def test_v3_converter_searches_all_nonstandard_source_splits_for_legacy_rows(tmp
     assert calls == ["catalog-a", "catalog-b"]
     assert restored[0]["source_hf_split"] == "*"
     assert report["converted_records"] == 1
+
+
+
+def test_v3_default_source_loader_disables_automatic_media_decoding(monkeypatch):
+    calls = {"load": None, "decode": []}
+
+    class FakeStreamingDataset:
+        def decode(self, enabled=True):
+            calls["decode"].append(enabled)
+            return self
+
+    stream = FakeStreamingDataset()
+
+    def fake_load_dataset(**kwargs):
+        calls["load"] = kwargs
+        return stream
+
+    monkeypatch.setattr(converter_module, "load_dataset", fake_load_dataset)
+    result = _default_source_loader("org/pinned-media", "main", "train", REVISION)
+
+    assert result is stream
+    assert calls["decode"] == [False]
+    assert calls["load"] == {
+        "path": "org/pinned-media",
+        "name": "main",
+        "split": "train",
+        "streaming": True,
+        "revision": REVISION,
+    }
+
+
+def test_v3_default_source_loader_fails_closed_without_stream_decode_control(monkeypatch):
+    class UnsupportedStream:
+        pass
+
+    monkeypatch.setattr(converter_module, "load_dataset", lambda **_: UnsupportedStream())
+    try:
+        _default_source_loader("org/pinned-media", None, "train", REVISION)
+    except RuntimeError as exc:
+        assert "decode(False)" in str(exc)
+    else:
+        raise AssertionError("source loader must not silently invoke automatic TorchCodec decoding")

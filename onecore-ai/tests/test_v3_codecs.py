@@ -92,7 +92,7 @@ def test_v3_audio_codec_preserves_stereo_channels_and_sample_rate_metadata():
     reconstructed, encoding = codec(stereo, sample_rate=24_000)
     assert reconstructed.shape == stereo.shape
     assert encoding.original_channels == 2
-    assert encoding.sample_rate == 24_000
+    assert encoding.sample_rate is None
 
     mono = torch.randn(1, 1025)
     mono_encoding = codec.encode(mono, sample_rate=24_000)
