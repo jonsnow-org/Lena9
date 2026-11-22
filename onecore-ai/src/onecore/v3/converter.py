@@ -19,7 +19,8 @@ from datasets import load_dataset
 from huggingface_hub import hf_hub_download
 
 from onecore.acquire import _nested, _resolve_video_asset, _row_identity
-from onecore.data import external_record_is_trainable, has_immutable_external_provenance
+from onecore.data import external_record_is_trainable, has_immutable_external_provenance, iter_manifest
+from .manifest import validate_v3_manifest
 from .media_ingest import (
     preserve_audio_payload,
     preserve_image_payload,
@@ -214,6 +215,14 @@ def restore_v2_media_records(
         if not bool(source.get("enabled", True)):
             skipped["source_disabled"] += 1
             continue
+        allowed_adapters = {
+            "image": {"image", "image_url", "image_base64"},
+            "audio": {"audio"},
+            "video": {"video", "video_url", "video_repo_file"},
+        }
+        if str(source.get("adapter", "")) not in allowed_adapters[MEDIA_TASKS[task]]:
+            skipped["source_adapter_mismatch"] += 1
+            continue
         if not revision or len(revision) not in (40, 64) or any(c not in "0123456789abcdef" for c in revision.lower()):
             skipped["source_revision_not_pinned"] += 1
             continue
@@ -332,3 +341,48 @@ def write_v3_manifests(records: Iterable[dict[str, Any]], output_root: str | Pat
             path.unlink(missing_ok=True)
         raise
     return {split: str(path) for split, path in destinations.items()}
+
+
+
+def convert_v2_corpus(
+    v2_data_root: str | Path,
+    sources_registry: str | Path,
+    output_root: str | Path,
+    *,
+    target_audio_rate: int = 24_000,
+    minimum_train: int = 100,
+    minimum_holdout: int = 10,
+    source_loader: Callable[[str, str | None, str, str], Iterable[dict[str, Any]]] | None = None,
+) -> dict[str, Any]:
+    """Convert existing V2 split manifests and run the complete V3 external gate.
+
+    v2_data_root must contain train.jsonl, validation.jsonl and test.jsonl.
+    The output is written to output_root/data/{split}.jsonl and its assets folder.
+    A failed quota/provenance/asset gate is returned as blocked; it never starts
+    training or invents records to fill missing modality families.
+    """
+    source_root = Path(v2_data_root).resolve()
+    records: list[dict[str, Any]] = []
+    for split in ("train", "validation", "test"):
+        manifest = source_root / f"{split}.jsonl"
+        if not manifest.is_file():
+            raise FileNotFoundError(f"V2 {split} manifest not found: {manifest}")
+        records.extend(iter_manifest(manifest))
+
+    destination = Path(output_root).resolve()
+    assets_root = destination / "data" / "assets"
+    converted, report = restore_v2_media_records(
+        records, sources_registry, assets_root,
+        target_audio_rate=target_audio_rate, source_loader=source_loader,
+    )
+    manifest_paths = write_v3_manifests(converted, destination)
+    gate = validate_v3_manifest(
+        converted, assets_root,
+        minimum_train=minimum_train, minimum_holdout=minimum_holdout,
+    )
+    report.update({
+        "manifest_paths": manifest_paths,
+        "manifest_gate": gate,
+        "blocked": bool(report.get("blocked")) or not bool(gate["passed"]),
+    })
+    return report
