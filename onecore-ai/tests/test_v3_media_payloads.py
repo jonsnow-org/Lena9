@@ -15,8 +15,13 @@ def test_v3_image_payload_supports_bytes_and_decoded_arrays(tmp_path):
     from_array = preserve_image_payload(
         np.zeros((31, 47, 3), dtype=np.uint8), tmp_path / "assets", "image-array"
     )
+    from_dataset_array = preserve_image_payload(
+        {"array": np.zeros((33, 49, 3), dtype=np.uint8)},
+        tmp_path / "assets", "image-dataset-array",
+    )
     assert (from_bytes["width"], from_bytes["height"]) == (29, 43)
     assert (from_array["width"], from_array["height"]) == (47, 31)
+    assert (from_dataset_array["width"], from_dataset_array["height"]) == (49, 33)
 
 
 def test_v3_audio_payload_supports_bytes_and_array_metadata(tmp_path):
