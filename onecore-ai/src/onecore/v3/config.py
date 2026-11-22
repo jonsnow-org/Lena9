@@ -22,6 +22,7 @@ class V3Config:
     audio_codebook_size: int = 1024
     audio_quantizer_stages: int = 8
     audio_channels: int = 2
+    audio_sample_rate: int = 24_000
     temporal_layers: int = 2
     max_image_context_tokens: int = 256
     max_video_context_tokens: int = 256
@@ -40,12 +41,14 @@ class V3Config:
             raise ValueError("width must be divisible by attention_heads")
         if self.patch_size < 2 or min(
             self.audio_latent_channels, self.audio_hidden_channels,
-            self.audio_codebook_size, self.audio_quantizer_stages, self.audio_channels, self.layers,
+            self.audio_codebook_size, self.audio_quantizer_stages, self.audio_channels, self.audio_sample_rate, self.layers,
             self.temporal_layers, self.cycles, self.max_image_context_tokens,
             self.max_video_context_tokens, self.max_flow_context_tokens,
             self.temporal_window_frames, self.video_generation_chunk_frames,
         ) < 1 or self.temporal_memory_frames < 0:
             raise ValueError("codec and layer dimensions must be positive")
+        if self.audio_sample_rate < 1:
+            raise ValueError("audio_sample_rate must be positive")
         if self.audio_channels not in (1, 2):
             raise ValueError("audio_channels must be 1 (mono) or 2 (stereo)")
         if not 0.0 <= self.dropout < 1.0:
