@@ -32,18 +32,21 @@ class SharedSemanticCore(nn.Module):
     still require chunking, memory measurements, and an efficient-attention plan.
     """
 
-    def __init__(self, width: int = 512, layers: int = 8,
+    def __init__(self, width: int = 512, layers: int = 4, cycles: int = 3,
                  attention_heads: int = 8, dropout: float = 0.0) -> None:
         super().__init__()
         if width % 2 or width % attention_heads:
             raise ValueError("width must be even and divisible by attention_heads")
-        if layers < 1:
-            raise ValueError("layers must be positive")
-        encoder_layer = nn.TransformerEncoderLayer(
-            d_model=width, nhead=attention_heads, dim_feedforward=4 * width,
-            dropout=dropout, batch_first=True, norm_first=True, activation="gelu",
-        )
-        self.layers = nn.TransformerEncoder(encoder_layer, num_layers=layers)
+        if layers < 1 or cycles < 1:
+            raise ValueError("unique layers and recurrent cycles must be positive")
+        self.layers = nn.ModuleList([
+            nn.TransformerEncoderLayer(
+                d_model=width, nhead=attention_heads, dim_feedforward=4 * width,
+                dropout=dropout, batch_first=True, norm_first=True, activation="gelu",
+            )
+            for _ in range(layers)
+        ])
+        self.cycles = cycles
         self.norm = nn.LayerNorm(width)
         self.width = width
 
@@ -64,7 +67,11 @@ class SharedSemanticCore(nn.Module):
                 ),
                 diagonal=1,
             )
-        return self.norm(self.layers(latents + positions.unsqueeze(0), mask=mask))
+        hidden = latents + positions.unsqueeze(0)
+        for _ in range(self.cycles):
+            for block in self.layers:
+                hidden = block(hidden, src_mask=mask)
+        return self.norm(hidden)
 
 
 class OneCoreV3(nn.Module):
@@ -77,7 +84,7 @@ class OneCoreV3(nn.Module):
     """
 
     def __init__(self, *, text_vocab_size: int = 32_000, width: int = 512,
-                 layers: int = 8, attention_heads: int = 8, patch_size: int = 16,
+                 layers: int = 4, cycles: int = 3, attention_heads: int = 8, patch_size: int = 16,
                  audio_latent_channels: int = 128, audio_hidden_channels: int = 256,
                  audio_codebook_size: int = 1024, audio_quantizer_stages: int = 8,
                  temporal_layers: int = 2, dropout: float = 0.0,
@@ -97,11 +104,15 @@ class OneCoreV3(nn.Module):
         self.video_generation_chunk_frames = video_generation_chunk_frames
         self.text_embedding = nn.Embedding(text_vocab_size, width)
         self.modality_embedding = nn.Embedding(5, width)
-        self.shared_core = SharedSemanticCore(width, layers, attention_heads, dropout)
+        self.shared_core = SharedSemanticCore(width, layers, cycles, attention_heads, dropout)
         self.text_head = nn.Linear(width, text_vocab_size, bias=False)
         self.text_head.weight = self.text_embedding.weight
         self.flow_time = nn.Sequential(nn.Linear(1, width), nn.SiLU(), nn.Linear(width, width))
-        self.flow_velocity_head = nn.Linear(width, width)
+        self.flow_velocity_heads = nn.ModuleDict({
+            "image": nn.Linear(width, width),
+            "audio": nn.Linear(width, width),
+            "video": nn.Linear(width, width),
+        })
 
         self.image_codec = VariableResolutionImageCodec(width, patch_size)
         self.audio_codec = NeuralAudioCodec(
@@ -275,7 +286,10 @@ class OneCoreV3(nn.Module):
             compact_target = target_tokens
         sequence = torch.cat((condition_tokens, compact_target), dim=1)
         hidden = self.shared_core(sequence, causal=False)
-        predicted = self.flow_velocity_head(hidden[:, condition_tokens.shape[1]:])
+        head_name = {1: "image", 2: "audio", 3: "video"}[modality]
+        predicted = self.flow_velocity_heads[head_name](
+            hidden[:, condition_tokens.shape[1]:]
+        )
         if predicted.shape[1] != noisy_latents.shape[1]:
             predicted = F.interpolate(
                 predicted.transpose(1, 2), size=noisy_latents.shape[1],
