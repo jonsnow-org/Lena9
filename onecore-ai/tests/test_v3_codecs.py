@@ -36,7 +36,7 @@ def test_v3_neural_audio_codec_handles_variable_duration_and_exact_length():
     )
     for samples in (257, 1024, 4097):
         waveform = torch.randn(2, samples, requires_grad=True)
-        reconstruction, encoding = codec(waveform)
+        reconstruction, encoding = codec(waveform, sample_rate=24_000)
         assert reconstruction.shape == waveform.shape
         assert encoding.codes.shape[:2] == (2, 3)
         assert encoding.quantized.shape[1] == 16
@@ -89,17 +89,17 @@ def test_v3_audio_codec_preserves_stereo_channels_and_sample_rate_metadata():
         quantizer_stages=3, channels=2,
     )
     stereo = torch.randn(2, 2, 2049)
-    reconstructed, encoding = codec(stereo)
+    reconstructed, encoding = codec(stereo, sample_rate=24_000)
     assert reconstructed.shape == stereo.shape
     assert encoding.original_channels == 2
     assert encoding.sample_rate is None
 
     mono = torch.randn(1, 1025)
-    mono_encoding = codec.encode(mono, sample_rate=44100)
+    mono_encoding = codec.encode(mono, sample_rate=24_000)
     mono_reconstruction = codec.decode(mono_encoding)
     assert mono_reconstruction.shape == (1, 1, 1025)
     assert mono_encoding.original_channels == 1
-    assert mono_encoding.sample_rate == 44100
+    assert mono_encoding.sample_rate == 24_000
 
 
 def test_v3_audio_codec_rejects_invalid_sample_rate_and_channel_count():
@@ -109,7 +109,9 @@ def test_v3_audio_codec_rejects_invalid_sample_rate_and_channel_count():
     with pytest.raises(ValueError, match="sample_rate"):
         codec.encode(torch.randn(1, 1024), sample_rate=0)
     with pytest.raises(ValueError, match="waveform"):
-        codec.encode(torch.randn(1, 3, 1024))
+        codec.encode(torch.randn(1, 3, 1024), sample_rate=24_000)
+    with pytest.raises(ValueError, match="resampled"):
+        codec.encode(torch.randn(1, 1024), sample_rate=44_100)
     with pytest.raises(ValueError, match="mono.*stereo"):
         NeuralAudioCodec(latent_channels=8, hidden_channels=16,
                          codebook_size=16, quantizer_stages=2, channels=3)
