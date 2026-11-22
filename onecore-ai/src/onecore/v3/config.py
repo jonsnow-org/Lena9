@@ -46,6 +46,8 @@ class V3Config:
             self.temporal_window_frames, self.video_generation_chunk_frames,
         ) < 1 or self.temporal_memory_frames < 0:
             raise ValueError("codec and layer dimensions must be positive")
+        if self.audio_channels not in (1, 2):
+            raise ValueError("audio_channels must be 1 (mono) or 2 (stereo)")
         if not 0.0 <= self.dropout < 1.0:
             raise ValueError("dropout must be in [0, 1)")
 
