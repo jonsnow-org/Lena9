@@ -7,7 +7,9 @@ import yaml
 from PIL import Image
 
 from onecore.acquire import _row_identity
-from onecore.v3.converter import (\n    acquire_missing_media_rows, convert_v2_corpus, restore_v2_media_records, write_v3_manifests,\n)
+from onecore.v3.converter import (
+    acquire_missing_media_rows, convert_v2_corpus, restore_v2_media_records, write_v3_manifests,
+)
 
 
 REVISION = "a" * 40
