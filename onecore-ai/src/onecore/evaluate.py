@@ -73,6 +73,8 @@ def _token_weighted_mean_loss(record_losses: list[float], record_token_counts: l
     """Aggregate per-record mean cross-entropy weighted by target-token count."""
     if len(record_losses) != len(record_token_counts):
         raise ValueError("record losses and token counts must have matching lengths")
+    if any(not math.isfinite(loss) for loss in record_losses):
+        raise ValueError("record losses must be finite")
     if not record_losses or any(count <= 0 for count in record_token_counts):
         raise ValueError("token-weighted loss requires records with positive target-token counts")
     total_tokens = sum(record_token_counts)
