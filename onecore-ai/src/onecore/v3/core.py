@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import torch
 from torch import nn
+from torch.nn import functional as F
 
 from .audio import AudioEncoding, NeuralAudioCodec
 from .video import TemporalVideoCodec, VideoEncoding
@@ -79,11 +80,15 @@ class OneCoreV3(nn.Module):
                  layers: int = 8, attention_heads: int = 8, patch_size: int = 16,
                  audio_latent_channels: int = 128, audio_hidden_channels: int = 256,
                  audio_codebook_size: int = 1024, audio_quantizer_stages: int = 8,
-                 temporal_layers: int = 2, dropout: float = 0.0) -> None:
+                 temporal_layers: int = 2, dropout: float = 0.0,
+                 max_image_context_tokens: int = 256) -> None:
         super().__init__()
         if text_vocab_size < 2:
             raise ValueError("text_vocab_size must be at least two")
+        if max_image_context_tokens < 1:
+            raise ValueError("max_image_context_tokens must be positive")
         self.width = width
+        self.max_image_context_tokens = max_image_context_tokens
         self.text_embedding = nn.Embedding(text_vocab_size, width)
         self.modality_embedding = nn.Embedding(5, width)
         self.shared_core = SharedSemanticCore(width, layers, attention_heads, dropout)
@@ -111,11 +116,30 @@ class OneCoreV3(nn.Module):
 
     def forward_image(self, images: torch.Tensor) -> tuple[torch.Tensor, ImageEncoding]:
         encoding = self.image_codec.encode(images)
-        shared = self.shared_core(
-            encoding.tokens + self.modality_embedding.weight[1], causal=False
+        batch = encoding.tokens.shape[0]
+        local = encoding.tokens.reshape(
+            batch, encoding.grid_height, encoding.grid_width, self.width
+        ).permute(0, 3, 1, 2)
+        grid_height, grid_width = encoding.grid_height, encoding.grid_width
+        scale = min(1.0, (self.max_image_context_tokens / (grid_height * grid_width)) ** 0.5)
+        context_height = max(1, int(grid_height * scale))
+        context_width = max(1, min(grid_width, self.max_image_context_tokens // context_height))
+        context = F.adaptive_avg_pool2d(local, (context_height, context_width))
+        context_tokens = context.flatten(2).transpose(1, 2)
+        shared_context = self.shared_core(
+            context_tokens + self.modality_embedding.weight[1], causal=False
         )
+        shared_grid = shared_context.transpose(1, 2).reshape(
+            batch, self.width, context_height, context_width
+        )
+        broadcast = F.interpolate(
+            shared_grid, size=(grid_height, grid_width), mode="bilinear", align_corners=False
+        )
+        processed_tokens = (
+            local + broadcast
+        ).permute(0, 2, 3, 1).reshape(batch, grid_height * grid_width, self.width)
         processed = ImageEncoding(
-            shared, encoding.grid_height, encoding.grid_width,
+            processed_tokens, grid_height, grid_width,
             encoding.image_height, encoding.image_width,
         )
         return self.image_codec.decode(processed), processed
