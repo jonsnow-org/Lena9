@@ -2,7 +2,9 @@ import numpy as np
 import soundfile as sf
 from PIL import Image
 
-from onecore.v3.media_ingest import (\n    preserve_audio_payload, preserve_audio_source, preserve_image_source, resample_audio_source,\n)
+from onecore.v3.media_ingest import (
+    preserve_audio_payload, preserve_audio_source, preserve_image_source, resample_audio_source,
+)
 
 
 def test_v3_image_ingest_preserves_native_dimensions_and_original_asset(tmp_path):
