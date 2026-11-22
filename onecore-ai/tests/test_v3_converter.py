@@ -223,3 +223,28 @@ def test_v3_converter_acquires_only_missing_image_holdouts_from_pinned_native_sp
     assert len(restored) == 2
     assert all(row["assets"]["image"]["source_asset"] for row in restored)
     assert restore_report["converted_records"] == 2
+
+
+
+def test_v3_converter_searches_all_nonstandard_source_splits_for_legacy_rows(tmp_path):
+    row = {"id": "wavcaps-like-image", "image": Image.new("RGB", (18, 19), (7, 8, 9))}
+    record = _record("multi-split-source", row, "image_reconstruction", "multi-split-row")
+    registry = tmp_path / "sources.yaml"
+    _write_registry(registry, [{
+        "id": "multi-split-source", "repo": "org/multi-split", "config": "default",
+        "hf_splits": ["catalog-a", "catalog-b"], "adapter": "image",
+        "image_field": "image", "split_strategy": "hash", "enabled": True,
+    }])
+    calls = []
+
+    def loader(repo, config, split, revision):
+        calls.append(split)
+        return [] if split == "catalog-a" else [row]
+
+    restored, report = restore_v2_media_records(
+        [record], registry, tmp_path / "assets", source_loader=loader,
+    )
+    assert len(restored) == 1
+    assert calls == ["catalog-a", "catalog-b"]
+    assert restored[0]["source_hf_split"] == "*"
+    assert report["converted_records"] == 1
