@@ -235,3 +235,12 @@ Added `src/onecore/v3/losses.py` with:
 - patch-image and multi-scale waveform discriminators with hinge objectives.
 
 Added tests for all these loss paths and a seven-frame GIF ingestion test proving the video source adapter saves all seven frames and does not apply a four-frame cap. CI Run #477 is executing against this commit; results are pending.
+
+
+### Bounded long-video and generation context update — commit `991980d8964e762fa8ed6e437f208f2d50329c4b`
+
+The V3 temporal path now processes video in causal windows (default 32 frames) while carrying a compact detached memory (default 4 frames) between windows. Shared global video context and flow-attention context each have explicit 256-token budgets. Video generation exposes `generate_video_chunks()` to yield decoded chunks with timestamp conditioning and compact latent history; `generate_video()` is a convenience wrapper that concatenates those chunks in memory.
+
+Run #480 has passed compilation, the full unit/regression suite, and the v2 architecture/FLOPs checks; the remaining notebook and streaming checks are still running. The preceding #477 CI run passed all 173 tests and all workflow/notebook checks.
+
+This is bounded-window temporal processing, not full-context KV caching. The detached memory intentionally truncates backpropagation across windows; quality and long-range temporal consistency remain unmeasured.
