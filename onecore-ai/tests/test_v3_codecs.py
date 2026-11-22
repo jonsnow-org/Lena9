@@ -80,3 +80,33 @@ def test_v3_video_temporal_attention_is_causal():
         second = codec.encode(changed_future)
 
     assert torch.allclose(first.tokens[:, :-1], second.tokens[:, :-1], atol=1e-6, rtol=1e-6)
+
+
+def test_v3_audio_codec_preserves_stereo_channels_and_sample_rate_metadata():
+    torch.manual_seed(43)
+    codec = NeuralAudioCodec(
+        latent_channels=16, hidden_channels=24, codebook_size=32,
+        quantizer_stages=3, channels=2,
+    )
+    stereo = torch.randn(2, 2, 2049)
+    reconstructed, encoding = codec(stereo)
+    assert reconstructed.shape == stereo.shape
+    assert encoding.original_channels == 2
+    assert encoding.sample_rate is None
+
+    mono = torch.randn(1, 1025)
+    mono_encoding = codec.encode(mono, sample_rate=44100)
+    mono_reconstruction = codec.decode(mono_encoding)
+    assert mono_reconstruction.shape == (1, 1, 1025)
+    assert mono_encoding.original_channels == 1
+    assert mono_encoding.sample_rate == 44100
+
+
+def test_v3_audio_codec_rejects_invalid_sample_rate_and_channel_count():
+    import pytest
+    codec = NeuralAudioCodec(latent_channels=8, hidden_channels=16,
+                             codebook_size=16, quantizer_stages=2, channels=2)
+    with pytest.raises(ValueError, match="sample_rate"):
+        codec.encode(torch.randn(1, 1024), sample_rate=0)
+    with pytest.raises(ValueError, match="waveform"):
+        codec.encode(torch.randn(1, 3, 1024))
