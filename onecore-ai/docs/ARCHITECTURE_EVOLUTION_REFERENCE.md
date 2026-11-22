@@ -607,3 +607,15 @@ Follow-up to the previous note: Run #579 (ID `45058144645`) is now progressing o
 This is the first run in which the decoder preflight is successful and the pinned V2 media converter has actually started. Keep the V3 branch frozen until Run #579 concludes. Inspect the JSON report and independently confirm all five family/split quotas, raw media paths, 24 kHz derivatives, SHA256 integrity, and split disjointness before acknowledging corpus promotion. If any family fails, use the report's exact source errors to fix only the affected media adapter; do not reacquire completed text/tool data.
 
 Run #55 (ID `45017683783`) continues its independent validation/test evaluation-only job, with no optimizer updates. `main` remains `0b5ec69e839bfc6086a358511b54649b03c7be9a`.
+
+
+### Run #579 exact verification evidence — 2026-11-22
+
+The completed Verify job in Run #579 (ID `45058144645`, V3 head `26d00bf3bc37007e424c0f338635b8f3ca07d04e`) produced the following explicit evidence:
+- **208 tests passed, 9 warnings**.
+- V3 report: 39,906,568 trainable parameters; config SHA256 `6c879331c75da434c58680050f94035dc15626e7af4847db1b36e055c47d7708`; FP32 parameter bytes 159,626,272; FP16 bytes 79,813,136; AdamW FP32 moments estimate 319,252,544 bytes. This is not measured peak RAM.
+- V2 specification/FLOPs: exact 57,579,201 parameters, vocab 5,144, hidden 2,730. Random-init reference cross-entropy `ln(5144)=8.545586...`; one-step smoke observed 8.37449 nats. Joint FLOPs checks: T=128 1.296720 TF; T=512 5.258828 TF; text T=128 1.037376 TF.
+- FineWeb-2 Arabic `arb_Arab` exact cursor resume returned `resume_exact=True` at pinned revision `af9c13333eb981300149d5ca60a8e9d659b276b9`.
+- Compile, 6 notebooks checks/preflights, smoke training, workflow isolation all passed.
+
+The same Run #579 restore job has successfully passed FFmpeg install, CPU-only PyTorch install, optional dependency install, TorchCodec CPU-wheel installation, decoder preflight (`torch.cuda` absent; both decoder classes importable), and pinned source-registry restore. The real V2-to-V3 corpus conversion is still in progress at step 10. No report artifact or V3 corpus artifact is yet available; no external 100/10/10 media-gate success is claimed.
