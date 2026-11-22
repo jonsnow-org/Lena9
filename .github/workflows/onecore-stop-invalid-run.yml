@@ -1,0 +1,23 @@
+name: OneCore — stop disqualified continuation
+on:
+  push:
+    branches: [research/onecore-foundation]
+    paths: [".github/workflows/onecore-stop-invalid-run.yml"]
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  stop-invalid-run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Cancel the disqualified session-6 continuation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          gh api --method POST "/repos/${GH_REPOSITORY}/actions/runs/44983411821/cancel"
+          echo "Requested cancellation of disqualified OneCore run 44983411821."
