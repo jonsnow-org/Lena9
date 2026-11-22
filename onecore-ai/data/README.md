@@ -50,3 +50,8 @@ Only records classified as `external` are used to fit the tokenizer or enter opt
 
 Bootstrap, synthetic, and owner-curated records may remain in the repository for engineering smoke tests and diagnostics, but they are excluded from the real tokenizer corpus and optimizer inputs. Image, audio, and video training records still require readable media payloads; metadata-only catalogue rows remain outside the training manifests until their real payload is available. Validation and test stay held out and are never used for tokenizer fitting or gradient updates.
 
+
+
+## Immutable external provenance
+
+Every externally imported manifest row must retain a non-empty `source_id`, a pinned immutable `source_revision` (40–64 hexadecimal characters), and a 64-character `source_row_id_sha256`. Manifest validation rejects missing or malformed provenance, and split-integrity validation rejects the same source row appearing in more than one of train, validation, or test. These checks do not introduce a license filter and do not rewrite attribution or source-rights metadata.
