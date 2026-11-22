@@ -168,7 +168,7 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
     assert 'native.get("updates", 0)) != expected_updates' in bootstrap
     assert 'report.get("sampled_data_class_counts") != {"external": expected_updates}' in bootstrap
     assert "onecore-state-train-10" in bootstrap
-    assert "Notebook order: 03, 04, 03, 04, 03, 04, 03, 04, 03, 04" in bootstrap
+    assert "Notebook cycle: 03/04 alternating; resume continues from the supplied checkpoint" in bootstrap
     assert "OneCore checkpoint — ${EXPECTED_FINAL_OPTIMIZER_STEP} optimizer steps" in bootstrap
     assert "- Cumulative optimizer steps: ${EXPECTED_FINAL_OPTIMIZER_STEP}" in bootstrap
     assert "- Training sessions: 10 × ${PER_JOB_STEPS} steps" in bootstrap
