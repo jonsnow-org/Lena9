@@ -159,10 +159,10 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
     assert "./.github/actions/onecore-train" in bootstrap
     assert "steps: ${{ needs.prepare.outputs.steps_per_job }}" in bootstrap
     assert bootstrap.count("steps: ${{ needs.prepare.outputs.steps_per_job }}") == 10
-    assert "per_job_steps < 1 or per_job_steps > 250" in bootstrap
+    assert "not 1 <= per_job_steps <= 250" in bootstrap
     assert "sessions_to_run * per_job_steps" in bootstrap
     assert "expected_final_step != resume_optimizer_step + total_optimizer_steps" in bootstrap
-    assert "expected_final_step > 20000" in bootstrap
+    assert "not 1 <= expected_final_step <= 20000" in bootstrap
     assert 'int(report.get("optimizer_step", -1)) != expected_steps' in bootstrap
     assert 'expected = {family: expected_steps for family in ("text", "tool", "image", "audio", "video")}' in bootstrap
     assert 'native.get("updates", 0)) != expected_updates' in bootstrap
