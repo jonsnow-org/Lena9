@@ -170,7 +170,7 @@ def _source_hf_split(record: dict[str, Any], source: dict[str, Any]) -> str:
         return output_split
     if "train" in available:
         return "train"
-    return str(available[0])
+    return "*"
 
 
 def acquire_missing_media_rows(
@@ -427,7 +427,7 @@ def restore_v2_media_records(
         available_splits = source.get("hf_splits") or ["train"]
         if isinstance(available_splits, str):
             available_splits = [available_splits]
-        if hf_split not in available_splits:
+        if hf_split != "*" and hf_split not in available_splits:
             skipped["source_split_not_available"] += 1
             errors.append(f"{record_id}: inferred source split {hf_split!r} is unavailable")
             continue
@@ -446,34 +446,40 @@ def restore_v2_media_records(
             skipped["source_repo_missing"] += len(targets)
             continue
         found: set[str] = set()
-        try:
-            stream = loader(repo, source.get("config"), hf_split, revision)
-            for index, row in enumerate(stream):
-                if not isinstance(row, dict):
-                    continue
-                row_id = _row_identity(row, source_id, index)
-                row_hash = _sha256_text(row_id)
-                if row_hash not in targets or row_hash in found:
-                    continue
-                record = targets[row_hash]
-                try:
-                    converted_record = _rehydrate_record(
-                        record, row, source, root, target_audio_rate
-                    )
-                    converted[record["id"]] = converted_record
-                    found.add(row_hash)
-                except Exception as exc:
-                    errors.append(
-                        f"{record['id']}: media restore failed "
-                        f"({type(exc).__name__}: {str(exc)[:240]})"
-                    )
-                if len(found) == len(targets):
-                    break
-        except Exception as exc:
-            errors.append(
-                f"{source_id}/{hf_split}@{revision[:12]}: source stream failed "
-                f"({type(exc).__name__}: {str(exc)[:240]})"
-            )
+        source_splits = (source.get("hf_splits") or ["train"]) if hf_split == "*" else [hf_split]
+        if isinstance(source_splits, str):
+            source_splits = [source_splits]
+        for source_split in source_splits:
+            try:
+                stream = loader(repo, source.get("config"), str(source_split), revision)
+                for index, row in enumerate(stream):
+                    if not isinstance(row, dict):
+                        continue
+                    row_id = _row_identity(row, source_id, index)
+                    row_hash = _sha256_text(row_id)
+                    if row_hash not in targets or row_hash in found:
+                        continue
+                    record = targets[row_hash]
+                    try:
+                        converted_record = _rehydrate_record(
+                            record, row, source, root, target_audio_rate
+                        )
+                        converted[record["id"]] = converted_record
+                        found.add(row_hash)
+                    except Exception as exc:
+                        errors.append(
+                            f"{record['id']}: media restore failed "
+                            f"({type(exc).__name__}: {str(exc)[:240]})"
+                        )
+                    if len(found) == len(targets):
+                        break
+            except Exception as exc:
+                errors.append(
+                    f"{source_id}/{source_split}@{revision[:12]}: source stream failed "
+                    f"({type(exc).__name__}: {str(exc)[:240]})"
+                )
+            if len(found) == len(targets):
+                break
         missing = len(targets) - len(found)
         if missing:
             skipped["pinned_source_row_not_found"] += missing
