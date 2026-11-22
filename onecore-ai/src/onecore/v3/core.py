@@ -122,7 +122,7 @@ class OneCoreV3(nn.Module):
         ).permute(0, 3, 1, 2)
         grid_height, grid_width = encoding.grid_height, encoding.grid_width
         scale = min(1.0, (self.max_image_context_tokens / (grid_height * grid_width)) ** 0.5)
-        context_height = max(1, int(grid_height * scale))
+        context_height = max(1, min(grid_height, self.max_image_context_tokens, int(grid_height * scale)))
         context_width = max(1, min(grid_width, self.max_image_context_tokens // context_height))
         context = F.adaptive_avg_pool2d(local, (context_height, context_width))
         context_tokens = context.flatten(2).transpose(1, 2)
