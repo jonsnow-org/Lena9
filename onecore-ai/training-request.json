@@ -1,15 +1,17 @@
 {
   "schema": "onecore-training-request-v1",
-  "stage": "train_existing",
+  "stage": "evaluate_existing",
   "steps": 150,
-  "purpose": "Start the clean external-only OneCore v2 joint-training lineage from random initialization. Reuse the already validated, unchanged five-family corpus artifact onecore-corpus-final from workflow run 44925751665; do not re-acquire, download, re-package, or repeat the successful data gate. Do not restore any checkpoint: the previous session-6 continuation used a tokenizer without external-only provenance and is disqualified from the official clean lineage. Fit the tokenizer only on external train records, record tokenizer_corpus_data_class_counts in checkpoint metadata and train_result.json, and reject any resumed checkpoint missing or violating that provenance. Run ten sequential 150-step sessions (1,500 cumulative optimizer updates), each update sampling one external micro-batch from each of text/tool/image/audio/video. Then perform actual independent validation and held-out test, recording checkpoint/tokenizer/manifest hashes. Keep promotion blocked unless the approved quality gate passes. This is only the first 1,500-update segment (7.5% of the configured 20,000-step schedule), not training completion.",
-  "request_id": "onecore-v2-fresh-external-tokenizer-1500-20261122-v45",
+  "purpose": "Evaluation-only recovery of the exact external-only checkpoint produced by all ten successful training sessions in workflow run 44985942863. Reuse onecore-state-train-10 from that run and the immutable onecore-corpus-final artifact from run 44925751665. Verify checkpoint.pt, train_result.json, optimizer and scheduler state, tokenizer provenance, lineage and hashes; run independent validation and held-out test with the current evaluation code. Do not acquire data, run the corpus gate again, or execute any optimizer update. Keep promotion blocked while approved quality thresholds remain not-approved.",
+  "request_id": "onecore-evaluate-existing-run-44985942863-train-10-20261122",
   "data_profile": "expanded",
   "base_corpus_run_id": "44925751665",
-  "start_fresh_joint_training": true,
+  "start_fresh_joint_training": false,
   "base_corpus_artifact_name": "onecore-corpus-final",
-  "resume_checkpoint_run_id": "",
-  "resume_checkpoint_artifact_name": "",
+  "resume_checkpoint_run_id": "44985942863",
+  "resume_checkpoint_artifact_name": "onecore-state-train-10",
+  "resume_optimizer_step": 1500,
+  "expected_final_optimizer_step": 1500,
   "jobs": 10,
-  "total_optimizer_steps": 1500
+  "total_optimizer_steps": 0
 }
