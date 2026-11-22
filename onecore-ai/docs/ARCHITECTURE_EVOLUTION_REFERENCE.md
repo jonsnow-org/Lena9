@@ -183,3 +183,30 @@ The retained diagnostic for corpus Run #48 and its completed gate logs establish
 - [ ] Begin v3 architecture implementation only after the current checkpoint/corpus evidence is reconciled and resource estimates are measured.
 
 This file is the durable session handoff. Every future OneCore session must read it before modifying architecture, corpus, training workflows or checkpoint lineage, then update the implementation log with commit/test evidence.
+
+
+## 11. V3 implementation status (2026-11-22)
+
+A clean implementation branch was created from the research foundation without changing `main`:
+- Branch: `research/onecore-v3-implementation`
+- Current implementation commit at this update: `91f1140469b3f1df41d67377f0d2e31267447128`
+- CI Run #470: queued/running on that exact commit; do not claim success until its test job concludes.
+- V2 training/checkpoint lineage remains on `research/onecore-foundation`; V3 modules are separate and checkpoint-incompatible.
+
+Implemented V3 prototype components:
+1. `src/onecore/v3/vision.py`: variable native image height/width, edge padding to patch grid, exact output crop, 2-D positions, patch codec.
+2. `src/onecore/v3/audio.py`: trainable convolutional waveform encoder/decoder and multi-stage residual vector quantization; exact duration restoration.
+3. `src/onecore/v3/video.py`: variable frame count, timestamp embeddings and causal temporal attention for each spatial patch; no four-frame truncation in this module.
+4. `src/onecore/v3/core.py`: integrated text/image/audio/video forward paths through a shared semantic Transformer with modality embeddings; bounded global image context tokens (default 256) are broadcast back to local patch features.
+5. `src/onecore/v3/media_ingest.py`: preserve original image/audio/video sources and metadata; stream all video frames into lossless PNG assets without a fixed frame limit.
+6. `src/onecore/v3/config.py` and `configs/onecore-v3-research.yaml`: versioned config fingerprint and parameter report.
+
+Tests added:
+- `tests/test_v3_codecs.py`: variable image sizes, arbitrary image edge dimensions, audio durations and exact waveform lengths, video frame count and causal temporal behavior.
+- `tests/test_v3_integration.py`: shared-core forward paths and gradient flow for text/image/audio/video.
+- `tests/test_v3_media_ingest.py`: native image and audio source preservation.
+- `tests/test_v3_config.py`: stable config fingerprint and parameter report.
+
+**Strict current scope:** These are architecture/codecs and forward-path prototypes, not quality-certified generators. No diffusion/flow image generation objective, production audio perceptual/adversarial training, video long-context memory/chunking, cross-modal paired alignment objective, full v3 training loop, inference/checkpoint format, or promotion gates are complete. Current Transformer attention remains quadratic; the 256-token global visual context bounds image global attention, but video temporal attention and full shared sequences still require resource benchmarks and chunked memory design.
+
+The v3 CI workflow was explicitly extended to run on this isolated branch. Its result is pending until Run #470 completes. Do not merge or train V3 until tests pass, exact parameter/resource reports are captured, and the remaining training/evaluation components are implemented.
