@@ -1,5 +1,8 @@
+import json
+
 from onecore.data import classify_record_data, validate_manifest
 from onecore.evaluate import REQUIRED_CODEBOOKS, REQUIRED_METRICS, promotion_gate
+from onecore.promote import promote_candidate
 
 
 def _codebook_report():
@@ -247,6 +250,38 @@ def test_tool_evaluation_requires_both_workflow_steps_to_be_present():
     passed, failures = promotion_gate(metrics)
     assert not passed
     assert any("workflow step 2 has fewer than 4 held-out examples" in item for item in failures)
+
+
+
+def test_promote_candidate_uses_the_same_baseline_required_by_the_gate(tmp_path):
+    metrics = _metrics(data_verified=True)
+    baseline = _metrics(data_verified=True)
+    metrics_path = tmp_path / "evaluation.json"
+    baseline_path = tmp_path / "evaluation.baseline.json"
+    registry_path = tmp_path / "model-registry.json"
+    metrics_path.write_text(json.dumps(metrics), encoding="utf-8")
+    baseline_path.write_text(json.dumps(baseline), encoding="utf-8")
+
+    result = promote_candidate(metrics_path, registry_path, baseline_path)
+
+    assert result["promoted"] is True
+    registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    candidate = registry["candidates"][0]
+    assert candidate["baseline_evaluation_id"] == baseline.get("evaluation_id")
+    assert candidate["baseline_checkpoint_sha256"] == baseline["checkpoint_sha256"]
+
+
+def test_promote_candidate_cannot_skip_the_required_baseline(tmp_path):
+    metrics_path = tmp_path / "evaluation.json"
+    registry_path = tmp_path / "model-registry.json"
+    metrics_path.write_text(json.dumps(_metrics(data_verified=True)), encoding="utf-8")
+
+    try:
+        promote_candidate(metrics_path, registry_path)
+    except RuntimeError as exc:
+        assert "approved-comparison baseline evaluation is required" in str(exc)
+    else:
+        raise AssertionError("promotion unexpectedly succeeded without a baseline")
 
 
 def test_text_loss_regression_allows_exactly_two_percent_but_rejects_more():
