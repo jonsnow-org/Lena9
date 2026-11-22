@@ -25,6 +25,10 @@ inputs:
     description: Source workflow run ID when restoring a checkpoint created by an earlier workflow run
     required: false
     default: ""
+  expected_resume_optimizer_step:
+    description: Expected optimizer step in the supplied parent checkpoint; empty when no external resume is being performed
+    required: false
+    default: ""
   previous_checkpoint_artifact_name:
     description: Previous checkpoint artifact to remove after its successor has been uploaded
     required: false
@@ -103,9 +107,10 @@ runs:
       shell: bash
       env:
         PYTHONPATH: onecore-ai/src
+        EXPECTED_RESUME_OPTIMIZER_STEP: ${{ inputs.expected_resume_optimizer_step }}
       run: |
         python - <<'PY'
-        import hashlib, json
+        import hashlib, json, os
         from pathlib import Path
         import torch
         root = Path("onecore-ai/run-state")
@@ -119,6 +124,9 @@ runs:
             raise ValueError("optimizer step differs between checkpoint and report")
         if int(payload.get("step", 0)) > 0 and not payload.get("optimizer", {}).get("state"):
             raise ValueError("checkpoint has no optimizer moments")
+        expected_resume_step = os.environ.get("EXPECTED_RESUME_OPTIMIZER_STEP", "").strip()
+        if expected_resume_step and int(payload.get("step", -1)) != int(expected_resume_step):
+            raise ValueError("restored checkpoint optimizer step differs from the request's expected parent step")
         metadata = payload.get("metadata", {})
         tokenizer_classes = metadata.get("tokenizer_corpus_data_class_counts", {})
         if payload.get("step", 0) > 0 and (
@@ -164,6 +172,7 @@ runs:
       env:
         ONECORE_EXPECTED_STAGE: ${{ inputs.stage }}
         ONECORE_EXPECTED_STEPS: ${{ inputs.steps }}
+        ONECORE_EXPECTED_RESUME_OPTIMIZER_STEP: ${{ inputs.expected_resume_optimizer_step }}
       run: |
         python - <<'PY' >> "$GITHUB_OUTPUT"
         import hashlib, json, os
@@ -175,7 +184,20 @@ runs:
             raise ValueError("new checkpoint digest does not match train_result.json")
         print(f"optimizer_step={int(report['optimizer_step'])}")
         print(f"checkpoint_sha256={checkpoint_sha}")
-        print(f"steps_in_this_job={int(report['steps_in_this_job'])}")
+        steps_in_job = int(report.get("steps_in_this_job", -1))
+        expected_steps = int(os.environ["ONECORE_EXPECTED_STEPS"])
+        if steps_in_job != expected_steps:
+            raise ValueError(f"expected {expected_steps} optimizer updates in this session, found {steps_in_job}")
+        parent_step = report.get("parent_optimizer_step")
+        expected_resume_step = os.environ.get("ONECORE_EXPECTED_RESUME_OPTIMIZER_STEP", "").strip()
+        if expected_resume_step and (parent_step is None or int(parent_step) != int(expected_resume_step)):
+            raise ValueError("training report parent optimizer step differs from the requested resume step")
+        if parent_step is None:
+            if int(report["optimizer_step"]) != steps_in_job:
+                raise ValueError("fresh training did not start at optimizer step zero")
+        elif int(report["optimizer_step"]) != int(parent_step) + steps_in_job:
+            raise ValueError("optimizer step did not advance by the requested session length")
+        print(f"steps_in_this_job={steps_in_job}")
         print(f"lineage_id={report.get('lineage_id', '')}")
         if os.environ.get("ONECORE_EXPECTED_STAGE") in {"joint", "multimodal"}:
             tokenizer_classes = report.get("tokenizer_corpus_data_class_counts", {})
