@@ -644,3 +644,28 @@ The acquisition report confirms the exact immutable source revisions used by tho
 **V2 evaluation note:** Run #52 (ID `45015944155`) ended cancelled without an evaluation artifact. Run #55 (ID `45017683783`) failed during its independent validation/test job because the external validation result omitted `image_reconstruction`. This is consistent with the already-proven absence of usable external image holdout assets in the old corpus; it is not a reason to weaken the modality requirement or claim V2 evaluation success. No optimizer updates occurred in #52 or #55.
 
 V3 training remains blocked pending a successful external-only media gate, measured CPU peak memory/throughput, and checkpoint save/restore continuity. `main` remains at `0b5ec69e839bfc6086a358511b54649b03c7be9a`; no PR or merge was created.
+
+
+### Run #584 regression result and targeted V3 correction — 2026-11-23
+
+Run #584 (ID 45080540084) on V3 commit 8c20497e905f6b9381d7e3d3916986a694f5ba71 compiled successfully and produced a fresh exact prototype-2 report, but its unit/regression test step failed before the corpus-restore job could run.
+
+Exact architecture report from step 7:
+- onecore-v3-prototype-2
+- **39,906,568 trainable parameters**
+- config SHA-256 6c879331c75da434c58680050f94035dc15626e7af4847db1b36e055c47d7708
+- 123 state tensors; FP32 parameter storage 159,626,272 bytes; FP16 79,813,136 bytes; AdamW moments estimate 319,252,544 bytes. These remain storage estimates, not peak memory.
+
+The test log identified three regressions introduced by the first media-fallback patch:
+1. _needs_dataset_viewer_fallback treated an in-memory video frames payload as missing because it only recognized bytes/arrays/URLs. The seven-frame converter fixture therefore fell through to the remote viewer and returned no converted record.
+2. The nonstandard-split test still expected source_hf_split="*", while the converter now correctly records the actual matched split catalog-b and row index 0. The assertion was stale.
+3. Forcing FFmpeg for every video extension broke the existing GIF round-trip fixture; GIF is an image-sequence format and should retain ImageIO's native plugin.
+
+Targeted fix committed on V3: 1cc8571c278b4b163e457a8440efe2b6b91ce63b.
+- Treat non-empty frames payloads as already available.
+- Select FFmpeg only for extensionless/.bin and recognized video-container suffixes; retain ImageIO's default plugin for GIF and other image-sequence formats.
+- Update the source-split regression assertion to require the actual catalog-b split and row index 0.
+
+Run #586 (ID 45080869616) is now running on 1cc8571c278b4b163e457a8440efe2b6b91ce63b. Its latest status must be inspected before claiming test success. The restore job is gated behind Verify, so no new real-corpus conversion has started yet. The known FLEURS Arabic train split has a Dataset Viewer scan-size failure for row-group ranges 0–1999 (the viewer returns 500/502); offset 2000 succeeds. If #586 reaches conversion and that source blocks the audio gate, add a pinned FLEURS tar-stream fallback for only the matched WAV basenames rather than downloading/reacquiring the full corpus.
+
+No V3 training has started. The data gate, CPU peak-memory/throughput benchmark, and checkpoint save/restore continuity remain incomplete. main remains 0b5ec69e839bfc6086a358511b54649b03c7be9a; no V3 PR or merge was created.
