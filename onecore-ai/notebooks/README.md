@@ -17,15 +17,15 @@ The current instantiated configuration has **57,579,201 trainable parameters**. 
 
 ## Request and continuation
 
-The repository's staged bootstrap request accepts `acquire`, `train_existing`, or `repair_video_existing`; the active request uses `repair_video_existing` to resume only the saved Videos4CameraBench cursor from the preserved corpus artifact. Once the 100/10/10 five-family external-data gate passes, the workflow starts a fresh random-initialized `joint` checkpoint and chains ten 15-step sessions. It does not restore the legacy step-210 checkpoint. The separate manual training workflow supports `smoke`, `text`, `multimodal`, and `evaluate` with a numeric parent run ID when resuming.
+The repository's staged bootstrap request accepts `acquire`, `train_existing`, or `repair_video_existing`. The active request uses `train_existing` to reuse the already validated five-family corpus artifact without reacquisition or repeating its successful data gate. The clean lineage starts from random initialization and chains ten 150-step sessions, fitting the tokenizer only on external train records and sampling one external record from each of the five families per optimizer update. It does not restore the disqualified checkpoint whose tokenizer-corpus provenance was missing/mixed. The separate manual training workflow supports `smoke`, `text`, `multimodal`, and `evaluate` with a numeric parent run ID when resuming.
 
 Before training, the workflow verifies the parent checkpoint SHA-256, optimizer state and step, scheduler state, parameter count, and lineage metadata, then runs compile/tests/notebook-integrity CI. It restores from the Actions artifact; a release asset is a fallback only when durable release write permissions are available.
 
 ## Dataset and promotion
 
-The historical bootstrap corpus (360 train / 87 validation / 87 test synthetic records) is an engineering curriculum, not broad knowledge, and never satisfies external data quotas. The preserved expanded corpus artifact is reused; the latest verified pre-repair acquisition report had not yet passed the five-family gate. Validation and test are never read by the training iterator; cross-split record IDs, asset paths, and identical asset-content hashes are checked. A missing test manifest is added without rewriting train/validation data.
+The historical bootstrap corpus (360 train / 87 validation / 87 test synthetic records) is an engineering curriculum, not broad knowledge, and never satisfies external data quotas. The preserved expanded corpus artifact is reused; its five-family 100/10/10 data gate passed in the originating workflow run. No recrawl or duplicate data-gate pass is required while this immutable artifact remains unchanged. Validation and test are never read by the training iterator; cross-split record IDs, asset paths, and identical asset-content hashes are checked. A missing test manifest is added without rewriting train/validation data.
 
-Every usable data class enters tokenizer fitting and optimizer updates from the train split. Validation and test preserve all available data classes but remain independent and excluded from gradient updates. Promotion depends on independent evaluation fingerprints, full modality coverage, and measured quality thresholds.
+Only external train records enter tokenizer fitting and optimizer updates. Bootstrap, synthetic, and owner-curated records are retained only for engineering tests and diagnostics. Validation and test remain in independent held-out manifests and never enter tokenizer fitting or gradient updates. Promotion depends on independent evaluation fingerprints, full modality coverage, and measured quality thresholds.
 
 ## Implemented versus not yet verified
 
