@@ -745,7 +745,7 @@ def test_weighted_training_sampler_uses_only_external_rows() -> None:
     assert {item["id"] for item in production_rows} == {"external-1", "external-2"}
 
 
-def test_task_coverage_gate_counts_all_usable_records(tmp_path: Path) -> None:
+def test_task_coverage_gate_counts_only_usable_external_records(tmp_path: Path) -> None:
     from onecore.acquire import assert_task_coverage
 
     data = tmp_path / "data"
@@ -780,6 +780,18 @@ def test_task_coverage_gate_counts_all_usable_records(tmp_path: Path) -> None:
             {**_external_metadata(f"{split}-video-source", f"{split}-video"),
              "id": f"{split}-video", "task": "video_caption", "split": split,
              "frames": frame_rels, "caption": "A fixture video with two frames."},
+            # Valid payloads in non-external classes must never satisfy external quotas.
+            {"id": f"{split}-bootstrap-text", "task": "text", "split": split,
+             "data_class": "bootstrap", "text": "Valid bootstrap text must not count externally."},
+            {"id": f"{split}-bootstrap-tool", "task": "tool_use", "split": split,
+             "data_class": "bootstrap", "prompt": "Run a bootstrap tool sample.",
+             "response": '{"name":"bootstrap","arguments":{}}'},
+            {"id": f"{split}-bootstrap-image", "task": "image_caption", "split": split,
+             "data_class": "bootstrap", "image": image_rel, "caption": "Bootstrap image."},
+            {"id": f"{split}-bootstrap-audio", "task": "audio_text", "split": split,
+             "data_class": "bootstrap", "audio_features": audio_rel, "transcript": "Bootstrap audio."},
+            {"id": f"{split}-bootstrap-video", "task": "video_caption", "split": split,
+             "data_class": "bootstrap", "frames": frame_rels, "caption": "Bootstrap video."},
             {**_external_metadata(f"{split}-metadata-image-source", f"{split}-metadata-image"),
              "id": f"{split}-metadata-image", "task": "image_caption", "split": split,
              "caption": "Metadata-only image record with no image payload."},
@@ -789,8 +801,6 @@ def test_task_coverage_gate_counts_all_usable_records(tmp_path: Path) -> None:
             {**_external_metadata(f"{split}-metadata-video-source", f"{split}-metadata-video"),
              "id": f"{split}-metadata-video", "task": "video_caption", "split": split,
              "caption": "Metadata-only video record with no frames."},
-            {"id": f"{split}-bootstrap", "task": "text", "split": split,
-             "data_class": "bootstrap"},
         ]
         (data / f"{split}.jsonl").write_text(
             "\n".join(json.dumps(item) for item in records) + "\n", encoding="utf-8"
@@ -800,6 +810,24 @@ def test_task_coverage_gate_counts_all_usable_records(tmp_path: Path) -> None:
     )
     for split in ("train", "validation", "test"):
         assert coverage[split] == {group: 1 for group in task_ids}
+
+
+def test_task_coverage_gate_rejects_bootstrap_only_payloads(tmp_path: Path) -> None:
+    from onecore.acquire import assert_task_coverage
+
+    data = tmp_path / "data"
+    assets = data / "assets" / "acquired"
+    assets.mkdir(parents=True)
+    for split in ("train", "validation", "test"):
+        image_rel = f"acquired/{split}.png"
+        Image.new("RGB", (16, 16), (30, 70, 120)).save(assets / Path(image_rel).name, format="PNG")
+        record = {
+            "id": f"{split}-bootstrap-image", "task": "image_caption", "split": split,
+            "data_class": "bootstrap", "image": image_rel, "caption": "Valid bootstrap image.",
+        }
+        (data / f"{split}.jsonl").write_text(json.dumps(record) + "\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="External corpus gate blocked training"):
+        assert_task_coverage(tmp_path, {"image"}, minimum_train=1, minimum_holdout=1)
 
 def test_imported_record_needs_no_policy_metadata(tmp_path: Path) -> None:
     record = {
