@@ -14,9 +14,10 @@ professional output quality.
   reconstruction to the exact source length. The code is untrained.
 - `video.py`: encodes every supplied frame, accepts variable frame counts and
   timestamps, and applies causal temporal attention per spatial patch.
-- `core.py`: integrates text, image, waveform audio and video latents with one
-  shared Transformer semantic core and explicit modality embeddings; includes
-  conditional rectified-flow objectives and variable-shape latent samplers.
+- `core.py`: integrates text, image, waveform audio and video latents with a recurrent
+  shared Transformer semantic core (four unique blocks reused over three cycles by
+  default), explicit modality embeddings, and independent image/audio/video flow heads;
+  includes conditional rectified-flow objectives and variable-shape latent samplers.
 - `losses.py`: multi-scale image reconstruction, multi-resolution STFT/waveform,
   video temporal consistency, paired cross-modal alignment, and image/audio GAN losses.
 - `training.py`: joint text/tool/image/audio/video objective and an optimizer-step
@@ -24,6 +25,16 @@ professional output quality.
 - `manifest.py`: external-only per-family quotas, immutable provenance, source-row and
   asset SHA-256 split-integrity checks, and required raw-media payload validation.
 - `report.py`: exact instantiated parameter count, config fingerprint and storage-only estimates.
+
+## Architecture revision 2
+
+The current prototype-2 config uses four unique Transformer blocks repeated for three
+cycles, retaining twelve effective block applications while sharing the same four sets
+of weights. Image, audio, and video rectified-flow prediction use separate modality
+heads. This reduces duplicated backbone parameters and prevents the final velocity
+projection from being shared across different latent distributions. It does not reduce
+the attention compute of twelve block applications, and it is not a measured quality
+or memory improvement until benchmarked.
 
 ## Current limits (do not hide these)
 
