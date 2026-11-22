@@ -430,11 +430,37 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install FFmpeg shared libraries required by TorchCodec
+        run: sudo apt-get update && sudo apt-get install --yes ffmpeg
+
       - name: Install CPU-only PyTorch
         run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
 
-      - name: Install OneCore and range-archive dependencies
-        run: python -m pip install --upgrade pip && python -m pip install -e "onecore-ai[dev]"
+      - name: Install OneCore, corpus-restore, and test dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -e "onecore-ai[dev,corpus-restore]"
+
+      - name: Verify CPU-only TorchCodec audio and video support
+        env:
+          PYTHONPATH: onecore-ai/src
+        run: |
+          python - <<'PY'
+          import importlib.metadata
+          import torch
+          from datasets import config as datasets_config
+          from torchcodec.decoders import AudioDecoder, VideoDecoder
+
+          assert torch.version.cuda is None, torch.__version__
+          assert datasets_config.TORCHCODEC_AVAILABLE, "datasets cannot import TorchCodec"
+          assert AudioDecoder is not None and VideoDecoder is not None
+          print({
+              "torch": torch.__version__,
+              "torchcodec": importlib.metadata.version("torchcodec"),
+              "datasets_torchcodec_available": datasets_config.TORCHCODEC_AVAILABLE,
+              "cpu_only": True,
+              "audio_decoder": AudioDecoder.__name__,
+              "video_decoder": VideoDecoder.__name__,
+          })
+          PY
 
       - name: Restore the exact V2 source registry snapshot
         run: |
@@ -467,19 +493,30 @@ jobs:
           if path.is_file():
               report = json.loads(path.read_text(encoding="utf-8"))
               passed = bool(report.get("manifest_gate", {}).get("passed")) and not bool(report.get("blocked"))
+              acquisition = report.get("missing_media_acquisition") or {}
               print({
                   "blocked": report.get("blocked"),
                   "converted_records": report.get("converted_records"),
                   "gate_passed": passed,
                   "coverage": report.get("manifest_gate", {}).get("coverage"),
-                  "missing_media": report.get("missing_media_acquisition", {}).get("remaining_deficits")
-                      if report.get("missing_media_acquisition") else None,
+                  "missing_media": acquisition.get("remaining_deficits"),
+                  "media_restore_errors": report.get("errors", []),
+                  "media_restore_skipped": report.get("skipped", {}),
+                  "acquisition_errors": acquisition.get("errors", []),
+                  "acquisition_skipped_sources": acquisition.get("skipped_sources", {}),
+                  "sources_scanned": acquisition.get("sources_scanned", []),
               })
           else:
               print("Conversion report was not produced.")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
               handle.write(f"gate_passed={str(passed).lower()}\n")
           PY
+
+      - name: Fail when the external-only V3 corpus gate is blocked
+        if: steps.conversion-summary.outputs.gate_passed != 'true'
+        run: |
+          echo "::error::V3 external-only corpus gate did not pass; no V3 corpus artifact will be published."
+          exit 1
 
       - name: Upload V3 conversion report
         if: always()

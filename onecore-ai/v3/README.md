@@ -28,6 +28,10 @@ professional output quality.
   helper, plus a separate discriminator update helper.
 - `manifest.py`: external-only per-family quotas, immutable provenance, source-row and
   asset SHA-256 split-integrity checks, and required raw-media payload validation.
+- `converter.py` and `artifact.py`: selectively reuse V2 text/tool rows and rehydrate raw
+  image/audio/video assets only from immutable source revisions and matching row hashes;
+  the artifact reader extracts the existing V2 manifests with HTTP byte ranges rather than
+  downloading the 15.8 GB artifact in full. `cli.py` exposes this bounded conversion path.
 - `report.py`: exact instantiated parameter count, config fingerprint and storage-only estimates.
 
 ## Architecture revision 2
@@ -58,9 +62,14 @@ or memory improvement until benchmarked.
   fixed 512-position table. Attention is still quadratic; this is not proof of
   efficient long-context scaling. Benchmark memory, throughput, and long-context
   retrieval before selecting production sequence lengths.
-- A joint v3 objective and one-step optimizer helper now exist, but there is no
-  multi-session training workflow, dataset converter, checkpoint/resume format,
-  production inference API, quality benchmark suite, or promotion threshold yet.
+- A selective V2-to-V3 converter exists, but the external-only 100/10/10 media gate
+  has not yet passed on the recovered corpus. No V3 corpus artifact, multi-session training
+  workflow, checkpoint/resume format, production inference API, quality benchmark suite,
+  or promotion threshold has been approved or published.
+- The bounded corpus-restore job uses the optional `corpus-restore` extra. It requires
+  CPU PyTorch 2.11 or newer, TorchCodec 0.17, and FFmpeg shared libraries; the job installs
+  these explicitly and keeps Hugging Face media decoding disabled so the converter can
+  preserve original encoded payloads and perform its own audio/video ingestion.
 - The optional GAN discriminators require a separately configured discriminator
   optimizer and stable alternating updates; this is not yet a full adversarial trainer.
 - The V3 manifest gate is implemented but has not yet been run against the complete
@@ -78,8 +87,9 @@ or memory improvement until benchmarked.
    frame rate/duration/audio track, audio sample rate/channels/duration); implement an
    explicit canonical-rate normalization policy before mixed-rate training; the current
    policy is polyphase resampling to 24 kHz while preserving the raw source.
-5. Convert existing corpora without reacquiring completed sources; validate immutable
-   external provenance and 100/10/10 per-family quotas after corrected gate.
+5. Run the isolated V3 corpus-restore job against the existing V2 artifact; reuse
+   completed text/tool rows, rehydrate raw media by pinned source hashes, and require the
+   immutable external-only 100/10/10 per-family gate to pass before publishing any corpus.
 6. Benchmark peak activation/optimizer memory, FLOPs, CPU/GPU wall-clock, and scaling
    at multiple image sizes, clip durations, and audio lengths.
 7. Add round-trip, variable-length, streaming, long-context, and quality evaluations.
