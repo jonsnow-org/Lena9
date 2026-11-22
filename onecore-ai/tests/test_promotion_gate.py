@@ -72,6 +72,7 @@ def _metrics(data_verified=True, data_kind="external_only"):
     native_tldm_test = _native_tldm_report("test", checkpoint_sha)
     test_metrics = {**values, "split": "test", "checkpoint_sha256": checkpoint_sha,
         "parameter_count": 57_579_201, "real_data": data_kind == "external_only",
+        "quality_thresholds_status": "approved", "quality_thresholds": thresholds,
         "tokenizer_sha256": "f" * 64, "selected_records_sha256": "e" * 64,
         "data_kind": data_kind,
         "data_classes": ["external"] if data_kind == "external_only" else [data_kind],
@@ -81,6 +82,7 @@ def _metrics(data_verified=True, data_kind="external_only"):
         "native_tldm_evaluation": native_tldm_test}
     return {**values, "split": "validation", "checkpoint_sha256": checkpoint_sha,
         "parameter_count": 57_579_201, "real_data": data_kind == "external_only",
+        "quality_thresholds_status": "approved",
         "tokenizer_sha256": "f" * 64, "selected_records_sha256": "d" * 64,
         "data_kind": data_kind,
         "data_classes": ["external"] if data_kind == "external_only" else [data_kind],
@@ -98,6 +100,19 @@ def test_external_only_data_can_pass_gate_when_quality_evidence_passes():
     passed, failures = promotion_gate(metrics, baseline=_metrics(data_verified=True))
     assert passed
     assert failures == []
+
+
+
+def test_promotion_requires_explicitly_approved_threshold_status_for_both_splits():
+    for split in ("validation", "test"):
+        metrics = _metrics(data_verified=True)
+        target = metrics if split == "validation" else metrics["test_metrics"]
+        target["quality_thresholds_status"] = "not-approved"
+
+        passed, failures = promotion_gate(metrics, baseline=_metrics(data_verified=True))
+
+        assert not passed
+        assert any(f"{split} promotion thresholds status is" in item for item in failures)
 
 
 def test_synthetic_bootstrap_data_is_rejected_by_default():

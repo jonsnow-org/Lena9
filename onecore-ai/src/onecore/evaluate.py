@@ -535,6 +535,7 @@ def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
         "per_task_counts": counts,
         "per_task_target_tokens": token_counts,
         "modalities_tested": modalities_tested,
+        "quality_thresholds_status": str(threshold_doc.get("status", "missing")),
         "quality_thresholds": threshold_doc.get("thresholds", {}),
         "text_loss_regression_max": raw_cfg.get("evaluation", {}).get("text_loss_regression_max"),
         "split_manifest_sha256": split_manifest_sha256,
@@ -780,6 +781,12 @@ def promotion_gate(metrics: dict[str, Any], baseline: dict[str, Any] | None = No
     missing = required_modalities - observed
     if missing:
         failures.append(f"missing validation coverage: {sorted(missing)}")
+    threshold_status = metrics.get("quality_thresholds_status")
+    if threshold_status != "approved":
+        failures.append(
+            f"validation promotion thresholds status is {threshold_status!r}; "
+            "expected 'approved' in configs/promotion-thresholds.json"
+        )
     thresholds = metrics.get("quality_thresholds")
     if not isinstance(thresholds, dict) or not thresholds:
         failures.append("promotion thresholds have not been benchmarked and approved in configs/promotion-thresholds.json")
@@ -810,6 +817,16 @@ def promotion_gate(metrics: dict[str, Any], baseline: dict[str, Any] | None = No
     else:
         if test_metrics.get("split") != "test":
             failures.append("nested test metrics must be evaluated on the test split")
+        test_threshold_status = test_metrics.get("quality_thresholds_status")
+        if test_threshold_status != "approved":
+            failures.append(
+                f"test promotion thresholds status is {test_threshold_status!r}; "
+                "expected 'approved' in configs/promotion-thresholds.json"
+            )
+        if test_threshold_status != threshold_status:
+            failures.append("validation and test evaluation used different promotion-threshold approval states")
+        if test_metrics.get("quality_thresholds") != thresholds:
+            failures.append("validation and test evaluation used different approved threshold values")
         if require_verified_data:
             _check_external_only_evaluation("test", test_metrics, failures)
         if test_metrics.get("checkpoint_sha256") != metrics.get("checkpoint_sha256"):
