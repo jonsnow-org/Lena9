@@ -466,3 +466,17 @@ Run #554 (ID `45038258359`) completed with **success** on V3 branch head `e5cd11
 **V2 checkpoint:** Run #52 (ID `45015944155`) remains in progress at independent validation/held-out test with no optimizer updates; restored checkpoint/corpus/lineage steps are successful. Do not start a competing run.
 
 **Branch protection check:** `main` remains at `0b5ec69e839bfc6086a358511b54649b03c7be9a`. V3 remains isolated at `e5cd116164e6b67ffe397e10af9b9251b9e5ff85`; no PR or merge was created. Foundation reference branch head before this update: `14124f7e1dc43ae1955c93c460d7059d196dd692`.
+
+
+### Existing corpus artifact audit and exact image holdout gap — 2026-11-22
+
+Downloaded and inspected the small diagnostic artifact `onecore-data-gate-diagnostic-44925751665` (artifact ID `14716542436`) from V2 Run #48 (`44925751665`). The full corpus artifact `onecore-corpus-final` (ID `14715699177`) is still available, 15,803,310,342 bytes, SHA-256 `5761e5008e8b6a8dec861e803a66e590b822c3a7cf1dc95311faa96b4017f46a`, expiration 2027-02-19. It must not be downloaded/extracted in full on a normal runner; the V3 artifact helper now uses HTTP Range ZIP reads to extract only the three JSONL manifests and acquisition report.
+
+The diagnostic report exposes the previous data-gate false positive:
+- `acquisition_complete=false`, but the legacy report nevertheless said `training_ready=true`; do not trust that field.
+- External assets: train image 900, validation image **0**, test image **0**; audio 1100/165/185; video 100/10/10. Text/tool coverage exceeds quotas.
+- The generic `task_coverage` showed 12 image validation and 12 image test rows, but `external_media_assets` shows no external image files in either holdout split. These were not valid external raw-image holdouts and must not count.
+- `openimages_finedet_v1` is enabled and pinned at revision `d492ad4d6c43af64c27bad62a1cdd6a39c6efaa7`; prior acquisition had 900 train images and zero validation/test images. The V2 registry snapshot at artifact source commit `5489900c3662082ad39efbfac5b6a2c7d22a7c4c` declares native train/validation/test splits.
+- The V3 converter now has a targeted missing-media quota pass: it can fetch only the 10 missing image rows from each native validation/test split at that exact pinned revision, then restore matching existing V2 media rows. It does not reacquire text/tool records or fabricate examples.
+
+**Current execution:** Run #566 (ID `45039655675`) is executing the optional one-time V3 corpus-restore job, triggered by commit `f76e9972b7f588567f3dc86ca4cd3ce6af05ef70`. The job uses the verified artifact ID, range extraction, the exact V2 source-registry snapshot, pinned revisions from the artifact report, and only uploads the converted corpus if the external-only gate passes. Do not start V3 training while this is running or before the gate report is inspected.
