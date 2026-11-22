@@ -19,6 +19,8 @@ class AudioEncoding:
     commitment_loss: torch.Tensor
     original_samples: int
     padded_samples: int
+    sample_rate: int | None = None
+    original_channels: int = 1
 
 
 class ResidualVectorQuantizer(nn.Module):
@@ -71,14 +73,16 @@ class NeuralAudioCodec(nn.Module):
     """A convolutional waveform encoder/decoder with learned multi-stage RVQ."""
 
     def __init__(self, latent_channels: int = 128, hidden_channels: int = 256,
-                 codebook_size: int = 1024, quantizer_stages: int = 8) -> None:
+                 codebook_size: int = 1024, quantizer_stages: int = 8,
+                 channels: int = 2) -> None:
         super().__init__()
-        if min(latent_channels, hidden_channels) < 1:
+        if min(latent_channels, hidden_channels, channels) < 1:
             raise ValueError("channel dimensions must be positive")
         self.latent_channels = latent_channels
+        self.channels = channels
         self.downsample_factor = 16
         self.encoder = nn.Sequential(
-            nn.Conv1d(1, hidden_channels, kernel_size=8, stride=4, padding=2),
+            nn.Conv1d(channels, hidden_channels, kernel_size=8, stride=4, padding=2),
             nn.SiLU(),
             nn.Conv1d(hidden_channels, latent_channels, kernel_size=8, stride=4, padding=2),
         )
@@ -91,15 +95,20 @@ class NeuralAudioCodec(nn.Module):
             ),
             nn.SiLU(),
             nn.ConvTranspose1d(
-                hidden_channels, 1, kernel_size=8, stride=4, padding=2
+                hidden_channels, channels, kernel_size=8, stride=4, padding=2
             ),
         )
 
-    def encode(self, waveform: torch.Tensor) -> AudioEncoding:
+    def encode(self, waveform: torch.Tensor, *, sample_rate: int | None = None) -> AudioEncoding:
+        original_channels = 1 if waveform.ndim == 2 else (waveform.shape[1] if waveform.ndim == 3 else 0)
         if waveform.ndim == 2:
             waveform = waveform.unsqueeze(1)
-        if waveform.ndim != 3 or waveform.shape[1] != 1:
-            raise ValueError("waveform must have shape [B,T] or mono [B,1,T]")
+        if waveform.ndim != 3 or waveform.shape[1] not in (1, self.channels):
+            raise ValueError(f"waveform must have shape [B,T], [B,1,T], or [B,{self.channels},T]")
+        if sample_rate is not None and sample_rate < 1:
+            raise ValueError("sample_rate must be positive when supplied")
+        if waveform.shape[1] == 1 and self.channels > 1:
+            waveform = waveform.expand(-1, self.channels, -1)
         if waveform.shape[-1] < 1:
             raise ValueError("waveform cannot be empty")
         original_samples = waveform.shape[-1]
@@ -110,13 +119,15 @@ class NeuralAudioCodec(nn.Module):
         padded = F.pad(waveform, (0, padded_samples - original_samples))
         latents = self.encoder(padded)
         codes, quantized, loss = self.quantizer(latents)
-        return AudioEncoding(codes, quantized, loss, original_samples, padded_samples)
+        return AudioEncoding(codes, quantized, loss, original_samples, padded_samples,
+                             sample_rate, original_channels)
 
     def decode(self, encoding: AudioEncoding | torch.Tensor, *,
                original_samples: int | None = None) -> torch.Tensor:
         if isinstance(encoding, AudioEncoding):
             latents = encoding.quantized
             original_samples = encoding.original_samples
+            original_channels = encoding.original_channels
         else:
             latents = encoding
         if latents.ndim != 3 or latents.shape[1] != self.latent_channels:
@@ -124,6 +135,8 @@ class NeuralAudioCodec(nn.Module):
         if original_samples is None or original_samples < 1:
             raise ValueError("original_samples is required when decoding raw latents")
         waveform = self.decoder(latents)
+        if isinstance(encoding, AudioEncoding) and original_channels == 1 and waveform.shape[1] > 1:
+            waveform = waveform.mean(dim=1, keepdim=True)
         if waveform.shape[-1] < original_samples:
             waveform = F.pad(waveform, (0, original_samples - waveform.shape[-1]))
         return waveform[..., :original_samples]
