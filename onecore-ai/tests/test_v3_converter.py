@@ -172,8 +172,7 @@ def test_v3_corpus_conversion_writes_all_splits_and_reports_manifest_gate(tmp_pa
             "data_class": "external", "task": "text",
             "text": "A sufficiently long existing text sample.",
         }
-        (v2 / f"{split}.jsonl").write_text(yaml.safe_dump(record).replace("---\n", "").strip() and
-            __import__("json").dumps(record) + "\n", encoding="utf-8")
+        (v2 / f"{split}.jsonl").write_text(json.dumps(record) + "\n", encoding="utf-8")
     registry = tmp_path / "sources.yaml"
     _write_registry(registry, [])
     report = convert_v2_corpus(
