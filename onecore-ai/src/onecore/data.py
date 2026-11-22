@@ -151,6 +151,53 @@ def validate_manifest(records: Iterable[dict[str, Any]], assets_root: str | Path
     return {"valid": not errors, "records": record_count, "task_counts": task_counts, "errors": errors}
 
 
+def validate_external_provenance_disjointness(project_root: str | Path) -> dict[str, Any]:
+    """Audit immutable external row identity across all three splits without hashing assets."""
+    root = Path(project_root)
+    split_names = ("train", "validation", "test")
+    counts = {split: 0 for split in split_names}
+    row_owners: dict[tuple[str, str, str], str] = {}
+    errors: list[str] = []
+
+    for split in split_names:
+        manifest = root / "data" / f"{split}.jsonl"
+        for item in iter_manifest(manifest):
+            if classify_record_data(item) != "external":
+                continue
+            counts[split] += 1
+            if not has_immutable_external_provenance(item):
+                errors.append(
+                    f"external record lacks immutable source provenance in {split}: "
+                    f"{str(item.get('id', ''))[:120]}"
+                )
+                continue
+            identity = (
+                str(item["source_id"]).strip(),
+                str(item["source_revision"]).strip().lower(),
+                str(item["source_row_id_sha256"]).strip().lower(),
+            )
+            previous_split = row_owners.get(identity)
+            if previous_split is not None and previous_split != split:
+                errors.append(
+                    "identical external source row appears in multiple splits: "
+                    f"{identity[0]}@{identity[1][:12]}:{identity[2][:12]} "
+                    f"({previous_split}, {split})"
+                )
+            else:
+                row_owners[identity] = split
+
+    if errors:
+        raise DatasetError(
+            "external source-row provenance audit failed:\\n- " + "\\n- ".join(errors[:50])
+        )
+    return {
+        "valid": True,
+        "external_records_by_split": counts,
+        "unique_source_rows": len(row_owners),
+        "cross_split_source_row_overlaps": 0,
+    }
+
+
 TRAINABLE_DATA_CLASSES = set(DATA_CLASSES)
 
 

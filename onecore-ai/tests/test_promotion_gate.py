@@ -88,6 +88,12 @@ def _metrics(data_verified=True, data_kind="external_only"):
         "data_kind": data_kind,
         "data_classes": ["external"] if data_kind == "external_only" else [data_kind],
         "data_verified_for_promotion": data_verified,
+        "external_provenance_audit": {
+            "valid": True,
+            "external_records_by_split": {"train": 100, "validation": 10, "test": 10},
+            "unique_source_rows": 120,
+            "cross_split_source_row_overlaps": 0,
+        },
         "modalities_tested": list(REQUIRED_METRICS), "split_manifest_sha256": test_hash,
         "codebook_usage": codebook_usage, "tool_behavior": test_tool_behavior,
         "native_tldm_evaluation": native_tldm_test}

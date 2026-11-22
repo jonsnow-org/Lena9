@@ -11,7 +11,7 @@ import torch
 
 from .checkpoint import load_checkpoint, sha256_file
 from .config import load_config
-from .data import classify_record_data, external_record_is_trainable, read_manifest, validate_manifest
+from .data import classify_record_data, external_record_is_trainable, read_manifest, validate_manifest, validate_external_provenance_disjointness
 from .curriculum_reference import verify_record
 from .model import MASK, OneCore
 from .inference import InferenceSession
@@ -392,6 +392,9 @@ def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
     )
     if not data_report["valid"]:
         raise ValueError(f"{split} data gate failed: " + "; ".join(data_report["errors"][:20]))
+    external_provenance_audit = (
+        validate_external_provenance_disjointness(root) if split == "validation" else None
+    )
     evaluation_data_classes = set(data_classes) if data_classes is not None else {"external"}
     records = select_evaluation_records(all_records, evaluation_data_classes)
     requested_data_filter = sorted(evaluation_data_classes)
@@ -539,6 +542,7 @@ def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
         "data_kind": data_kind,
         "data_classes": data_classes,
         "data_verified_for_promotion": data_verified_for_promotion,
+        "external_provenance_audit": external_provenance_audit,
         "parameter_count": model.count_parameters(),
         "text_loss": mean(loss_sum, "text"),
         "tool_use": mean(loss_sum, "tool_use"),
@@ -804,6 +808,18 @@ def promotion_gate(metrics: dict[str, Any], baseline: dict[str, Any] | None = No
     failures: list[str] = []
     if require_verified_data:
         _check_external_only_evaluation("validation", metrics, failures)
+        provenance_audit = metrics.get("external_provenance_audit")
+        if not isinstance(provenance_audit, dict) or provenance_audit.get("valid") is not True:
+            failures.append("external source-row provenance audit is missing or invalid")
+        else:
+            split_counts = provenance_audit.get("external_records_by_split")
+            if not isinstance(split_counts, dict) or any(
+                not isinstance(split_counts.get(split), int) or split_counts[split] < 1
+                for split in ("train", "validation", "test")
+            ):
+                failures.append("external source-row provenance audit has incomplete split counts")
+            if provenance_audit.get("cross_split_source_row_overlaps") != 0:
+                failures.append("external source-row provenance audit reports cross-split leakage")
     if metrics.get("split") != "validation":
         failures.append("top-level candidate metrics must come from the validation split")
     if not isinstance(metrics.get("parameter_count"), int) or metrics["parameter_count"] <= 0:

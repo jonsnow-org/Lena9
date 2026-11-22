@@ -16,7 +16,7 @@ from tokenizers import Tokenizer
 
 from .checkpoint import load_checkpoint, save_checkpoint, sha256_file, write_json_atomic
 from .config import ModelConfig, load_config
-from .data import classify_record_data, iter_training_records, read_manifest, validate_training_data
+from .data import classify_record_data, iter_training_records, read_manifest, validate_training_data, validate_external_provenance_disjointness
 from .model import (
     AUDIO_END, AUDIO_START, BOS, EOS, IMAGE_END, IMAGE_START, TEXT_START,
     TOOL_END, TOOL_START, VIDEO_END, VIDEO_FRAME, VIDEO_START, MOTION_START, MASK,
@@ -492,9 +492,11 @@ def run_training(
     source_data_counts: dict[str, int] = {}
     optimizer_data_class_counts: dict[str, int] = {}
     excluded_data_class_counts: dict[str, int] = {}
+    external_provenance_audit: dict[str, Any] | None = None
 
     if stage != "smoke":
         data_report = validate_training_data(root)
+        external_provenance_audit = validate_external_provenance_disjointness(root)
         all_train_records = read_manifest(root / "data" / "train.jsonl")
         manifest_sha = sha256_file(root / "data" / "train.jsonl")
         allowed_tasks = {"text", "tool_use"} if stage == "text" else {
@@ -745,6 +747,7 @@ def run_training(
         "source_data_counts": source_data_counts,
         "optimizer_data_class_counts": optimizer_data_class_counts,
         "excluded_data_class_counts": excluded_data_class_counts,
+        "external_provenance_audit": external_provenance_audit,
         "lineage_id": lineage_id,
         "parent_checkpoint_sha256": parent_checkpoint_sha256,
         "parent_optimizer_step": parent_optimizer_step,
@@ -815,6 +818,7 @@ def run_training(
         "source_data_counts": source_data_counts,
         "optimizer_data_class_counts": optimizer_data_class_counts,
         "excluded_data_class_counts": excluded_data_class_counts,
+        "external_provenance_audit": external_provenance_audit,
         "lineage_id": lineage_id,
         "parent_checkpoint_sha256": parent_checkpoint_sha256,
         "parent_optimizer_step": parent_optimizer_step,

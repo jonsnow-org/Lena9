@@ -313,3 +313,41 @@ def test_split_disjointness_rejects_same_external_source_row_in_two_splits(tmp_p
 
     with pytest.raises(DatasetError, match="identical source-row provenance leakage"):
         validate_split_disjointness(tmp_path)
+
+
+def test_external_provenance_audit_checks_all_splits_without_rehashing_assets(tmp_path):
+    from onecore.data import validate_external_provenance_disjointness
+
+    data_root = tmp_path / "data"
+    (data_root / "assets").mkdir(parents=True)
+    base = {
+        "task": "text",
+        "source_url": "https://example.org/dataset",
+        "data_class": "external",
+        "source_id": "dataset-a",
+        "source_revision": "a" * 40,
+        "text": "A real external source row with pinned provenance.",
+    }
+    manifests = {
+        "train": [{**base, "id": "train-1", "split": "train", "source_row_id_sha256": "b" * 64}],
+        "validation": [{**base, "id": "validation-1", "split": "validation", "source_row_id_sha256": "c" * 64}],
+        "test": [{**base, "id": "test-1", "split": "test", "source_row_id_sha256": "d" * 64}],
+    }
+    for split, records in manifests.items():
+        (data_root / f"{split}.jsonl").write_text(
+            "\\n".join(json.dumps(record) for record in records) + "\\n",
+            encoding="utf-8",
+        )
+
+    report = validate_external_provenance_disjointness(tmp_path)
+    assert report["valid"] is True
+    assert report["external_records_by_split"] == {"train": 1, "validation": 1, "test": 1}
+    assert report["unique_source_rows"] == 3
+    assert report["cross_split_source_row_overlaps"] == 0
+
+    manifests["test"][0]["source_row_id_sha256"] = "b" * 64
+    (data_root / "test.jsonl").write_text(
+        json.dumps(manifests["test"][0]) + "\\n", encoding="utf-8"
+    )
+    with pytest.raises(Exception, match="identical external source row"):
+        validate_external_provenance_disjointness(tmp_path)
