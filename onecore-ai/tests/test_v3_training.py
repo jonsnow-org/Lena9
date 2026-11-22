@@ -32,6 +32,7 @@ def test_v3_joint_objective_and_optimizer_step_cover_all_modalities():
         },
         "audio": {
             "waveform": torch.rand(2, 1024),
+            "sample_rate": 24_000,
             "condition_ids": torch.randint(0, 128, (2, 5)),
         },
         "video": {
