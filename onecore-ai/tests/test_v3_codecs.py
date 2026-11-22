@@ -110,3 +110,6 @@ def test_v3_audio_codec_rejects_invalid_sample_rate_and_channel_count():
         codec.encode(torch.randn(1, 1024), sample_rate=0)
     with pytest.raises(ValueError, match="waveform"):
         codec.encode(torch.randn(1, 3, 1024))
+    with pytest.raises(ValueError, match="mono.*stereo"):
+        NeuralAudioCodec(latent_channels=8, hidden_channels=16,
+                         codebook_size=16, quantizer_stages=2, channels=3)
