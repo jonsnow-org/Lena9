@@ -13,11 +13,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Cancel the disqualified continuation
+      - name: Cancel disqualified training job and its workflow run
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPOSITORY: ${{ github.repository }}
         shell: bash
         run: |
+          gh api --method POST "/repos/${GH_REPOSITORY}/actions/jobs/137088949501/cancel"
           gh api --method POST "/repos/${GH_REPOSITORY}/actions/runs/44983411821/cancel"
-          echo "Cancellation request re-sent for disqualified OneCore run 44983411821."
+          echo "Cancellation sent to disqualified training job 137088949501 and run 44983411821."
