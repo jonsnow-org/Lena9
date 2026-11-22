@@ -120,6 +120,11 @@ def validate_manifest(records: Iterable[dict[str, Any]], assets_root: str | Path
             errors.append(f"line {line}: split must be {expected_split!r}; got {item['split']!r}")
         if not _valid_source(str(item["source_url"])):
             errors.append(f"line {line}: source_url must be http(s) or local://...")
+        if classify_record_data(item) == "external" and not has_immutable_external_provenance(item):
+            errors.append(
+                f"line {line}: external records require source_id, an immutable source_revision, "
+                "and a 64-character source_row_id_sha256"
+            )
         if task == "text" and not str(item.get("text", "")).strip():
             errors.append(f"line {line}: text task requires non-empty text")
         if task == "tool_use" and not (item.get("prompt") and item.get("response")):
@@ -214,6 +219,7 @@ def validate_split_disjointness(project_root: str | Path) -> dict[str, Any]:
     content_hash_sets: dict[str, set[str]] = {name: set() for name in split_names}
     content_details: dict[str, dict[str, list[str]]] = {name: {} for name in split_names}
     group_sets: dict[str, set[str]] = {name: set() for name in split_names}
+    source_row_identity_sets: dict[str, set[str]] = {name: set() for name in split_names}
     # Hash identical file paths only once across the three streamed manifests.
     asset_digest_cache: dict[Path, str] = {}
     errors: list[str] = []
@@ -235,6 +241,19 @@ def validate_split_disjointness(project_root: str | Path) -> dict[str, Any]:
             group_id = str(item.get("source_group_id", "")).strip()
             if group_id:
                 group_sets[split].add(group_id)
+            if classify_record_data(item) == "external":
+                if not has_immutable_external_provenance(item):
+                    errors.append(
+                        f"external record lacks immutable source provenance in {split}: {record_id}"
+                    )
+                else:
+                    source_row_identity_sets[split].add(
+                        ":".join((
+                            str(item["source_id"]).strip(),
+                            str(item["source_revision"]).strip().lower(),
+                            str(item["source_row_id_sha256"]).strip().lower(),
+                        ))
+                    )
 
             values: list[str] = []
             for field in ("image", "audio_features"):
@@ -286,11 +305,13 @@ def validate_split_disjointness(project_root: str | Path) -> dict[str, Any]:
         shared_paths = path_sets[left] & path_sets[right]
         shared_asset_content = content_hash_sets[left] & content_hash_sets[right]
         shared_groups = group_sets[left] & group_sets[right]
+        shared_source_rows = source_row_identity_sets[left] & source_row_identity_sets[right]
         overlaps[f"{left}__{right}"] = {
             "record_ids": len(shared_ids),
             "asset_paths": len(shared_paths),
             "asset_content_hashes": len(shared_asset_content),
             "source_groups": len(shared_groups),
+            "source_rows": len(shared_source_rows),
         }
         if shared_ids:
             errors.append(f"record ID leakage between {left} and {right}: {sorted(shared_ids)[:10]}")
@@ -313,6 +334,11 @@ def validate_split_disjointness(project_root: str | Path) -> dict[str, Any]:
             errors.append(
                 f"source/media content group leakage between {left} and {right}: "
                 f"{sorted(shared_groups)[:10]}"
+            )
+        if shared_source_rows:
+            errors.append(
+                f"identical source-row provenance leakage between {left} and {right}: "
+                f"{sorted(shared_source_rows)[:10]}"
             )
 
     if errors:
