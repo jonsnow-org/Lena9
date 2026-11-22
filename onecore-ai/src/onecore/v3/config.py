@@ -21,6 +21,7 @@ class V3Config:
     audio_hidden_channels: int = 256
     audio_codebook_size: int = 1024
     audio_quantizer_stages: int = 8
+    audio_channels: int = 2
     temporal_layers: int = 2
     max_image_context_tokens: int = 256
     max_video_context_tokens: int = 256
@@ -39,7 +40,7 @@ class V3Config:
             raise ValueError("width must be divisible by attention_heads")
         if self.patch_size < 2 or min(
             self.audio_latent_channels, self.audio_hidden_channels,
-            self.audio_codebook_size, self.audio_quantizer_stages, self.layers,
+            self.audio_codebook_size, self.audio_quantizer_stages, self.audio_channels, self.layers,
             self.temporal_layers, self.cycles, self.max_image_context_tokens,
             self.max_video_context_tokens, self.max_flow_context_tokens,
             self.temporal_window_frames, self.video_generation_chunk_frames,
