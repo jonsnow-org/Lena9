@@ -499,3 +499,30 @@ The confirmed V3 prototype-2 parameter/config report remains **39,906,568 traina
 **V2 evaluation continuity:** Run #52 (ID `45015944155`) was cancelled during independent validation/test; its evaluation evidence artifact was not uploaded. Run #55 (ID `45017683783`) is now in progress in the evaluation-only job, currently restoring the exact corpus; it has no optimizer-update job active and no artifacts visible at this inspection. Do not start a competing V2 training/evaluation run or infer evaluation completion. The V2 checkpoint remains the previously verified train-10 lineage at optimizer step 1,500; no new step is claimed.
 
 V3 remains isolated at `174c4650e1fd65799c53c89d68b6e49aeb9c2737`. Foundation is being updated only with this continuity record; `main` remains `0b5ec69e839bfc6086a358511b54649b03c7be9a`. No PR or merge was created.
+
+
+### V3 first real-corpus conversion audit — Run #570 (2026-11-22)
+
+Run #570 (ID `45045979340`) completed successfully as a workflow, and both jobs concluded successfully; however, the converter deliberately **blocked corpus promotion** because the final external-media manifest gate failed. Its report artifact is `onecore-v3-conversion-report-45045979340` (artifact ID `14764196247`, SHA-256 `52fadc66cc8d88670aa790cc78989827b3ece10abd181dd9ef6e1a1c1144756e`).
+
+Report facts:
+- 655,427 input rows; 652,555 converted rows; zero synthetic rows.
+- Text/tool/image counts present: train 591,525 text / 14,000 tool / 900 image; validation 22,552 text / 400 tool / 10 image; test 22,758 text / 400 tool / 10 image.
+- Final manifest gate: image, text and tool pass the required counts; **audio and video are zero usable rows in all three splits**, so the final gate correctly fails.
+- Ten source streams failed before row hydration because Hugging Face attempted automatic TorchCodec decode: Fleurs Arabic and Arabic speech audio; four WavCaps configurations; Videos4CameraBench video. The error was missing `torchcodec`.
+- The targeted acquisition diagnostic showed enough candidate row counts for audio/video (audio 1100/165/185 and video 100/10/10), but these were only source-row counts. They are not proof of preserved media payloads. The final gate correctly rejected the conversion.
+- The missing-media fill added 10 validation and 10 test images from the existing pinned OpenImages source; no audio/video candidates were added because their manifest row counts already met their minimums. No re-crawl of text/tool was performed.
+
+### V3 media source decoding fix — commit `9da80f5ac9320ebc2967b29bb4686e7d2929d051`
+
+Root cause: `_default_source_loader` streamed Hugging Face datasets with their default feature decoding enabled. For audio/video columns this invokes TorchCodec decoders, although the converter needs encoded source paths/bytes and performs its own loss-preserving ingestion.
+
+Change:
+- The pinned streaming loader now requires `IterableDataset.decode(False)` and fails closed if the stream cannot disable automatic media decoding.
+- This returns source path/byte payloads instead of constructing AudioDecoder/VideoDecoder objects. Existing ingestion functions then preserve source assets and use the explicit 24 kHz resampling and imageio/FFmpeg frame extraction path.
+- Added regression tests asserting that the loader calls `decode(False)` and refuses a stream without that capability.
+- Existing resolver `_resolve_video_asset` already supports the path/bytes values returned by Video(decode=False), including pinned `hf://datasets/{repo}@{revision}/...` references.
+
+**Verification:** CI Run #572 (ID `45057049451`) is in progress on this exact commit; the latest observed job reached the exact V3 parameter report step after installing CPU PyTorch and project dependencies. Do not claim the tests passed until this run completes.
+
+**Next required sequence:** once #572 passes, trigger the existing conditional `v3-corpus-restore` job using the required commit-message marker `[onecore-v3-corpus-restore]`. Inspect its new report artifact. Only if all five family gates pass and raw media hashes/provenance are sound may the V3 corpus artifact be uploaded. Do not start V3 training before that. Run #55 (ID `45017683783`) remains evaluation-only and active; no optimizer-update job is running. `main` remains at `0b5ec69e839bfc6086a358511b54649b03c7be9a`.
