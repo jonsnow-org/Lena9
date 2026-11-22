@@ -236,3 +236,21 @@ def test_manifest_file_validation_streams_rows_without_read_manifest(tmp_path, m
     assert report["valid"] is True
     assert report["records"] == 1
     assert report["task_counts"] == {"text": 1}
+
+
+def test_bootstrap_training_and_heldout_evaluation_use_separate_jobs():
+    from pathlib import Path
+
+    repository_root = Path(__file__).resolve().parents[2]
+    workflow = (repository_root / ".github" / "workflows" / "onecore-bootstrap.yml").read_text(
+        encoding="utf-8"
+    )
+    training_job = workflow.split("  train_all:\n", 1)[1].split("\n  evaluate:\n", 1)[0]
+    evaluation_job = workflow.split("\n  evaluate:\n", 1)[1].split("\n  evaluate_existing:\n", 1)[0]
+
+    assert "Execute independent validation and held-out test" not in training_job
+    assert "05_evaluation_and_promotion.ipynb" not in training_job
+    assert "05_evaluation_and_promotion.ipynb" in evaluation_job
+    assert 'ONECORE_EXECUTE_EVALUATION: "1"' in evaluation_job
+    assert "needs.prepare.outputs.base_corpus_run_id" in evaluation_job
+    assert "onecore-evaluation-${{ github.run_id }}" in evaluation_job
