@@ -453,7 +453,7 @@ jobs:
   train_all:
     name: Ten sequential 150-step CPU training sessions on one persistent runner
     needs: [dataset_gate, prepare]
-    if: ${{ always() && (needs.dataset_gate.result == 'success' || (needs.dataset_gate.result == 'skipped' && needs.prepare.outputs.request_stage == 'train_existing')) }}
+    if: ${{ always() && needs.prepare.result == 'success' && (needs.dataset_gate.result == 'success' || (needs.dataset_gate.result == 'skipped' && needs.prepare.outputs.request_stage == 'train_existing')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 360
     outputs:

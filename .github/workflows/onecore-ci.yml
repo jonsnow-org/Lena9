@@ -297,6 +297,7 @@ jobs:
           assert "train_existing" in bootstrap, "existing-corpus training must bypass acquisition"
           assert "needs.prepare.outputs.request_stage == 'acquire'" in bootstrap
           assert "always() && needs.finalize_acquisition.result == 'success' && needs.finalize_acquisition.outputs.complete == 'true'" in bootstrap
+          assert "needs.prepare.result == 'success'" in bootstrap
           assert "dataset_gate.result == 'success'" in bootstrap and "dataset_gate.result == 'skipped' && needs.prepare.outputs.request_stage == 'train_existing'" in bootstrap
           assert "needs.finalize_acquisition.outputs.request_stage != 'train_existing'" in bootstrap
           assert "always() && needs.train_all.result == 'success'" in bootstrap

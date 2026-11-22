@@ -106,6 +106,7 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
     assert bootstrap_doc["jobs"]["finalize_acquisition"]["outputs"]["complete"].startswith("${{")
     assert bootstrap_doc["jobs"]["dataset_gate"]["if"].startswith("${{")
     assert "always() && needs.finalize_acquisition.result == 'success' && needs.finalize_acquisition.outputs.complete == 'true'" in bootstrap
+    assert "needs.prepare.result == 'success'" in bootstrap
     assert "dataset_gate.result == 'success'" in bootstrap
     assert "dataset_gate.result == 'skipped' && needs.prepare.outputs.request_stage == 'train_existing'" in bootstrap
     assert "needs.finalize_acquisition.outputs.request_stage != 'train_existing'" in bootstrap
@@ -128,7 +129,7 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
     assert 'github-token: ${{ github.token }}' in bootstrap
     assert "onecore-corpus-acq-progress" in bootstrap
     assert "resume_notice" in bootstrap_doc["jobs"]
-    assert "cancel-in-progress: true" in bootstrap
+    assert "cancel-in-progress: false" in bootstrap and "cancel-in-progress: false" in training
     assert "timeout-minutes: 330" in bootstrap
     assert "onecore-corpus-" in bootstrap
     assert "onecore-corpus-final" in bootstrap
@@ -173,6 +174,7 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
     assert not any(f"train_{index:02d}" in jobs for index in range(1, 11))
     train_job = jobs["train_all"]
     assert train_job["needs"] == ["dataset_gate", "prepare"]
+    assert "needs.prepare.result == 'success'" in train_job["if"]
     assert "dataset_gate.result == 'skipped'" in train_job["if"]
     assert "request_stage == 'train_existing'" in train_job["if"]
     assert "cancel-in-progress: false" in bootstrap
@@ -242,5 +244,5 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
     assert "optimizer, scheduler, RNG" in train_action
     assert 'expected_family_counts = {' in train_action
     assert "text,tool,image,audio,video" in training
-    assert "cancel-in-progress: true" in bootstrap
+    assert "cancel-in-progress: false" in bootstrap and "cancel-in-progress: false" in training
     assert "gh workflow run onecore-training.yml" not in bootstrap
