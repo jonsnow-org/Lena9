@@ -70,18 +70,21 @@ class ResidualVectorQuantizer(nn.Module):
 
 
 class NeuralAudioCodec(nn.Module):
-    """A convolutional waveform encoder/decoder with learned multi-stage RVQ."""
+    """A convolutional waveform codec that accepts only normalized-rate audio."""
 
     def __init__(self, latent_channels: int = 128, hidden_channels: int = 256,
                  codebook_size: int = 1024, quantizer_stages: int = 8,
-                 channels: int = 2) -> None:
+                 channels: int = 2, sample_rate: int = 24_000) -> None:
         super().__init__()
         if min(latent_channels, hidden_channels) < 1:
             raise ValueError("latent and hidden channel dimensions must be positive")
         if channels not in (1, 2):
             raise ValueError("audio codec supports mono (1) or stereo (2) channels")
+        if sample_rate < 1:
+            raise ValueError("sample_rate must be positive")
         self.latent_channels = latent_channels
         self.channels = channels
+        self.sample_rate = sample_rate
         self.downsample_factor = 16
         self.encoder = nn.Sequential(
             nn.Conv1d(channels, hidden_channels, kernel_size=8, stride=4, padding=2),
@@ -101,14 +104,19 @@ class NeuralAudioCodec(nn.Module):
             ),
         )
 
-    def encode(self, waveform: torch.Tensor, *, sample_rate: int | None = None) -> AudioEncoding:
+    def encode(self, waveform: torch.Tensor, *, sample_rate: int) -> AudioEncoding:
         original_channels = 1 if waveform.ndim == 2 else (waveform.shape[1] if waveform.ndim == 3 else 0)
         if waveform.ndim == 2:
             waveform = waveform.unsqueeze(1)
         if waveform.ndim != 3 or waveform.shape[1] not in (1, self.channels):
             raise ValueError(f"waveform must have shape [B,T], [B,1,T], or [B,{self.channels},T]")
-        if sample_rate is not None and sample_rate < 1:
-            raise ValueError("sample_rate must be positive when supplied")
+        if sample_rate < 1:
+            raise ValueError("sample_rate must be positive")
+        if sample_rate != self.sample_rate:
+            raise ValueError(
+                f"audio must be resampled to the configured {self.sample_rate} Hz before encoding; "
+                f"received {sample_rate} Hz"
+            )
         if waveform.shape[1] == 1 and self.channels > 1:
             waveform = waveform.expand(-1, self.channels, -1)
         if waveform.shape[-1] < 1:
@@ -143,9 +151,9 @@ class NeuralAudioCodec(nn.Module):
             waveform = F.pad(waveform, (0, original_samples - waveform.shape[-1]))
         return waveform[..., :original_samples]
 
-    def forward(self, waveform: torch.Tensor) -> tuple[torch.Tensor, AudioEncoding]:
+    def forward(self, waveform: torch.Tensor, *, sample_rate: int) -> tuple[torch.Tensor, AudioEncoding]:
         squeeze_channel = waveform.ndim == 2
-        encoding = self.encode(waveform)
+        encoding = self.encode(waveform, sample_rate=sample_rate)
         reconstruction = self.decode(encoding)
         if squeeze_channel:
             reconstruction = reconstruction.squeeze(1)
