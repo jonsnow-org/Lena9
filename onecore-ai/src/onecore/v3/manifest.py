@@ -23,7 +23,7 @@ def _asset_paths(record: dict[str, Any]) -> list[str]:
     paths: list[str] = []
 
     def visit(value: Any, key: str = "") -> None:
-        if key in {"source_asset", "asset_path"} and isinstance(value, str):
+        if key in {"source_asset", "asset_path", "training_asset"} and isinstance(value, str):
             paths.append(value)
         elif key == "frames" and isinstance(value, (list, tuple)):
             paths.extend(item for item in value if isinstance(item, str))
@@ -35,7 +35,7 @@ def _asset_paths(record: dict[str, Any]) -> list[str]:
                 visit(child)
 
     visit(record.get("assets", {}))
-    visit({key: record[key] for key in ("source_asset", "frames", "asset_path") if key in record})
+    visit({key: record[key] for key in ("source_asset", "frames", "asset_path", "training_asset") if key in record})
     return list(dict.fromkeys(paths))
 
 
