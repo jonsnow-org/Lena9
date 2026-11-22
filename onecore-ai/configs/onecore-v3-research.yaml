@@ -1,10 +1,11 @@
 # OneCore v3 research prototype. All dimensions are versioned and fingerprinted.
 # This config is not a claim of production quality or a frozen production budget.
-architecture_version: onecore-v3-prototype-1
+architecture_version: onecore-v3-prototype-2
 model:
   text_vocab_size: 32000
   width: 512
-  layers: 8
+  layers: 4
+  cycles: 3
   attention_heads: 8
   patch_size: 16
   audio_latent_channels: 128
@@ -19,6 +20,8 @@ model:
   temporal_memory_frames: 4
   video_generation_chunk_frames: 8
   dropout: 0.0
+# Four unique Transformer blocks are reused over three recurrent cycles.
+# The modality flow heads are independent for image, audio, and video.
 # The current shared attention is quadratic in token count. Do not set a
 # production sequence limit until peak-memory and throughput benchmarks exist.
 sequence_policy:
