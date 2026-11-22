@@ -8,25 +8,16 @@ permissions:
   actions: write
   contents: read
 
-concurrency:
-  group: onecore-training-v2
-  cancel-in-progress: true
-
 jobs:
   stop-invalid-run:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Ensure disqualified and superseded runs are stopped
+      - name: Cancel the disqualified continuation
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPOSITORY: ${{ github.repository }}
         shell: bash
         run: |
-          for run_id in 44983411821 44984206310; do
-            if gh api --method POST "/repos/${GH_REPOSITORY}/actions/runs/${run_id}/cancel"; then
-              echo "Cancellation requested for OneCore run ${run_id}."
-            else
-              echo "OneCore run ${run_id} is already stopped or no longer cancellable."
-            fi
-          done
+          gh api --method POST "/repos/${GH_REPOSITORY}/actions/runs/44983411821/cancel"
+          echo "Cancellation request re-sent for disqualified OneCore run 44983411821."
