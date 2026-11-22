@@ -248,7 +248,8 @@ def test_v3_converter_searches_all_nonstandard_source_splits_for_legacy_rows(tmp
     )
     assert len(restored) == 1
     assert calls == ["catalog-a", "catalog-b"]
-    assert restored[0]["source_hf_split"] == "*"
+    assert restored[0]["source_hf_split"] == "catalog-b"
+    assert restored[0]["source_hf_row_index"] == 0
     assert report["converted_records"] == 1
 
 

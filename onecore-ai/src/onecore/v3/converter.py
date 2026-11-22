@@ -187,7 +187,7 @@ def _needs_dataset_viewer_fallback(value: Any) -> bool:
     if value is None:
         return True
     if isinstance(value, dict):
-        if value.get("bytes") is not None or value.get("array") is not None:
+        if value.get("bytes") is not None or value.get("array") is not None or value.get("frames"):
             return False
         if _find_media_source_url(value):
             return False
