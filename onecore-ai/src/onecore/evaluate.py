@@ -12,6 +12,7 @@ import torch
 from .checkpoint import load_checkpoint, sha256_file
 from .config import load_config
 from .data import classify_record_data, external_record_is_trainable, read_manifest, validate_manifest
+from .curriculum_reference import verify_record
 from .model import MASK, OneCore
 from .inference import InferenceSession
 from .tool_eval import evaluate_tool_behavior
@@ -187,6 +188,22 @@ def select_evaluation_records(
             f"evaluation split contains no records for data filter {sorted(effective_data_classes)}"
         )
     return selected
+
+
+def select_verified_tool_evaluation_records(
+    records: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Select only deterministic synthetic tool episodes for engineering regression tests.
+
+    These examples are never included in external-only loss, modality or T-LDM metrics,
+    and are never eligible for optimizer updates.
+    """
+    return [
+        record for record in records
+        if str(record.get("data_class", "")).strip().lower() == "synthetic_verified"
+        and record.get("task") == "tool_use"
+        and verify_record(record)
+    ]
 
 
 def select_tldm_evaluation_records(
@@ -399,9 +416,16 @@ def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
                 str(record.get("prompt", "")), max_new_tokens=96
             )
 
+    tool_behavior_records = select_verified_tool_evaluation_records(all_records)
     tool_behavior = evaluate_tool_behavior(
-        records, generate_verified_tool_call, max_examples=32
+        tool_behavior_records, generate_verified_tool_call, max_examples=32
     )
+    tool_behavior.update({
+        "data_class": "synthetic_verified",
+        "evaluation_role": "engineering_only",
+        "split": split,
+        "split_manifest_sha256": sha256_file(split_manifest),
+    })
 
     loss_sum: dict[str, float] = {}
     aux_sum: dict[str, float] = {}
@@ -567,6 +591,10 @@ def _check_tool_behavior(
     if not isinstance(report, dict):
         failures.append(f"{prefix} verified tool-execution report is missing")
         return
+    if report.get("data_class") != "synthetic_verified":
+        failures.append(f"{prefix} tool regression evidence must use synthetic_verified engineering examples")
+    if report.get("evaluation_role") != "engineering_only":
+        failures.append(f"{prefix} tool regression evidence must be labeled engineering_only")
     sample_count = report.get("sample_count")
     if not isinstance(sample_count, int) or sample_count < 16:
         failures.append(f"{prefix} tool behaviour has fewer than 16 held-out examples")
@@ -615,6 +643,15 @@ def _check_tool_behavior_regression(
     floor = regression_floor
     if not isinstance(floor, (int, float)) or not math.isfinite(floor) or not 0 < floor <= 1:
         failures.append("tool_behavior_regression_floor must be a finite number in (0,1]")
+        return
+    if current.get("data_class") != "synthetic_verified" or baseline.get("data_class") != "synthetic_verified":
+        failures.append(f"{prefix} tool regression baseline/current data class must be synthetic_verified")
+        return
+    if current.get("evaluation_role") != "engineering_only" or baseline.get("evaluation_role") != "engineering_only":
+        failures.append(f"{prefix} tool regression baseline/current role must be engineering_only")
+        return
+    if current.get("split") != prefix or baseline.get("split") != prefix:
+        failures.append(f"{prefix} tool regression baseline/current split does not match")
         return
     if current.get("protocol") != baseline.get("protocol"):
         failures.append(f"{prefix} tool-behaviour protocol differs from the baseline")
