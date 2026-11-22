@@ -149,6 +149,9 @@ def test_token_weighted_language_loss_rejects_non_finite_losses():
 def test_tool_promotion_requires_sixteen_examples_and_four_per_step():
     failures = []
     report = {
+        "data_class": "synthetic_verified",
+        "evaluation_role": "engineering_only",
+        "split": "validation",
         "sample_count": 15,
         "execution_success_rate": 1.0,
         "per_step": {
@@ -165,6 +168,9 @@ def test_tool_promotion_requires_sixteen_examples_and_four_per_step():
 def test_tool_promotion_accepts_spec_minimum_evidence():
     failures = []
     report = {
+        "data_class": "synthetic_verified",
+        "evaluation_role": "engineering_only",
+        "split": "validation",
         "sample_count": 16,
         "execution_success_rate": 0.95,
         "per_step": {
