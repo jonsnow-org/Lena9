@@ -4,7 +4,8 @@ import pytest
 import torch
 
 from onecore.evaluate import (
-    _text_language_bucket, _token_weighted_mean_loss, _tldm_masked_span_loss, codebook_assignment_report,
+    _check_text_loss_regression, _check_tool_behavior, _text_language_bucket,
+    _token_weighted_mean_loss, _tldm_masked_span_loss, codebook_assignment_report,
     select_evaluation_records, select_tldm_evaluation_records,
 )
 from onecore.config import ModelConfig
@@ -141,3 +142,68 @@ def test_token_weighted_language_loss_rejects_invalid_inputs():
 def test_token_weighted_language_loss_rejects_non_finite_losses():
     with pytest.raises(ValueError, match="record losses must be finite"):
         _token_weighted_mean_loss([float("nan")], [10])
+
+
+
+def test_tool_promotion_requires_sixteen_examples_and_four_per_step():
+    failures = []
+    report = {
+        "sample_count": 15,
+        "execution_success_rate": 1.0,
+        "per_step": {
+            "1": {"sample_count": 3, "execution_success_rate": 1.0},
+            "2": {"sample_count": 4, "execution_success_rate": 1.0},
+        },
+    }
+    _check_tool_behavior("validation", report, {"min_tool_execution_success_rate": 0.9},
+                         "min_tool_execution_success_rate", failures)
+    assert any("fewer than 16" in failure for failure in failures)
+    assert any("step 1 has fewer than 4" in failure for failure in failures)
+
+
+def test_tool_promotion_accepts_spec_minimum_evidence():
+    failures = []
+    report = {
+        "sample_count": 16,
+        "execution_success_rate": 0.95,
+        "per_step": {
+            "1": {"sample_count": 8, "execution_success_rate": 0.95},
+            "2": {"sample_count": 8, "execution_success_rate": 0.95},
+        },
+    }
+    _check_tool_behavior("validation", report, {"min_tool_execution_success_rate": 0.9},
+                         "min_tool_execution_success_rate", failures)
+    assert failures == []
+
+
+def test_text_loss_regression_enforces_v2_ratio_on_identical_evidence():
+    baseline = {
+        "split": "validation",
+        "tokenizer_sha256": "a" * 64,
+        "split_manifest_sha256": "b" * 64,
+        "selected_records_sha256": "c" * 64,
+        "text_loss": 2.0,
+    }
+    current = dict(baseline, text_loss=2.04)
+    failures = []
+    _check_text_loss_regression("validation", current, baseline, 1.02, failures)
+    assert failures == []
+
+    current["text_loss"] = 2.041
+    failures = []
+    _check_text_loss_regression("validation", current, baseline, 1.02, failures)
+    assert any("exceeds 1.02 × baseline" in failure for failure in failures)
+
+
+def test_text_loss_regression_rejects_different_tokenizer_or_manifest():
+    baseline = {
+        "split": "test",
+        "tokenizer_sha256": "a" * 64,
+        "split_manifest_sha256": "b" * 64,
+        "selected_records_sha256": "c" * 64,
+        "text_loss": 2.0,
+    }
+    current = dict(baseline, tokenizer_sha256="d" * 64)
+    failures = []
+    _check_text_loss_regression("test", current, baseline, 1.02, failures)
+    assert any("does not match current tokenizer_sha256" in failure for failure in failures)
