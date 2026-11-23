@@ -484,6 +484,9 @@ def _rehydrate_record(
     source_hf_split: str | None = None,
     viewer_row_loader: Callable[[str, str, str, int, int], dict[str, Any]] | None = None,
     viewer_row_cache: dict[tuple[str, str, str, int], dict[int, dict[str, Any]]] | None = None,
+    filter_row_loader: Callable[[str, str, str, str], dict[str, Any]] | None = None,
+    filter_row_cache: dict[tuple[str, str, str, str, str], dict[str, Any] | None] | None = None,
+    media_value_overrides: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     task = str(record["task"])
     family = MEDIA_TASKS[task]
@@ -504,12 +507,14 @@ def _rehydrate_record(
             row, source, media_family, str(record["source_revision"]), source_split,
             source_row_index, viewer_row_loader=viewer_row_loader,
             viewer_row_cache=viewer_row_cache,
+            filter_row_loader=filter_row_loader,
+            filter_row_cache=filter_row_cache,
         )
         used_dataset_viewer = True
         return value
 
     if family == "image":
-        value = _nested(row, str(source.get("image_field") or "image"))
+        value = (media_value_overrides or {}).get("image", _nested(row, str(source.get("image_field") or "image")))
         value = _safe_image_value(value, source)
         value = _prefer_available_media_payload(value)
         if _needs_dataset_viewer_fallback(value):
@@ -518,14 +523,23 @@ def _rehydrate_record(
         result["assets"] = {"image": metadata}
 
     elif family == "audio":
-        value = _nested(row, str(source.get("audio_field") or "audio"))
+        value = (media_value_overrides or {}).get("audio", _nested(row, str(source.get("audio_field") or "audio")))
         if isinstance(value, (list, tuple)):
             media_url = _find_media_source_url(value)
-            value = {"src": media_url} if media_url else value
+            if media_url:
+                value = {"src": media_url}
+            else:
+                value = next((item for item in value if isinstance(item, dict) and _has_nonempty_media_payload(item)), value)
         value = _prefer_available_media_payload(value)
         if _needs_dataset_viewer_fallback(value):
             value = viewer_value("audio")
-        raw = preserve_audio_payload(value, assets_root, record_id)
+        try:
+            raw = preserve_audio_payload(value, assets_root, record_id)
+        except Exception:
+            if used_dataset_viewer:
+                raise
+            value = viewer_value("audio")
+            raw = preserve_audio_payload(value, assets_root, record_id)
         raw_path = assets_root / raw["source_asset"]
         normalized = resample_audio_source(
             raw_path, assets_root, record_id, target_sample_rate=target_audio_rate
@@ -556,7 +570,13 @@ def _rehydrate_record(
             value = _prefer_available_media_payload(value)
             if _needs_dataset_viewer_fallback(value):
                 value = viewer_value("video")
-        metadata = preserve_video_payload(value, assets_root, record_id)
+        try:
+            metadata = preserve_video_payload(value, assets_root, record_id)
+        except Exception:
+            if used_dataset_viewer:
+                raise
+            value = viewer_value("video")
+            metadata = preserve_video_payload(value, assets_root, record_id)
         if metadata.get("frame_limit_applied") is not False:
             raise ValueError("video preservation must prove that no frame limit was applied")
         result["assets"] = {"video": metadata}
@@ -759,6 +779,121 @@ def acquire_missing_media_rows(
     return output, report
 
 
+
+
+def _progress_asset_paths(record: dict[str, Any]) -> list[str]:
+    paths: list[str] = []
+    def visit(value: Any, key: str = "") -> None:
+        if key in {"source_asset", "training_asset", "asset_path"} and isinstance(value, str):
+            paths.append(value)
+        elif key == "frames" and isinstance(value, (list, tuple)):
+            paths.extend(item for item in value if isinstance(item, str))
+        elif isinstance(value, dict):
+            for child_key, child in value.items():
+                visit(child, str(child_key))
+        elif isinstance(value, (list, tuple)):
+            for child in value:
+                visit(child)
+    visit(record.get("assets", {}))
+    return list(dict.fromkeys(paths))
+
+
+def _load_restore_progress(progress_path: Path | None, assets_root: Path) -> dict[str, dict[str, Any]]:
+    """Load only restored rows with every referenced raw and derived asset intact."""
+    if progress_path is None or not progress_path.is_file():
+        return {}
+    restored: dict[str, dict[str, Any]] = {}
+    with progress_path.open("r", encoding="utf-8") as stream:
+        for line in stream:
+            if not line.strip():
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(record, dict):
+                continue
+            record_id = str(record.get("id", "")).strip()
+            asset_paths = _progress_asset_paths(record)
+            if not record_id or not asset_paths:
+                continue
+            valid = True
+            for relative in asset_paths:
+                target = (assets_root / relative).resolve()
+                try:
+                    target.relative_to(assets_root.resolve())
+                except ValueError:
+                    valid = False
+                    break
+                if not target.is_file() or target.stat().st_size == 0:
+                    valid = False
+                    break
+            if valid:
+                restored[record_id] = record
+    return restored
+
+
+def _append_restore_progress(progress_path: Path | None, record: dict[str, Any]) -> None:
+    if progress_path is None:
+        return
+    progress_path.parent.mkdir(parents=True, exist_ok=True)
+    with progress_path.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
+def _extract_fleurs_audio_for_rows(
+    matched_rows: list[tuple[str, dict[str, Any], dict[str, Any], int]],
+    source: dict[str, Any],
+    source_split: str,
+    revision: str,
+    assets_root: Path,
+) -> tuple[dict[str, Path], Path]:
+    """Extract only the WAVs matched to pinned FLEURS rows from the exact split tarball."""
+    archive_split = {"train": "train", "validation": "dev", "test": "test"}.get(source_split)
+    if archive_split is None:
+        raise ValueError(f"unsupported FLEURS audio split for tar fallback: {source_split}")
+    config = str(source.get("config") or "ar_eg")
+    repo = str(source.get("repo") or "google/fleurs")
+    archive_name = f"data/{config}/audio/{archive_split}.tar.gz"
+    archive_path = Path(hf_hub_download(
+        repo_id=repo, filename=archive_name, repo_type="dataset", revision=revision,
+    ))
+    field = str(source.get("audio_field") or "audio")
+    wanted: dict[str, list[str]] = defaultdict(list)
+    for _row_hash, record, row, _index in matched_rows:
+        basename = _local_media_basename(_nested(row, field))
+        if basename and basename.lower().endswith(".wav"):
+            wanted[basename].append(str(record["id"]))
+    if not wanted:
+        raise FileNotFoundError("matched FLEURS rows do not expose WAV basenames")
+    assets_root.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix="onecore-fleurs-tar-", dir=str(assets_root.parent)))
+    extracted: dict[str, Path] = {}
+    remaining = set(wanted)
+    with tarfile.open(archive_path, mode="r|gz") as archive:
+        for member in archive:
+            if not member.isfile():
+                continue
+            basename = Path(member.name).name
+            if basename not in remaining:
+                continue
+            source_file = archive.extractfile(member)
+            if source_file is None:
+                continue
+            payload = source_file.read()
+            for record_id in wanted[basename]:
+                safe_id = "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in record_id)
+                destination = staging / f"{safe_id}.wav"
+                destination.write_bytes(payload)
+                extracted[record_id] = destination
+            remaining.remove(basename)
+            if not remaining:
+                break
+    return extracted, staging
+
+
 def restore_v2_media_records(
     records: Iterable[dict[str, Any]],
     sources_registry: str | Path,
@@ -767,6 +902,8 @@ def restore_v2_media_records(
     target_audio_rate: int = 24_000,
     source_loader: Callable[[str, str | None, str, str], Iterable[dict[str, Any]]] | None = None,
     viewer_row_loader: Callable[[str, str, str, int, int], dict[str, Any]] | None = None,
+    filter_row_loader: Callable[[str, str, str, str], dict[str, Any]] | None = None,
+    progress_path: str | Path | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Reuse external text/tool rows and selectively restore only V2 media rows.
 
@@ -786,20 +923,36 @@ def restore_v2_media_records(
     root = Path(assets_root).resolve()
     root.mkdir(parents=True, exist_ok=True)
 
-    converted: dict[str, dict[str, Any]] = {}
+    progress_file = Path(progress_path).resolve() if progress_path is not None else None
+    converted: dict[str, dict[str, Any]] = _load_restore_progress(progress_file, root)
+    resumed_record_ids = set(converted)
+    resumed_media_records = 0
     input_records = 0
     pending: dict[tuple[str, str, str], dict[str, dict[str, Any]]] = defaultdict(dict)
     skipped: Counter[str] = Counter()
     errors: list[str] = []
     viewer_row_cache: dict[tuple[str, str, str, int], dict[int, dict[str, Any]]] = {}
+    filter_row_cache: dict[tuple[str, str, str, str, str], dict[str, Any] | None] = {}
 
     for item in records:
         input_records += 1
         record = {key: value for key, value in item.items() if not key.startswith("_")}
         record_id = str(record.get("id", "")).strip()
-        if not record_id or record_id in converted:
+        if not record_id:
             skipped["missing_or_duplicate_id"] += 1
-            errors.append("input V2 row has a missing or duplicate record ID")
+            errors.append("input V2 row has a missing record ID")
+            continue
+        if record_id in converted:
+            prior = converted[record_id]
+            same_lineage = all(
+                str(prior.get(key, "")) == str(record.get(key, ""))
+                for key in ("source_id", "source_revision", "source_row_id_sha256", "task", "split")
+            )
+            if record_id in resumed_record_ids and same_lineage:
+                resumed_media_records += 1
+                continue
+            skipped["missing_or_duplicate_id"] += 1
+            errors.append(f"{record_id}: duplicate ID or progress lineage mismatch")
             continue
         if not external_record_is_trainable(record):
             skipped["not_external_data_class"] += 1
@@ -856,27 +1009,63 @@ def restore_v2_media_records(
             continue
         group[row_hash] = record
 
-    for (source_id, revision, hf_split), targets in pending.items():
+    for group_index, ((source_id, revision, hf_split), targets) in enumerate(pending.items(), 1):
         source = source_map[source_id]
         repo = str(source.get("repo", "")).strip()
         if not repo:
             skipped["source_repo_missing"] += len(targets)
             continue
-        found: set[str] = set()
+        found: set[str] = {
+            row_hash for row_hash, record in targets.items()
+            if str(record.get("id", "")) in converted
+        }
+        if len(found) == len(targets):
+            print(
+                f"[onecore-v3] resume skip {source_id}/{hf_split}: "
+                f"{len(found)} of {len(targets)} media rows already restored",
+                flush=True,
+            )
+            continue
         source_splits = (source.get("hf_splits") or ["train"]) if hf_split == "*" else [hf_split]
         if isinstance(source_splits, str):
             source_splits = [source_splits]
+        print(
+            f"[onecore-v3] source {group_index}/{len(pending)} {source_id}/{hf_split}: "
+            f"targets={len(targets)} resumed={len(found)}",
+            flush=True,
+        )
         for source_split in source_splits:
+            matched_rows: list[tuple[str, dict[str, Any], dict[str, Any], int]] = []
+            scanned = 0
             try:
                 stream = loader(repo, source.get("config"), str(source_split), revision)
                 for index, row in enumerate(stream):
+                    scanned = index + 1
+                    if scanned % 5000 == 0:
+                        print(
+                            f"[onecore-v3] scan {source_id}/{source_split}: "
+                            f"rows={scanned} matched={len(matched_rows)} restored={len(found)}/{len(targets)}",
+                            flush=True,
+                        )
                     if not isinstance(row, dict):
                         continue
                     row_id = _row_identity(row, source_id, index)
                     row_hash = _sha256_text(row_id)
                     if row_hash not in targets or row_hash in found:
                         continue
-                    record = targets[row_hash]
+                    matched_rows.append((row_hash, targets[row_hash], row, index))
+                    if len(found) + len(matched_rows) >= len(targets):
+                        break
+                print(
+                    f"[onecore-v3] source scan complete {source_id}/{source_split}: "
+                    f"rows={scanned} matched={len(matched_rows)}",
+                    flush=True,
+                )
+                fleurs_failures: list[tuple[str, dict[str, Any], dict[str, Any], int, str]] = []
+                for row_hash, record, row, index in matched_rows:
+                    if str(record.get("id", "")) in converted:
+                        found.add(row_hash)
+                        continue
                     try:
                         converted_record = _rehydrate_record(
                             record, row, source, root, target_audio_rate,
@@ -884,16 +1073,63 @@ def restore_v2_media_records(
                             source_hf_split=str(source_split),
                             viewer_row_loader=viewer_row_loader,
                             viewer_row_cache=viewer_row_cache,
+                            filter_row_loader=filter_row_loader,
+                            filter_row_cache=filter_row_cache,
                         )
                         converted[record["id"]] = converted_record
                         found.add(row_hash)
+                        _append_restore_progress(progress_file, converted_record)
+                    except Exception as exc:
+                        reason = f"{type(exc).__name__}: {str(exc)[:240]}"
+                        if source_id == "fleurs_ar" and MEDIA_TASKS[str(record["task"])] == "audio":
+                            fleurs_failures.append((row_hash, record, row, index, reason))
+                        else:
+                            errors.append(f"{record['id']}: media restore failed ({reason})")
+                if fleurs_failures:
+                    staging: Path | None = None
+                    try:
+                        extraction_rows = [
+                            (row_hash, record, row, index)
+                            for row_hash, record, row, index, _reason in fleurs_failures
+                        ]
+                        extracted, staging = _extract_fleurs_audio_for_rows(
+                            extraction_rows, source, str(source_split), revision, root,
+                        )
+                        for row_hash, record, row, index, previous_reason in fleurs_failures:
+                            extracted_path = extracted.get(str(record["id"]))
+                            if extracted_path is None:
+                                errors.append(
+                                    f"{record['id']}: FLEURS tar fallback missed matching WAV "
+                                    f"(initial: {previous_reason})"
+                                )
+                                continue
+                            try:
+                                converted_record = _rehydrate_record(
+                                    record, row, source, root, target_audio_rate,
+                                    source_row_index=index,
+                                    source_hf_split=str(source_split),
+                                    viewer_row_loader=viewer_row_loader,
+                                    viewer_row_cache=viewer_row_cache,
+                                    filter_row_loader=filter_row_loader,
+                                    filter_row_cache=filter_row_cache,
+                                    media_value_overrides={"audio": {"path": str(extracted_path)}},
+                                )
+                                converted[record["id"]] = converted_record
+                                found.add(row_hash)
+                                _append_restore_progress(progress_file, converted_record)
+                            except Exception as exc:
+                                errors.append(
+                                    f"{record['id']}: FLEURS tar fallback failed "
+                                    f"({type(exc).__name__}: {str(exc)[:240]}; initial: {previous_reason})"
+                                )
                     except Exception as exc:
                         errors.append(
-                            f"{record['id']}: media restore failed "
+                            f"{source_id}/{source_split}@{revision[:12]}: FLEURS tar fallback failed "
                             f"({type(exc).__name__}: {str(exc)[:240]})"
                         )
-                    if len(found) == len(targets):
-                        break
+                    finally:
+                        if staging is not None:
+                            shutil.rmtree(staging, ignore_errors=True)
             except Exception as exc:
                 errors.append(
                     f"{source_id}/{source_split}@{revision[:12]}: source stream failed "
@@ -902,6 +1138,11 @@ def restore_v2_media_records(
             if len(found) == len(targets):
                 break
         missing = len(targets) - len(found)
+        print(
+            f"[onecore-v3] source complete {source_id}/{hf_split}: "
+            f"restored={len(found)}/{len(targets)} missing={missing}",
+            flush=True,
+        )
         if missing:
             skipped["pinned_source_row_not_found"] += missing
 
@@ -920,7 +1161,9 @@ def restore_v2_media_records(
         "skipped": dict(skipped),
         "errors": errors,
         "target_audio_rate": target_audio_rate,
-        "source_restore_mode": "pinned_revision_streaming_row_hash_lookup_with_dataset_viewer_media_fallback",
+        "source_restore_mode": "pinned_revision_streaming_row_hash_lookup_with_indexed_filter_and_fleurs_tar_fallback",
+        "resumed_media_records": resumed_media_records,
+        "restore_progress_path": str(progress_file) if progress_file is not None else None,
         "dataset_viewer_media_restored_records": sum(
             1 for row in ordered if isinstance(row.get("source_media_locator"), dict)
         ),
@@ -987,6 +1230,8 @@ def convert_v2_corpus(
     source_revisions: dict[str, str] | None = None,
     fill_missing_media: bool = True,
     max_scan_rows_per_source_split: int = 50_000,
+    filter_row_loader: Callable[[str, str, str, str], dict[str, Any]] | None = None,
+    progress_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Convert existing V2 split manifests and run the complete V3 external gate.
 
@@ -1017,6 +1262,8 @@ def convert_v2_corpus(
         records, sources_registry, assets_root,
         target_audio_rate=target_audio_rate, source_loader=source_loader,
         viewer_row_loader=viewer_row_loader,
+        filter_row_loader=filter_row_loader,
+        progress_path=progress_path or (destination / "restore-progress.jsonl"),
     )
     manifest_paths = write_v3_manifests(converted, destination)
     gate = validate_v3_manifest(

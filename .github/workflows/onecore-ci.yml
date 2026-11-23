@@ -418,7 +418,7 @@ jobs:
     needs: verify
     if: github.ref == 'refs/heads/research/onecore-v3-implementation' && contains(github.event.head_commit.message, '[onecore-v3-corpus-restore]')
     runs-on: ubuntu-24.04
-    timeout-minutes: 330
+    timeout-minutes: 350
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -470,11 +470,70 @@ jobs:
           git fetch --no-tags --depth=1 origin 5489900c3662082ad39efbfac5b6a2c7d22a7c4c
           git show 5489900c3662082ad39efbfac5b6a2c7d22a7c4c:onecore-ai/data/sources.yaml > "$RUNNER_TEMP/onecore-v2-sources.yaml"
 
+      - name: Locate latest durable V3 media progress snapshot
+        id: resume-progress
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from urllib.request import Request, urlopen
+          repo, token = os.environ["GITHUB_REPOSITORY"], os.environ["GH_TOKEN"]
+          branch, current = os.environ["GITHUB_REF_NAME"], os.environ["CURRENT_RUN_ID"]
+          headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
+          def get(url):
+              with urlopen(Request(url, headers=headers), timeout=30) as response:
+                  return json.loads(response.read().decode("utf-8"))
+          runs = get(f"https://api.github.com/repos/{repo}/actions/runs?branch={branch}&per_page=30")
+          selected = None
+          for run in runs.get("workflow_runs", []):
+              if str(run.get("id")) == current or run.get("path") != ".github/workflows/onecore-ci.yml":
+                  continue
+              if run.get("head_branch") != branch:
+                  continue
+              artifacts = get(run["artifacts_url"] + "?per_page=100").get("artifacts", [])
+              candidates = [
+                  item for item in artifacts
+                  if item.get("name", "").startswith("onecore-v3-restore-progress-")
+                  and not item.get("expired", False)
+              ]
+              if candidates:
+                  candidates.sort(key=lambda item: item.get("created_at", ""), reverse=True)
+                  selected = (run["id"], candidates[0]["name"])
+                  break
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              if selected:
+                  output.write(f"available=true\\nrun_id={selected[0]}\\nartifact_name={selected[1]}\\n")
+                  print({"resume_run_id": selected[0], "artifact_name": selected[1]})
+              else:
+                  output.write("available=false\\n")
+                  print("No prior V3 progress artifact; restoring from the durable V2 corpus.")
+          PY
+
+      - name: Restore prior V3 media progress and raw assets
+        if: steps.resume-progress.outputs.available == 'true'
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ steps.resume-progress.outputs.artifact_name }}
+          run-id: ${{ steps.resume-progress.outputs.run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/onecore-v3-restore-progress
+
+      - name: Merge prior V3 progress snapshot into the working corpus
+        if: steps.resume-progress.outputs.available == 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/onecore-v3-corpus/v3/data"
+          cp -a "$RUNNER_TEMP/onecore-v3-restore-progress/." "$RUNNER_TEMP/onecore-v3-corpus/v3/"
+
       - name: Convert the existing corpus with HTTP range reads
         env:
           PYTHONPATH: onecore-ai/src
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HF_HUB_DISABLE_TELEMETRY: "1"
+          PYTHONUNBUFFERED: "1"
         run: |
           python -m onecore.v3.cli \
             --artifact-id 14715699177 \
@@ -482,6 +541,7 @@ jobs:
             --source-registry "$RUNNER_TEMP/onecore-v2-sources.yaml" \
             --output-root "$RUNNER_TEMP/onecore-v3-corpus" \
             --report-output "$RUNNER_TEMP/onecore-v3-conversion-report.json" \
+            --resume-progress "$RUNNER_TEMP/onecore-v3-corpus/v3/restore-progress.jsonl" \
             --max-scan-rows-per-source-split 100000
 
       - name: Publish conversion gate result
@@ -520,6 +580,17 @@ jobs:
         run: |
           echo "::error::V3 external-only corpus gate did not pass; no V3 corpus artifact will be published."
           exit 1
+
+      - name: Upload durable partial V3 media progress for the next bounded run
+        if: always() && steps.conversion-summary.outputs.gate_passed != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: onecore-v3-restore-progress-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/onecore-v3-corpus/v3/restore-progress.jsonl
+            ${{ runner.temp }}/onecore-v3-corpus/v3/data/assets
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Upload V3 conversion report
         if: always()

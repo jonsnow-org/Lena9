@@ -24,6 +24,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--acquisition-report", help="Local acquisition-report.json for pinned revisions.")
     parser.add_argument("--output-root", required=True)
     parser.add_argument("--report-output")
+    parser.add_argument("--resume-progress", help="Previously uploaded V3 media progress JSONL.")
     parser.add_argument("--target-audio-rate", type=int, default=24_000)
     parser.add_argument("--minimum-train", type=int, default=100)
     parser.add_argument("--minimum-holdout", type=int, default=10)
@@ -61,6 +62,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         source_revisions=source_revisions,
         fill_missing_media=not args.no_fill_missing_media,
         max_scan_rows_per_source_split=args.max_scan_rows_per_source_split,
+        progress_path=args.resume_progress or (output_root / "v3" / "restore-progress.jsonl"),
     )
     report_output = Path(args.report_output) if args.report_output else output_root / "conversion-report.json"
     report_output.parent.mkdir(parents=True, exist_ok=True)

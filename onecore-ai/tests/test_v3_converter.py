@@ -448,3 +448,56 @@ def test_v3_converter_prefers_encoded_bytes_over_a_missing_local_path(tmp_path, 
     assert report["dataset_viewer_media_restored_records"] == 0
     assert report["errors"] == []
 
+
+
+
+def test_restore_progress_reuses_completed_media_without_rescanning(tmp_path):
+    image = Image.new("RGB", (14, 11), (3, 4, 5))
+    row = {"id": "resume-image-01", "image": image}
+    record = _record("resume-source", row, "image_reconstruction", "resume-image-record")
+    registry = tmp_path / "sources.yaml"
+    _write_registry(registry, [{
+        "id": "resume-source", "repo": "org/resume", "config": "default",
+        "hf_splits": ["train"], "adapter": "image", "image_field": "image", "enabled": True,
+    }])
+    assets = tmp_path / "assets"
+    progress = tmp_path / "restore-progress.jsonl"
+    restored, first = restore_v2_media_records(
+        [record], registry, assets, source_loader=lambda *_: [row], progress_path=progress,
+    )
+    assert len(restored) == 1 and first["resumed_media_records"] == 0
+    assert progress.is_file()
+    def must_not_scan(*_):
+        raise AssertionError("completed media must be resumed without re-scanning")
+    resumed, second = restore_v2_media_records(
+        [record], registry, assets, source_loader=must_not_scan, progress_path=progress,
+    )
+    assert len(resumed) == 1 and second["resumed_media_records"] == 1
+    assert second["blocked"] is False
+
+
+def test_fleurs_tar_fallback_extracts_only_matched_wav_files(tmp_path, monkeypatch):
+    import io
+    import shutil
+    import tarfile
+    from onecore.v3.converter import _extract_fleurs_audio_for_rows
+
+    archive = tmp_path / "train.tar.gz"
+    with tarfile.open(archive, "w:gz") as handle:
+        for name, payload in (("audio/keep.wav", b"wanted"), ("audio/other.wav", b"ignore")):
+            info = tarfile.TarInfo(name)
+            info.size = len(payload)
+            handle.addfile(info, io.BytesIO(payload))
+    monkeypatch.setattr(converter_module, "hf_hub_download", lambda **_: str(archive))
+    row = {"audio": {"path": "/runner/missing/keep.wav"}}
+    matched = [("rowhash", {"id": "fleurs-record"}, row, 4)]
+    extracted, staging = _extract_fleurs_audio_for_rows(
+        matched, {"repo": "google/fleurs", "config": "ar_eg", "audio_field": "audio"},
+        "train", REVISION, tmp_path / "assets",
+    )
+    try:
+        assert set(extracted) == {"fleurs-record"}
+        assert extracted["fleurs-record"].read_bytes() == b"wanted"
+        assert len(list(staging.iterdir())) == 1
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
