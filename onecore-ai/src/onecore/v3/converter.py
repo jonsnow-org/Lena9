@@ -838,7 +838,7 @@ def _append_restore_progress(progress_path: Path | None, record: dict[str, Any])
         return
     progress_path.parent.mkdir(parents=True, exist_ok=True)
     with progress_path.open("a", encoding="utf-8") as stream:
-        stream.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\\n")
+        stream.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
         stream.flush()
         os.fsync(stream.fileno())
 
@@ -927,6 +927,7 @@ def restore_v2_media_records(
     converted: dict[str, dict[str, Any]] = _load_restore_progress(progress_file, root)
     resumed_record_ids = set(converted)
     resumed_media_records = 0
+    seen_input_ids: set[str] = set()
     input_records = 0
     pending: dict[tuple[str, str, str], dict[str, dict[str, Any]]] = defaultdict(dict)
     skipped: Counter[str] = Counter()
@@ -938,15 +939,16 @@ def restore_v2_media_records(
         input_records += 1
         record = {key: value for key, value in item.items() if not key.startswith("_")}
         record_id = str(record.get("id", "")).strip()
-        if not record_id:
+        if not record_id or record_id in seen_input_ids:
             skipped["missing_or_duplicate_id"] += 1
-            errors.append("input V2 row has a missing record ID")
+            errors.append("input V2 row has a missing or duplicate record ID")
             continue
+        seen_input_ids.add(record_id)
         if record_id in converted:
             prior = converted[record_id]
             same_lineage = all(
                 str(prior.get(key, "")) == str(record.get(key, ""))
-                for key in ("source_id", "source_revision", "source_row_id_sha256", "task", "split")
+                for key in ("source_id", "source_revision", "source_row_id_sha256", "source_url", "data_class", "task", "split")
             )
             if record_id in resumed_record_ids and same_lineage:
                 resumed_media_records += 1

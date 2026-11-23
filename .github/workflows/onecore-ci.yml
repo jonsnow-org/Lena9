@@ -506,10 +506,10 @@ jobs:
                   break
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               if selected:
-                  output.write(f"available=true\\nrun_id={selected[0]}\\nartifact_name={selected[1]}\\n")
+                  output.write(f"available=true\nrun_id={selected[0]}\nartifact_name={selected[1]}\n")
                   print({"resume_run_id": selected[0], "artifact_name": selected[1]})
               else:
-                  output.write("available=false\\n")
+                  output.write("available=false\n")
                   print("No prior V3 progress artifact; restoring from the durable V2 corpus.")
           PY
 

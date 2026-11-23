@@ -929,6 +929,37 @@ def test_asset_report_counts_all_usable_media_files(tmp_path: Path) -> None:
     assert report["unique_asset_files"] == 4
     assert report["missing_asset_files"] == 0
 
+def test_external_asset_report_by_split_refreshes_caption_paired_images(tmp_path: Path) -> None:
+    from onecore.acquire import external_asset_report_by_split
+
+    data = tmp_path / "data"
+    assets = data / "assets" / "acquired"
+    assets.mkdir(parents=True)
+    for split in ("train", "validation", "test"):
+        relative = f"acquired/{split}-caption-image.png"
+        Image.new("RGB", (16, 16), (30, 70, 120)).save(
+            assets / Path(relative).name, format="PNG"
+        )
+        record = {
+            **_external_metadata(f"{split}-image-source", f"{split}-image-row"),
+            "id": f"{split}-image-caption",
+            "task": "image_caption",
+            "split": split,
+            "image": relative,
+            "caption": "A real image paired with a caption.",
+        }
+        (data / f"{split}.jsonl").write_text(
+            json.dumps(record) + "\n", encoding="utf-8"
+        )
+
+    report = external_asset_report_by_split(tmp_path)
+    for split in ("train", "validation", "test"):
+        assert report[split]["records_by_task"] == {"image_caption": 1}
+        assert report[split]["image_files"] == 1
+        assert report[split]["missing_asset_files"] == 0
+        assert report[split]["unusable_external_records"] == 0
+
+
 def test_task_coverage_gate_counts_all_usable_records(tmp_path: Path) -> None:
     from onecore.acquire import assert_task_coverage
     groups = {"text": "text", "tool": "tool_use", "image": "image_reconstruction",

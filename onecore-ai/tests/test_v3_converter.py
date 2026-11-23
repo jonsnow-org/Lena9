@@ -501,3 +501,60 @@ def test_fleurs_tar_fallback_extracts_only_matched_wav_files(tmp_path, monkeypat
         assert len(list(staging.iterdir())) == 1
     finally:
         shutil.rmtree(staging, ignore_errors=True)
+
+
+
+def test_dataset_viewer_filter_fallback_uses_exact_row_key_and_pinned_revision():
+    from onecore.v3.converter import _dataset_viewer_media_value
+
+    revision = "d" * 40
+    source_row = {"id": "07027116", "audio": {"path": "/runner/missing/07027116.wav"}}
+    media_url = (
+        "https://datasets-server.huggingface.co/cached-assets/org/audio/"
+        f"--/{revision}/--/default/bbc/7/audio/audio.wav?Signature=valid"
+    )
+    calls = []
+
+    def rows_loader(*_):
+        raise RuntimeError("rows endpoint exceeds source row-group scan limit")
+
+    def filter_loader(repo, config, split, where):
+        calls.append((repo, config, split, where))
+        return {
+            "rows": [{
+                "row_idx": 7,
+                "row": {"id": "07027116", "audio": [{"src": media_url}]},
+            }]
+        }
+
+    value = converter_module._dataset_viewer_media_value(
+        source_row,
+        {"repo": "org/audio", "config": "default", "audio_field": "audio"},
+        "audio", revision, "bbc", 7,
+        viewer_row_loader=rows_loader,
+        filter_row_loader=filter_loader,
+    )
+    assert value == {"src": media_url}
+    assert calls == [('org/audio', 'default', 'bbc', '"id"=\'07027116\'')]
+
+
+def test_dataset_viewer_filter_fallback_rejects_wrong_revision():
+    other_revision = "e" * 40
+    pinned_revision = "d" * 40
+    source_row = {"file": "ARA NORM 0001.wav"}
+    bad_url = (
+        "https://datasets-server.huggingface.co/cached-assets/org/audio/"
+        f"--/{other_revision}/--/default/train/0/audio/audio.wav?Signature=bad"
+    )
+    with pytest.raises(ValueError, match="does not match the pinned source revision"):
+        converter_module._dataset_viewer_filter_media_value(
+            source_row,
+            {"repo": "org/audio", "config": "default", "audio_field": "audio"},
+            "audio", pinned_revision, "train",
+            filter_row_loader=lambda *_: {
+                "rows": [{
+                    "row_idx": 0,
+                    "row": {"file": "ARA NORM 0001.wav", "audio": [{"src": bad_url}]},
+                }]
+            },
+        )
