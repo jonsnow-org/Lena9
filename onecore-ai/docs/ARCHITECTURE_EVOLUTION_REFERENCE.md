@@ -682,3 +682,33 @@ Run #586 (ID 45080869616) on V3 commit 1cc8571c278b4b163e457a8440efe2b6b91ce63b 
 The separate corpus-restore job in the same Run #586 is now active. FFmpeg installation is in progress; CPU PyTorch, CPU TorchCodec, registry restore, HTTP-range manifest extraction and the real converter have not yet been verified in this run. No conversion report or V3 corpus artifact is available yet. Do not repeat acquisition or start V3 training. Inspect the converter report after it completes; specifically verify that image/audio/video raw assets, hashes, canonical 24 kHz audio derivatives, provenance and external-only 100/10/10 coverage pass. The FLEURS Arabic train Dataset Viewer row endpoint has a known scan-size failure for early row groups; if the real conversion confirms this blocks audio, use the pinned train.tar.gz streaming fallback only for the matched WAV basenames.
 
 V3 head: 1cc8571c278b4b163e457a8440efe2b6b91ce63b. Foundation reference head before this note: 95447e2f2f6eaebf50f73b9a62410f4419d0b22b. main remains 0b5ec69e839bfc6086a358511b54649b03c7be9a. No V3 training, PR or merge.
+
+### V3 real-corpus restore audit and stale-path correction — 2026-11-23
+
+Run #586 (ID `45080869616`) completed on V3 commit `1cc8571c278b4b163e457a8440efe2b6b91ce63b`.
+
+**Verify job:** passed in full: 211 tests, 9 warnings; compile, exact prototype-2 parameter report, Corrected Specification v2/FLOPs, notebook checks, text one-step smoke, random-init smoke, FineWeb-2 cursor resume and workflow isolation all passed. Exact report: 39,906,568 trainable parameters; config SHA-256 `6c879331c75da434c58680050f94035dc15626e7af4847db1b36e055c47d7708`; 123 state tensors; FP32 parameter storage 159,626,272 bytes; FP16 79,813,136 bytes; AdamW moments estimate 319,252,544 bytes. These are storage estimates, not peak memory. The one-step smoke is not a V3 training run or quality result.
+
+**Real converter:** the restore job ran to completion but correctly blocked promotion. Report artifact:
+- Name: `onecore-v3-conversion-report-45080869616`
+- Artifact ID: `14786937256`
+- ZIP SHA-256: `7c222dd2a9d3801dcdc95d3435d4766c3fd761169fcb64625f5a123528f9caec`
+- 655,427 input records; 651,635 converted records; 1,302 non-external rows skipped; 2,490 pinned source-row matches unresolved; 1,553 media restore errors.
+- Error groups: FLEURS Arabic 700; Arabic Speech Corpus 413; WavCaps 300; Videos4CameraBench 120; OpenImages 20.
+- Dataset Viewer media fallback restored 0 records. The final manifest had zero usable image/audio/video records in every split and zero asset hashes; text/tool counts were present, but the external-only media gate failed. No V3 corpus artifact was uploaded.
+- The targeted OpenImages fill attempted 10 validation and 10 test rows, but those rows also failed media restoration; candidate row counts are not valid media coverage.
+
+**Root-cause correction:** inspection of `converter.py` and `media_ingest.py` showed that the fallback predicate treated any non-None `bytes` field as usable before checking whether the accompanying local `path` existed. The preservation helpers prefer `path` over `bytes`, so a stale local path could still cause FileNotFoundError even when the row carried another payload. Empty bytes also incorrectly suppressed fallback.
+
+V3 commit `1799460ec04f5ea5b16fc6e3a65428ec7d1762f0` now:
+- checks that inline bytes/arrays/frames are non-empty;
+- removes an unavailable local path when a valid alternate payload is present, allowing the existing preservation helper to use the payload;
+- sends missing paths with no usable alternate payload through the pinned Dataset Viewer fallback;
+- adds regression coverage for empty-byte fallback and non-empty encoded-byte priority.
+
+**Current verification:** Run #589 (ID `45116254698`) is active on exact V3 commit `1799460ec04f5ea5b16fc6e3a65428ec7d1762f0`. Do not claim this fix or the converter gate passed until Verify and the real restore report finish. Do not push another V3 commit while #589 is active.
+
+**V2 evaluation reconciliation:** Run #52 (ID `45015944155`) is cancelled without an evaluation artifact. Run #55 (ID `45017683783`) failed during independent validation/test because `image_reconstruction` was missing; no optimizer updates occurred. Neither is a successful independent evaluation. No active V2 training/evaluation job is evidenced by those runs.
+
+V3 training remains prohibited until the real external-only 100/10/10 gate passes for all five families, CPU peak-memory/throughput and modality sequence measurements are recorded, and durable checkpoint save/restore continuity (optimizer, scheduler, RNG, tokenizer and step lineage) is implemented and tested. No V3 PR/merge was created. `main` remains at `0b5ec69e839bfc6086a358511b54649b03c7be9a`.
+
