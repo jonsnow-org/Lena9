@@ -2,6 +2,7 @@ import hashlib
 import json
 
 import numpy as np
+import pytest
 import soundfile as sf
 import yaml
 from PIL import Image
