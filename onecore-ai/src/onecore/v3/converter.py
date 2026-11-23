@@ -10,6 +10,10 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import os
+import shutil
+import tarfile
+import tempfile
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Callable, Iterable
@@ -130,6 +134,134 @@ def _validate_pinned_media_url(url: str, revision: str) -> str:
     return url
 
 
+
+
+_DATASET_VIEWER_FILTER_URL = "https://datasets-server.huggingface.co/filter"
+
+
+def _default_dataset_viewer_filter_loader(
+    repo: str, config: str, split: str, where: str,
+) -> dict[str, Any]:
+    """Fetch an exact stable-key row through the Hub's indexed Dataset Viewer filter."""
+    query = urlencode({
+        "dataset": repo, "config": config, "split": split,
+        "where": where, "offset": 0, "length": 10,
+    })
+    request = Request(
+        f"{_DATASET_VIEWER_FILTER_URL}?{query}",
+        headers={"User-Agent": "OneCore-v3-pinned-media-restore/1.0"},
+    )
+    with urlopen(request, timeout=90) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    if not isinstance(payload, dict) or not isinstance(payload.get("rows"), list):
+        raise RuntimeError("Hugging Face Dataset Viewer filter returned an invalid rows payload")
+    return payload
+
+
+def _filter_candidates(source_row: dict[str, Any], family: str, source: dict[str, Any]) -> list[tuple[str, str]]:
+    """Find stable scalar keys usable for an exact media-row filter."""
+    candidates: list[tuple[str, str]] = []
+    for key in ("id", "sample_id", "file", "filename", "path", "url", "video_id", "clip_id"):
+        value = source_row.get(key)
+        if isinstance(value, str) and value.strip():
+            candidates.append((key, value.strip()))
+    field_name = str(source.get(f"{family}_field") or {
+        "image": "image", "audio": "audio", "video": "video",
+    }[family])
+    media_value = _nested(source_row, field_name)
+    if isinstance(media_value, dict):
+        for key in ("path", "src", "url"):
+            value = media_value.get(key)
+            if isinstance(value, str) and value.strip():
+                basename = Path(unquote(urlparse(value).path)).name
+                if basename:
+                    candidates.extend((("file", basename), ("path", basename), ("id", Path(basename).stem)))
+    unique: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in candidates:
+        if item not in seen:
+            seen.add(item)
+            unique.append(item)
+    return unique
+
+
+def _dataset_viewer_filter_media_value(
+    source_row: dict[str, Any],
+    source: dict[str, Any],
+    family: str,
+    revision: str,
+    split: str,
+    *,
+    filter_row_loader: Callable[[str, str, str, str], dict[str, Any]] | None = None,
+    filter_row_cache: dict[tuple[str, str, str, str, str], dict[str, Any] | None] | None = None,
+) -> dict[str, str]:
+    """Resolve media by stable key when offset-based Dataset Viewer rows are unavailable."""
+    repo = str(source.get("repo") or "").strip()
+    config = str(source.get("config") or "default")
+    if not repo:
+        raise ValueError("Dataset Viewer filter fallback requires a source repository")
+    cache = filter_row_cache if filter_row_cache is not None else {}
+    loader = filter_row_loader or _default_dataset_viewer_filter_loader
+    errors: list[str] = []
+    media_field = str(source.get(f"{family}_field") or {
+        "image": "image", "audio": "audio", "video": "video",
+    }[family])
+    for field, value in _filter_candidates(source_row, family, source):
+        cache_key = (repo, config, split, field, value)
+        if cache_key not in cache:
+            escaped = value.replace("'", "''")
+            where = f'"{field}"=\'{escaped}\''
+            try:
+                payload = loader(repo, config, split, where)
+                rows = payload.get("rows") if isinstance(payload, dict) else None
+                if not isinstance(rows, list):
+                    raise RuntimeError("filter response omitted rows")
+                selected = None
+                for item in rows:
+                    candidate = item.get("row") if isinstance(item, dict) else None
+                    if isinstance(candidate, dict) and str(candidate.get(field, "")).strip() == value:
+                        selected = candidate
+                        break
+                cache[cache_key] = selected
+            except Exception as exc:
+                cache[cache_key] = None
+                errors.append(f"{field} filter failed: {type(exc).__name__}: {str(exc)[:120]}")
+        viewer_row = cache[cache_key]
+        if not isinstance(viewer_row, dict):
+            continue
+        if str(viewer_row.get(field, "")).strip() != value:
+            continue
+        source_key = _row_primary_key(source_row)
+        viewer_key = _row_primary_key(viewer_row)
+        if source_key is not None and viewer_key is not None and source_key != viewer_key:
+            continue
+        media_url = _find_media_source_url(_nested(viewer_row, media_field))
+        if media_url:
+            return {"src": _validate_pinned_media_url(media_url, revision)}
+    suffix = "; ".join(errors[:3])
+    raise FileNotFoundError(
+        f"Dataset Viewer filter could not resolve {family} row for {repo}/{config}/{split}"
+        + (f" ({suffix})" if suffix else "")
+    )
+
+
+def _local_media_basename(value: Any) -> str | None:
+    if isinstance(value, dict):
+        for key in ("path", "src", "url"):
+            candidate = value.get(key)
+            if isinstance(candidate, str) and candidate.strip():
+                return Path(unquote(urlparse(candidate).path)).name
+        return None
+    if isinstance(value, str) and value.strip():
+        return Path(unquote(urlparse(value).path)).name
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            candidate = _local_media_basename(item)
+            if candidate:
+                return candidate
+    return None
+
+
 def _dataset_viewer_media_value(
     source_row: dict[str, Any],
     source: dict[str, Any],
@@ -140,47 +272,64 @@ def _dataset_viewer_media_value(
     *,
     viewer_row_loader: Callable[[str, str, str, int, int], dict[str, Any]] | None = None,
     viewer_row_cache: dict[tuple[str, str, str, int], dict[int, dict[str, Any]]] | None = None,
+    filter_row_loader: Callable[[str, str, str, str], dict[str, Any]] | None = None,
+    filter_row_cache: dict[tuple[str, str, str, str, str], dict[str, Any] | None] | None = None,
 ) -> dict[str, str]:
-    """Resolve a missing local path to the same pinned source row's cached raw-media URL."""
-    if row_index is None or row_index < 0:
-        raise ValueError("pinned media fallback requires the source row index")
+    """Resolve media via exact pinned row offset, then indexed stable-key filtering."""
     repo = str(source.get("repo") or "").strip()
     config = str(source.get("config") or "default")
     if not repo:
         raise ValueError("pinned media fallback requires a source repository")
-    page_start = (int(row_index) // _DATASET_VIEWER_PAGE_SIZE) * _DATASET_VIEWER_PAGE_SIZE
-    cache = viewer_row_cache if viewer_row_cache is not None else {}
-    cache_key = (repo, config, split, page_start)
-    if cache_key not in cache:
-        loader = viewer_row_loader or _default_dataset_viewer_row_loader
-        payload = loader(repo, config, split, page_start, _DATASET_VIEWER_PAGE_SIZE)
-        rows = payload.get("rows") if isinstance(payload, dict) else None
-        if not isinstance(rows, list):
-            raise RuntimeError("Dataset Viewer rows response omitted the row slice")
-        page: dict[int, dict[str, Any]] = {}
-        for item in rows:
-            if not isinstance(item, dict) or not isinstance(item.get("row"), dict):
-                continue
-            try:
-                page[int(item.get("row_idx", -1))] = item["row"]
-            except (TypeError, ValueError):
-                continue
-        cache[cache_key] = page
-    viewer_row = cache[cache_key].get(int(row_index))
-    if viewer_row is None:
-        raise FileNotFoundError(
-            f"Dataset Viewer did not return row {row_index} for {repo}/{config}/{split}"
+    page_error: Exception | None = None
+    if row_index is not None and row_index >= 0:
+        page_start = (int(row_index) // _DATASET_VIEWER_PAGE_SIZE) * _DATASET_VIEWER_PAGE_SIZE
+        cache = viewer_row_cache if viewer_row_cache is not None else {}
+        cache_key = (repo, config, split, page_start)
+        try:
+            if cache_key not in cache:
+                loader = viewer_row_loader or _default_dataset_viewer_row_loader
+                payload = loader(repo, config, split, page_start, _DATASET_VIEWER_PAGE_SIZE)
+                rows = payload.get("rows") if isinstance(payload, dict) else None
+                if not isinstance(rows, list):
+                    raise RuntimeError("Dataset Viewer rows response omitted the row slice")
+                page: dict[int, dict[str, Any]] = {}
+                for item in rows:
+                    if not isinstance(item, dict) or not isinstance(item.get("row"), dict):
+                        continue
+                    try:
+                        page[int(item.get("row_idx", -1))] = item["row"]
+                    except (TypeError, ValueError):
+                        continue
+                cache[cache_key] = page
+            viewer_row = cache[cache_key].get(int(row_index))
+            if viewer_row is None:
+                raise FileNotFoundError(
+                    f"Dataset Viewer did not return row {row_index} for {repo}/{config}/{split}"
+                )
+            media_field = str(source.get(f"{family}_field") or {
+                "image": "image", "audio": "audio", "video": "video",
+            }[family])
+            if not _viewer_row_matches_source(source_row, viewer_row, media_field):
+                raise ValueError("Dataset Viewer row identity does not match the pinned streaming source row")
+            media_url = _find_media_source_url(_nested(viewer_row, media_field))
+            if not media_url:
+                raise ValueError(f"Dataset Viewer row {row_index} has no usable {family} media URL")
+            return {"src": _validate_pinned_media_url(media_url, revision)}
+        except Exception as exc:
+            page_error = exc
+    try:
+        return _dataset_viewer_filter_media_value(
+            source_row, source, family, revision, split,
+            filter_row_loader=filter_row_loader, filter_row_cache=filter_row_cache,
         )
-    media_field = str(source.get(f"{family}_field") or {
-        "image": "image", "audio": "audio", "video": "video",
-    }[family])
-    if not _viewer_row_matches_source(source_row, viewer_row, media_field):
-        raise ValueError("Dataset Viewer row identity does not match the pinned streaming source row")
-    media_value = _nested(viewer_row, media_field)
-    media_url = _find_media_source_url(media_value)
-    if not media_url:
-        raise ValueError(f"Dataset Viewer row {row_index} has no usable {family} media URL")
-    return {"src": _validate_pinned_media_url(media_url, revision)}
+    except Exception as filter_error:
+        if page_error is not None:
+            raise RuntimeError(
+                f"Dataset Viewer rows fallback failed ({type(page_error).__name__}: "
+                f"{str(page_error)[:140]}); filter fallback failed "
+                f"({type(filter_error).__name__}: {str(filter_error)[:140]})"
+            ) from filter_error
+        raise
 
 
 def _has_nonempty_media_payload(value: dict[str, Any]) -> bool:
