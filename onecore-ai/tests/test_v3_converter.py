@@ -559,3 +559,106 @@ def test_dataset_viewer_filter_fallback_rejects_wrong_revision():
                 }]
             },
         )
+
+
+def test_v3_restore_uses_stateful_cursor_to_resume_bounded_source_scan(tmp_path):
+    rows = [
+        {"id": f"row-{index}", "image": Image.new("RGB", (17, 13), (index, 9, 10))}
+        for index in range(6)
+    ]
+    record = _record("cursor-source", rows[5], "image_reconstruction", "cursor-image-005")
+    registry = tmp_path / "sources.yaml"
+    _write_registry(registry, [{
+        "id": "cursor-source", "repo": "org/cursor-images", "config": "default",
+        "hf_splits": ["train"], "adapter": "image", "image_field": "image",
+        "enabled": True,
+    }])
+
+    class StatefulRows:
+        def __init__(self, payload, position=0):
+            self.payload = payload
+            self.position = position
+
+        def __iter__(self):
+            while self.position < len(self.payload):
+                row = self.payload[self.position]
+                self.position += 1
+                yield row
+
+        def state_dict(self):
+            return {"position": self.position}
+
+        def load_state_dict(self, state):
+            self.position = int(state["position"])
+            return self
+
+    progress = tmp_path / "restore-progress.jsonl"
+    first, first_report = restore_v2_media_records(
+        [record], registry, tmp_path / "assets",
+        source_loader=lambda *_: StatefulRows(rows),
+        progress_path=progress,
+        max_scan_rows_per_source_split=2,
+        cursor_root=tmp_path,
+    )
+    assert first == []
+    assert first_report["deferred_source_splits"] == [{
+        "source_id": "cursor-source", "split": "train", "remaining_records": 1,
+        "reason": "bounded_scan_or_retry_checkpoint",
+    }]
+    cursor_file = tmp_path / "data/resume-cache/crawlers/v3-corpus-restore/cursor-source/train.json"
+    assert cursor_file.is_file()
+    cursor_state = json.loads(cursor_file.read_text(encoding="utf-8"))
+    assert cursor_state["rows_read"] == 2
+    assert cursor_state["cursor_mode"] == "state_dict"
+
+    second, second_report = restore_v2_media_records(
+        [record], registry, tmp_path / "assets",
+        source_loader=lambda *_: StatefulRows(rows),
+        progress_path=progress,
+        max_scan_rows_per_source_split=4,
+        cursor_root=tmp_path,
+    )
+    assert len(second) == 1
+    image_asset = second[0]["assets"]["image"]["source_asset"]
+    assert (tmp_path / "assets" / image_asset).is_file()
+    assert second_report["deferred_source_splits"] == []
+    final_cursor = json.loads(cursor_file.read_text(encoding="utf-8"))
+    assert final_cursor["rows_read"] == 6
+
+
+def test_v3_image_restore_retries_pinned_viewer_if_local_path_disappears(tmp_path, monkeypatch):
+    row = {"id": "image-viewer-race-001", "image": {"path": "/runner/cache/disappeared.jpg"}}
+    record = _record("image-race-source", row, "image_reconstruction", "image-viewer-race-001")
+    registry = tmp_path / "sources.yaml"
+    _write_registry(registry, [{
+        "id": "image-race-source", "repo": "org/image-race", "config": "default",
+        "hf_splits": ["train"], "adapter": "image", "image_field": "image",
+        "enabled": True,
+    }])
+    media_url = (
+        "https://datasets-server.huggingface.co/cached-assets/org/image-race/"
+        f"--/{REVISION}/--/default/train/0/image/image.jpg?Expires=9999999999&Signature=test"
+    )
+    preserve_calls = []
+
+    def fake_preserve(value, assets_root, record_id):
+        preserve_calls.append(value)
+        if len(preserve_calls) == 1:
+            raise FileNotFoundError("local image cache disappeared during copy")
+        return {
+            "source_asset": "raw/images/image-viewer-race-001.jpg",
+            "width": 20, "height": 12, "resized": False,
+        }
+
+    monkeypatch.setattr(converter_module, "preserve_image_payload", fake_preserve)
+    monkeypatch.setattr(converter_module, "_needs_dataset_viewer_fallback", lambda value: False)
+    viewer_row = {"id": "image-viewer-race-001", "image": {"src": media_url}}
+    restored, report = restore_v2_media_records(
+        [record], registry, tmp_path / "assets",
+        source_loader=lambda *_: [row],
+        viewer_row_loader=lambda *_: {"rows": [{"row_idx": 0, "row": viewer_row}]},
+    )
+    assert len(restored) == 1
+    assert preserve_calls == [row["image"], {"src": media_url}]
+    assert report["dataset_viewer_media_restored_records"] == 1
+    assert report["errors"] == []

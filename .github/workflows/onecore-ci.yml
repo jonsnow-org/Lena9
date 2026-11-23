@@ -542,7 +542,7 @@ jobs:
             --output-root "$RUNNER_TEMP/onecore-v3-corpus" \
             --report-output "$RUNNER_TEMP/onecore-v3-conversion-report.json" \
             --resume-progress "$RUNNER_TEMP/onecore-v3-corpus/v3/restore-progress.jsonl" \
-            --max-scan-rows-per-source-split 100000
+            --max-scan-rows-per-source-split 10000
 
       - name: Publish conversion gate result
         id: conversion-summary
@@ -589,6 +589,7 @@ jobs:
           path: |
             ${{ runner.temp }}/onecore-v3-corpus/v3/restore-progress.jsonl
             ${{ runner.temp }}/onecore-v3-corpus/v3/data/assets
+            ${{ runner.temp }}/onecore-v3-corpus/v3/data/resume-cache/crawlers/v3-corpus-restore
           if-no-files-found: warn
           retention-days: 14
 

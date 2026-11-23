@@ -28,7 +28,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--target-audio-rate", type=int, default=24_000)
     parser.add_argument("--minimum-train", type=int, default=100)
     parser.add_argument("--minimum-holdout", type=int, default=10)
-    parser.add_argument("--max-scan-rows-per-source-split", type=int, default=50_000)
+    parser.add_argument("--max-scan-rows-per-source-split", type=int, default=10_000)
     parser.add_argument("--no-fill-missing-media", action="store_true")
     args = parser.parse_args(argv)
 

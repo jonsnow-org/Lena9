@@ -14,6 +14,7 @@ import os
 import shutil
 import tarfile
 import tempfile
+import time
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Callable, Iterable
@@ -25,6 +26,7 @@ from datasets import load_dataset
 from huggingface_hub import hf_hub_download
 
 from onecore.acquire import _first_text, _nested, _resolve_video_asset, _row_identity
+from onecore.crawlers import StatefulStreamCursor
 from onecore.data import external_record_is_trainable, has_immutable_external_provenance, iter_manifest
 from .manifest import validate_v3_manifest
 from .media_ingest import (
@@ -519,7 +521,13 @@ def _rehydrate_record(
         value = _prefer_available_media_payload(value)
         if _needs_dataset_viewer_fallback(value):
             value = viewer_value("image")
-        metadata = preserve_image_payload(value, assets_root, record_id)
+        try:
+            metadata = preserve_image_payload(value, assets_root, record_id)
+        except Exception:
+            if used_dataset_viewer:
+                raise
+            value = viewer_value("image")
+            metadata = preserve_image_payload(value, assets_root, record_id)
         result["assets"] = {"image": metadata}
 
     elif family == "audio":
@@ -904,6 +912,8 @@ def restore_v2_media_records(
     viewer_row_loader: Callable[[str, str, str, int, int], dict[str, Any]] | None = None,
     filter_row_loader: Callable[[str, str, str, str], dict[str, Any]] | None = None,
     progress_path: str | Path | None = None,
+    max_scan_rows_per_source_split: int = 10_000,
+    cursor_root: str | Path | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Reuse external text/tool rows and selectively restore only V2 media rows.
 
@@ -914,6 +924,8 @@ def restore_v2_media_records(
     """
     if target_audio_rate < 1:
         raise ValueError("target_audio_rate must be positive")
+    if max_scan_rows_per_source_split < 1:
+        raise ValueError("max_scan_rows_per_source_split must be positive")
     registry = yaml.safe_load(Path(sources_registry).read_text(encoding="utf-8"))
     source_items = registry.get("sources", [])
     source_map = {str(item["id"]): item for item in source_items if item.get("id")}
@@ -922,6 +934,9 @@ def restore_v2_media_records(
     loader = source_loader or _default_source_loader
     root = Path(assets_root).resolve()
     root.mkdir(parents=True, exist_ok=True)
+    cursor_project_root = (
+        Path(cursor_root).resolve() if cursor_root is not None else root.parent.parent
+    )
 
     progress_file = Path(progress_path).resolve() if progress_path is not None else None
     converted: dict[str, dict[str, Any]] = _load_restore_progress(progress_file, root)
@@ -934,6 +949,8 @@ def restore_v2_media_records(
     errors: list[str] = []
     viewer_row_cache: dict[tuple[str, str, str, int], dict[int, dict[str, Any]]] = {}
     filter_row_cache: dict[tuple[str, str, str, str, str], dict[str, Any] | None] = {}
+    deferred_source_splits: list[dict[str, Any]] = []
+    source_scan_checkpoints: list[dict[str, Any]] = []
 
     for item in records:
         input_records += 1
@@ -1036,34 +1053,48 @@ def restore_v2_media_records(
             f"targets={len(targets)} resumed={len(found)}",
             flush=True,
         )
+        source_deferred = False
+        all_source_splits_exhausted = True
         for source_split in source_splits:
             matched_rows: list[tuple[str, dict[str, Any], dict[str, Any], int]] = []
-            scanned = 0
+            scan_started_at = time.monotonic()
+            rows_scanned = 0
+            scan_stop_reason = "stream_exhausted"
+            cursor = StatefulStreamCursor(
+                cursor_project_root, "v3-corpus-restore", source_id, repo,
+                str(source.get("config") or ""), str(source_split), revision,
+            )
             try:
                 stream = loader(repo, source.get("config"), str(source_split), revision)
-                for index, row in enumerate(stream):
-                    scanned = index + 1
-                    if scanned % 5000 == 0:
-                        print(
-                            f"[onecore-v3] scan {source_id}/{source_split}: "
-                            f"rows={scanned} matched={len(matched_rows)} restored={len(found)}/{len(targets)}",
-                            flush=True,
-                        )
-                    if not isinstance(row, dict):
-                        continue
-                    row_id = _row_identity(row, source_id, index)
-                    row_hash = _sha256_text(row_id)
-                    if row_hash not in targets or row_hash in found:
-                        continue
-                    matched_rows.append((row_hash, targets[row_hash], row, index))
-                    if len(found) + len(matched_rows) >= len(targets):
-                        break
+                stream, start_offset, cursor_mode = cursor.restore(stream, 0)
                 print(
-                    f"[onecore-v3] source scan complete {source_id}/{source_split}: "
-                    f"rows={scanned} matched={len(matched_rows)}",
+                    f"[onecore-v3] source {group_index}/{len(pending)} {source_id}/{source_split}: "
+                    f"targets={len(targets)} resumed={len(found)} cursor={cursor_mode} start={start_offset}",
                     flush=True,
                 )
+                for index, row in enumerate(stream, start=start_offset):
+                    rows_scanned += 1
+                    if rows_scanned % 1000 == 0:
+                        print(
+                            f"[onecore-v3] scan {source_id}/{source_split}: rows_this_run={rows_scanned} "
+                            f"absolute_rows={index + 1} matched={len(matched_rows)} "
+                            f"restored={len(found)}/{len(targets)}",
+                            flush=True,
+                        )
+                    if isinstance(row, dict):
+                        row_id = _row_identity(row, source_id, index)
+                        row_hash = _sha256_text(row_id)
+                        if row_hash in targets and row_hash not in found:
+                            matched_rows.append((row_hash, targets[row_hash], row, index))
+                            if len(found) + len(matched_rows) >= len(targets):
+                                scan_stop_reason = "targets_found"
+                                break
+                    if rows_scanned >= max_scan_rows_per_source_split:
+                        scan_stop_reason = "chunk_limit"
+                        break
+
                 fleurs_failures: list[tuple[str, dict[str, Any], dict[str, Any], int, str]] = []
+                chunk_had_restore_error = False
                 for row_hash, record, row, index in matched_rows:
                     if str(record.get("id", "")) in converted:
                         found.add(row_hash)
@@ -1071,12 +1102,9 @@ def restore_v2_media_records(
                     try:
                         converted_record = _rehydrate_record(
                             record, row, source, root, target_audio_rate,
-                            source_row_index=index,
-                            source_hf_split=str(source_split),
-                            viewer_row_loader=viewer_row_loader,
-                            viewer_row_cache=viewer_row_cache,
-                            filter_row_loader=filter_row_loader,
-                            filter_row_cache=filter_row_cache,
+                            source_row_index=index, source_hf_split=str(source_split),
+                            viewer_row_loader=viewer_row_loader, viewer_row_cache=viewer_row_cache,
+                            filter_row_loader=filter_row_loader, filter_row_cache=filter_row_cache,
                         )
                         converted[record["id"]] = converted_record
                         found.add(row_hash)
@@ -1087,15 +1115,14 @@ def restore_v2_media_records(
                             fleurs_failures.append((row_hash, record, row, index, reason))
                         else:
                             errors.append(f"{record['id']}: media restore failed ({reason})")
+                            chunk_had_restore_error = True
+
                 if fleurs_failures:
                     staging: Path | None = None
                     try:
-                        extraction_rows = [
-                            (row_hash, record, row, index)
-                            for row_hash, record, row, index, _reason in fleurs_failures
-                        ]
                         extracted, staging = _extract_fleurs_audio_for_rows(
-                            extraction_rows, source, str(source_split), revision, root,
+                            [(h, r, row, idx) for h, r, row, idx, _reason in fleurs_failures],
+                            source, str(source_split), revision, root,
                         )
                         for row_hash, record, row, index, previous_reason in fleurs_failures:
                             extracted_path = extracted.get(str(record["id"]))
@@ -1104,16 +1131,14 @@ def restore_v2_media_records(
                                     f"{record['id']}: FLEURS tar fallback missed matching WAV "
                                     f"(initial: {previous_reason})"
                                 )
+                                chunk_had_restore_error = True
                                 continue
                             try:
                                 converted_record = _rehydrate_record(
                                     record, row, source, root, target_audio_rate,
-                                    source_row_index=index,
-                                    source_hf_split=str(source_split),
-                                    viewer_row_loader=viewer_row_loader,
-                                    viewer_row_cache=viewer_row_cache,
-                                    filter_row_loader=filter_row_loader,
-                                    filter_row_cache=filter_row_cache,
+                                    source_row_index=index, source_hf_split=str(source_split),
+                                    viewer_row_loader=viewer_row_loader, viewer_row_cache=viewer_row_cache,
+                                    filter_row_loader=filter_row_loader, filter_row_cache=filter_row_cache,
                                     media_value_overrides={"audio": {"path": str(extracted_path)}},
                                 )
                                 converted[record["id"]] = converted_record
@@ -1124,28 +1149,77 @@ def restore_v2_media_records(
                                     f"{record['id']}: FLEURS tar fallback failed "
                                     f"({type(exc).__name__}: {str(exc)[:240]}; initial: {previous_reason})"
                                 )
+                                chunk_had_restore_error = True
                     except Exception as exc:
                         errors.append(
                             f"{source_id}/{source_split}@{revision[:12]}: FLEURS tar fallback failed "
                             f"({type(exc).__name__}: {str(exc)[:240]})"
                         )
+                        chunk_had_restore_error = True
                     finally:
                         if staging is not None:
                             shutil.rmtree(staging, ignore_errors=True)
+
+                if chunk_had_restore_error:
+                    source_deferred = True
+                    all_source_splits_exhausted = False
+                    source_scan_checkpoints.append({
+                        "source_id": source_id, "split": str(source_split),
+                        "rows_before": start_offset, "rows_scanned": rows_scanned,
+                        "rows_total": start_offset, "cursor_mode": "previous_checkpoint_preserved",
+                        "stop_reason": "restore_error_retry",
+                        "elapsed_seconds": round(time.monotonic() - scan_started_at, 3),
+                    })
+                    break
+
+                saved = cursor.save(stream, start_offset + rows_scanned)
+                source_scan_checkpoints.append({
+                    "source_id": source_id, "split": str(source_split),
+                    "rows_before": start_offset, "rows_scanned": rows_scanned,
+                    "rows_total": start_offset + rows_scanned, "cursor_mode": saved["cursor_mode"],
+                    "stop_reason": scan_stop_reason,
+                    "elapsed_seconds": round(time.monotonic() - scan_started_at, 3),
+                })
+                print(
+                    f"[onecore-v3] source scan checkpoint {source_id}/{source_split}: "
+                    f"rows_this_run={rows_scanned} matched={len(matched_rows)} "
+                    f"restored={len(found)}/{len(targets)} stop={scan_stop_reason}",
+                    flush=True,
+                )
+                if len(found) == len(targets):
+                    break
+                if scan_stop_reason == "chunk_limit":
+                    source_deferred = True
+                    all_source_splits_exhausted = False
+                    break
             except Exception as exc:
                 errors.append(
                     f"{source_id}/{source_split}@{revision[:12]}: source stream failed "
                     f"({type(exc).__name__}: {str(exc)[:240]})"
                 )
-            if len(found) == len(targets):
+                source_deferred = True
+                all_source_splits_exhausted = False
+                source_scan_checkpoints.append({
+                    "source_id": source_id, "split": str(source_split),
+                    "rows_before": 0, "rows_scanned": rows_scanned, "rows_total": 0,
+                    "cursor_mode": "previous_checkpoint_preserved",
+                    "stop_reason": "source_stream_error",
+                    "elapsed_seconds": round(time.monotonic() - scan_started_at, 3),
+                })
                 break
+
         missing = len(targets) - len(found)
         print(
             f"[onecore-v3] source complete {source_id}/{hf_split}: "
-            f"restored={len(found)}/{len(targets)} missing={missing}",
+            f"restored={len(found)}/{len(targets)} missing={missing} deferred={source_deferred}",
             flush=True,
         )
-        if missing:
+        if missing and source_deferred:
+            deferred_source_splits.append({
+                "source_id": source_id, "split": hf_split, "remaining_records": missing,
+                "reason": "bounded_scan_or_retry_checkpoint",
+            })
+        elif missing and all_source_splits_exhausted:
             skipped["pinned_source_row_not_found"] += missing
 
     ordered = sorted(
@@ -1163,14 +1237,17 @@ def restore_v2_media_records(
         "skipped": dict(skipped),
         "errors": errors,
         "target_audio_rate": target_audio_rate,
-        "source_restore_mode": "pinned_revision_streaming_row_hash_lookup_with_indexed_filter_and_fleurs_tar_fallback",
+        "source_restore_mode": "pinned_revision_streaming_row_hash_lookup_with_resumable_stateful_cursors_and_indexed_filter_and_fleurs_tar_fallback",
+        "deferred_source_splits": deferred_source_splits,
+        "source_scan_checkpoints": source_scan_checkpoints,
+        "max_scan_rows_per_source_split": max_scan_rows_per_source_split,
         "resumed_media_records": resumed_media_records,
         "restore_progress_path": str(progress_file) if progress_file is not None else None,
         "dataset_viewer_media_restored_records": sum(
             1 for row in ordered if isinstance(row.get("source_media_locator"), dict)
         ),
         "synthetic_records_added": 0,
-        "blocked": bool(errors or any(skipped.get(key, 0) for key in (
+        "blocked": bool(errors or deferred_source_splits or any(skipped.get(key, 0) for key in (
             "missing_or_duplicate_id", "source_not_in_registry", "source_disabled",
             "source_adapter_mismatch", "source_revision_not_pinned", "invalid_source_row_hash",
             "duplicate_source_row_hash", "source_repo_missing", "pinned_source_row_not_found",
@@ -1231,7 +1308,7 @@ def convert_v2_corpus(
     viewer_row_loader: Callable[[str, str, str, int, int], dict[str, Any]] | None = None,
     source_revisions: dict[str, str] | None = None,
     fill_missing_media: bool = True,
-    max_scan_rows_per_source_split: int = 50_000,
+    max_scan_rows_per_source_split: int = 10_000,
     filter_row_loader: Callable[[str, str, str, str], dict[str, Any]] | None = None,
     progress_path: str | Path | None = None,
 ) -> dict[str, Any]:
@@ -1266,6 +1343,8 @@ def convert_v2_corpus(
         viewer_row_loader=viewer_row_loader,
         filter_row_loader=filter_row_loader,
         progress_path=progress_path or (destination / "restore-progress.jsonl"),
+        max_scan_rows_per_source_split=max_scan_rows_per_source_split,
+        cursor_root=destination,
     )
     manifest_paths = write_v3_manifests(converted, destination)
     gate = validate_v3_manifest(
