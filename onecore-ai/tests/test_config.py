@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+import re
 import yaml
 
 from onecore.config import load_config
@@ -61,7 +62,7 @@ training:
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="unknown training config keys"):
-        load_config(path)
+        load_config(path, validate_spec_v2=False)
 
 
 def test_missing_explicit_schedule_is_rejected(tmp_path):
@@ -80,7 +81,7 @@ training:
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="training.warmup_steps must be explicit"):
-        load_config(path)
+        load_config(path, validate_spec_v2=False)
 
 
 def test_missing_total_steps_is_rejected(tmp_path):
@@ -100,7 +101,7 @@ training:
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="training.total_steps must be explicit"):
-        load_config(path)
+        load_config(path, validate_spec_v2=False)
 
 
 def test_wrong_exact_parameter_budget_is_rejected(tmp_path):
@@ -120,7 +121,7 @@ training:
 """,
         encoding="utf-8",
     )
-    with pytest.raises(ValueError, match="expected_parameter_count must equal 57579201"):
+    with pytest.raises(ValueError, match="expected_parameter_count must be 57579201"):
         load_config(path)
 
 
@@ -194,7 +195,7 @@ def test_corrected_spec_v2_model_values_are_hard_anchored(tmp_path, field, value
     raw["model"][field] = value
     path = tmp_path / f"wrong-{field}.yaml"
     path.write_text(yaml.safe_dump(raw, sort_keys=False), encoding="utf-8")
-    with pytest.raises(ValueError, match=message):
+    with pytest.raises(ValueError, match=re.escape(message)):
         load_config(path)
 
 

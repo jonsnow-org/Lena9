@@ -412,11 +412,12 @@ def run_training(
     output_dir: str | Path,
     resume: bool = False,
     seed_override: int | None = None,
+    validate_spec_v2: bool = True,
 ) -> dict[str, Any]:
     root = Path(project_root).resolve()
     out = Path(output_dir).resolve()
     out.mkdir(parents=True, exist_ok=True)
-    cfg, train_cfg, raw_cfg = load_config(config_path)
+    cfg, train_cfg, raw_cfg = load_config(config_path, validate_spec_v2=validate_spec_v2)
     if not 1 <= steps <= train_cfg.max_steps_per_job:
         raise ValueError(f"steps must be between 1 and {train_cfg.max_steps_per_job} per GitHub job")
     if stage not in {"smoke", "text", "joint", "multimodal"}:

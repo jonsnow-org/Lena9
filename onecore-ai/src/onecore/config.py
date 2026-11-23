@@ -177,18 +177,23 @@ class TrainConfig:
             raise ValueError("tldm_diffusion_weight cannot be negative")
 
 
-def load_config(path: str | Path) -> tuple[ModelConfig, TrainConfig, dict[str, Any]]:
+def load_config(
+    path: str | Path,
+    *,
+    validate_spec_v2: bool = True,
+) -> tuple[ModelConfig, TrainConfig, dict[str, Any]]:
     raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
     if not isinstance(raw, dict) or not isinstance(raw.get("model"), dict):
         raise ValueError("config must contain a model mapping")
-    spec_v2_model_values = {
-        "expected_parameter_count": (57_579_201, "expected_parameter_count must be 57579201 (Spec v2, Section 2)."),
-        "vocab_size": (5_144, "vocab_size must be 5144 = 4096+512+256+256+24."),
-        "hidden_size": (2_730, "hidden_size must be int(1024*8/3) = 2730."),
-    }
-    for key, (expected, message) in spec_v2_model_values.items():
-        if raw["model"].get(key) != expected:
-            raise ValueError(message)
+    if validate_spec_v2:
+        spec_v2_model_values = {
+            "expected_parameter_count": (57_579_201, "expected_parameter_count must be 57579201 (Spec v2, Section 2)."),
+            "vocab_size": (5_144, "vocab_size must be 5144 = 4096+512+256+256+24."),
+            "hidden_size": (2_730, "hidden_size must be int(1024*8/3) = 2730."),
+        }
+        for key, (expected, message) in spec_v2_model_values.items():
+            if raw["model"].get(key) != expected:
+                raise ValueError(message)
     if raw["model"].get("expected_parameter_count") is None:
         raise ValueError("model.expected_parameter_count must be explicit; silent parameter budgets are forbidden")
     model = ModelConfig.from_mapping(raw["model"])

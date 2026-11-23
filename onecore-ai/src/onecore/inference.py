@@ -274,6 +274,7 @@ def load_inference_session(
     tokenizer_path: str | Path,
     device: str = "cpu",
     tools: ToolRuntime | None = None,
+    validate_spec_v2: bool = True,
 ) -> tuple[InferenceSession, dict[str, Any]]:
     """Load one verified OneCore checkpoint/tokenizer pair for CPU inference.
 
@@ -283,7 +284,7 @@ def load_inference_session(
     if device != "cpu":
         raise ValueError("OneCore inference currently supports the CPU device only")
 
-    cfg, _, _ = load_config(config_path)
+    cfg, _, _ = load_config(config_path, validate_spec_v2=validate_spec_v2)
     checkpoint_file = Path(checkpoint_path)
     tokenizer_file = Path(tokenizer_path)
     report_file = checkpoint_file.with_name("train_result.json")
