@@ -298,7 +298,7 @@ def test_v3_default_source_loader_fails_closed_without_stream_decode_control(mon
 def test_v3_converter_restores_missing_local_media_path_from_pinned_dataset_viewer(tmp_path, monkeypatch):
     row = {
         "id": "audio-viewer-001",
-        "audio": {"path": "/runner/work/missing-audio.wav", "bytes": None},
+        "audio": {"path": "/runner/work/missing-audio.wav", "bytes": b""},
         "transcription": "A pinned audio example.",
     }
     record = _record(
@@ -399,3 +399,52 @@ def test_v3_converter_rejects_dataset_viewer_media_from_a_different_revision(tmp
     assert restored == []
     assert report["blocked"] is True
     assert any("does not match the pinned source revision" in error for error in report["errors"])
+
+def test_v3_converter_prefers_encoded_bytes_over_a_missing_local_path(tmp_path, monkeypatch):
+    row = {
+        "id": "audio-inline-bytes-001",
+        "audio": {"path": "/runner/work/missing-audio.wav", "bytes": b"encoded-audio"},
+        "transcription": "A pinned audio example.",
+    }
+    record = _record(
+        "audio-source", row, "audio_text", "audio-inline-bytes-001",
+        transcript="A pinned audio example.", audio_features="legacy.npy",
+    )
+    registry = tmp_path / "sources.yaml"
+    _write_registry(registry, [{
+        "id": "audio-source", "repo": "org/audio-data", "config": "default",
+        "hf_splits": ["train"], "adapter": "audio", "audio_field": "audio",
+        "text_fields": ["transcription"], "enabled": True,
+    }])
+    payload_calls = []
+
+    def fake_preserve_audio_payload(value, assets_root, record_id):
+        payload_calls.append(value)
+        return {
+            "source_asset": "raw/audio/source.wav", "sample_rate": 16000,
+            "channels": 1, "samples": 160, "duration_seconds": 0.01,
+        }
+
+    def fake_resample_audio_source(source, assets_root, record_id, target_sample_rate):
+        return {
+            "training_asset": "processed/audio/source-24000hz.wav",
+            "training_sample_rate": target_sample_rate, "training_channels": 1,
+            "training_samples": 240, "resampled": True,
+            "resampler": "scipy.signal.resample_poly", "resample_ratio": {"up": 3, "down": 2},
+        }
+
+    monkeypatch.setattr(converter_module, "preserve_audio_payload", fake_preserve_audio_payload)
+    monkeypatch.setattr(converter_module, "resample_audio_source", fake_resample_audio_source)
+    restored, report = restore_v2_media_records(
+        [record], registry, tmp_path / "assets",
+        source_loader=lambda *_: [row],
+        viewer_row_loader=lambda *_: (_ for _ in ()).throw(
+            AssertionError("non-empty encoded bytes must be used before remote fallback")
+        ),
+    )
+
+    assert len(restored) == 1
+    assert payload_calls == [{"bytes": b"encoded-audio"}]
+    assert report["dataset_viewer_media_restored_records"] == 0
+    assert report["errors"] == []
+

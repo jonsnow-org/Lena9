@@ -183,20 +183,59 @@ def _dataset_viewer_media_value(
     return {"src": _validate_pinned_media_url(media_url, revision)}
 
 
+def _has_nonempty_media_payload(value: dict[str, Any]) -> bool:
+    """Return whether a media mapping has usable bytes, arrays, frames or URL.
+
+    Hugging Face decode(False) may provide both a stale local path and a
+    payload field. A non-None but empty bytes value is not usable, and the
+    preserve helpers prefer path over bytes. Check payload length rather
+    than presence so stale paths cannot mask a recoverable source.
+    """
+    raw = value.get("bytes")
+    if isinstance(raw, (bytes, bytearray, memoryview)) and len(raw) > 0:
+        return True
+    for key in ("array", "frames"):
+        payload = value.get(key)
+        if payload is None:
+            continue
+        try:
+            if len(payload) > 0:
+                return True
+        except TypeError:
+            return True
+    return bool(_find_media_source_url(value))
+
+
+def _prefer_available_media_payload(value: Any) -> Any:
+    """Drop an unavailable local path when another real payload is present."""
+    if not isinstance(value, dict):
+        return value
+    path = value.get("path")
+    if (
+        isinstance(path, str)
+        and path.strip()
+        and not path.startswith(("https://", "http://"))
+        and not Path(path).is_file()
+        and _has_nonempty_media_payload(value)
+    ):
+        usable = dict(value)
+        usable.pop("path", None)
+        return usable
+    return value
+
+
 def _needs_dataset_viewer_fallback(value: Any) -> bool:
     if value is None:
         return True
     if isinstance(value, dict):
-        if value.get("bytes") is not None or value.get("array") is not None or value.get("frames"):
-            return False
-        if _find_media_source_url(value):
-            return False
         path = value.get("path")
-        if isinstance(path, str):
-            return not (
-                path.startswith(("https://", "http://")) or Path(path).is_file()
-            )
-        return True
+        if isinstance(path, str) and path.strip():
+            if path.startswith(("https://", "http://")):
+                return False
+            if Path(path).is_file():
+                return False
+            return True
+        return not _has_nonempty_media_payload(value)
     if isinstance(value, str):
         return not (
             value.startswith(("https://", "http://")) or Path(value).is_file()
@@ -323,6 +362,7 @@ def _rehydrate_record(
     if family == "image":
         value = _nested(row, str(source.get("image_field") or "image"))
         value = _safe_image_value(value, source)
+        value = _prefer_available_media_payload(value)
         if _needs_dataset_viewer_fallback(value):
             value = viewer_value("image")
         metadata = preserve_image_payload(value, assets_root, record_id)
@@ -333,6 +373,7 @@ def _rehydrate_record(
         if isinstance(value, (list, tuple)):
             media_url = _find_media_source_url(value)
             value = {"src": media_url} if media_url else value
+        value = _prefer_available_media_payload(value)
         if _needs_dataset_viewer_fallback(value):
             value = viewer_value("audio")
         raw = preserve_audio_payload(value, assets_root, record_id)
@@ -363,6 +404,7 @@ def _rehydrate_record(
         except Exception:
             value = viewer_value("video")
         else:
+            value = _prefer_available_media_payload(value)
             if _needs_dataset_viewer_fallback(value):
                 value = viewer_value("video")
         metadata = preserve_video_payload(value, assets_root, record_id)
