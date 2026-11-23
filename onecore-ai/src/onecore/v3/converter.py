@@ -935,7 +935,7 @@ def restore_v2_media_records(
     root = Path(assets_root).resolve()
     root.mkdir(parents=True, exist_ok=True)
     cursor_project_root = (
-        Path(cursor_root).resolve() if cursor_root is not None else root.parent.parent
+        Path(cursor_root).resolve() if cursor_root is not None else root.parent
     )
 
     progress_file = Path(progress_path).resolve() if progress_path is not None else None
