@@ -6,6 +6,7 @@ import pytest
 import soundfile as sf
 import yaml
 from PIL import Image
+from datasets import Image as HFImage
 
 from onecore.acquire import _row_identity
 from onecore.v3 import converter as converter_module
@@ -253,6 +254,42 @@ def test_v3_converter_searches_all_nonstandard_source_splits_for_legacy_rows(tmp
     assert restored[0]["source_hf_row_index"] == 0
     assert report["converted_records"] == 1
 
+
+
+def test_v3_image_identity_stream_reenables_only_hf_image_decoding():
+    class FakeStreamingDataset:
+        def __init__(self):
+            self.features = {
+                "image": HFImage(decode=False),
+                "audio": object(),
+            }
+            self.cast_calls = []
+
+        def cast_column(self, name, feature):
+            self.cast_calls.append((name, feature))
+            self.features[name] = feature
+            return self
+
+    stream = FakeStreamingDataset()
+    source = {"adapter": "image", "image_field": "image"}
+
+    result = converter_module._enable_v2_image_identity_decoding(stream, source)
+
+    assert result is stream
+    assert [name for name, _ in stream.cast_calls] == ["image"]
+    assert isinstance(stream.features["image"], HFImage)
+    assert stream.features["image"].decode is True
+    assert stream.features["audio"] is not None
+
+
+def test_v3_image_identity_decode_does_not_change_audio_or_video_streams():
+    stream = object()
+    assert converter_module._enable_v2_image_identity_decoding(
+        stream, {"adapter": "audio", "audio_field": "audio"}
+    ) is stream
+    assert converter_module._enable_v2_image_identity_decoding(
+        stream, {"adapter": "video", "video_field": "video"}
+    ) is stream
 
 
 def test_v3_default_source_loader_disables_automatic_media_decoding(monkeypatch):
@@ -605,7 +642,7 @@ def test_v3_restore_uses_stateful_cursor_to_resume_bounded_source_scan(tmp_path)
         "source_id": "cursor-source", "split": "train", "remaining_records": 1,
         "reason": "bounded_scan_or_retry_checkpoint",
     }]
-    cursor_file = tmp_path / "data/resume-cache/crawlers/v3-corpus-restore/cursor-source/train.json"
+    cursor_file = tmp_path / "data/resume-cache/crawlers/v3-corpus-restore-image-v2-identity/cursor-source/train.json"
     assert cursor_file.is_file()
     cursor_state = json.loads(cursor_file.read_text(encoding="utf-8"))
     assert cursor_state["rows_read"] == 2

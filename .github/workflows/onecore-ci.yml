@@ -589,7 +589,7 @@ jobs:
           path: |
             ${{ runner.temp }}/onecore-v3-corpus/v3/restore-progress.jsonl
             ${{ runner.temp }}/onecore-v3-corpus/v3/data/assets
-            ${{ runner.temp }}/onecore-v3-corpus/v3/data/resume-cache/crawlers/v3-corpus-restore
+            ${{ runner.temp }}/onecore-v3-corpus/v3/data/resume-cache/crawlers
           if-no-files-found: warn
           retention-days: 14
 

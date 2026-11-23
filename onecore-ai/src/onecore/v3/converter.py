@@ -23,7 +23,7 @@ from urllib.parse import unquote, urlencode, urlparse
 from urllib.request import Request, urlopen
 
 import yaml
-from datasets import load_dataset
+from datasets import Image as HFImage, load_dataset
 from huggingface_hub import hf_hub_download
 
 from onecore.acquire import _first_text, _nested, _resolve_video_asset, _row_identity
@@ -410,6 +410,40 @@ def _needs_dataset_viewer_fallback(value: Any) -> bool:
     if isinstance(value, (list, tuple)):
         return len(value) == 0
     return False
+
+
+def _enable_v2_image_identity_decoding(stream: Any, source: dict[str, Any]) -> Any:
+    """Reproduce V2's decoded-PIL image row identity before hashing source rows.
+
+    V2 acquisition left Hugging Face Image columns decoded as PIL images while
+    explicitly disabling automatic Audio/Video decoding. V3 disables all media
+    decoding for safe raw-payload ingestion. Hashing an Image(decode=False)
+    path dictionary therefore cannot match the immutable V2 row hash. Re-enable
+    only the Image feature so row identity is byte-for-byte compatible; audio
+    and video remain undecoded and under the explicit V3 ingest path.
+    """
+    if str(source.get("adapter", "")) != "image":
+        return stream
+    field = str(source.get("image_field") or "image")
+    features = getattr(stream, "features", None)
+    feature = features.get(field) if hasattr(features, "get") else None
+    if feature is None or feature.__class__.__name__ != "Image":
+        return stream
+    if bool(getattr(feature, "decode", True)):
+        return stream
+    cast_column = getattr(stream, "cast_column", None)
+    if not callable(cast_column):
+        raise RuntimeError(
+            f"pinned image source exposes Image(decode=False) for {field!r} "
+            "but does not support cast_column; cannot reproduce V2 source-row hashes"
+        )
+    try:
+        return cast_column(field, HFImage(decode=True))
+    except Exception as exc:
+        raise RuntimeError(
+            f"could not enable V2-compatible Image decoding for {field!r}: "
+            f"{type(exc).__name__}: {str(exc)[:200]}"
+        ) from exc
 
 
 def _default_source_loader(repo: str, config: str | None, split: str, revision: str):
@@ -1076,12 +1110,18 @@ def restore_v2_media_records(
             scan_started_at = time.monotonic()
             rows_scanned = 0
             scan_stop_reason = "stream_exhausted"
+            cursor_namespace = (
+                "v3-corpus-restore-image-v2-identity"
+                if str(source.get("adapter", "")) == "image"
+                else "v3-corpus-restore"
+            )
             cursor = StatefulStreamCursor(
-                cursor_project_root, "v3-corpus-restore", source_id, repo,
+                cursor_project_root, cursor_namespace, source_id, repo,
                 str(source.get("config") or ""), str(source_split), revision,
             )
             try:
                 stream = loader(repo, source.get("config"), str(source_split), revision)
+                stream = _enable_v2_image_identity_decoding(stream, source)
                 stream, start_offset, cursor_mode = cursor.restore(stream, 0)
                 print(
                     f"[onecore-v3] source {group_index}/{len(pending)} {source_id}/{source_split}: "
@@ -1191,6 +1231,7 @@ def restore_v2_media_records(
                 saved = cursor.save(stream, start_offset + rows_scanned)
                 source_scan_checkpoints.append({
                     "source_id": source_id, "split": str(source_split),
+                    "cursor_namespace": cursor_namespace,
                     "rows_before": start_offset, "rows_scanned": rows_scanned,
                     "rows_total": start_offset + rows_scanned, "cursor_mode": saved["cursor_mode"],
                     "stop_reason": scan_stop_reason,
@@ -1253,7 +1294,7 @@ def restore_v2_media_records(
         "skipped": dict(skipped),
         "errors": errors,
         "target_audio_rate": target_audio_rate,
-        "source_restore_mode": "pinned_revision_streaming_row_hash_lookup_with_resumable_stateful_cursors_and_indexed_filter_and_fleurs_tar_fallback",
+        "source_restore_mode": "pinned_revision_streaming_v2_compatible_image_row_hash_lookup_with_resumable_stateful_cursors_and_indexed_filter_and_fleurs_tar_fallback",
         "deferred_source_splits": deferred_source_splits,
         "source_scan_checkpoints": source_scan_checkpoints,
         "max_scan_rows_per_source_split": max_scan_rows_per_source_split,
