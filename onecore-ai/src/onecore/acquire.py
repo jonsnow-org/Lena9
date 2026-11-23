@@ -231,20 +231,6 @@ def _external_asset_report(project_root: str | Path, split: str) -> dict[str, An
         "unique_asset_bytes": total_bytes,
     }
 
-
-def external_asset_report_by_split(project_root: str | Path) -> dict[str, dict[str, Any]]:
-    """Build a fresh media-asset snapshot from the final split manifests.
-
-    Acquisition reports may be resumed and gain rows after an earlier snapshot.
-    Always call this at finalization instead of trusting a previously persisted
-    external_media_assets section.
-    """
-    return {
-        split: _external_asset_report(project_root, split)
-        for split in ("train", "validation", "test")
-    }
-
-
 def _stable_split(
     source_id: str, row_id: str, seed: str = "onecore-shard-v1",
     validation_percent: int = 2, test_percent: int = 2,

@@ -1,3 +1,4 @@
+seed: 20261115
 model:
   width: 1024
   n_blocks: 4
@@ -31,7 +32,6 @@ training:
   max_steps_per_job: 250
   cpu_threads: 4
   tldm_diffusion_weight: 0.15
-  seed: 20261115
 data_gate:
   min_train_per_family: 100
   min_holdout_per_family: 10
