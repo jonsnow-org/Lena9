@@ -183,3 +183,23 @@ The retained diagnostic for corpus Run #48 and its completed gate logs establish
 - [ ] Begin v3 architecture implementation only after the current checkpoint/corpus evidence is reconciled and resource estimates are measured.
 
 This file is the durable session handoff. Every future OneCore session must read it before modifying architecture, corpus, training workflows or checkpoint lineage, then update the implementation log with commit/test evidence.
+
+
+### V3 restore checkpoint audit and bounded retry improvement — 2026-11-23
+
+The V3 branch now includes resumable media progress and indexed Dataset Viewer fallback (commits `f074c3a` through `12c6539`). CI Run #599 on `12c65397d452ee7dff29a140fea3309e36752091` passed the full Verify job but correctly failed the external-only V3 corpus gate. Its report artifact is `14836372267` (`onecore-v3-conversion-report-45189488873`, SHA-256 `542a8a2c2eaf1f8b4e9761377dec6efaee1608494edcd58c98e8be8c290e990`).
+
+Evidence from Run #599:
+- 655,427 V2 input records; 653,187 converted; 1,302 non-external rows excluded; 37 pinned Arabic Speech Corpus rows were not found in the pinned source stream.
+- Resumable progress successfully reused 1,190 previously restored media rows and restored 119 media rows through Dataset Viewer fallback.
+- All audio quotas and video train/validation quotas were present. Video test was 9 (one missing row); the remaining video restore error was a transient HTTP 502 from Dataset Viewer rows and filter endpoints for one pinned video.
+- OpenImages train still had 900 pending image rows. The first bounded 10,000-row source chunk completed in 146.86 seconds without a match and correctly saved its stateful cursor; validation and test each restored 10 images. The gate therefore correctly reported zero usable OpenImages train assets, despite 900 candidates in the V2 manifest.
+- The durable partial restore artifact is `14835553943`, 22,962,354,839 bytes, and includes the JSONL progress, raw assets and source cursors. It is a partial restore snapshot, not a validated V3 corpus.
+
+Targeted follow-up:
+- Retry only transient Dataset Viewer HTTP 408/425/429/500/502/503/504 and URL transport failures with bounded exponential backoff; permanent 4xx errors remain fail-fast.
+- Add regression tests proving transient 502 responses recover and permanent 404 responses are not retried.
+- Increase the per-run OpenImages train scan chunk from 10,000 to 100,000 rows while preserving the uploaded cursor/progress resume mechanism. This avoids repeated tiny chunks while retaining bounded, resumable work.
+- The workflow resumes from the latest non-expired progress artifact. It must not reacquire the V2 corpus or replace any missing records with synthetic data.
+
+Run #599 Verify passed; the V3 external-only data gate remains blocked until all five families meet the required split coverage with usable raw assets and hashes. No V3 training, PR or merge is authorized by this evidence. `main` remains `0b5ec69e839bfc6086a358511b54649b03c7be9a`.

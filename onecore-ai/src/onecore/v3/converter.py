@@ -18,6 +18,7 @@ import time
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Callable, Iterable
+from urllib.error import HTTPError, URLError
 from urllib.parse import unquote, urlencode, urlparse
 from urllib.request import Request, urlopen
 
@@ -153,8 +154,23 @@ def _default_dataset_viewer_filter_loader(
         f"{_DATASET_VIEWER_FILTER_URL}?{query}",
         headers={"User-Agent": "OneCore-v3-pinned-media-restore/1.0"},
     )
-    with urlopen(request, timeout=90) as response:
-        payload = json.loads(response.read().decode("utf-8"))
+    # The indexed Dataset Viewer endpoint occasionally returns transient 5xx/429
+    # responses for otherwise valid exact-key lookups. Retry only transient transport
+    # failures; never turn a 404/invalid query into a false match.
+    for attempt in range(5):
+        try:
+            with urlopen(request, timeout=90) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            break
+        except HTTPError as exc:
+            if exc.code not in {408, 425, 429, 500, 502, 503, 504} or attempt == 4:
+                raise
+            exc.close()
+            time.sleep(min(2 ** attempt, 8))
+        except URLError:
+            if attempt == 4:
+                raise
+            time.sleep(min(2 ** attempt, 8))
     if not isinstance(payload, dict) or not isinstance(payload.get("rows"), list):
         raise RuntimeError("Hugging Face Dataset Viewer filter returned an invalid rows payload")
     return payload

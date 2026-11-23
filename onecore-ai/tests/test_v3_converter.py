@@ -662,3 +662,55 @@ def test_v3_image_restore_retries_pinned_viewer_if_local_path_disappears(tmp_pat
     assert preserve_calls == [row["image"], {"src": media_url}]
     assert report["dataset_viewer_media_restored_records"] == 1
     assert report["errors"] == []
+
+
+def test_dataset_viewer_filter_loader_retries_transient_http_errors(monkeypatch):
+    from urllib.error import HTTPError
+
+    calls = []
+    payload = {"rows": [{"row": {"id": "retry-ok"}}]}
+
+    class Response:
+        def __enter__(self):
+            return self
+        def __exit__(self, *_):
+            return False
+        def read(self):
+            return json.dumps(payload).encode("utf-8")
+
+    def flaky_urlopen(request, timeout):
+        calls.append((request.full_url, timeout))
+        if len(calls) < 3:
+            raise HTTPError(request.full_url, 502, "Bad Gateway", hdrs=None, fp=None)
+        return Response()
+
+    sleeps = []
+    monkeypatch.setattr(converter_module, "urlopen", flaky_urlopen)
+    monkeypatch.setattr(converter_module.time, "sleep", sleeps.append)
+
+    result = converter_module._default_dataset_viewer_filter_loader(
+        "org/video-data", "default", "train", '"file"=\'clip-001.mp4\''
+    )
+
+    assert result == payload
+    assert len(calls) == 3
+    assert sleeps == [1, 2]
+
+
+def test_dataset_viewer_filter_loader_does_not_retry_permanent_http_errors(monkeypatch):
+    from urllib.error import HTTPError
+
+    calls = []
+
+    def missing_urlopen(request, timeout):
+        calls.append(request.full_url)
+        raise HTTPError(request.full_url, 404, "Not Found", hdrs=None, fp=None)
+
+    monkeypatch.setattr(converter_module, "urlopen", missing_urlopen)
+    monkeypatch.setattr(converter_module.time, "sleep", lambda *_: None)
+
+    with pytest.raises(HTTPError):
+        converter_module._default_dataset_viewer_filter_loader(
+            "org/video-data", "default", "train", '"file"=\'missing.mp4\''
+        )
+    assert len(calls) == 1

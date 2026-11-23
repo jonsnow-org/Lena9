@@ -542,7 +542,7 @@ jobs:
             --output-root "$RUNNER_TEMP/onecore-v3-corpus" \
             --report-output "$RUNNER_TEMP/onecore-v3-conversion-report.json" \
             --resume-progress "$RUNNER_TEMP/onecore-v3-corpus/v3/restore-progress.jsonl" \
-            --max-scan-rows-per-source-split 10000
+            --max-scan-rows-per-source-split 100000
 
       - name: Publish conversion gate result
         id: conversion-summary
