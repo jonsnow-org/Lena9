@@ -145,6 +145,7 @@ class ModelConfig:
 
 @dataclass(frozen=True)
 class TrainConfig:
+    seed: int = 20261115
     learning_rate: float = 3e-4
     weight_decay: float = 0.1
     adam_betas: tuple[float, float] = (0.9, 0.95)
@@ -158,6 +159,8 @@ class TrainConfig:
     tldm_diffusion_weight: float = 0.15
 
     def __post_init__(self) -> None:
+        if not isinstance(self.seed, int) or isinstance(self.seed, bool) or self.seed < 0:
+            raise ValueError("seed must be a non-negative integer")
         if self.learning_rate <= 0 or self.gradient_accumulation <= 0:
             raise ValueError("learning rate and gradient accumulation must be positive")
         if len(self.adam_betas) != 2 or not all(0.0 <= value < 1.0 for value in self.adam_betas):
@@ -178,6 +181,14 @@ def load_config(path: str | Path) -> tuple[ModelConfig, TrainConfig, dict[str, A
     raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
     if not isinstance(raw, dict) or not isinstance(raw.get("model"), dict):
         raise ValueError("config must contain a model mapping")
+    spec_v2_model_values = {
+        "expected_parameter_count": (57_579_201, "expected_parameter_count must be 57579201 (Spec v2, Section 2)."),
+        "vocab_size": (5_144, "vocab_size must be 5144 = 4096+512+256+256+24."),
+        "hidden_size": (2_730, "hidden_size must be int(1024*8/3) = 2730."),
+    }
+    for key, (expected, message) in spec_v2_model_values.items():
+        if raw["model"].get(key) != expected:
+            raise ValueError(message)
     if raw["model"].get("expected_parameter_count") is None:
         raise ValueError("model.expected_parameter_count must be explicit; silent parameter budgets are forbidden")
     model = ModelConfig.from_mapping(raw["model"])
@@ -193,7 +204,7 @@ def load_config(path: str | Path) -> tuple[ModelConfig, TrainConfig, dict[str, A
         raise ValueError(f"unknown training config keys: {sorted(unknown)}")
     required_training = (
         "warmup_steps", "total_steps", "learning_rate", "weight_decay",
-        "max_grad_norm", "tldm_diffusion_weight", "adam_betas",
+        "max_grad_norm", "tldm_diffusion_weight", "adam_betas", "seed",
     )
     for key in required_training:
         if key not in train_values:

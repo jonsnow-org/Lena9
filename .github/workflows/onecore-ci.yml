@@ -70,6 +70,8 @@ jobs:
           cfg, train, raw = load_config("onecore-ai/configs/phone-research.yaml")
           assert train.total_steps == 20000 and train.warmup_steps == 200
           assert train.learning_rate == 0.0003 and train.weight_decay == 0.1
+          assert train.seed == 20261115
+          assert raw["training"]["seed"] == 20261115 and "seed" not in raw
           assert tuple(train.adam_betas) == (0.9, 0.95)
           assert cfg.vocab_size == 5144 and cfg.hidden_size == 2730
           assert cfg.thinker_latents == 16
