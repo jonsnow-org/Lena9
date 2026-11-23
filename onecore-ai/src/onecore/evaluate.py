@@ -33,6 +33,23 @@ T_LDM_FAMILY_TASKS = {
     "video": {"video_caption", "video_reconstruction"},
 }
 
+MODALITY_TASK_GROUPS = {
+    "text_loss": {"text"},
+    "tool_use": {"tool_use"},
+    "image_reconstruction": {"image_caption", "image_reconstruction"},
+    "audio_reconstruction": {"audio_text", "audio_reconstruction"},
+    "video_sequence": {"video_caption", "video_reconstruction"},
+}
+
+
+def _modalities_tested(task_counts: dict[str, int]) -> list[str]:
+    """Return modalities with at least one evaluated task record."""
+    observed = {task for task, count in task_counts.items() if int(count) > 0}
+    return [
+        metric for metric, tasks in MODALITY_TASK_GROUPS.items()
+        if tasks & observed
+    ]
+
 
 def _text_language_bucket(record: dict[str, Any]) -> tuple[str, str]:
     """Classify natural-language text conservatively for held-out language metrics.
@@ -489,17 +506,7 @@ def evaluate_checkpoint(project_root: str | Path, config_path: str | Path,
         }
         for bucket in sorted(language_counts)
     }
-    modalities_tested: list[str] = []
-    metric_groups = {
-        "text_loss": {"text"},
-        "tool_use": {"tool_use"},
-        "image_reconstruction": {"image_caption", "image_reconstruction"},
-        "audio_reconstruction": {"audio_text", "audio_reconstruction"},
-        "video_sequence": {"video_caption", "video_reconstruction"},
-    }
-    for metric, tasks in metric_groups.items():
-        if tasks & set(counts):
-            modalities_tested.append(metric)
+    modalities_tested = _modalities_tested(counts)
 
     def combined_mean(source: dict[str, float], tasks: set[str]) -> float | None:
         present = [task for task in tasks if task in counts]
