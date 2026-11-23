@@ -712,3 +712,22 @@ V3 commit `1799460ec04f5ea5b16fc6e3a65428ec7d1762f0` now:
 
 V3 training remains prohibited until the real external-only 100/10/10 gate passes for all five families, CPU peak-memory/throughput and modality sequence measurements are recorded, and durable checkpoint save/restore continuity (optimizer, scheduler, RNG, tokenizer and step lineage) is implemented and tested. No V3 PR/merge was created. `main` remains at `0b5ec69e839bfc6086a358511b54649b03c7be9a`.
 
+
+
+### Corrected Specification v2 runtime enforcement and verification — 2026-11-23
+
+Foundation branch commits:
+- `78e4f43de42915e6f7a6c8c828330826fd0abd52`: enforce the Corrected Specification v2 exact parameter/vocabulary/hidden-size anchors, move `seed: 20261115` under `training:`, and make the seed an explicit training config field. Resume compatibility compares optimizer/schedule fields while restoring the historical seed and RNG state from checkpoint metadata.
+- `68c2ce7e1a03366458f137724a0cc2b4ebd86164`: keep the official V2 hard anchors strict by default (`validate_spec_v2=True`) while making an explicit opt-out available only for deliberately small engineering/smoke/inference fixtures. This preserves tiny architecture tests without weakening the production V2 configuration gate.
+
+The first CI attempt, Run #591 (ID `45120377335`), exposed that tiny model fixtures in training and inference tests were unintentionally being subjected to the fixed V2 production parameter budget. Those test paths were updated to request the explicit non-V2 fixture mode; production callers retain strict defaults. This was a useful regression finding, not a reason to relax the V2 contract.
+
+Run #592 (ID `45121112021`) completed successfully on `68c2ce7e1a03366458f137724a0cc2b4ebd86164`:
+- 165 unit/regression tests passed.
+- Corrected Specification v2 configuration and FLOPs checks passed, including exact 57,579,201 parameters, vocabulary 5,144, hidden size 2,730, and the expected training schedule/seed placement.
+- Exact architecture notebook, safe notebook preflights, one-step text-training notebook, one-step random-initialization smoke and FineWeb-2 streaming/exact cursor-resume checks passed.
+- The training smoke recorded first-language loss 8.3744935989 against the random-initialization reference 8.5456, within the engineering smoke interval. This is smoke evidence only, not a quality result or full training run.
+
+No full optimizer training was launched by Run #592. The 20,000-step training requirement remains a future training target, and V2 quality promotion remains blocked because independent validation/test evidence is incomplete and `promotion-thresholds.json` is not approved. Run #55 (ID `45017683783`) still failed independent evaluation because the external validation split omitted `image_reconstruction`; no optimizer updates occurred in that evaluation job.
+
+The V3 corpus conversion remains a separate active run (#589, ID `45116254698`) on V3 head `1799460ec04f5ea5b16fc6e3a65428ec7d1762f0`; do not push to that branch or interrupt its conversion until its report is available. V3 data-gate status is therefore still unverified. V2 source changes are confined to `research/onecore-foundation`; `main` remains `0b5ec69e839bfc6086a358511b54649b03c7be9a` and no merge was made.
