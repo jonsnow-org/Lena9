@@ -1,7 +1,7 @@
 name: OneCore V2 (ARCHIVED) — staged training
 
 on:
-  # Archived V2: this trigger is retained for audit only; every job is disabled.
+  # Archived V2: trigger retained for audit only; jobs are disabled below.
   workflow_dispatch:
     inputs:
       stage:
@@ -40,7 +40,6 @@ concurrency:
 
 jobs:
   train:
-    # Frozen V2 archive: optimizer work is prohibited on this legacy baseline.
     if: ${{ false }}
     name: "OneCore ${{ inputs.stage }} segment"
     runs-on: ubuntu-24.04

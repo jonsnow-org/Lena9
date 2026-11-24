@@ -17,7 +17,7 @@ def _assert_all_jobs_disabled(path: Path) -> None:
     jobs = workflow.get("jobs")
     assert isinstance(jobs, dict) and jobs
     for name, job in jobs.items():
-        assert job.get("if") == "${{ false }}", f"legacy job {name} must be disabled"
+        assert str(job.get("if", "")).startswith("${{ false"), f"legacy job {name} must be disabled"
         # A duplicated job-level if can override the archive guard in YAML parsers.
         lines = path.read_text(encoding="utf-8").splitlines()
         start = next(i for i, line in enumerate(lines) if line == f"  {name}:")

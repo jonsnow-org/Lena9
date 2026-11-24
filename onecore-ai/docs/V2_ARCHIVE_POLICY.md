@@ -37,8 +37,8 @@ The V2 `onecore-bootstrap.yml` and `onecore-training.yml` workflows are disabled
 
 The initial archive-guard test found duplicate job-level `if` keys in jobs that already had conditional execution. The corrected archive commit replaces each existing job-level condition rather than inserting a second key:
 
-- `onecore-bootstrap.yml`: eight top-level jobs; each has exactly one `if: ${{ false }}`.
-- `onecore-training.yml`: its single manual-training job has exactly one `if: ${{ false }}`.
+- `onecore-bootstrap.yml`: eight top-level jobs; each has exactly one job-level guard beginning with `if: ${{ false && ... }}` (or `if: ${{ false }}` where no historical condition existed).
+- `onecore-training.yml`: its single manual-training job has exactly one job-level guard beginning with `if: ${{ false`.
 - Step-level conditions and the historical job bodies remain preserved for audit; the job-level expression prevents the jobs from running.
 - Run #58 on commit `c379a824a041fcf53d307d20ff505248c6809df2` concluded `skipped`, confirming the archived push-triggered bootstrap did not execute a job.
 
@@ -49,4 +49,9 @@ The regression test asserts both the parsed expression and exactly one job-level
 
 The V2 archive branch was repaired from the last verified complete Foundation tree after an earlier documentation-only update accidentally omitted unrelated repository entries. The repaired Foundation commit preserves the complete repository tree and applies only the intended archive/verification files on top of it. The V2 source, notebook, manifest, checkpoint lineage, and Actions history remain preserved. The canonical V3 branch and `main` are unchanged.
 
-The Foundation CI now also checks the archive guard independently of the unit tests: every job in both legacy V2 training workflows must have exactly one job-level `if: ${{ false }}`.
+The Foundation CI now also checks the archive guard independently of the unit tests: every job in both legacy V2 training workflows must have exactly one job-level `if` with a leading `false` guard.
+
+
+## Preserve historical job conditions under the archive guard — 2026-11-24
+
+Archive expressions now use `false && (original job condition)` where a job previously had an `if` condition. This guarantees the job is never eligible to run while preserving the original dependency/order condition for audit and regression tests. Jobs without a prior condition use `if: ${{ false }}`. Both the regression test and CI guard assert the leading false term and exactly one job-level `if` per job.
