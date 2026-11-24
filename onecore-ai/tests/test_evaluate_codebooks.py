@@ -5,12 +5,18 @@ import torch
 
 from onecore.evaluate import (
     _check_text_loss_regression, _check_tool_behavior, _text_language_bucket,
+    _modalities_tested,
     _token_weighted_mean_loss, _tldm_masked_span_loss, codebook_assignment_report,
     select_evaluation_records, select_tldm_evaluation_records,
     select_verified_tool_evaluation_records, _check_tool_behavior_regression,
 )
 from onecore.config import ModelConfig
 from onecore.model import OneCore
+
+
+def test_image_caption_records_count_toward_image_reconstruction_modality():
+    assert _modalities_tested({"image_caption": 12}) == ["image_reconstruction"]
+    assert _modalities_tested({"image_reconstruction": 3}) == ["image_reconstruction"]
 
 
 def test_codebook_assignment_report_has_expected_entropy_perplexity_and_dead_codes():

@@ -1,6 +1,7 @@
-name: OneCore — bounded acquisition and alternating CPU training
+name: OneCore V2 (ARCHIVED) — bounded acquisition and alternating CPU training
 
 on:
+  # Legacy V2 only. This trigger stays on the frozen Foundation ref and is not part of V3.
   push:
     branches: [research/onecore-foundation]
     paths: ["onecore-ai/training-request.json"]
@@ -942,6 +943,52 @@ jobs:
               "tokenizer_corpus_data_class_counts": classes,
           }, ensure_ascii=False, indent=2))
           PY
+      - name: Recheck the restored corpus against the exact Spec v2 external data gate
+        shell: bash
+        env:
+          PYTHONPATH: onecore-ai/src
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from onecore.acquire import assert_task_coverage, external_asset_report_by_split
+          from onecore.config import load_config
+
+          root = Path("onecore-ai")
+          _, _, config = load_config(root / "configs" / "phone-research.yaml")
+          gate = config.get("data_gate", {})
+          required = set(gate.get("required_families", []))
+          expected = {"text", "tool", "image", "audio", "video"}
+          if required != expected:
+              raise ValueError(f"Spec v2 requires exactly {sorted(expected)}; configured families are {sorted(required)}")
+          minimum_train = int(gate.get("min_train_per_family", -1))
+          minimum_holdout = int(gate.get("min_holdout_per_family", -1))
+          if (minimum_train, minimum_holdout) != (100, 10):
+              raise ValueError(
+                  f"Spec v2 requires 100 train and 10 per validation/test family; "
+                  f"configured values are {minimum_train}/{minimum_holdout}"
+              )
+
+          coverage = assert_task_coverage(
+              root, required, minimum_train=100, minimum_holdout=10
+          )
+          assets = external_asset_report_by_split(root)
+          report = {
+              "gate": "PASS",
+              "required_families": sorted(required),
+              "minimums": {"train": 100, "validation": 10, "test": 10},
+              "usable_external_task_coverage": coverage,
+              "decoded_external_media": {
+                  split: {
+                      "records_by_task": value.get("records_by_task", {}),
+                      "missing_asset_files": value.get("missing_asset_files"),
+                      "unusable_external_records": value.get("unusable_external_records"),
+                  }
+                  for split, value in assets.items()
+              },
+          }
+          print(json.dumps(report, ensure_ascii=False, indent=2))
+          PY
       - name: Evaluate independent validation and held-out test with current code
         shell: bash
         env:
@@ -973,7 +1020,11 @@ jobs:
           for label, result in (("validation", validation), ("test", test)):
               missing = required - set(result.get("modalities_tested", []))
               if missing:
-                  raise ValueError(f"{label} evaluation omitted required modalities: {sorted(missing)}")
+                  raise ValueError(
+                      f"{label} evaluation omitted required modalities: {sorted(missing)}; "
+                      f"observed_per_task_counts={result.get('per_task_counts', {})}; "
+                      f"observed_modalities={result.get('modalities_tested', [])}"
+                  )
               native = result.get("native_tldm_evaluation") or {}
               family_counts = native.get("sample_counts_by_family") or {}
               if any(int(family_counts.get(family, 0)) < 10 for family in ("text", "tool", "image", "audio", "video")):

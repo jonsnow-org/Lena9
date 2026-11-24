@@ -2,7 +2,7 @@ name: OneCore — CI and notebook integrity
 
 on:
   push:
-    branches: [research/onecore-foundation, research/onecore-v3-implementation]
+    branches: [research/onecore-v3-implementation]
     paths:
       - "onecore-ai/**"
       - ".github/workflows/onecore-ci.yml"
@@ -74,6 +74,8 @@ jobs:
           cfg, train, raw = load_config("onecore-ai/configs/phone-research.yaml")
           assert train.total_steps == 20000 and train.warmup_steps == 200
           assert train.learning_rate == 0.0003 and train.weight_decay == 0.1
+          assert train.seed == 20261115
+          assert raw["training"]["seed"] == 20261115 and "seed" not in raw
           assert tuple(train.adam_betas) == (0.9, 0.95)
           assert cfg.vocab_size == 5144 and cfg.hidden_size == 2730
           assert cfg.thinker_latents == 16
@@ -416,7 +418,8 @@ jobs:
   v3-corpus-restore:
     name: Restore and validate V3 corpus from existing V2 artifact
     needs: verify
-    if: github.ref == 'refs/heads/research/onecore-v3-implementation' && contains(github.event.head_commit.message, '[onecore-v3-corpus-restore]')
+    # Expensive corpus restoration is opt-in: include the marker only on a deliberate restore commit.
+    if: github.ref == 'refs/heads/research/onecore-v3-implementation' && github.event_name == 'push' && contains(github.event.head_commit.message, '[onecore-v3-corpus-restore]')
     runs-on: ubuntu-24.04
     timeout-minutes: 350
     steps:

@@ -58,6 +58,7 @@ def _inference_bundle(tmp_path):
                 "total_steps": 20,
                 "max_grad_norm": 1.0,
                 "tldm_diffusion_weight": 0.15,
+                "seed": 20261115,
             },
         }),
         encoding="utf-8",
@@ -92,7 +93,7 @@ def test_load_inference_session_verifies_checkpoint_and_tokenizer_lineage(tmp_pa
     config_path, checkpoint_path, tokenizer_path = _inference_bundle(tmp_path)
 
     session, info = load_inference_session(
-        config_path, checkpoint_path, tokenizer_path, device="cpu"
+        config_path, checkpoint_path, tokenizer_path, device="cpu", validate_spec_v2=False
     )
 
     assert session.model.training is False
@@ -108,7 +109,7 @@ def test_load_inference_session_rejects_a_tokenizer_from_another_lineage(tmp_pat
     _write_tokenizer(tokenizer_path, {"[UNK]": 0, "different": 1})
 
     with pytest.raises(ValueError, match="tokenizer fingerprint"):
-        load_inference_session(config_path, checkpoint_path, tokenizer_path, device="cpu")
+        load_inference_session(config_path, checkpoint_path, tokenizer_path, device="cpu", validate_spec_v2=False)
 
 
 def test_load_inference_session_rejects_architecture_config_mismatch(tmp_path):
@@ -143,13 +144,14 @@ def test_load_inference_session_rejects_architecture_config_mismatch(tmp_path):
                 "total_steps": 20,
                 "max_grad_norm": 1.0,
                 "tldm_diffusion_weight": 0.15,
+                "seed": 20261115,
             },
         }),
         encoding="utf-8",
     )
 
     with pytest.raises(RuntimeError):
-        load_inference_session(config_path, checkpoint_path, tokenizer_path, device="cpu")
+        load_inference_session(config_path, checkpoint_path, tokenizer_path, device="cpu", validate_spec_v2=False)
 
 
 def test_griffin_lim_reconstruction_is_repeatable_without_global_rng_side_effects():

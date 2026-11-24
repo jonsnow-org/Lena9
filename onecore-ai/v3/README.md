@@ -98,3 +98,10 @@ or memory improvement until benchmarked.
 
 All output-quality claims require measured evidence tied to checkpoint, tokenizer,
 codec, config and dataset-manifest hashes. No quality thresholds are inferred here.
+
+
+## Canonical OneCore product decision
+
+OneCore is a single multimodal model, not separate V2 and V3 products and not five independent models. V3 is the canonical active architecture: text and tool tokens plus image/audio/video latents are processed by one shared semantic Transformer core; modality-specific codecs and generation heads remain components of that same model. V2 is preserved as a frozen legacy baseline and source of historical data/evidence only. Never import V2 weights, checkpoints, optimizer state, tokenizer or training manifests into V3. The selective V2 corpus converter reuses eligible externally sourced records and rehydrates raw media with pinned provenance; that is a data migration, not a weight migration.
+
+V3 still requires its own 32,000-token tokenizer, exact parameter/FLOPs report, independent checkpoint/resume lineage, measured CPU resource envelope, and quality evaluation before any training or production-readiness claim.

@@ -264,7 +264,14 @@ def _validate_resume_configuration(
     saved_model_config.setdefault("hidden_size", expected_model_config["hidden_size"])
     if saved_model_config != expected_model_config:
         raise ValueError("checkpoint model architecture does not match this run config")
-    if saved_config.get("training") != raw_config.get("training", {}):
+    saved_training = dict(saved_config.get("training", {}))
+    current_training = dict(raw_config.get("training", {}))
+    # The seed is restored from checkpoint metadata and RNG state on resume;
+    # older checkpoints stored it outside the training block. It is not an
+    # optimizer/schedule compatibility field.
+    saved_training.pop("seed", None)
+    current_training.pop("seed", None)
+    if saved_training != current_training:
         raise ValueError(
             "checkpoint optimizer/schedule config does not match this run config; "
             "start a fresh lineage rather than resuming incompatible AdamW state"
@@ -405,11 +412,12 @@ def run_training(
     output_dir: str | Path,
     resume: bool = False,
     seed_override: int | None = None,
+    validate_spec_v2: bool = True,
 ) -> dict[str, Any]:
     root = Path(project_root).resolve()
     out = Path(output_dir).resolve()
     out.mkdir(parents=True, exist_ok=True)
-    cfg, train_cfg, raw_cfg = load_config(config_path)
+    cfg, train_cfg, raw_cfg = load_config(config_path, validate_spec_v2=validate_spec_v2)
     if not 1 <= steps <= train_cfg.max_steps_per_job:
         raise ValueError(f"steps must be between 1 and {train_cfg.max_steps_per_job} per GitHub job")
     if stage not in {"smoke", "text", "joint", "multimodal"}:
@@ -419,7 +427,7 @@ def run_training(
     if stage == "multimodal" and not resume:
         raise ValueError("multimodal continuation must resume the same joint OneCore checkpoint")
 
-    seed = int(seed_override if seed_override is not None else raw_cfg.get("seed", 20261115))
+    seed = int(seed_override if seed_override is not None else train_cfg.seed)
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)

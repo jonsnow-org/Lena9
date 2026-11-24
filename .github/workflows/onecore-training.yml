@@ -39,6 +39,8 @@ concurrency:
 
 jobs:
   train:
+    # V2 is the frozen legacy baseline; the canonical V3 line must never run this optimizer.
+    if: false
     name: "OneCore ${{ inputs.stage }} segment"
     runs-on: ubuntu-24.04
     timeout-minutes: 350

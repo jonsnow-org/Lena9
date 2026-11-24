@@ -2,7 +2,7 @@
 
 **One unified, multimodal research model initialized randomly from scratch.** No pretrained model weights, adapters, teacher-model outputs, or model downloads are used.
 
-OneCore is isolated under `onecore-ai/` in `jonsnow-org/Lena9` and developed only on `research/onecore-foundation`. Workflows are path-filtered and pinned to their triggering commit. The request-file training workflow uses the shared, non-cancelling `onecore-training-v2` lock; a newer request does not cancel an active training lineage.
+OneCore is one unified multimodal model. Its canonical active architecture is V3, developed on `research/onecore-v3-implementation`; text, tools, image, audio and video use one shared semantic Transformer core with modality-specific codecs/heads inside the same model. `research/onecore-foundation` is retained as the frozen V2 historical baseline and compatibility reference, not as a second active product or training line. V2 and V3 weights, checkpoints, tokenizers, optimizer states and training manifests are never mixed or silently converted. V3 may reuse eligible external V2 text/tool records and rehydrate original media only through the pinned-source converter; no V2 model weights are imported.
 
 ## Research hypothesis
 

@@ -83,10 +83,12 @@ def test_smoke_training_segment_saves_checkpoint_and_empty_data_class_counts(tmp
             "learning_rate": 1e-3, "weight_decay": 0.0, "adam_betas": [0.9, 0.95], "gradient_accumulation": 1,
             "max_grad_norm": 1.0, "checkpoint_every": 1, "max_steps_per_job": 10,
             "total_steps": 10, "warmup_steps": 0, "cpu_threads": 1, "tldm_diffusion_weight": 0.15,
+            "seed": 42,
         },
-        "seed": 42,
     }), encoding="utf-8")
-    report = run_training(tmp_path, config_path, "smoke", 1, tmp_path / "run-state")
+    report = run_training(
+        tmp_path, config_path, "smoke", 1, tmp_path / "run-state", validate_spec_v2=False
+    )
     assert report["optimizer_step"] == 1
     assert report["optimizer_data_class_counts"] == {}
     assert report["excluded_data_class_counts"] == {}
