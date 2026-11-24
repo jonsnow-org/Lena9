@@ -2,9 +2,13 @@ import json
 
 import pytest
 
+import torch
+
 from onecore.v3.resource_benchmark import (
+    _build_joint_plan,
     _distribution,
     _manifest_bundle_fingerprint,
+    _preallocate_adamw_state,
     _safe_relative,
     _unique_basename,
     _unique_suffix,
@@ -160,3 +164,82 @@ def test_sequence_length_distributions_reject_non_train_rows(tmp_path):
 
     with pytest.raises(ValueError, match="only the V3 train manifest"):
         _sequence_length_distributions(manifest, tokenizer_path)
+
+
+def test_joint_plan_contains_one_bounded_micro_batch_for_each_family(tmp_path):
+    from tokenizers import Tokenizer, models, pre_tokenizers
+
+    tokenizer = Tokenizer(models.WordLevel(
+        {"[UNK]": 0, "one": 1, "two": 2, "three": 3, "four": 4},
+        unk_token="[UNK]",
+    ))
+    tokenizer.pre_tokenizer = pre_tokenizers.Whitespace()
+    tokenizer_path = tmp_path / "joint-tokenizer.json"
+    tokenizer.save(str(tokenizer_path))
+
+    selected = {
+        "text": {"record_id": "text-1", "text": "one two three four"},
+        "tool": {"record_id": "tool-1", "text": "one two three"},
+        "image": {"record_id": "image-1", "local_paths": ["image.png"]},
+        "audio": {
+            "record_id": "audio-1", "local_paths": ["audio-24k.wav"],
+            "duration_seconds": 3.5,
+        },
+        "video": {
+            "record_id": "video-1", "local_paths": ["frame-0.png", "frame-1.png", "frame-2.png"],
+            "timestamps": [0.0, 0.5, 1.0], "timestamp_unit": "seconds",
+        },
+    }
+
+    plan = _build_joint_plan(
+        selected, tokenizer_path, max_audio_seconds=2.0, max_video_frames=2,
+    )
+
+    assert plan["micro_batch_order"] == ["text", "tool", "image", "audio", "video"]
+    assert set(plan["families"]) == set(plan["micro_batch_order"])
+    assert plan["families"]["text"]["target_tokens"] == 4
+    assert plan["families"]["tool"]["target_tokens"] == 3
+    assert plan["families"]["audio"]["target_seconds"] == 2.0
+    assert plan["families"]["video"]["frame_paths"] == ["frame-0.png", "frame-1.png"]
+    assert plan["families"]["video"]["timestamps"] == [0.0, 0.5]
+
+
+def test_adamw_state_preallocation_measures_moments_without_updating_weights():
+    model = torch.nn.Sequential(torch.nn.Linear(3, 4), torch.nn.Linear(4, 2))
+    before = [parameter.detach().clone() for parameter in model.parameters()]
+    optimizer = torch.optim.AdamW(model.parameters(), lr=0.0, weight_decay=0.0)
+
+    report = _preallocate_adamw_state(optimizer)
+
+    parameters = list(model.parameters())
+    expected_parameter_bytes = sum(
+        parameter.numel() * parameter.element_size() for parameter in parameters
+    )
+    expected_state_bytes = sum(
+        2 * parameter.numel() * parameter.element_size() + torch.tensor(0.0).element_size()
+        for parameter in parameters
+    )
+    assert report["parameter_count"] == sum(parameter.numel() for parameter in parameters)
+    assert report["parameter_tensor_count"] == len(parameters)
+    assert report["parameter_bytes"] == expected_parameter_bytes
+    assert report["state_parameter_count"] == len(parameters)
+    assert report["state_tensor_count"] == 3 * len(parameters)
+    assert report["optimizer_state_bytes"] == expected_state_bytes
+
+    for parameter, original in zip(parameters, before, strict=True):
+        state = optimizer.state[parameter]
+        assert set(state) == {"step", "exp_avg", "exp_avg_sq"}
+        assert state["step"].shape == torch.Size([])
+        assert state["step"].item() == 0.0
+        assert state["exp_avg"].shape == parameter.shape
+        assert state["exp_avg_sq"].shape == parameter.shape
+        assert torch.count_nonzero(state["exp_avg"]).item() == 0
+        assert torch.count_nonzero(state["exp_avg_sq"]).item() == 0
+        assert torch.equal(parameter, original)
+
+
+def test_adamw_state_preallocation_rejects_non_adamw_optimizer():
+    model = torch.nn.Linear(2, 2)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
+    with pytest.raises(TypeError, match="requires torch.optim.AdamW"):
+        _preallocate_adamw_state(optimizer)

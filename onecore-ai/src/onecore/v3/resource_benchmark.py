@@ -460,6 +460,57 @@ def _max_rss_bytes() -> int:
     return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
 
 
+def _preallocate_adamw_state(optimizer: torch.optim.Optimizer) -> dict[str, int]:
+    """Allocate AdamW moment tensors without executing an optimizer step.
+
+    This deliberately measures the full parameter-state footprint while keeping
+    model weights unchanged and optimizer_updates at zero.
+    """
+    if not isinstance(optimizer, torch.optim.AdamW):
+        raise TypeError("joint memory profiling requires torch.optim.AdamW")
+    parameters = [
+        parameter
+        for group in optimizer.param_groups
+        for parameter in group.get("params", [])
+        if parameter.requires_grad
+    ]
+    if not parameters:
+        raise ValueError("AdamW memory profiling requires trainable parameters")
+    if len({id(parameter) for parameter in parameters}) != len(parameters):
+        raise ValueError("AdamW memory profiling rejects duplicated parameters")
+
+    parameter_bytes = sum(parameter.numel() * parameter.element_size() for parameter in parameters)
+    state_bytes = 0
+    state_tensor_count = 0
+    for parameter in parameters:
+        state = optimizer.state[parameter]
+        if state:
+            raise ValueError("AdamW state must be empty before memory preallocation")
+        step = torch.zeros((), dtype=torch.float32, device="cpu")
+        exp_avg = torch.zeros_like(parameter, memory_format=torch.preserve_format)
+        exp_avg_sq = torch.zeros_like(parameter, memory_format=torch.preserve_format)
+        optimizer.state[parameter] = {
+            "step": step,
+            "exp_avg": exp_avg,
+            "exp_avg_sq": exp_avg_sq,
+        }
+        state_bytes += (
+            step.numel() * step.element_size()
+            + exp_avg.numel() * exp_avg.element_size()
+            + exp_avg_sq.numel() * exp_avg_sq.element_size()
+        )
+        state_tensor_count += 3
+
+    return {
+        "parameter_count": sum(parameter.numel() for parameter in parameters),
+        "parameter_tensor_count": len(parameters),
+        "parameter_bytes": parameter_bytes,
+        "state_parameter_count": len(parameters),
+        "state_tensor_count": state_tensor_count,
+        "optimizer_state_bytes": state_bytes,
+    }
+
+
 def _load_worker_input(plan: dict[str, Any], tokenizer_path: Path | None) -> tuple[Any, int | float, dict[str, Any]]:
     family = plan["family"]
     metadata: dict[str, Any] = {}
@@ -660,6 +711,158 @@ def _worker(plan_path: Path, tokenizer_path: Path | None, threads: int,
         }
 
 
+def _joint_worker(
+    plan_path: Path,
+    tokenizer_path: Path | None,
+    threads: int,
+) -> dict[str, Any]:
+    """Measure one real micro-batch from each family plus full AdamW state memory."""
+    started = time.perf_counter()
+    try:
+        if not sys.platform.startswith("linux"):
+            raise RuntimeError("joint resource benchmark requires a Linux runner")
+        if torch.cuda.is_available():
+            raise RuntimeError("joint resource benchmark must run with CUDA unavailable")
+        if tokenizer_path is None:
+            raise ValueError("joint resource benchmark requires the real V3 tokenizer JSON")
+        torch.set_num_threads(threads)
+        torch.set_num_interop_threads(1)
+        torch.manual_seed(20261124)
+
+        plan = json.loads(plan_path.read_text(encoding="utf-8"))
+        family_plans = plan.get("families")
+        order = ("text", "tool", "image", "audio", "video")
+        if not isinstance(family_plans, dict) or set(family_plans) != set(order):
+            raise ValueError("joint plan must contain exactly text, tool, image, audio and video")
+        for family in order:
+            if family_plans[family].get("family") != family:
+                raise ValueError(f"joint plan family identity mismatch for {family}")
+
+        config = V3Config()
+        init_started = time.perf_counter()
+        model = config.build_model().cpu()
+        model.train()
+        model_init_seconds = time.perf_counter() - init_started
+
+        load_started = time.perf_counter()
+        inputs: dict[str, tuple[Any, int | float, dict[str, Any]]] = {}
+        for family in order:
+            inputs[family] = _load_worker_input(family_plans[family], tokenizer_path)
+        input_load_seconds = time.perf_counter() - load_started
+        baseline_current = _load_current_rss_bytes()
+        baseline_peak = _max_rss_bytes()
+
+        model.zero_grad(set_to_none=True)
+        family_results: dict[str, dict[str, Any]] = {}
+        for family in order:
+            loaded, units, input_metadata = inputs[family]
+            family_started = time.perf_counter()
+            loss_values: list[float] = []
+
+            if family in {"text", "tool"}:
+                logits = model.forward_text(loaded)
+                loss = F.cross_entropy(
+                    logits[:, :-1].reshape(-1, logits.shape[-1]),
+                    loaded[:, 1:].reshape(-1),
+                )
+                loss.backward()
+                loss_values.append(float(loss.detach()))
+
+            elif family == "image":
+                reconstruction, _encoding = model.forward_image(loaded)
+                loss = F.mse_loss(reconstruction, loaded)
+                loss.backward()
+                loss_values.append(float(loss.detach()))
+
+            elif family == "audio":
+                reconstruction, encoding = model.forward_audio(
+                    loaded, sample_rate=config.audio_sample_rate,
+                )
+                loss = F.mse_loss(reconstruction, loaded) + encoding.commitment_loss
+                loss.backward()
+                loss_values.append(float(loss.detach()))
+
+            else:
+                video, timestamps = loaded
+                offset = 0
+                for reconstruction in model.forward_video_chunks(
+                    video,
+                    timestamps=timestamps,
+                    frame_chunk_size=config.video_generation_chunk_frames,
+                ):
+                    expected = video[:, offset:offset + reconstruction.shape[1]]
+                    loss = F.mse_loss(reconstruction, expected)
+                    loss.backward()
+                    loss_values.append(float(loss.detach()))
+                    offset += reconstruction.shape[1]
+                if offset != video.shape[1]:
+                    raise RuntimeError("joint video micro-batch did not process every selected frame")
+
+            elapsed = time.perf_counter() - family_started
+            unit_name = {
+                "text": "tokens", "tool": "tokens", "image": "megapixels",
+                "audio": "audio_seconds", "video": "frames",
+            }[family]
+            family_results[family] = {
+                "record_id": family_plans[family]["record_id"],
+                "units": float(units),
+                "unit_name": unit_name,
+                "input_metadata": input_metadata,
+                "backward_seconds": round(elapsed, 6),
+                "backward_units_per_second": round(float(units) / max(elapsed, 1e-9), 6),
+                "loss_diagnostic_only": round(float(sum(loss_values) / max(1, len(loss_values))), 8),
+            }
+
+        gradient_bytes = sum(
+            parameter.grad.numel() * parameter.grad.element_size()
+            for parameter in model.parameters()
+            if parameter.grad is not None
+        )
+        optimizer = torch.optim.AdamW(
+            (parameter for parameter in model.parameters() if parameter.requires_grad),
+            lr=0.0,
+            weight_decay=0.0,
+        )
+        optimizer_memory = _preallocate_adamw_state(optimizer)
+        peak_rss = _max_rss_bytes()
+        return {
+            "status": "success",
+            "benchmark_kind": "joint_five_family_backward_plus_adamw_state_preallocation_no_step",
+            "micro_batch_order": list(order),
+            "micro_batch_count": len(order),
+            "family_results": family_results,
+            "model_init_seconds": round(model_init_seconds, 6),
+            "input_load_seconds": round(input_load_seconds, 6),
+            "joint_backward_seconds": round(sum(
+                item["backward_seconds"] for item in family_results.values()
+            ), 6),
+            "parameter_count": optimizer_memory["parameter_count"],
+            "parameter_bytes": optimizer_memory["parameter_bytes"],
+            "gradient_bytes": gradient_bytes,
+            "optimizer_state_bytes": optimizer_memory["optimizer_state_bytes"],
+            "optimizer_state_parameter_count": optimizer_memory["state_parameter_count"],
+            "optimizer_state_tensor_count": optimizer_memory["state_tensor_count"],
+            "peak_rss_bytes": peak_rss,
+            "baseline_current_rss_bytes": baseline_current,
+            "baseline_peak_rss_bytes": baseline_peak,
+            "peak_rss_growth_bytes": max(0, peak_rss - baseline_peak),
+            "cpu_threads": threads,
+            "optimizer_updates": 0,
+            "optimizer_step_executed": False,
+            "optimizer_state_allocated": True,
+            "elapsed_seconds": round(time.perf_counter() - started, 6),
+        }
+    except Exception as exc:
+        return {
+            "status": "failed",
+            "benchmark_kind": "joint_five_family_backward_plus_adamw_state_preallocation_no_step",
+            "error": f"{type(exc).__name__}: {str(exc)}",
+            "traceback": traceback.format_exc()[-5000:],
+            "optimizer_updates": 0,
+            "optimizer_step_executed": False,
+        }
+
+
 def _build_plans(selected: dict[str, dict[str, Any]], tokenizer_path: Path,
                  max_video_frames: int) -> list[dict[str, Any]]:
     tokenizer = Tokenizer.from_file(str(tokenizer_path))
@@ -698,6 +901,71 @@ def _build_plans(selected: dict[str, dict[str, Any]], tokenizer_path: Path,
             "target_frames": target,
         })
     return plans
+
+
+def _build_joint_plan(
+    selected: dict[str, dict[str, Any]],
+    tokenizer_path: Path,
+    *,
+    max_audio_seconds: float,
+    max_video_frames: int,
+) -> dict[str, Any]:
+    """Build one bounded, real external micro-batch for each of the five families."""
+    tokenizer = Tokenizer.from_file(str(tokenizer_path))
+    families: dict[str, dict[str, Any]] = {}
+
+    for family in ("text", "tool"):
+        sample = selected[family]
+        token_count = len(tokenizer.encode(sample["text"]).ids)
+        target_tokens = min(token_count, 512)
+        if target_tokens < 2:
+            raise ValueError(f"joint {family} sample contains fewer than two tokens")
+        families[family] = {
+            "family": family,
+            "record_id": sample["record_id"],
+            "text": sample["text"],
+            "target_tokens": target_tokens,
+        }
+
+    image = selected["image"]
+    if not image.get("local_paths"):
+        raise ValueError("joint image sample has no verified local asset")
+    families["image"] = {
+        "family": "image",
+        "record_id": image["record_id"],
+        "image_path": image["local_paths"][0],
+    }
+
+    audio = selected["audio"]
+    audio_duration = float(audio.get("duration_seconds", 0.0))
+    if audio_duration <= 0 or not audio.get("local_paths"):
+        raise ValueError("joint audio sample has no verified canonical training asset")
+    families["audio"] = {
+        "family": "audio",
+        "record_id": audio["record_id"],
+        "audio_path": audio["local_paths"][0],
+        "target_seconds": min(audio_duration, max_audio_seconds),
+    }
+
+    video = selected["video"]
+    frame_paths = list(video.get("local_paths") or [])[:max_video_frames]
+    if not frame_paths:
+        raise ValueError("joint video sample has no verified local frames")
+    timestamps = video.get("timestamps")
+    families["video"] = {
+        "family": "video",
+        "record_id": video["record_id"],
+        "frame_paths": frame_paths,
+        "timestamps": timestamps[:len(frame_paths)] if isinstance(timestamps, list) else None,
+        "timestamp_unit": video.get("timestamp_unit"),
+        "target_frames": len(frame_paths),
+    }
+
+    return {
+        "format_version": 1,
+        "micro_batch_order": ["text", "tool", "image", "audio", "video"],
+        "families": families,
+    }
 
 
 def _run_parent(args: argparse.Namespace) -> int:
@@ -843,12 +1111,51 @@ def _run_parent(args: argparse.Namespace) -> int:
             worker_result["case_index"] = index
             benchmark_results.append(worker_result)
 
+        joint_plan = _build_joint_plan(
+            selected,
+            tokenizer_path,
+            max_audio_seconds=args.max_audio_seconds,
+            max_video_frames=args.max_video_frames,
+        )
+        joint_plan_path = root / "worker-plan-joint.json"
+        joint_plan_path.write_text(
+            json.dumps(joint_plan, ensure_ascii=False), encoding="utf-8"
+        )
+        joint_command = [
+            sys.executable, "-m", "onecore.v3.resource_benchmark",
+            "--joint-plan", str(joint_plan_path),
+            "--tokenizer-json", str(tokenizer_path),
+            "--threads", str(args.threads),
+        ]
+        joint_completed = subprocess.run(
+            joint_command,
+            capture_output=True,
+            text=True,
+            timeout=args.worker_timeout_seconds,
+        )
+        try:
+            joint_result = json.loads(joint_completed.stdout.strip())
+        except json.JSONDecodeError:
+            joint_result = {
+                "status": "failed",
+                "error": f"joint worker returned no JSON (exit={joint_completed.returncode})",
+                "stdout_tail": joint_completed.stdout[-2000:],
+                "stderr_tail": joint_completed.stderr[-2000:],
+                "optimizer_updates": 0,
+                "optimizer_step_executed": False,
+            }
+        if joint_completed.returncode != 0 and joint_result.get("status") == "success":
+            joint_result["status"] = "failed"
+            joint_result["error"] = f"joint worker exit code {joint_completed.returncode}"
+
         model_report = build_report()
         failed = [item for item in benchmark_results if item.get("status") != "success"]
+        if joint_result.get("status") != "success":
+            failed.append(joint_result)
         result = {
             "format_version": 1,
             "status": "blocked" if failed else "measured",
-            "benchmark_kind": "cpu_forward_backward_without_optimizer_step",
+            "benchmark_kind": "cpu_per_family_plus_joint_five_microbatch_backward_and_adamw_state_preallocation_without_optimizer_step",
             "created_at_utc": datetime.now(timezone.utc).isoformat(),
             "github_run_id": os.environ.get("GITHUB_RUN_ID"),
             "artifacts": artifact_info,
@@ -884,13 +1191,15 @@ def _run_parent(args: argparse.Namespace) -> int:
                 for family, sample in selected.items()
             },
             "benchmarks": benchmark_results,
+            "joint_training_memory": joint_result,
             "optimizer_updates": 0,
-            "optimizer_state_allocated": False,
+            "optimizer_state_allocated": joint_result.get("optimizer_state_allocated") is True,
             "limitations": [
                 "All samples are immutable external V3 train records from the validated corpus artifact.",
                 "The model is randomly initialized; this is a resource measurement, not a quality evaluation.",
                 "Each case measures inference and forward/backward latency in an isolated CPU process.",
-                "No optimizer step is executed and AdamW moment tensors are not allocated; measured peak RSS is not a complete optimizer-training memory budget.",
+                "No optimizer step is executed. The joint case preallocates AdamW moment tensors for every trainable parameter without changing model weights.",
+                "The joint case uses one bounded real train micro-batch per family; it is a measured resource sample, not a full training run or a quality result.",
                 "Image resolution is native; audio is the preserved 24 kHz training derivative; video uses original stored frame PNGs and timestamps.",
                 "No source acquisition, corpus conversion, tokenizer fitting, V2 import, or checkpoint mutation occurs.",
             ],
@@ -909,6 +1218,8 @@ def _run_parent(args: argparse.Namespace) -> int:
             "benchmark_cases": len(benchmark_results),
             "failed_cases": len(failed),
             "peak_rss_bytes": [item.get("peak_rss_bytes") for item in benchmark_results],
+            "joint_peak_rss_bytes": joint_result.get("peak_rss_bytes"),
+            "joint_optimizer_state_bytes": joint_result.get("optimizer_state_bytes"),
         }, ensure_ascii=False, indent=2))
         return 1 if failed else 0
 
@@ -935,22 +1246,30 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--worker-timeout-seconds", type=int, default=1800)
     parser.add_argument("--tokenizer-json")
     parser.add_argument("--worker-plan")
+    parser.add_argument("--joint-plan")
     args = parser.parse_args(argv)
 
     if args.threads < 1 or args.iterations < 1 or args.max_video_frames < 1:
         parser.error("threads, iterations and max-video-frames must be positive")
     if args.max_image_megapixels <= 0 or args.max_audio_seconds <= 0 or args.max_video_megapixels <= 0:
         parser.error("media benchmark limits must be positive")
-    if args.worker_plan:
+    if args.worker_plan and args.joint_plan:
+        parser.error("worker-plan and joint-plan are mutually exclusive")
+    if args.worker_plan or args.joint_plan:
         try:
             tokenizer_path = Path(args.tokenizer_json).resolve() if args.tokenizer_json else None
-            result = _worker(Path(args.worker_plan), tokenizer_path, args.threads, args.iterations)
+            if args.worker_plan:
+                result = _worker(Path(args.worker_plan), tokenizer_path, args.threads, args.iterations)
+            else:
+                result = _joint_worker(Path(args.joint_plan), tokenizer_path, args.threads)
             print(json.dumps(result, ensure_ascii=False))
             return 0 if result.get("status") == "success" else 2
         except Exception as exc:
             print(json.dumps({
                 "status": "failed", "error": f"{type(exc).__name__}: {str(exc)}",
-                "traceback": traceback.format_exc()[-4000:],
+                "traceback": traceback.format_exc()[-5000:],
+                "optimizer_updates": 0,
+                "optimizer_step_executed": False,
             }, ensure_ascii=False))
             return 2
     try:
