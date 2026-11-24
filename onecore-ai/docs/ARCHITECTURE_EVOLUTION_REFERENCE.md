@@ -761,3 +761,16 @@ The report contained no media-restore errors and no deferred source splits; 37 a
 The V3 correction separates `restoration_incomplete` and `acquisition_incomplete` telemetry from corpus eligibility. The top-level `blocked` value now means only that the final V3 manifest gate failed. The workflow's corpus-publish decision follows `manifest_gate.passed` and logs both incompleteness fields. A regression test covers a passing final gate with 37 unmatched legacy rows and a genuinely failing manifest gate.
 
 This does not authorize V3 training: CPU peak-memory/throughput and full checkpoint save/restore continuity remain outstanding. No V2/V3 assets were merged, no training was started, and `main` remains `0b5ec69e839bfc6086a358511b54649b03c7be9a`.
+
+
+### V3 checkpoint format implementation — 2026-11-24
+
+An independent `onecore.v3.checkpoint` format has been implemented in the canonical V3 integration tree. Format version 1 atomically stores and strictly validates:
+- V3 model, optimizer and scheduler states plus the global optimizer step;
+- exact `V3Config` values and fingerprint;
+- serialized tokenizer JSON, SHA-256 and actual vocabulary size (must exactly match `text_vocab_size`);
+- validated V3 manifest SHA-256 and JSON-serializable source/data cursor state;
+- Python, NumPy and Torch CPU RNG states;
+- run/session lineage and parent-checkpoint SHA-256.
+
+Regression tests cover a complete tiny-model training-state round trip and rejection of configuration, tokenizer, manifest, parent-lineage and vocabulary mismatches. The implementation is not yet CI-verified; no V3 training run has started. The checkpoint gate remains closed until the new tests pass in the canonical V3 branch.
