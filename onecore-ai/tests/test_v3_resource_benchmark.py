@@ -122,7 +122,7 @@ def test_sequence_length_distributions_use_real_tokenizer_and_external_train_onl
 
     rows = [
         row("text-1", "text", "external_staged", text="hello world"),
-        row("tool-1", "tool", "external_reviewed", prompt="prompt", response="reply"),
+        row("tool-1", "tool_use", "external_reviewed", prompt="prompt", response="reply"),
         row("bootstrap-1", "text", "bootstrap", text="hello world"),
     ]
     manifest = tmp_path / "train.jsonl"
