@@ -1,0 +1,19 @@
+{
+  "corpus_run_id": 45325008221,
+  "corpus_artifact_id": 14892594659,
+  "corpus_artifact_name": "onecore-v3-corpus-45325008221",
+  "tokenizer_run_id": 45336933362,
+  "tokenizer_artifact_name": "onecore-v3-tokenizer-45325008221",
+  "tokenizer_sha256": "569f1b61e017dcf5c8ba9fef22a8002cc48d5ea3c26504bdae83f53834d00e76",
+  "conversion_report_artifact_name": "onecore-v3-conversion-report-45325008221",
+  "steps": 5,
+  "total_steps": 20000,
+  "warmup_steps": 200,
+  "learning_rate": 0.0003,
+  "weight_decay": 0.1,
+  "max_grad_norm": 1,
+  "checkpoint_every": 1,
+  "seed": 20261124,
+  "threads": 4,
+  "resume_artifact_run_id": null
+}
