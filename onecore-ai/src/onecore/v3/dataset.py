@@ -26,6 +26,11 @@ from .tokenizer import verify_v3_tokenizer
 
 FAMILIES = tuple(TASK_GROUPS)
 TASK_TO_FAMILY = {task: family for family, tasks in TASK_GROUPS.items() for task in tasks}
+CONDITION_FIELDS = {
+    "image_caption": "caption",
+    "audio_text": "transcript",
+    "video_caption": "caption",
+}
 
 
 @dataclass(frozen=True)
@@ -195,6 +200,7 @@ class V3JointDataLoader:
             "image_policy": "native_resolution_no_resize",
             "audio_policy": f"canonical_{self.config.audio_sample_rate}_hz_training_asset",
             "video_policy": "contiguous_deterministic_epoch_window_all_frames_preserved",
+            "paired_condition_policy": "same_external_row_caption_or_transcript_for_caption_tasks_only",
         }
 
     def _build_train_index(self) -> None:
@@ -275,6 +281,13 @@ class V3JointDataLoader:
         media = assets.get(family) if isinstance(assets, dict) else None
         if not isinstance(media, dict):
             raise ValueError(f"V3 {family} row has no media metadata: {record_id}")
+        condition_field = CONDITION_FIELDS.get(str(row.get("task", "")))
+        if condition_field is not None:
+            condition_text = row.get(condition_field)
+            if not isinstance(condition_text, str) or not condition_text.strip():
+                raise ValueError(
+                    f"V3 {family} caption/transcript task is missing paired condition text: {record_id}"
+                )
         paths = _asset_paths(row)
         if not paths or any(path not in self._asset_hashes for path in paths):
             raise ValueError(f"V3 {family} row has an asset absent from the validated hash map: {record_id}")
@@ -299,6 +312,38 @@ class V3JointDataLoader:
                 or len(media["timestamps"]) != len(frames)
             ):
                 raise ValueError(f"V3 video timestamps do not match frames: {record_id}")
+
+    def _condition_ids(
+        self, row: dict[str, Any], family: str, epoch: int,
+    ) -> tuple[torch.Tensor | None, dict[str, Any]]:
+        field = CONDITION_FIELDS.get(str(row.get("task", "")))
+        if field is None:
+            return None, {}
+        value = row.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"V3 {family} row is missing paired condition text: {row.get('id')}")
+        text_value = value.strip()
+        token_ids = self.tokenizer.encode(text_value).ids
+        total_tokens = len(token_ids)
+        row_hash = str(row.get("source_row_id_sha256", "")).lower()
+        if self.max_text_tokens is not None and total_tokens > self.max_text_tokens:
+            start = _window_start(
+                row_hash, epoch, total_tokens - self.max_text_tokens, f"{family}_condition"
+            )
+            token_ids = token_ids[start:start + self.max_text_tokens]
+        else:
+            start = 0
+        if not token_ids:
+            raise ValueError(f"V3 {family} condition tokenization produced an empty sequence")
+        tensor = torch.tensor(token_ids, dtype=torch.long).unsqueeze(0)
+        return tensor, {
+            "condition_field": field,
+            "condition_source": "same_external_record",
+            "condition_text_sha256": hashlib.sha256(text_value.encode("utf-8")).hexdigest(),
+            "condition_tokens": len(token_ids),
+            "source_condition_tokens": total_tokens,
+            "condition_window_start": start,
+        }
 
     def _resolve_asset(self, relative: str, record_id: str) -> Path:
         safe = _safe_relative(relative)
@@ -384,6 +429,8 @@ class V3JointDataLoader:
             return {family: {"input_ids": input_ids}}, metadata
 
         media = row["assets"][family]
+        condition_ids, condition_metadata = self._condition_ids(row, family, epoch)
+        metadata.update(condition_metadata)
         if family == "image":
             relative = _safe_relative(media["source_asset"])
             with Image.open(self._resolve_asset(relative, record_id)) as image:
@@ -393,7 +440,10 @@ class V3JointDataLoader:
                 "width": int(tensor.shape[-1]), "height": int(tensor.shape[-2]),
                 "resized": False, "asset_paths": [relative],
             })
-            return {"image": {"images": tensor}}, metadata
+            batch = {"images": tensor}
+            if condition_ids is not None:
+                batch["condition_ids"] = condition_ids
+            return {"image": batch}, metadata
 
         if family == "audio":
             relative = _safe_relative(media["training_asset"])
@@ -424,7 +474,10 @@ class V3JointDataLoader:
                 "source_samples": total, "duration_seconds": float(window / rate),
                 "window_start_sample": start, "asset_paths": [relative],
             })
-            return {"audio": {"waveform": waveform, "sample_rate": rate}}, metadata
+            batch = {"waveform": waveform, "sample_rate": rate}
+            if condition_ids is not None:
+                batch["condition_ids"] = condition_ids
+            return {"audio": batch}, metadata
 
         frame_paths = [_safe_relative(path) for path in media["frames"]]
         if media.get("frame_count") is not None and int(media["frame_count"]) != len(frame_paths):
@@ -457,7 +510,10 @@ class V3JointDataLoader:
             "window_start_frame": start, "timestamp_unit": media.get("timestamp_unit"),
             "timestamps_supplied": timestamps is not None, "asset_paths": selected,
         })
-        return {"video": {"frames": video, "timestamps": timestamps}}, metadata
+        batch = {"frames": video, "timestamps": timestamps}
+        if condition_ids is not None:
+            batch["condition_ids"] = condition_ids
+        return {"video": batch}, metadata
 
     def _prepare_family(self, family: str) -> tuple[V3JointMicroBatch, str, str]:
         keys = self._family_sources[family]

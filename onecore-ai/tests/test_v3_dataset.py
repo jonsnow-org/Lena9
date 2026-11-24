@@ -59,6 +59,7 @@ def _write_project(root):
                     Image.fromarray(pixels).save(path)
                     row = {
                         **common, "task": "image_caption",
+                        "caption": f"External image caption {index} from {split}.",
                         "assets": {"image": {"source_asset": relative, "width": 2, "height": 2}},
                     }
                 elif family == "audio":
@@ -72,6 +73,7 @@ def _write_project(root):
                     sf.write(path, samples, 24_000, subtype="PCM_24")
                     row = {
                         **common, "task": "audio_text",
+                        "transcript": f"External audio transcript {index} from {split}.",
                         "assets": {"audio": {
                             "source_asset": relative, "training_asset": relative,
                             "sample_rate": 24_000, "training_sample_rate": 24_000,
@@ -92,6 +94,7 @@ def _write_project(root):
                         frame_paths.append(relative)
                     row = {
                         **common, "task": "video_caption",
+                        "caption": f"External video caption {index} from {split}.",
                         "assets": {"video": {
                             "frames": frame_paths, "timestamps": [0.0, 0.04, 0.08],
                             "timestamp_unit": "seconds", "frame_count": 3, "width": 2, "height": 2,
@@ -177,6 +180,19 @@ def test_v3_joint_loader_emits_five_families_and_resumes_exact_source_cursors(tm
         assert first[3].batch["audio"]["waveform"].shape[-1] == 24
         assert first[3].batch["audio"]["sample_rate"] == 24_000
         assert first[4].batch["video"]["frames"].shape == (1, 2, 3, 2, 2)
+        expected_conditions = (
+            (first[2], "caption", "External image caption 0 from train."),
+            (first[3], "transcript", "External audio transcript 0 from train."),
+            (first[4], "caption", "External video caption 0 from train."),
+        )
+        for item, field, expected_text in expected_conditions:
+            condition_ids = item.batch[item.family]["condition_ids"]
+            assert condition_ids.ndim == 2 and condition_ids.shape[0] == 1
+            assert 0 < condition_ids.shape[1] <= 16
+            assert condition_ids[0].tolist() == loader.tokenizer.encode(expected_text).ids
+            assert item.metadata["condition_field"] == field
+            assert item.metadata["condition_source"] == "same_external_record"
+            assert len(item.metadata["condition_text_sha256"]) == 64
         start = first[4].metadata["window_start_frame"]
         assert first[4].batch["video"]["timestamps"].tolist()[0] == pytest.approx(
             [start * 0.04, (start + 1) * 0.04]
@@ -229,4 +245,23 @@ def test_v3_joint_loader_materialization_failure_does_not_advance_any_family(tmp
         assert all(
             loader.state_dict()["families"][family]["rows_consumed"] == 0
             for family in FAMILIES
+        )
+
+
+def test_v3_joint_loader_rejects_caption_task_without_paired_text(tmp_path):
+    manifests, assets_root = _write_project(tmp_path / "project")
+    rows = [json.loads(line) for line in manifests["train"].read_text(encoding="utf-8").splitlines()]
+    target = next(row for row in rows if row.get("task") == "image_caption")
+    target.pop("caption")
+    manifests["train"].write_text(
+        "".join(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\\n" for row in rows),
+        encoding="utf-8",
+    )
+    config = V3Config()
+    tokenizer_path = tmp_path / "v3-tokenizer.json"
+    _write_exact_v3_test_tokenizer(manifests["train"], tokenizer_path, config)
+    with pytest.raises(ValueError, match="missing paired condition text"):
+        V3JointDataLoader(
+            manifests, assets_root, tokenizer_path, config=config,
+            max_text_tokens=16, audio_window_seconds=0.001, video_window_frames=2,
         )
