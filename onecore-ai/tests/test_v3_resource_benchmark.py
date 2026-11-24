@@ -1,4 +1,5 @@
 import json
+import sys
 
 import pytest
 
@@ -462,3 +463,26 @@ def test_select_train_samples_preserves_same_row_media_conditions(tmp_path):
     assert selected["audio"]["condition_text"] == "A spoken weather report."
     assert selected["video"]["condition_field"] == "caption"
     assert selected["video"]["condition_text"] == "A person opens a door."
+
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="RSS sampling uses Linux /proc")
+def test_monitored_subprocess_samples_parent_and_worker_rss():
+    from onecore.v3.resource_benchmark import (
+        _load_current_rss_bytes,
+        _run_monitored_subprocess,
+    )
+
+    baseline_parent_rss = _load_current_rss_bytes()
+    code = (
+        "import time; "
+        "payload = bytearray(32 * 1024 * 1024); "
+        "[(payload.__setitem__(index, 1)) for index in range(0, len(payload), 4096)]; "
+        "time.sleep(0.3)"
+    )
+    completed, observed_tree_peak = _run_monitored_subprocess(
+        [sys.executable, "-c", code], timeout=10,
+    )
+
+    assert completed.returncode == 0
+    assert observed_tree_peak >= baseline_parent_rss + 16 * 1024 * 1024

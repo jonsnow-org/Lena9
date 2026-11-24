@@ -485,6 +485,62 @@ def _load_current_rss_bytes() -> int:
     return 0
 
 
+def _load_pid_rss_bytes(pid: int) -> int:
+    try:
+        for line in Path(f"/proc/{pid}/status").read_text(encoding="utf-8").splitlines():
+            if line.startswith("VmRSS:"):
+                return int(line.split()[1]) * 1024
+    except (OSError, ValueError, IndexError):
+        pass
+    return 0
+
+
+def _run_monitored_subprocess(
+    command: list[str], *, timeout: int, poll_interval: float = 0.02,
+) -> tuple[subprocess.CompletedProcess[str], int]:
+    """Run one worker and sample the combined parent+child resident set.
+
+    The child also reports its kernel ru_maxrss high-water mark. The sampled
+    process-tree value complements that exact per-process figure; a separate
+    sum of per-process high-water marks is reported as a conservative bound.
+    """
+    if not sys.platform.startswith("linux"):
+        raise RuntimeError("process-tree RSS sampling requires a Linux runner")
+    if timeout < 1 or poll_interval <= 0:
+        raise ValueError("worker timeout and RSS sampling interval must be positive")
+
+    process = subprocess.Popen(
+        command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+    peak_tree_rss = _load_current_rss_bytes() + _load_pid_rss_bytes(process.pid)
+    deadline = time.monotonic() + timeout
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            try:
+                process.kill()
+            except ProcessLookupError:
+                pass
+            stdout, stderr = process.communicate()
+            raise subprocess.TimeoutExpired(
+                command, timeout, output=stdout, stderr=stderr,
+            )
+        try:
+            stdout, stderr = process.communicate(timeout=min(poll_interval, remaining))
+            break
+        except subprocess.TimeoutExpired:
+            current_tree_rss = (
+                _load_current_rss_bytes() + _load_pid_rss_bytes(process.pid)
+            )
+            peak_tree_rss = max(peak_tree_rss, current_tree_rss)
+
+    peak_tree_rss = max(peak_tree_rss, _load_current_rss_bytes())
+    completed = subprocess.CompletedProcess(
+        command, process.returncode, stdout, stderr,
+    )
+    return completed, peak_tree_rss
+
+
 def _max_rss_bytes() -> int:
     if not sys.platform.startswith("linux"):
         raise RuntimeError("peak RSS measurement currently requires a Linux runner")
@@ -1237,8 +1293,8 @@ def _run_parent(args: argparse.Namespace) -> int:
                 "--threads", str(args.threads),
                 "--iterations", str(args.iterations),
             ]
-            completed = subprocess.run(
-                command, capture_output=True, text=True, timeout=args.worker_timeout_seconds,
+            completed, process_tree_peak = _run_monitored_subprocess(
+                command, timeout=args.worker_timeout_seconds,
             )
             try:
                 worker_result = json.loads(completed.stdout.strip())
@@ -1252,6 +1308,7 @@ def _run_parent(args: argparse.Namespace) -> int:
             if completed.returncode != 0 and worker_result.get("status") == "success":
                 worker_result["status"] = "failed"
                 worker_result["error"] = f"worker exit code {completed.returncode}"
+            worker_result["process_tree_peak_rss_bytes_observed"] = process_tree_peak
             worker_result["case_index"] = index
             benchmark_results.append(worker_result)
 
@@ -1271,11 +1328,8 @@ def _run_parent(args: argparse.Namespace) -> int:
             "--tokenizer-json", str(tokenizer_path),
             "--threads", str(args.threads),
         ]
-        joint_completed = subprocess.run(
-            joint_command,
-            capture_output=True,
-            text=True,
-            timeout=args.worker_timeout_seconds,
+        joint_completed, joint_process_tree_peak = _run_monitored_subprocess(
+            joint_command, timeout=args.worker_timeout_seconds,
         )
         try:
             joint_result = json.loads(joint_completed.stdout.strip())
@@ -1291,11 +1345,40 @@ def _run_parent(args: argparse.Namespace) -> int:
         if joint_completed.returncode != 0 and joint_result.get("status") == "success":
             joint_result["status"] = "failed"
             joint_result["error"] = f"joint worker exit code {joint_completed.returncode}"
+        joint_result["process_tree_peak_rss_bytes_observed"] = joint_process_tree_peak
 
         model_report = build_report()
         failed = [item for item in benchmark_results if item.get("status") != "success"]
         if joint_result.get("status") != "success":
             failed.append(joint_result)
+        parent_peak_rss = _max_rss_bytes()
+        worker_peak_values = [
+            int(item["peak_rss_bytes"])
+            for item in [*benchmark_results, joint_result]
+            if isinstance(item.get("peak_rss_bytes"), int) and item["peak_rss_bytes"] > 0
+        ]
+        max_worker_peak_rss = max(worker_peak_values, default=0)
+        observed_tree_peaks = [
+            int(item["process_tree_peak_rss_bytes_observed"])
+            for item in [*benchmark_results, joint_result]
+            if isinstance(item.get("process_tree_peak_rss_bytes_observed"), int)
+        ]
+        memory_accounting = {
+            "parent_process_peak_rss_bytes": parent_peak_rss,
+            "max_worker_process_peak_rss_bytes": max_worker_peak_rss,
+            "observed_process_tree_peak_rss_bytes": max(
+                [parent_peak_rss, *observed_tree_peaks]
+            ),
+            "conservative_process_tree_rss_upper_bound_bytes": (
+                parent_peak_rss + max_worker_peak_rss
+            ),
+            "sampling_interval_seconds": 0.02,
+            "method": (
+                "Linux per-process ru_maxrss plus sampled /proc parent+worker RSS; "
+                "the conservative upper bound sums separate per-process maxima and "
+                "may exceed the true simultaneous process-tree peak"
+            ),
+        }
         result = {
             "format_version": 1,
             "status": "blocked" if failed else "measured",
@@ -1317,6 +1400,7 @@ def _run_parent(args: argparse.Namespace) -> int:
             "tokenizer": tokenizer_evidence,
             "config_sha256": V3Config().fingerprint,
             "model_report": model_report,
+            "memory_accounting": memory_accounting,
             "cpu": {
                 "platform": platform.platform(),
                 "machine": platform.machine(),
@@ -1345,6 +1429,7 @@ def _run_parent(args: argparse.Namespace) -> int:
                 "The joint case executes OneCoreV3Objective once per family micro-batch, calls backward in the required five-family order, and accumulates gradients. It then preallocates AdamW state without calling optimizer.step or changing model weights.",
                 "The joint case uses one bounded real train micro-batch per family; optional GAN discriminators and paired alignment loss are absent unless the selected sample provides condition_ids. It is a measured resource sample, not a full training run or a quality result.",
                 "Image resolution is native; audio is the preserved 24 kHz training derivative; video uses original stored frame PNGs and timestamps.",
+                "Per-worker peak RSS is the Linux kernel ru_maxrss value; sampled process-tree RSS includes the parent and active worker, while the conservative bound sums separate per-process maxima and may overestimate simultaneous use.",
                 "No source acquisition, corpus conversion, tokenizer fitting, V2 import, or checkpoint mutation occurs.",
             ],
         }
@@ -1363,6 +1448,7 @@ def _run_parent(args: argparse.Namespace) -> int:
             "failed_cases": len(failed),
             "peak_rss_bytes": [item.get("peak_rss_bytes") for item in benchmark_results],
             "joint_peak_rss_bytes": joint_result.get("peak_rss_bytes"),
+            "memory_accounting": memory_accounting,
             "joint_optimizer_state_bytes": joint_result.get("optimizer_state_bytes"),
         }, ensure_ascii=False, indent=2))
         return 1 if failed else 0
