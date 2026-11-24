@@ -353,3 +353,47 @@ def test_v3_checkpoint_save_rejects_scheduler_attached_to_another_optimizer(tmp_
             lineage={"run_id": "run-v3-001", "session": 1,
                      "parent_checkpoint_sha256": None},
         )
+
+def test_v3_checkpoint_rejects_optimizer_not_bound_to_model_on_save(tmp_path):
+    config = _config()
+    model = config.build_model()
+    foreign_model = config.build_model()
+    optimizer = torch.optim.AdamW(foreign_model.parameters(), lr=1e-3)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.8)
+
+    with pytest.raises(ValueError, match="exactly the model's trainable parameters"):
+        save_v3_checkpoint(
+            tmp_path / "foreign-optimizer.pt", model, optimizer, scheduler, 0, config,
+            tokenizer_json=_tokenizer_json(config.text_vocab_size),
+            manifest_sha256="a" * 64,
+            data_state={"source_cursors": {"text/train": {"offset": 0}}},
+            lineage={"run_id": "run-v3-foreign", "session": 1,
+                     "parent_checkpoint_sha256": None},
+        )
+
+
+def test_v3_checkpoint_rejects_foreign_optimizer_before_restoring_model(tmp_path):
+    config = _config()
+    model, optimizer, scheduler = _make_training_state(config)
+    checkpoint_path = tmp_path / "onecore-v3.pt"
+    _, _, manifest_sha = _save(checkpoint_path, model, optimizer, scheduler, config)
+
+    foreign_model = config.build_model()
+    foreign_optimizer = torch.optim.AdamW(foreign_model.parameters(), lr=1e-3)
+    foreign_scheduler = torch.optim.lr_scheduler.StepLR(
+        foreign_optimizer, step_size=1, gamma=0.8
+    )
+    with torch.no_grad():
+        for parameter in model.parameters():
+            parameter.add_(0.125)
+    expected_model = copy.deepcopy(model.state_dict())
+
+    with pytest.raises(ValueError, match="exactly the model's trainable parameters"):
+        load_v3_checkpoint(
+            checkpoint_path, model, foreign_optimizer, foreign_scheduler, config,
+            expected_manifest_sha256=manifest_sha,
+            expected_parent_checkpoint_sha256=None,
+        )
+
+    _assert_nested_equal(model.state_dict(), expected_model)
+
