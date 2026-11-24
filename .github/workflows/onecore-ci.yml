@@ -71,7 +71,8 @@ jobs:
               assert isinstance(jobs, dict) and jobs, f"{filename} has no auditable job definitions"
               lines = path.read_text(encoding="utf-8").splitlines()
               for name, job in jobs.items():
-                  assert str(job.get("if", "")).startswith("${{ false"), f"{filename}:{name} is not disabled"
+                  archive_prefix = "$" + "{{ false"
+                  assert str(job.get("if", "")).startswith(archive_prefix), f"{filename}:{name} is not disabled"
                   start = next(i for i, line in enumerate(lines) if line == f"  {name}:")
                   stop = next(
                       (i for i in range(start + 1, len(lines))
