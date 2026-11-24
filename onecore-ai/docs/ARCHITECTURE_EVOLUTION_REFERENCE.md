@@ -813,3 +813,42 @@ This update supersedes the earlier statement that the first tokenizer fit was me
 - No tokenizer artifact has been published yet. Do not claim a fitted 32,000-token tokenizer until the JSON and evidence sidecar are uploaded and independently verified. No optimizer training has started.
 
 **Correction commit:** 93498a57d8d7ae3c33fb55ade2375c2f86864f86. Foundation remains the frozen V2 archive; main remains 0b5ec69e839bfc6086a358511b54649b03c7be9a. No new branch or PR was created.
+
+
+
+## 2026-11-24 — Verified V3 tokenizer, dense FLOPs, and canonical CI
+
+This update supersedes earlier statements in this reference and the README that the real tokenizer was still pending or that V3 FLOPs had not yet been recomputed.
+
+**Canonical refs and isolation**
+- V3 implementation branch: `research/onecore-v3-implementation`, implementation head `01dedd7ccf05c2826230a8693402087bed2bf94c` before this documentation-only update.
+- Frozen Foundation/V2 archive: `research/onecore-foundation` at `6d5dd21982f8f4a835e07b0f004b1621be57ba96`; Foundation Verify Run #613 (ID `45335115471`) passed.
+- `main` remains `0b5ec69e839bfc6086a358511b54649b03c7be9a`. No main merge, new PR, or new branch was created. PR #10 remains merged as previously recorded.
+- V2 Runs #52 and #55 are no longer active: #52 was cancelled; #55 failed its independent validation/test job. Neither produced optimizer updates. No V2 or V3 optimizer training was started in this execution.
+
+**External corpus and tokenizer**
+- V3 corpus Run #605 (ID `45325008221`) remains the authoritative external-only five-family corpus. Artifact 14892594659: 24,432,975,285 bytes, SHA-256 `302e6eb082ad82ee892b00153ac068f60505cdf5de5d14f3b82a919e576740a2`. Report artifact 14893020087: 892,194 bytes, SHA-256 `151677083079aee3cfe5a39cbe07fbd47908e9c74560312cef9c137c64fcd1ba`. Manifest gate passed with train audio/image/text/tool/video = 1100/900/591525/14000/100, validation = 165/10/22552/400/10, test = 148/10/22758/400/10. Asset hashes = 20,607; errors = []; deferred = []; synthetic records added = 0. The 1,302 non-external skips and 37 unmatched extra legacy rows remain separately reported and are not counted toward quotas.
+- Tokenizer workflow Run #2 (ID `45336933362`) completed successfully on source corpus Run #605. Artifact 14894835517, `onecore-v3-tokenizer-run605-vocab32000`, size 394,036 bytes; ZIP SHA-256 `47246c85500ed2647aacfd00187dacf4dedae1f10b180910ff55f71463851bd6`.
+- The tokenizer JSON has exactly 32,000 vocabulary entries and SHA-256 `569f1b61e017dcf5c8ba9fef22a8002cc48d5ea3c26504bdae83f53834d00e76`. Evidence sidecar SHA-256 `b60e5077767f79b1316635ed45343ed5c59ce2602f41d24759a25a386ea33e16`; summary SHA-256 `2fb6e83e277b8f3d44cffd46a7a6e1c7231bffcb3e4f423ec62ab25e8c05bbb5`. Evidence binds 591,525 external train-text records, train manifest SHA-256 `d499968cdd5e1869ae7b5d9866261e8aad8fe091ad9096b13067bfb6a83f9205`, and external text-row SHA-256 `6d60d6a07fbd82932373c449735d1b73cd882bcd14390e07a60400c2cc97e720`; validation/test usage = 0 and V2 tokenizer import = false. The workflow range-extracted only `data/train.jsonl`, not the full 24.43 GB corpus.
+
+**V3 checkpoint evidence**
+- The independent `onecore.v3.checkpoint` format remains version 1 and is separate from V2. It stores V3 weights, optimizer/scheduler/global step, config+fingerprint, serialized tokenizer bytes/hash/vocabulary, validated manifest fingerprint, source/data cursors, Python/NumPy/Torch CPU RNG and parent-checkpoint lineage.
+- Canonical Verify Run #618 (ID `45341192551`) passed 267 tests and 20 warnings on commit `1a33bff45348f01575f0ee74b67c5b7d30863735`, including the detached-optimizer/model binding regression.
+- The checkpoint suite still uses tiny fixtures. A save/restore test bound to the full real corpus assets, actual tokenizer artifact, and complete production-sized data cursors has not yet been run; do not treat the tiny fixture as the full data-continuity gate.
+
+**Exact V3 parameter and dense-FLOP report**
+- V3 remains `onecore-v3-prototype-2`, 39,906,568 trainable parameters, 123 state-dict tensors, config SHA-256 `6c879331c75da434c58680050f94035dc15626e7af4847db1b36e055c47d7708`. V2 parameter counts and FLOPs are not reused.
+- New `onecore.v3.flops` code computes dense arithmetic from instantiated module dimensions. Reference shapes: batch 1 per family; text/tool 128 tokens; image 256×256; audio 24,000 samples, stereo, 24 kHz; video 13 frames at 256×256.
+- Exact counted dense forward FLOPs at 2 FLOPs/MAC: text 14,260,633,600; tool 14,260,633,600; image 21,340,618,752; audio 173,752,320,000; video 68,232,426,496; five-family forward sum 291,846,632,448 (0.291846632448 TFLOPs).
+- The count excludes bias additions, normalization, activations, softmax/masking, sinusoidal position generation, pooling/interpolation, RVQ distance reductions/argmin, losses, memory movement and backward propagation. It is not a measured training-step FLOP count, runtime throughput, peak RSS, corpus shape distribution, or quality metric. The unconditioned flow-sampler reference is 21,072,708,608 FLOPs/step and 674,326,675,456 for 32 steps, excluding decoder FLOPs.
+
+**CI and correction history**
+- FLOP implementation commit: `1d8ce0858fe63b05e0993fc100610167c8269ed5`.
+- A focused test initially referenced the previous flow-report nesting and caused Run #619 (ID `45345829625`) to fail with 270 passed/1 failed. The test path was corrected in commit `01dedd7ccf05c2826230a8693402087bed2bf94c`; no model code or checkpoint lineage was changed by that correction.
+- Canonical Verify Run #620 (ID `45345949288`) on `01dedd7` completed success: 271 passed, 24 warnings. Compile, exact parameter/FLOP report, V2 corrected-spec contract, architecture notebook, safe notebook preflights, FineWeb-2 exact cursor resume, notebook validation and workflow isolation all passed.
+- Earlier tokenizer/CI Run #614 and tokenizer workflow Run #1 failures are historical and superseded by the successful tokenizer Run #2 and Verify #620. Do not rerun the successful corpus restore or tokenizer fit for these exact artifacts.
+
+**Still prohibited**
+- No V3 optimizer training until measured peak CPU RSS/throughput on actual corpus samples, modality shape/duration profiling, and a full checkpoint save/restore bound to the real tokenizer/manifest/cursors/RNG/lineage all pass.
+- No V3 training orchestrator or production inference API has been implemented yet. No image/audio/video quality evidence exists; professional-quality claims require independent held-out evaluation and human review.
+- Keep V3 as the sole active product branch, Foundation as the frozen V2 archive, and main unchanged.
