@@ -555,10 +555,12 @@ jobs:
           passed = False
           if path.is_file():
               report = json.loads(path.read_text(encoding="utf-8"))
-              passed = bool(report.get("manifest_gate", {}).get("passed")) and not bool(report.get("blocked"))
+              passed = bool(report.get("manifest_gate", {}).get("passed"))
               acquisition = report.get("missing_media_acquisition") or {}
               print({
                   "blocked": report.get("blocked"),
+                  "restoration_incomplete": report.get("restoration_incomplete", report.get("blocked")),
+                  "acquisition_incomplete": report.get("acquisition_incomplete", acquisition.get("blocked", False)),
                   "converted_records": report.get("converted_records"),
                   "gate_passed": passed,
                   "coverage": report.get("manifest_gate", {}).get("coverage"),

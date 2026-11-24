@@ -1412,6 +1412,17 @@ def convert_v2_corpus(
         "manifest_paths": manifest_paths,
         "manifest_gate": gate,
         "missing_media_acquisition": acquisition_report,
-        "blocked": bool(report.get("blocked")) or bool(acquisition_report and acquisition_report.get("blocked")) or not bool(gate["passed"]),
+            restoration_incomplete = bool(report.get("blocked"))
+    acquisition_incomplete = bool(acquisition_report and acquisition_report.get("blocked"))
+    report.update({
+        "manifest_paths": manifest_paths,
+        "manifest_gate": gate,
+        "missing_media_acquisition": acquisition_report,
+        "restoration_incomplete": restoration_incomplete,
+        "acquisition_incomplete": acquisition_incomplete,
+        # The final external-only manifest gate controls corpus eligibility.
+        # Extra legacy rows that cannot be rehydrated remain visible as warnings.
+        "blocked": not bool(gate["passed"]),
+    })
     })
     return report

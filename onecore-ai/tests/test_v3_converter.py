@@ -751,3 +751,59 @@ def test_dataset_viewer_filter_loader_does_not_retry_permanent_http_errors(monke
             "org/video-data", "default", "train", '"file"=\'missing.mp4\''
         )
     assert len(calls) == 1
+
+
+
+@pytest.mark.parametrize(
+    ("gate_passed", "expected_blocked"),
+    [(True, False), (False, True)],
+)
+def test_convert_v2_corpus_blocks_only_when_final_manifest_gate_fails(
+    tmp_path, monkeypatch, gate_passed, expected_blocked,
+):
+    source_root = tmp_path / "v2"
+    source_root.mkdir()
+    legacy_record = {
+        "id": "legacy-text-001",
+        "split": "train",
+        "task": "text",
+        "data_class": "external",
+        "text": "A preserved externally sourced legacy row.",
+    }
+    for split in ("train", "validation", "test"):
+        payload = [legacy_record] if split == "train" else []
+        (source_root / f"{split}.jsonl").write_text(
+            "".join(json.dumps(row) + "\n" for row in payload),
+            encoding="utf-8",
+        )
+
+    restore_report = {
+        "blocked": True,
+        "skipped": {"pinned_source_row_not_found": 37},
+        "errors": [],
+        "deferred_source_splits": [],
+    }
+
+    def fake_restore(records, *args, **kwargs):
+        assert len(records) == 1
+        return records, dict(restore_report)
+
+    monkeypatch.setattr(converter_module, "restore_v2_media_records", fake_restore)
+    monkeypatch.setattr(
+        converter_module,
+        "validate_v3_manifest",
+        lambda *args, **kwargs: {"passed": gate_passed, "errors": []},
+    )
+
+    report = convert_v2_corpus(
+        source_root,
+        tmp_path / "sources.yaml",
+        tmp_path / "output",
+        fill_missing_media=False,
+    )
+
+    assert report["blocked"] is expected_blocked
+    assert report["restoration_incomplete"] is True
+    assert report["acquisition_incomplete"] is False
+    assert report["skipped"]["pinned_source_row_not_found"] == 37
+    assert report["manifest_gate"]["passed"] is gate_passed
