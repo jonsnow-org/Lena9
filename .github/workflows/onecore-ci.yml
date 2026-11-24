@@ -26,6 +26,11 @@ on:
         required: false
         default: false
         type: boolean
+      benchmark_v3_resources:
+        description: "Measure CPU RSS and throughput from the existing validated V3 corpus/tokenizer artifacts; no training"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -601,4 +606,58 @@ jobs:
           name: onecore-v3-corpus-${{ github.run_id }}
           path: ${{ runner.temp }}/onecore-v3-corpus/v3
           if-no-files-found: error
+          retention-days: 30
+
+  v3-resource-benchmark:
+    name: Measure V3 CPU memory and throughput from existing artifacts
+    needs: verify
+    # Never overlap a corpus restore. This job is manual-only and performs no optimizer updates.
+    if: github.ref == 'refs/heads/research/onecore-v3-implementation' && github.event_name == 'workflow_dispatch' && inputs.benchmark_v3_resources == true && inputs.restore_v3_corpus != true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install CPU-only PyTorch
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install OneCore and range-artifact dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -e "onecore-ai[dev,corpus-restore]"
+
+      - name: Benchmark validated real-corpus samples without downloading the full archive
+        env:
+          PYTHONPATH: onecore-ai/src
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python -m onecore.v3.resource_benchmark \
+            --github-repo jonsnow-org/Lena9 \
+            --corpus-artifact-id 14892594659 \
+            --expected-corpus-run-id 45325008221 \
+            --report-artifact-id 14893020087 \
+            --expected-report-run-id 45325008221 \
+            --tokenizer-artifact-id 14894835517 \
+            --expected-tokenizer-run-id 45336933362 \
+            --threads 4 --iterations 2 \
+            --max-image-megapixels 2 \
+            --max-audio-seconds 5 \
+            --max-video-megapixels 1 \
+            --max-video-frames 16 \
+            --output "$RUNNER_TEMP/onecore-v3-resource-benchmark.json"
+
+      - name: Upload measured resource evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: onecore-v3-resource-benchmark-${{ github.run_id }}
+          path: ${{ runner.temp }}/onecore-v3-resource-benchmark.json
+          if-no-files-found: ignore
           retention-days: 30

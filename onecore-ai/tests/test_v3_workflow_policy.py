@@ -68,3 +68,19 @@ def test_v3_tokenizer_fit_waits_for_same_sha_ci_and_rechecks_source_evidence():
     assert "manifest_gate" in workflow
     assert "actions/download-artifact@v7" in workflow
     assert "train_v3_step(" not in workflow
+
+
+def test_v3_resource_benchmark_is_manual_only_and_uses_range_reads():
+    workflow = (WORKFLOWS / "onecore-ci.yml").read_text(encoding="utf-8")
+    assert "benchmark_v3_resources:" in workflow
+    assert "default: false" in workflow
+    benchmark = workflow.split("  v3-resource-benchmark:", 1)[1]
+    assert "github.event_name == 'workflow_dispatch'" in benchmark
+    assert "inputs.benchmark_v3_resources == true" in benchmark
+    assert "inputs.restore_v3_corpus != true" in benchmark
+    assert "onecore.v3.resource_benchmark" in benchmark
+    assert "--corpus-artifact-id 14892594659" in benchmark
+    assert "--report-artifact-id 14893020087" in benchmark
+    assert "--tokenizer-artifact-id 14894835517" in benchmark
+    assert "actions/download-artifact@" not in benchmark
+    assert "optimizer updates" in benchmark
