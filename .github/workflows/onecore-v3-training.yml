@@ -1,11 +1,9 @@
 name: OneCore V3 — real five-family CPU training
 
+# Staged only. Training remains disabled until the real CPU benchmark and
+# full artifact-backed V3 checkpoint save/restore audit both pass.
 on:
   workflow_dispatch:
-  push:
-    branches: [research/onecore-v3-implementation]
-    paths:
-      - "onecore-ai/v3-training-request.json"
 
 permissions:
   contents: read
@@ -47,7 +45,7 @@ jobs:
   train:
     name: Train OneCore V3 from the pinned external corpus
     needs: verify
-    if: github.ref == 'refs/heads/research/onecore-v3-implementation'
+    if: false  # Re-enable only after all pre-training gates are evidenced.
     runs-on: ubuntu-24.04
     timeout-minutes: 350
     steps:

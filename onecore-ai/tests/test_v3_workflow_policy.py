@@ -84,3 +84,12 @@ def test_v3_resource_benchmark_is_manual_only_and_uses_range_reads():
     assert "--tokenizer-artifact-id 14894835517" in benchmark
     assert "actions/download-artifact@" not in benchmark
     assert "optimizer updates" in benchmark
+
+
+def test_v3_training_workflow_is_blocked_until_resource_and_checkpoint_gates_pass():
+    workflow = (WORKFLOWS / "onecore-v3-training.yml").read_text(encoding="utf-8")
+    assert "on:\n  workflow_dispatch:" in workflow
+    assert "\n  push:" not in workflow
+    train = workflow.split("  train:", 1)[1]
+    assert "    if: false" in train
+    assert "Run the first real five-family optimizer update" in train
