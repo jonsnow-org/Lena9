@@ -10,7 +10,7 @@ from .checkpoint import (
     fingerprint_validated_v3_manifests,
     load_v3_checkpoint, save_v3_checkpoint,
 )
-from .training import OneCoreV3Objective, V3ObjectiveWeights, train_v3_discriminator_step, train_v3_step
+from .training import (\n    OneCoreV3Objective, V3ObjectiveWeights, train_v3_discriminator_step,\n    train_v3_joint_step, train_v3_step,\n)
 from .dataset import V3JointDataLoader, V3JointMicroBatch
 from .manifest import assert_v3_external_coverage, read_v3_manifest, validate_v3_manifest
 from .tokenizer import (
@@ -30,7 +30,7 @@ __all__ = [
     "fingerprint_validated_v3_manifests",
     "V3_SPECIAL_TOKENS", "iter_external_v3_train_text",
     "train_v3_tokenizer", "verify_v3_tokenizer",
-    "OneCoreV3Objective", "V3ObjectiveWeights", "train_v3_step", "train_v3_discriminator_step",
+    "OneCoreV3Objective", "V3ObjectiveWeights", "train_v3_step",\n    "train_v3_joint_step", "train_v3_discriminator_step",
     "V3JointDataLoader", "V3JointMicroBatch",
     "assert_v3_external_coverage", "read_v3_manifest", "validate_v3_manifest",
     "ImageEncoding", "VariableResolutionImageCodec",
