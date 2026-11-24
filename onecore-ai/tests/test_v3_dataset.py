@@ -251,6 +251,147 @@ def test_v3_joint_loader_materialization_failure_does_not_advance_any_family(tmp
         )
 
 
+def test_v3_joint_loader_benchmark_manifest_view_keeps_full_tokenizer_provenance_non_checkpointable(tmp_path):
+    manifests, assets_root = _write_project(tmp_path / "project")
+    extra = {
+        "id": "train-text-extra",
+        "split": "train",
+        "task": "text",
+        "data_class": "external",
+        "source_url": "https://example.org/text-extra",
+        "source_id": "text-extra-source",
+        "source_revision": "c" * 40,
+        "source_row_id_sha256": hashlib.sha256(b"train-text-extra").hexdigest(),
+        "text": "An extra external text row included only in the original tokenizer corpus.",
+    }
+    with manifests["train"].open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(extra, ensure_ascii=False, sort_keys=True) + "\n")
+    full_train_sha = hashlib.sha256(manifests["train"].read_bytes()).hexdigest()
+
+    subset_paths = {}
+    for split in ("train", "validation", "test"):
+        rows = [
+            json.loads(line)
+            for line in manifests[split].read_text(encoding="utf-8").splitlines()
+        ]
+        rows = [row for row in rows if row.get("id") != "train-text-extra"]
+        path = tmp_path / f"benchmark-{split}.jsonl"
+        path.write_text(
+            "".join(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n" for row in rows),
+            encoding="utf-8",
+        )
+        subset_paths[split] = path
+
+    config = V3Config()
+    tokenizer_path = tmp_path / "v3-tokenizer.json"
+    _write_exact_v3_test_tokenizer(manifests["train"], tokenizer_path, config)
+
+    with pytest.raises(ValueError, match="train manifest"):
+        V3JointDataLoader(
+            subset_paths, assets_root, tokenizer_path, config=config,
+            max_text_tokens=16, audio_window_seconds=0.001, video_window_frames=2,
+        )
+
+    loader = V3JointDataLoader(
+        subset_paths, assets_root, tokenizer_path, config=config,
+        max_text_tokens=16, audio_window_seconds=0.001, video_window_frames=2,
+        benchmark_manifest_view=True,
+        tokenizer_train_manifest_sha256=full_train_sha,
+    )
+    with loader:
+        assert loader.train_manifest_sha256 != full_train_sha
+        assert loader.tokenizer_evidence["train_manifest_sha256"] == full_train_sha
+        assert loader.current_step == 0
+        loader.next_joint_micro_batches()
+        with pytest.raises(RuntimeError, match="benchmark manifest view"):
+            loader.state_dict()
+        with pytest.raises(RuntimeError, match="benchmark manifest view"):
+            loader.load_state_dict({})
+
+
+def test_v3_loader_benchmark_worker_measures_real_five_family_materialization_without_updates(
+    tmp_path, monkeypatch,
+):
+    from onecore.v3 import resource_benchmark as benchmark
+
+    manifests, assets_root = _write_project(tmp_path / "project")
+    config = V3Config()
+    tokenizer_path = tmp_path / "v3-tokenizer.json"
+    _write_exact_v3_test_tokenizer(manifests["train"], tokenizer_path, config)
+    plan = {
+        "manifest_paths": {split: str(path) for split, path in manifests.items()},
+        "assets_root": str(assets_root),
+        "tokenizer_path": str(tokenizer_path),
+        "tokenizer_train_manifest_sha256": hashlib.sha256(
+            manifests["train"].read_bytes()
+        ).hexdigest(),
+        "iterations": 3,
+        "warmup_iterations": 1,
+        "max_text_tokens": 16,
+        "audio_window_seconds": 0.001,
+        "video_window_frames": 2,
+    }
+    plan_path = tmp_path / "loader-plan.json"
+    plan_path.write_text(json.dumps(plan), encoding="utf-8")
+
+    monkeypatch.setattr(benchmark.torch, "set_num_threads", lambda _value: None)
+    monkeypatch.setattr(benchmark.torch, "set_num_interop_threads", lambda _value: None)
+    monkeypatch.setattr(benchmark.torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(benchmark, "_load_current_rss_bytes", lambda: 1024)
+    monkeypatch.setattr(benchmark, "_max_rss_bytes", lambda: 2048)
+
+    result = benchmark._loader_worker(plan_path, 1)
+
+    assert result["status"] == "success", result
+    assert result["benchmark_kind"].startswith("v3_joint_data_loader")
+    assert result["measured_joint_steps"] == 2
+    assert result["measured_micro_batches"] == 10
+    assert result["joint_steps_per_second"] > 0
+    assert set(result["family_throughput"]) == set(FAMILIES)
+    assert all(
+        result["family_throughput"][family]["records"] == 2
+        for family in FAMILIES
+    )
+    assert result["optimizer_updates"] == 0
+    assert result["checkpoint_writes"] == 0
+    assert result["checkpointable"] is False
+
+
+def test_v3_loader_benchmark_sampling_is_deterministic_and_external_only(tmp_path):
+    from onecore.v3.resource_benchmark import _select_loader_benchmark_rows
+
+    manifests, _assets_root = _write_project(tmp_path / "project")
+    bootstrap = {
+        "id": "train-text-bootstrap",
+        "split": "train",
+        "task": "text",
+        "data_class": "bootstrap",
+        "source_url": "https://example.org/bootstrap",
+        "source_id": "bootstrap",
+        "source_revision": "d" * 40,
+        "source_row_id_sha256": hashlib.sha256(b"bootstrap").hexdigest(),
+        "text": "This bootstrap row must never enter the loader benchmark.",
+    }
+    with manifests["train"].open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(bootstrap, ensure_ascii=False, sort_keys=True) + "\n")
+    kwargs = {
+        "max_image_megapixels": 2.0,
+        "max_audio_seconds": 5.0,
+        "max_video_megapixels": 1.0,
+        "max_video_frames": 16,
+    }
+    first, stats = _select_loader_benchmark_rows(manifests, **kwargs)
+    second, _ = _select_loader_benchmark_rows(manifests, **kwargs)
+    for split, quota in (("train", 100), ("validation", 10), ("test", 10)):
+        for family in FAMILIES:
+            ids_first = [row["id"] for row in first[split][family]]
+            ids_second = [row["id"] for row in second[split][family]]
+            assert ids_first == ids_second
+            assert len(ids_first) == quota
+            assert "train-text-bootstrap" not in ids_first
+    assert stats["coverage"]["train"]["text"]["selected_rows"] == 100
+
+
 def test_v3_joint_loader_rejects_caption_task_without_paired_text(tmp_path):
     manifests, assets_root = _write_project(tmp_path / "project")
     rows = [json.loads(line) for line in manifests["train"].read_text(encoding="utf-8").splitlines()]

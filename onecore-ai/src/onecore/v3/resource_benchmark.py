@@ -1,8 +1,8 @@
 """Bounded CPU resource profiling against the already-validated V3 corpus.
 
 This is a measurement harness, not a training runner. It range-reads the existing
-GitHub artifacts, extracts only representative real samples, and performs no
-optimizer steps or checkpoint writes.
+GitHub artifacts, extracts representative real samples plus a quota-complete
+five-family loader slice, and performs no optimizer steps or checkpoint writes.
 """
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ import json
 import math
 import os
 import platform
+import random
 import resource
 import shutil
 import subprocess
@@ -39,7 +40,7 @@ except ImportError:  # supplied only by the explicit corpus-restore extra
 
 from onecore.data import external_record_is_trainable, has_immutable_external_provenance
 from onecore.v3.config import V3Config
-from onecore.v3.dataset import CONDITION_FIELDS, _window_start
+from onecore.v3.dataset import CONDITION_FIELDS, V3JointDataLoader, _asset_paths, _window_start
 from onecore.v3.manifest import TASK_GROUPS, read_v3_manifest
 from onecore.v3.report import build_report
 from onecore.v3.tokenizer import sha256_file, verify_v3_tokenizer
@@ -149,6 +150,34 @@ def _extract_member(archive: Any, member: str, destination: Path) -> None:
     except Exception:
         temporary.unlink(missing_ok=True)
         raise
+
+
+def _extract_verified_asset(
+    archive: Any,
+    members: list[str],
+    relative: str,
+    assets_root: Path,
+    asset_hashes: dict[str, Any],
+) -> Path:
+    safe = _safe_relative(relative)
+    expected = asset_hashes.get(safe)
+    if (
+        not isinstance(expected, str) or len(expected) != 64
+        or any(char not in "0123456789abcdef" for char in expected.lower())
+    ):
+        raise ValueError(f"selected V3 asset has no valid manifest SHA-256: {safe}")
+    destination = assets_root / safe
+    if destination.exists():
+        actual = sha256_file(destination)
+        if actual != expected.lower():
+            raise ValueError(f"existing benchmark asset hash mismatch: {safe}")
+        return destination
+    member = _unique_suffix(members, f"data/assets/{safe}")
+    _extract_member(archive, member, destination)
+    actual = sha256_file(destination)
+    if actual != expected.lower():
+        raise ValueError(f"selected corpus asset SHA-256 mismatch: {safe}")
+    return destination
 
 
 def _read_conversion_report(repo: str, artifact_id: int, token: str) -> tuple[dict[str, Any], bytes]:
@@ -390,6 +419,157 @@ def _select_train_samples(
     summaries = {name: _distribution(values) for name, values in stats.items()}
     return selected, summaries
 
+
+
+def _select_loader_benchmark_rows(
+    manifest_paths: dict[str, Path],
+    *,
+    max_image_megapixels: float,
+    max_audio_seconds: float,
+    max_video_megapixels: float,
+    max_video_frames: int,
+    seed: int = 20261124,
+) -> tuple[dict[str, dict[str, list[dict[str, Any]]]], dict[str, Any]]:
+    """Choose a deterministic, quota-complete external sample for the real V3 loader."""
+    required = {"train", "validation", "test"}
+    if set(manifest_paths) != required:
+        raise ValueError("loader benchmark requires train, validation and test manifests")
+    if min(max_image_megapixels, max_audio_seconds, max_video_megapixels) <= 0 or max_video_frames < 1:
+        raise ValueError("loader benchmark resource caps must be positive")
+
+    rows_by_split: dict[str, dict[str, list[dict[str, Any]]]] = {}
+    selection_stats: dict[str, Any] = {}
+    for split in ("train", "validation", "test"):
+        quota = 100 if split == "train" else 10
+        reservoirs = {family: [] for family in TASK_GROUPS}
+        seen = {family: 0 for family in TASK_GROUPS}
+        rejected_by_cap = {family: 0 for family in TASK_GROUPS}
+        rngs = {
+            family: random.Random(int.from_bytes(
+                hashlib.sha256(f"{seed}:{split}:{family}".encode("utf-8")).digest()[:8],
+                "big",
+            ))
+            for family in TASK_GROUPS
+        }
+
+        for row in read_v3_manifest(manifest_paths[split]):
+            if str(row.get("split", "")) != split:
+                raise ValueError(f"V3 {split} manifest contains a row assigned to another split")
+            if not external_record_is_trainable(row) or not has_immutable_external_provenance(row):
+                continue
+            family = _family(str(row.get("task", "")))
+            if family is None:
+                continue
+            record_id = str(row.get("id", "")).strip()
+            if not record_id:
+                raise ValueError(f"external V3 {split}/{family} row has no record ID")
+
+            candidate = row
+            if family == "image":
+                media = (row.get("assets") or {}).get("image") or {}
+                width, height = int(media.get("width", 0)), int(media.get("height", 0))
+                if min(width, height) < 1 or width * height / 1_000_000 > max_image_megapixels:
+                    rejected_by_cap[family] += 1
+                    continue
+            elif family == "audio":
+                media = (row.get("assets") or {}).get("audio") or {}
+                rate = int(media.get("training_sample_rate", 0))
+                samples = int(media.get("training_samples", 0))
+                duration = samples / rate if samples > 0 and rate > 0 else float(
+                    media.get("duration_seconds", 0.0)
+                )
+                if rate != 24_000 or duration <= 0 or duration > max_audio_seconds:
+                    rejected_by_cap[family] += 1
+                    continue
+            elif family == "video":
+                media = (row.get("assets") or {}).get("video") or {}
+                frames = media.get("frames")
+                width, height = int(media.get("width", 0)), int(media.get("height", 0))
+                if (
+                    not isinstance(frames, list) or not frames
+                    or min(width, height) < 1
+                    or width * height / 1_000_000 > max_video_megapixels
+                ):
+                    rejected_by_cap[family] += 1
+                    continue
+                if len(frames) > max_video_frames:
+                    original_count = len(frames)
+                    media["frames"] = frames[:max_video_frames]
+                    media["frame_count"] = len(media["frames"])
+                    timestamps = media.get("timestamps")
+                    if isinstance(timestamps, list):
+                        if len(timestamps) != original_count:
+                            raise ValueError(f"V3 video timestamps mismatch for benchmark row {record_id}")
+                        media["timestamps"] = timestamps[:max_video_frames]
+                    candidate["benchmark_view"] = {
+                        "transform": "prefix_frame_window",
+                        "source_frame_count": original_count,
+                        "selected_frame_count": len(media["frames"]),
+                    }
+
+            seen[family] += 1
+            reservoir = reservoirs[family]
+            if len(reservoir) < quota:
+                reservoir.append(candidate)
+            else:
+                replacement = rngs[family].randrange(seen[family])
+                if replacement < quota:
+                    reservoir[replacement] = candidate
+
+        for family, selected in reservoirs.items():
+            if len(selected) < quota:
+                raise ValueError(
+                    f"not enough bounded external {split}/{family} rows for loader benchmark: "
+                    f"selected {len(selected)}, required {quota}; eligible={seen[family]}, "
+                    f"rejected_by_resource_caps={rejected_by_cap[family]}"
+                )
+            selected.sort(key=lambda row: str(row["id"]))
+        rows_by_split[split] = reservoirs
+        selection_stats[split] = {
+            family: {
+                "eligible_external_rows_within_caps": seen[family],
+                "rejected_by_resource_caps": rejected_by_cap[family],
+                "selected_rows": len(reservoirs[family]),
+            }
+            for family in TASK_GROUPS
+        }
+
+    return rows_by_split, {
+        "algorithm": "seeded_reservoir_sampling_over_external_immutable_rows",
+        "seed": seed,
+        "quotas": {"train_per_family": 100, "validation_per_family": 10, "test_per_family": 10},
+        "resource_caps": {
+            "image_megapixels": max_image_megapixels,
+            "audio_seconds": max_audio_seconds,
+            "video_megapixels_per_frame": max_video_megapixels,
+            "video_frames": max_video_frames,
+        },
+        "coverage": selection_stats,
+        "video_prefix_clipping": "preserve source row identity and timestamps; select first bounded frames only in benchmark manifests",
+    }
+
+
+def _write_loader_benchmark_manifests(
+    rows_by_split: dict[str, dict[str, list[dict[str, Any]]]],
+    destination: Path,
+) -> dict[str, Path]:
+    destination.mkdir(parents=True, exist_ok=False)
+    paths: dict[str, Path] = {}
+    for split in ("train", "validation", "test"):
+        rows = [
+            row
+            for family in TASK_GROUPS
+            for row in rows_by_split[split][family]
+        ]
+        rows.sort(key=lambda row: (str(row.get("task", "")), str(row.get("id", ""))))
+        path = destination / f"{split}.jsonl"
+        with path.open("x", encoding="utf-8") as stream:
+            for row in rows:
+                stream.write(json.dumps(
+                    row, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+                ) + "\n")
+        paths[split] = path
+    return paths
 
 
 def _sequence_length_distributions(
@@ -1168,6 +1348,176 @@ def _build_joint_plan(
     }
 
 
+def _loader_worker(plan_path: Path, threads: int) -> dict[str, Any]:
+    started = time.perf_counter()
+    try:
+        if not sys.platform.startswith("linux"):
+            raise RuntimeError("V3 loader benchmark requires a Linux CPU runner")
+        if torch.cuda.is_available():
+            raise RuntimeError("V3 loader benchmark must run with CUDA unavailable")
+        if threads < 1:
+            raise ValueError("loader benchmark CPU threads must be positive")
+        torch.set_num_threads(threads)
+        torch.set_num_interop_threads(1)
+        plan = json.loads(plan_path.read_text(encoding="utf-8"))
+        iterations = int(plan.get("iterations", 20))
+        warmup = int(plan.get("warmup_iterations", 2))
+        if iterations < 1 or warmup < 0 or warmup >= iterations:
+            raise ValueError("loader benchmark requires iterations > warmup_iterations >= 0")
+
+        baseline_current = _load_current_rss_bytes()
+        baseline_peak = _max_rss_bytes()
+        init_started = time.perf_counter()
+        loader = V3JointDataLoader(
+            {key: Path(value) for key, value in plan["manifest_paths"].items()},
+            Path(plan["assets_root"]),
+            Path(plan["tokenizer_path"]),
+            config=V3Config(),
+            max_text_tokens=int(plan.get("max_text_tokens", 512)),
+            audio_window_seconds=float(plan.get("audio_window_seconds", 5.0)),
+            video_window_frames=int(plan.get("video_window_frames", 16)),
+            benchmark_manifest_view=True,
+            tokenizer_train_manifest_sha256=str(plan["tokenizer_train_manifest_sha256"]),
+        )
+        initialization_seconds = time.perf_counter() - init_started
+        step_latencies: list[float] = []
+        family_totals = {
+            family: {"records": 0, "units": 0.0, "pixel_megapixels": 0.0, "asset_bytes": 0}
+            for family in TASK_GROUPS
+        }
+        measured_asset_paths = 0
+        assets_root = Path(plan["assets_root"])
+        with loader:
+            for index in range(iterations):
+                step_started = time.perf_counter()
+                micro_batches = loader.next_joint_micro_batches()
+                step_elapsed = time.perf_counter() - step_started
+                if tuple(item.family for item in micro_batches) != tuple(TASK_GROUPS):
+                    raise RuntimeError("V3 loader did not return the five families in canonical order")
+                if index >= warmup:
+                    step_latencies.append(step_elapsed)
+                    for item in micro_batches:
+                        family = item.family
+                        payload = item.batch[family]
+                        totals = family_totals[family]
+                        totals["records"] += 1
+                        if family in {"text", "tool"}:
+                            totals["units"] += int(payload["input_ids"].shape[-1])
+                        elif family == "image":
+                            images = payload["images"]
+                            pixels = int(images.shape[-2]) * int(images.shape[-1])
+                            totals["units"] += pixels / 1_000_000
+                            totals["pixel_megapixels"] += pixels / 1_000_000
+                        elif family == "audio":
+                            waveform = payload["waveform"]
+                            rate = int(payload["sample_rate"])
+                            if rate != 24_000:
+                                raise ValueError("V3 loader emitted non-canonical audio sample rate")
+                            totals["units"] += int(waveform.shape[-1]) / rate
+                        else:
+                            frames = payload["frames"]
+                            frame_count = int(frames.shape[1])
+                            pixels = int(frames.shape[-2]) * int(frames.shape[-1])
+                            totals["units"] += frame_count
+                            totals["pixel_megapixels"] += frame_count * pixels / 1_000_000
+                        for relative in item.metadata.get("asset_paths", []):
+                            asset_path = (assets_root / _safe_relative(relative)).resolve()
+                            try:
+                                asset_path.relative_to(assets_root.resolve())
+                            except ValueError as exc:
+                                raise ValueError("V3 loader emitted an asset outside its benchmark root") from exc
+                            if not asset_path.is_file():
+                                raise FileNotFoundError(f"V3 loader benchmark asset disappeared: {relative}")
+                            totals["asset_bytes"] += asset_path.stat().st_size
+                            measured_asset_paths += 1
+                del micro_batches
+
+            final_step = loader.current_step
+            if final_step != iterations:
+                raise RuntimeError(
+                    f"V3 loader consumed {final_step} joint steps, expected {iterations}"
+                )
+            manifest_sha256 = loader.manifest_sha256
+            train_manifest_sha256 = loader.train_manifest_sha256
+            tokenizer_sha256 = loader.tokenizer_sha256
+            train_manifest_records = int(loader.fingerprint["manifest_files"]["train"]["records"])
+            source_cursor_count = len(loader._source_metadata)
+
+        measured_seconds = float(sum(step_latencies))
+        if measured_seconds <= 0 or len(step_latencies) != iterations - warmup:
+            raise RuntimeError("V3 loader benchmark did not produce measured step timings")
+        peak_rss = _max_rss_bytes()
+        per_family = {}
+        for family, totals in family_totals.items():
+            unit_name = {
+                "text": "tokens", "tool": "tokens", "image": "megapixels",
+                "audio": "audio_seconds", "video": "frames",
+            }[family]
+            per_family[family] = {
+                **totals,
+                "unit_name": unit_name,
+                "records_per_second": round(totals["records"] / measured_seconds, 6),
+                "units_per_second": round(totals["units"] / measured_seconds, 6),
+                "pixel_megapixels_per_second": round(
+                    totals["pixel_megapixels"] / measured_seconds, 6
+                ),
+                "asset_bytes_per_second": round(
+                    totals["asset_bytes"] / measured_seconds, 3
+                ),
+            }
+        return {
+            "status": "success",
+            "benchmark_kind": "v3_joint_data_loader_five_family_materialization_only_no_model_forward_no_optimizer_step",
+            "manifest_sha256": manifest_sha256,
+            "train_manifest_sha256": train_manifest_sha256,
+            "tokenizer_train_manifest_sha256": str(plan["tokenizer_train_manifest_sha256"]),
+            "tokenizer_sha256": tokenizer_sha256,
+            "train_manifest_records": train_manifest_records,
+            "source_cursor_count": source_cursor_count,
+            "iterations_including_warmup": iterations,
+            "warmup_iterations": warmup,
+            "measured_joint_steps": len(step_latencies),
+            "measured_micro_batches": len(step_latencies) * len(TASK_GROUPS),
+            "loader_initialization_seconds": round(initialization_seconds, 6),
+            "measured_seconds": round(measured_seconds, 6),
+            "joint_steps_per_second": round(len(step_latencies) / measured_seconds, 6),
+            "five_family_micro_batches_per_second": round(
+                len(step_latencies) * len(TASK_GROUPS) / measured_seconds, 6
+            ),
+            "mean_joint_step_seconds": round(float(np.mean(step_latencies)), 6),
+            "p95_joint_step_seconds": _distribution(step_latencies)["p95"],
+            "family_throughput": per_family,
+            "asset_paths_materialized": measured_asset_paths,
+            "baseline_current_rss_bytes": baseline_current,
+            "baseline_peak_rss_bytes": baseline_peak,
+            "peak_rss_bytes": peak_rss,
+            "peak_rss_growth_bytes": max(0, peak_rss - baseline_peak),
+            "cpu_threads": threads,
+            "cuda_available": False,
+            "benchmark_manifest_view": True,
+            "checkpointable": False,
+            "optimizer_updates": 0,
+            "checkpoint_writes": 0,
+            "elapsed_seconds": round(time.perf_counter() - started, 6),
+            "limitations": [
+                "The production V3JointDataLoader is exercised on a deterministic quota-complete 100/10/10-per-family sample from the immutable corpus.",
+                "Validation and test rows are used only for manifest/asset integrity checks; the loader indexes and consumes train rows only.",
+                "The tokenizer remains verified against the original full train manifest; the benchmark-only manifest slice cannot be serialized as checkpoint data state.",
+                "Video rows are prefix-clipped only in temporary benchmark manifests to the configured bounded frame count; original corpus assets and manifests are unchanged.",
+                "This measures data materialization only, not model forward/backward, optimizer updates, a full-corpus epoch, or generation quality.",
+            ],
+        }
+    except Exception as exc:
+        return {
+            "status": "failed",
+            "benchmark_kind": "v3_joint_data_loader_five_family_materialization_only_no_model_forward_no_optimizer_step",
+            "error": f"{type(exc).__name__}: {str(exc)}",
+            "traceback": traceback.format_exc()[-5000:],
+            "optimizer_updates": 0,
+            "checkpoint_writes": 0,
+        }
+
+
 def _run_parent(args: argparse.Namespace) -> int:
     if not sys.platform.startswith("linux"):
         raise RuntimeError("resource benchmark must run on Linux")
@@ -1208,6 +1558,8 @@ def _run_parent(args: argparse.Namespace) -> int:
         data_root = root / "corpus" / "data"
         data_root.mkdir(parents=True)
         manifest_paths: dict[str, Path] = {}
+        loader_manifest_paths: dict[str, Path] = {}
+        loader_selection: dict[str, Any] = {}
         with RemoteZip(corpus_url, support_suffix_range=False) as archive:
             names = archive.namelist()
             for split in ("train", "validation", "test"):
@@ -1228,17 +1580,33 @@ def _run_parent(args: argparse.Namespace) -> int:
                 sample = selected[family]
                 local_paths: list[str] = []
                 for relative in sample["asset_paths"]:
-                    expected = gate["asset_hashes"].get(relative)
-                    if not isinstance(expected, str) or len(expected) != 64:
-                        raise ValueError(f"selected asset is absent from the validated hash map: {relative}")
-                    member = _unique_suffix(names, f"data/assets/{relative}")
-                    destination = assets_root / relative
-                    _extract_member(archive, member, destination)
-                    actual = sha256_file(destination)
-                    if actual != expected:
-                        raise ValueError(f"selected raw/training asset hash mismatch: {relative}")
+                    destination = _extract_verified_asset(
+                        archive, names, relative, assets_root, gate["asset_hashes"],
+                    )
                     local_paths.append(str(destination))
                 sample["local_paths"] = local_paths
+
+            loader_rows, loader_selection = _select_loader_benchmark_rows(
+                manifest_paths,
+                max_image_megapixels=args.max_image_megapixels,
+                max_audio_seconds=args.max_audio_seconds,
+                max_video_megapixels=args.max_video_megapixels,
+                max_video_frames=args.max_video_frames,
+            )
+            loader_manifest_paths = _write_loader_benchmark_manifests(
+                loader_rows, root / "loader-manifests",
+            )
+            extracted_loader_assets: set[str] = set()
+            for split in ("train", "validation", "test"):
+                for family in TASK_GROUPS:
+                    for row in loader_rows[split][family]:
+                        for relative in _asset_paths(row):
+                            if relative in extracted_loader_assets:
+                                continue
+                            _extract_verified_asset(
+                                archive, names, relative, assets_root, gate["asset_hashes"],
+                            )
+                            extracted_loader_assets.add(relative)
 
         tokenizer_url = _signed_artifact_url(args.github_repo, args.tokenizer_artifact_id, args.github_token)
         tokenizer_root = root / "tokenizer"
@@ -1277,6 +1645,44 @@ def _run_parent(args: argparse.Namespace) -> int:
         sequence_distributions = _sequence_length_distributions(
             manifest_paths["train"], tokenizer_path,
         )
+
+        loader_plan_path = root / "loader-benchmark-plan.json"
+        loader_plan_path.write_text(json.dumps({
+            "manifest_paths": {split: str(path) for split, path in loader_manifest_paths.items()},
+            "assets_root": str(assets_root),
+            "tokenizer_path": str(tokenizer_path),
+            "tokenizer_train_manifest_sha256": train_manifest_sha,
+            "iterations": args.loader_iterations,
+            "warmup_iterations": args.loader_warmup_iterations,
+            "max_text_tokens": 512,
+            "audio_window_seconds": args.max_audio_seconds,
+            "video_window_frames": args.max_video_frames,
+            "selection": loader_selection,
+        }, ensure_ascii=False), encoding="utf-8")
+        loader_command = [
+            sys.executable, "-m", "onecore.v3.resource_benchmark",
+            "--loader-plan", str(loader_plan_path),
+            "--threads", str(args.threads),
+        ]
+        loader_completed, loader_process_tree_peak = _run_monitored_subprocess(
+            loader_command, timeout=args.worker_timeout_seconds,
+        )
+        try:
+            loader_result = json.loads(loader_completed.stdout.strip())
+        except json.JSONDecodeError:
+            loader_result = {
+                "status": "failed",
+                "error": f"loader worker returned no JSON (exit={loader_completed.returncode})",
+                "stdout_tail": loader_completed.stdout[-2000:],
+                "stderr_tail": loader_completed.stderr[-2000:],
+                "optimizer_updates": 0,
+                "checkpoint_writes": 0,
+            }
+        if loader_completed.returncode != 0 and loader_result.get("status") == "success":
+            loader_result["status"] = "failed"
+            loader_result["error"] = f"loader worker exit code {loader_completed.returncode}"
+        loader_result["process_tree_peak_rss_bytes_observed"] = loader_process_tree_peak
+        loader_result["sample_selection"] = loader_selection
 
         for family in ("text", "tool"):
             sample = selected[family]
@@ -1349,6 +1755,8 @@ def _run_parent(args: argparse.Namespace) -> int:
 
         model_report = build_report()
         failed = [item for item in benchmark_results if item.get("status") != "success"]
+        if loader_result.get("status") != "success":
+            failed.append(loader_result)
         if joint_result.get("status") != "success":
             failed.append(joint_result)
         parent_peak_rss = _max_rss_bytes()
@@ -1382,7 +1790,7 @@ def _run_parent(args: argparse.Namespace) -> int:
         result = {
             "format_version": 1,
             "status": "blocked" if failed else "measured",
-            "benchmark_kind": "cpu_per_family_diagnostics_plus_joint_five_microbatch_v3_objective_and_adamw_state_preallocation_without_optimizer_step",
+            "benchmark_kind": "cpu_v3_joint_loader_plus_per_family_diagnostics_and_joint_objective_without_optimizer_step",
             "created_at_utc": datetime.now(timezone.utc).isoformat(),
             "github_run_id": os.environ.get("GITHUB_RUN_ID"),
             "artifacts": artifact_info,
@@ -1419,6 +1827,7 @@ def _run_parent(args: argparse.Namespace) -> int:
                 for family, sample in selected.items()
             },
             "benchmarks": benchmark_results,
+            "data_loader_benchmark": loader_result,
             "joint_training_memory": joint_result,
             "optimizer_updates": 0,
             "optimizer_state_allocated": joint_result.get("optimizer_state_allocated") is True,
@@ -1428,6 +1837,7 @@ def _run_parent(args: argparse.Namespace) -> int:
                 "Per-family isolated cases measure forward latency and reconstruction-only backward diagnostics; their backward rates are not the full training objective.",
                 "The joint case executes OneCoreV3Objective once per family micro-batch, calls backward in the required five-family order, and accumulates gradients. It then preallocates AdamW state without calling optimizer.step or changing model weights.",
                 "The joint case uses one bounded real train micro-batch per family; optional GAN discriminators and paired alignment loss are absent unless the selected sample provides condition_ids. It is a measured resource sample, not a full training run or a quality result.",
+                "The production V3JointDataLoader is separately measured on a deterministic quota-complete 100/10/10-per-family sample; it measures data materialization only and does not represent a full-corpus epoch or model compute.",
                 "Image resolution is native; audio is the preserved 24 kHz training derivative; video uses original stored frame PNGs and timestamps.",
                 "Per-worker peak RSS is the Linux kernel ru_maxrss value; sampled process-tree RSS includes the parent and active worker, while the conservative bound sums separate per-process maxima and may overestimate simultaneous use.",
                 "No source acquisition, corpus conversion, tokenizer fitting, V2 import, or checkpoint mutation occurs.",
@@ -1448,6 +1858,8 @@ def _run_parent(args: argparse.Namespace) -> int:
             "failed_cases": len(failed),
             "peak_rss_bytes": [item.get("peak_rss_bytes") for item in benchmark_results],
             "joint_peak_rss_bytes": joint_result.get("peak_rss_bytes"),
+            "loader_joint_steps_per_second": loader_result.get("joint_steps_per_second"),
+            "loader_peak_rss_bytes": loader_result.get("peak_rss_bytes"),
             "memory_accounting": memory_accounting,
             "joint_optimizer_state_bytes": joint_result.get("optimizer_state_bytes"),
         }, ensure_ascii=False, indent=2))
@@ -1477,21 +1889,29 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--tokenizer-json")
     parser.add_argument("--worker-plan")
     parser.add_argument("--joint-plan")
+    parser.add_argument("--loader-plan")
+    parser.add_argument("--loader-iterations", type=int, default=22)
+    parser.add_argument("--loader-warmup-iterations", type=int, default=2)
     args = parser.parse_args(argv)
 
     if args.threads < 1 or args.iterations < 1 or args.max_video_frames < 1:
         parser.error("threads, iterations and max-video-frames must be positive")
     if args.max_image_megapixels <= 0 or args.max_audio_seconds <= 0 or args.max_video_megapixels <= 0:
         parser.error("media benchmark limits must be positive")
-    if args.worker_plan and args.joint_plan:
-        parser.error("worker-plan and joint-plan are mutually exclusive")
-    if args.worker_plan or args.joint_plan:
+    worker_modes = [bool(args.worker_plan), bool(args.joint_plan), bool(args.loader_plan)]
+    if sum(worker_modes) > 1:
+        parser.error("worker-plan, joint-plan and loader-plan are mutually exclusive")
+    if args.loader_iterations < 2 or not 0 <= args.loader_warmup_iterations < args.loader_iterations:
+        parser.error("loader iterations must exceed non-negative warmup iterations")
+    if any(worker_modes):
         try:
             tokenizer_path = Path(args.tokenizer_json).resolve() if args.tokenizer_json else None
             if args.worker_plan:
                 result = _worker(Path(args.worker_plan), tokenizer_path, args.threads, args.iterations)
-            else:
+            elif args.joint_plan:
                 result = _joint_worker(Path(args.joint_plan), tokenizer_path, args.threads)
+            else:
+                result = _loader_worker(Path(args.loader_plan), args.threads)
             print(json.dumps(result, ensure_ascii=False))
             return 0 if result.get("status") == "success" else 2
         except Exception as exc:

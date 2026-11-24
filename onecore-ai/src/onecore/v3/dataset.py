@@ -99,6 +99,10 @@ class V3JointDataLoader:
     Default windows are 512 text tokens, 5 seconds of canonical-rate audio and
     16 contiguous video frames. Raw assets remain unchanged; each epoch selects
     a deterministic new window. Images are loaded at native resolution.
+
+    A benchmark manifest view may index a quota-complete slice of a larger train
+    manifest while verifying the tokenizer against its original full-manifest
+    SHA. Benchmark views are deliberately non-checkpointable.
     """
 
     def __init__(
@@ -111,6 +115,8 @@ class V3JointDataLoader:
         max_text_tokens: int | None = 512,
         audio_window_seconds: float | None = 5.0,
         video_window_frames: int | None = 16,
+        benchmark_manifest_view: bool = False,
+        tokenizer_train_manifest_sha256: str | None = None,
     ) -> None:
         if not isinstance(manifest_paths, Mapping) or set(manifest_paths) != {
             "train", "validation", "test"
@@ -134,6 +140,26 @@ class V3JointDataLoader:
         ):
             raise ValueError("video_window_frames must be None or a positive integer")
 
+        if not isinstance(benchmark_manifest_view, bool):
+            raise TypeError("benchmark_manifest_view must be a boolean")
+        if benchmark_manifest_view:
+            if (
+                not isinstance(tokenizer_train_manifest_sha256, str)
+                or len(tokenizer_train_manifest_sha256) != 64
+                or any(char not in "0123456789abcdef" for char in tokenizer_train_manifest_sha256.lower())
+            ):
+                raise ValueError(
+                    "benchmark manifest view requires the full tokenizer train-manifest SHA-256"
+                )
+            tokenizer_train_sha = tokenizer_train_manifest_sha256.lower()
+        else:
+            if tokenizer_train_manifest_sha256 is not None:
+                raise ValueError(
+                    "tokenizer_train_manifest_sha256 override is only allowed for a benchmark manifest view"
+                )
+            tokenizer_train_sha = None
+
+        self.benchmark_manifest_view = benchmark_manifest_view
         self.manifest_paths = {key: Path(value).resolve() for key, value in manifest_paths.items()}
         self.assets_root = Path(assets_root).resolve()
         self.tokenizer_path = Path(tokenizer_path).resolve()
@@ -153,10 +179,14 @@ class V3JointDataLoader:
             raise RuntimeError("validated V3 manifest omitted the asset hash map")
         self._asset_hashes = dict(validation["asset_hashes"])
 
+        expected_tokenizer_train_sha = (
+            tokenizer_train_sha if self.benchmark_manifest_view else self.train_manifest_sha256
+        )
+        self.tokenizer_train_manifest_sha256 = expected_tokenizer_train_sha
         self.tokenizer_evidence = verify_v3_tokenizer(
             self.tokenizer_path,
             config=self.config,
-            expected_train_manifest_sha256=self.train_manifest_sha256,
+            expected_train_manifest_sha256=expected_tokenizer_train_sha,
         )
         self.tokenizer = Tokenizer.from_file(str(self.tokenizer_path))
         self.tokenizer_sha256 = self.tokenizer_evidence["tokenizer_sha256"]
@@ -544,6 +574,10 @@ class V3JointDataLoader:
         return tuple(item for item, _cursor_id, _row_hash in pending)
 
     def state_dict(self) -> dict[str, Any]:
+        if self.benchmark_manifest_view:
+            raise RuntimeError(
+                "benchmark manifest view cannot be serialized as a training checkpoint data state"
+            )
         source_cursors = {}
         for cursor_id in sorted(self._source_metadata):
             metadata = self._source_metadata[cursor_id]
@@ -569,6 +603,10 @@ class V3JointDataLoader:
         }, ensure_ascii=False, sort_keys=True))
 
     def load_state_dict(self, state: Mapping[str, Any]) -> None:
+        if self.benchmark_manifest_view:
+            raise RuntimeError(
+                "benchmark manifest view cannot restore a training checkpoint data state"
+            )
         if not isinstance(state, Mapping):
             raise TypeError("V3 loader state must be a mapping")
         try:
