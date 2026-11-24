@@ -1,3 +1,4 @@
+import pytest
 import torch
 
 from onecore.v3 import OneCoreV3
