@@ -26,7 +26,8 @@ permissions:
 
 concurrency:
   group: onecore-ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Preserve a running corpus restore; follow-up CI runs queue on the same ref.
+  cancel-in-progress: false
 
 jobs:
   verify:

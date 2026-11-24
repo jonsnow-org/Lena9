@@ -8,6 +8,7 @@ WORKFLOWS = ROOT / ".github" / "workflows"
 def test_canonical_onecore_ci_runs_on_v3_only_and_restore_is_explicit():
     workflow = (WORKFLOWS / "onecore-ci.yml").read_text(encoding="utf-8")
     assert "branches: [research/onecore-v3-implementation]" in workflow
+    assert "cancel-in-progress: false" in workflow
     assert "branches: [research/onecore-foundation, research/onecore-v3-implementation]" not in workflow
     restore = workflow.split("  v3-corpus-restore:", 1)[1]
     assert "github.event_name == 'push'" in restore
