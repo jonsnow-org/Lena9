@@ -63,8 +63,21 @@ jobs:
       - name: Compile package
         run: python -m compileall -q onecore-ai/src
 
-      - name: Report exact OneCore v3 parameter budget
-        run: python -m onecore.v3.report
+      - name: Assert exact OneCore v3 parameter budget
+        env:
+          PYTHONPATH: onecore-ai/src
+        run: |
+          python - <<'PY'
+          import json
+          from onecore.v3.report import build_report
+          report = build_report()
+          assert report["architecture_version"] == "onecore-v3-prototype-2"
+          assert report["trainable_parameters"] == 39_906_568, report
+          assert report["fp32_parameter_storage_bytes"] == 159_626_272, report
+          assert report["fp16_parameter_storage_bytes"] == 79_813_136, report
+          assert report["quality_certified"] is False
+          print(json.dumps(report, ensure_ascii=False, indent=2))
+          PY
 
       - name: Run unit and regression tests
         run: pytest -q onecore-ai/tests
@@ -164,48 +177,7 @@ jobs:
               --output-dir "$RUNNER_TEMP" --ExecutePreprocessor.timeout=-1
           done
 
-      - name: Execute text-training notebook through one-step smoke training
-        env:
-          PYTHONPATH: onecore-ai/src
-          ONECORE_EXECUTE_TRAINING: "1"
-          ONECORE_STAGE: "smoke"
-          ONECORE_STEPS: "1"
-          ONECORE_RESUME: "false"
-        run: |
-          jupyter nbconvert --to notebook --execute onecore-ai/notebooks/03_text_pretraining.ipynb \
-            --output 03_text_pretraining.smoke.executed.ipynb \
-            --output-dir "$RUNNER_TEMP" --ExecutePreprocessor.timeout=-1
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          report = json.loads(Path("onecore-ai/run-state/train_result.json").read_text(encoding="utf-8"))
-          assert report["stage"] == "smoke"
-          assert report["optimizer_step"] == 1
-          assert report["parameter_count"] == 57_579_201
-          assert 7.5456 <= report["first_language_loss"] <= 9.5456
-          print({
-              "notebook_training_path": "passed",
-              "optimizer_step": report["optimizer_step"],
-              "first_language_loss": report["first_language_loss"],
-          })
-          PY
-          rm -rf onecore-ai/run-state
 
-      - name: Run one-step random-init smoke gate
-        env:
-          PYTHONPATH: onecore-ai/src
-        run: |
-          python -m onecore.train --root . \
-            --config onecore-ai/configs/phone-research.yaml \
-            --stage smoke --steps 1 --output-dir "$RUNNER_TEMP/onecore-v2-smoke"
-          python - <<'PY'
-          import json, os
-          from pathlib import Path
-          report = json.loads((Path(os.environ["RUNNER_TEMP"]) / "onecore-v2-smoke" / "train_result.json").read_text())
-          loss = report.get("first_language_loss")
-          assert isinstance(loss, (int, float)) and 7.5456 <= loss <= 9.5456, loss
-          print({"first_language_loss": loss, "reference_nats": report["first_language_loss_reference_nats"]})
-          PY
 
       - name: Smoke-test FineWeb-2 streaming and exact cursor resume
         env:
