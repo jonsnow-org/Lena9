@@ -731,3 +731,22 @@ Run #592 (ID `45121112021`) completed successfully on `68c2ce7e1a03366458f137724
 No full optimizer training was launched by Run #592. The 20,000-step training requirement remains a future training target, and V2 quality promotion remains blocked because independent validation/test evidence is incomplete and `promotion-thresholds.json` is not approved. Run #55 (ID `45017683783`) still failed independent evaluation because the external validation split omitted `image_reconstruction`; no optimizer updates occurred in that evaluation job.
 
 The V3 corpus conversion remains a separate active run (#589, ID `45116254698`) on V3 head `1799460ec04f5ea5b16fc6e3a65428ec7d1762f0`; do not push to that branch or interrupt its conversion until its report is available. V3 data-gate status is therefore still unverified. V2 source changes are confined to `research/onecore-foundation`; `main` remains `0b5ec69e839bfc6086a358511b54649b03c7be9a` and no merge was made.
+
+
+## 2026-11-24 — V3 external-gate semantics after Run #602
+
+Run #600 (ID `45224997715`) failed the V3 external corpus gate after the retry and bounded-scan correction. The follow-up V3 commit `a1e693bc38d8badb7b3ec61cbadf100189358097` restored V2-compatible image-row identity by decoding only the Hugging Face Image feature while leaving audio/video under explicit decode-disabled ingestion, and preserved the crawler cursor namespace/artifacts. Run #602 (ID `45234080438`) then passed Verify with 222 tests and 9 warnings.
+
+Run #602 restored usable native media and its final manifest gate passed all five external families at the Corrected Specification v2 minima:
+
+| Split | Audio | Image | Text | Tool | Video |
+|---|---:|---:|---:|---:|---:|
+| Train | 1,100 | 900 | 591,525 | 14,000 | 100 |
+| Validation | 165 | 10 | 22,552 | 400 | 10 |
+| Test | 148 | 10 | 22,758 | 400 | 10 |
+
+The report contained no media-restore errors and no deferred source splits; 37 additional legacy V2 rows remained unmatched at their pinned source revisions (and 1,302 non-external rows were skipped as expected). Those extra rows remain explicitly counted in `skipped`; they are not replacements for required examples. The final `manifest_gate.passed` was true, but the workflow still failed because converter-level `blocked` inherited restore-completeness warnings and the workflow required both that legacy flag and the actual manifest gate to pass.
+
+The V3 correction separates `restoration_incomplete` and `acquisition_incomplete` telemetry from corpus eligibility. The top-level `blocked` value now means only that the final V3 manifest gate failed. The workflow's corpus-publish decision follows `manifest_gate.passed` and logs both incompleteness fields. A regression test covers a passing final gate with 37 unmatched legacy rows and a genuinely failing manifest gate.
+
+This does not authorize V3 training: CPU peak-memory/throughput and full checkpoint save/restore continuity remain outstanding. No V2/V3 assets were merged, no training was started, and `main` remains `0b5ec69e839bfc6086a358511b54649b03c7be9a`.
