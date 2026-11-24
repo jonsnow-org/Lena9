@@ -11,6 +11,12 @@ from .checkpoint import (
 )
 from .training import OneCoreV3Objective, V3ObjectiveWeights, train_v3_discriminator_step, train_v3_step
 from .manifest import assert_v3_external_coverage, read_v3_manifest, validate_v3_manifest
+from .tokenizer import (
+    SPECIAL_TOKENS as V3_SPECIAL_TOKENS,
+    iter_external_v3_train_text,
+    train_v3_tokenizer,
+    verify_v3_tokenizer,
+)
 from .video import TemporalVideoCodec, VideoEncoding
 from .vision import ImageEncoding, VariableResolutionImageCodec
 
@@ -19,6 +25,8 @@ __all__ = [
     "OneCoreV3", "SharedSemanticCore", "V3Config",
     "V3_CHECKPOINT_FORMAT_VERSION", "save_v3_checkpoint", "load_v3_checkpoint",
     "fingerprint_validated_v3_manifests",
+    "V3_SPECIAL_TOKENS", "iter_external_v3_train_text",
+    "train_v3_tokenizer", "verify_v3_tokenizer",
     "OneCoreV3Objective", "V3ObjectiveWeights", "train_v3_step", "train_v3_discriminator_step",
     "assert_v3_external_coverage", "read_v3_manifest", "validate_v3_manifest",
     "ImageEncoding", "VariableResolutionImageCodec",

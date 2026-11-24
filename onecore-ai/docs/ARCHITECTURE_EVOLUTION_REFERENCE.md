@@ -780,4 +780,15 @@ Regression tests cover a complete tiny-model training-state round trip and rejec
 
 The expensive V3 corpus restore is now a manual-only GitHub Actions operation. The V3 CI workflow exposes `workflow_dispatch` input `restore_v3_corpus`, defaulting to `false`; the restore job runs only when an operator explicitly sets it to `true` on `research/onecore-v3-implementation`. Ordinary code pushes and pull-request verification do not download or restore the multi-gigabyte media-progress artifact. The CI concurrency lock uses `cancel-in-progress: false` so a running restore is preserved while later verification is queued.
 
-This dispatch-policy change does not interrupt an already-running Run #605. Run #605 remains the current restore attempt; the queued Run #606 is expected to verify code only after #605 completes.
+This dispatch-policy change does not interrupt an already-running Run #605. Run #605 remains the current restore attempt. Older queued Verify Run #606 was replaced/cancelled when newer Run #607 was created; Run #607 is the current pending Verify-only run for head `3545e2633122b0a6e57b51d529773ce9cba9bcd0`.
+
+
+### V3 tokenizer implementation — 2026-11-24
+
+Added the independent `onecore.v3.tokenizer` module and `onecore-v3-tokenizer` package command:
+- Reads the V3 train manifest only, selects `task=text`, requires explicit `data_class=external`, HTTP(S) source URL, immutable source revision and unique source-row SHA-256. Rejects bootstrap/synthetic/owner-curated rows, non-train records, duplicate IDs/source rows, short rows and invalid provenance.
+- Fits byte-level BPE with NFC normalization and the exact `V3Config.text_vocab_size` (32,000 by default); it does not import V2 tokenizer vocabulary or files.
+- Writes tokenizer JSON and a sidecar evidence document containing config/manifest/tokenizer SHA-256, text-row digest, actual vocabulary, special-token IDs and the external train-only contract. Existing artifacts are never overwritten.
+- Adds a verifier that reloads the serialized tokenizer and rejects changed bytes, wrong vocabulary, invalid special-token IDs, config mismatch, missing evidence, non-external or non-train evidence, validation/test usage, and manifest mismatch.
+
+Regression tests cover a tiny exact-vocabulary BPE fit, pinned external train-only filtering, invalid revision/row hashes/URLs, bootstrap rejection, special-token evidence and SHA-256 mismatch, output immutability and overwrite refusal. The implementation and tests are committed with CI pending; the actual 32,000-token tokenizer has **not** been trained yet because the final V3 corpus artifact is still awaiting Run #605 completion. Do not label a tokenizer as fitted until the resulting JSON and evidence sidecar exist and verify successfully.

@@ -32,6 +32,7 @@ corpus-restore = [
 [project.scripts]
 onecore = "onecore.cli:main"
 onecore-v3-convert = "onecore.v3.cli:main"
+onecore-v3-tokenizer = "onecore.v3.tokenizer:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
