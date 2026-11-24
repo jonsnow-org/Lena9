@@ -5,8 +5,11 @@ corpus artifact. The 15.8 GB ZIP is never downloaded or expanded in full.
 """
 from __future__ import annotations
 
+import hashlib
+import os
 import shutil
 import tarfile
+import tempfile
 import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Iterable
@@ -166,4 +169,103 @@ def extract_v2_artifact_manifests(
         "full_archive_downloaded": False,
         "container_layout": container_layout,
         "container_member": container_member,
+    }
+
+
+
+def select_v3_train_manifest_member(names: Iterable[str]) -> str:
+    """Select exactly one V3 train manifest from a GitHub Actions artifact ZIP."""
+    normalized = [str(name).replace("\\", "/") for name in names]
+    matches = [
+        name for name in normalized
+        if name == "data/train.jsonl" or name.endswith("/data/train.jsonl")
+    ]
+    if len(matches) != 1:
+        raise ValueError(
+            "expected exactly one V3 data/train.jsonl in artifact ZIP; "
+            f"found {len(matches)}"
+        )
+    return matches[0]
+
+
+def extract_v3_train_manifest(
+    repository_full_name: str,
+    artifact_id: int,
+    github_token: str,
+    output_path: str | Path,
+) -> dict[str, object]:
+    """Range-extract only V3 data/train.jsonl; do not download its media archive."""
+    if requests is None or RemoteZip is None:
+        raise RuntimeError(
+            "range artifact extraction requires the optional dependency group: "
+            "pip install -e 'onecore-ai[corpus-restore]'"
+        )
+    if not github_token.strip():
+        raise ValueError("GITHUB_TOKEN is required to read the V3 corpus artifact")
+    if artifact_id < 1:
+        raise ValueError("artifact_id must be positive")
+
+    target = Path(output_path).resolve()
+    if target.exists():
+        raise FileExistsError(f"refusing to overwrite existing V3 train manifest: {target}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    api_url = (
+        f"https://api.github.com/repos/{repository_full_name}/actions/"
+        f"artifacts/{artifact_id}/zip"
+    )
+    headers = {
+        "Authorization": f"Bearer {github_token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    response = requests.get(
+        api_url, headers=headers, allow_redirects=False, stream=True, timeout=60
+    )
+    try:
+        if response.status_code not in (301, 302, 303, 307, 308):
+            raise RuntimeError(
+                "GitHub V3 artifact endpoint did not return a signed redirect: "
+                f"HTTP {response.status_code}"
+            )
+        signed_url = response.headers.get("Location")
+        if not signed_url:
+            raise RuntimeError("GitHub V3 artifact endpoint omitted the signed download Location")
+    finally:
+        response.close()
+
+    temporary: Path | None = None
+    try:
+        with RemoteZip(signed_url, support_suffix_range=False) as archive:
+            member = select_v3_train_manifest_member(archive.namelist())
+            descriptor, temporary_name = tempfile.mkstemp(
+                prefix=f".{target.name}.", suffix=".partial", dir=target.parent
+            )
+            temporary = Path(temporary_name)
+            with archive.open(member) as source, os.fdopen(descriptor, "wb") as output:
+                shutil.copyfileobj(source, output, length=8 * 1024 * 1024)
+                output.flush()
+                os.fsync(output.fileno())
+        if target.exists():
+            raise FileExistsError(f"refusing to overwrite existing V3 train manifest: {target}")
+        temporary.replace(target)
+    except Exception:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+        raise
+
+    digest = hashlib.sha256()
+    size_bytes = 0
+    with target.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(8 * 1024 * 1024), b""):
+            digest.update(chunk)
+            size_bytes += len(chunk)
+    return {
+        "path": str(target),
+        "member": member,
+        "artifact_id": artifact_id,
+        "sha256": digest.hexdigest(),
+        "size_bytes": size_bytes,
+        "range_download": True,
+        "full_archive_downloaded": False,
     }

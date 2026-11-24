@@ -172,3 +172,97 @@ def test_artifact_range_extraction_fails_fast_without_optional_dependency(monkey
         artifact.extract_v2_artifact_manifests(
             "jonsnow-org/Lena9", 14715699177, "test-token", tmp_path
         )
+
+
+
+def test_v3_train_manifest_selector_chooses_only_train_jsonl():
+    from onecore.v3.artifact import select_v3_train_manifest_member
+
+    assert select_v3_train_manifest_member([
+        "data/train.jsonl",
+        "data/validation.jsonl",
+        "data/test.jsonl",
+        "data/assets/large-media.bin",
+    ]) == "data/train.jsonl"
+    assert select_v3_train_manifest_member([
+        "onecore-v3/data/train.jsonl",
+        "onecore-v3/data/validation.jsonl",
+    ]) == "onecore-v3/data/train.jsonl"
+
+
+def test_v3_train_manifest_selector_rejects_missing_or_ambiguous_members():
+    from onecore.v3.artifact import select_v3_train_manifest_member
+
+    with pytest.raises(ValueError, match="exactly one"):
+        select_v3_train_manifest_member(["data/validation.jsonl", "data/test.jsonl"])
+    with pytest.raises(ValueError, match="exactly one"):
+        select_v3_train_manifest_member([
+            "data/train.jsonl", "other/data/train.jsonl"
+        ])
+
+
+def test_v3_train_manifest_extractor_downloads_only_one_zip_member(monkeypatch, tmp_path):
+    import io
+    import onecore.v3.artifact as artifact
+
+    payloads = {
+        "data/train.jsonl": b'{"id":"train","task":"text","split":"train"}\n',
+        "data/validation.jsonl": b'{"id":"validation"}\n',
+        "data/test.jsonl": b'{"id":"test"}\n',
+        "data/assets/large-media.bin": b"large-media-not-read",
+    }
+    calls = {"opened": []}
+
+    class RedirectResponse:
+        status_code = 302
+        headers = {"Location": "https://signed.example/v3-corpus.zip"}
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(
+        artifact.requests, "get", lambda *args, **kwargs: RedirectResponse()
+    )
+
+    class FakeRemoteZip:
+        def __init__(self, url, **kwargs):
+            calls["url"] = url
+            calls["kwargs"] = kwargs
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def namelist(self):
+            return list(payloads)
+
+        def open(self, member):
+            calls["opened"].append(member)
+            return io.BytesIO(payloads[member])
+
+    monkeypatch.setattr(artifact, "RemoteZip", FakeRemoteZip)
+    output = tmp_path / "train.jsonl"
+    result = artifact.extract_v3_train_manifest(
+        "jonsnow-org/Lena9", 14892594659, "test-token", output
+    )
+    assert calls["url"] == "https://signed.example/v3-corpus.zip"
+    assert calls["kwargs"]["support_suffix_range"] is False
+    assert calls["opened"] == ["data/train.jsonl"]
+    assert output.read_bytes() == payloads["data/train.jsonl"]
+    assert result["range_download"] is True
+    assert result["full_archive_downloaded"] is False
+    assert result["size_bytes"] == len(payloads["data/train.jsonl"])
+    assert len(result["sha256"]) == 64
+
+
+def test_v3_train_manifest_extractor_refuses_to_overwrite_existing_file(monkeypatch, tmp_path):
+    import onecore.v3.artifact as artifact
+
+    output = tmp_path / "train.jsonl"
+    output.write_text("keep", encoding="utf-8")
+    with pytest.raises(FileExistsError, match="refusing to overwrite"):
+        artifact.extract_v3_train_manifest(
+            "jonsnow-org/Lena9", 14892594659, "test-token", output
+        )
