@@ -325,6 +325,7 @@ def test_v3_loader_benchmark_worker_measures_real_five_family_materialization_wi
         "tokenizer_train_manifest_sha256": hashlib.sha256(
             manifests["train"].read_bytes()
         ).hexdigest(),
+        "source_manifest_bundle_sha256": "a" * 64,
         "iterations": 3,
         "warmup_iterations": 1,
         "max_text_tokens": 16,
@@ -352,9 +353,15 @@ def test_v3_loader_benchmark_worker_measures_real_five_family_materialization_wi
         result["family_throughput"][family]["records"] == 2
         for family in FAMILIES
     )
+    assert result["source_manifest_bundle_sha256"] == "a" * 64
     assert result["optimizer_updates"] == 0
     assert result["checkpoint_writes"] == 0
     assert result["checkpointable"] is False
+    assert all(
+        "referenced_asset_file_bytes_per_second" in result["family_throughput"][family]
+        and "asset_bytes_per_second" not in result["family_throughput"][family]
+        for family in FAMILIES
+    )
 
 
 def test_v3_loader_benchmark_sampling_is_deterministic_and_external_only(tmp_path):
@@ -372,8 +379,21 @@ def test_v3_loader_benchmark_sampling_is_deterministic_and_external_only(tmp_pat
         "source_row_id_sha256": hashlib.sha256(b"bootstrap").hexdigest(),
         "text": "This bootstrap row must never enter the loader benchmark.",
     }
-    with manifests["train"].open("a", encoding="utf-8") as stream:
-        stream.write(json.dumps(bootstrap, ensure_ascii=False, sort_keys=True) + "\n")
+    rows = [
+        json.loads(line)
+        for line in manifests["train"].read_text(encoding="utf-8").splitlines()
+    ]
+    video_row = next(row for row in rows if row.get("task") == "video_caption")
+    original_video_row_sha = video_row["source_row_id_sha256"]
+    video_media = video_row["assets"]["video"]
+    video_media["frames"] = [f"frames/extended/{index}.png" for index in range(20)]
+    video_media["timestamps"] = [index * 0.04 for index in range(20)]
+    video_media["frame_count"] = 20
+    rows.append(bootstrap)
+    manifests["train"].write_text(
+        "".join(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n" for row in rows),
+        encoding="utf-8",
+    )
     kwargs = {
         "max_image_megapixels": 2.0,
         "max_audio_seconds": 5.0,
@@ -390,6 +410,18 @@ def test_v3_loader_benchmark_sampling_is_deterministic_and_external_only(tmp_pat
             assert len(ids_first) == quota
             assert "train-text-bootstrap" not in ids_first
     assert stats["coverage"]["train"]["text"]["selected_rows"] == 100
+    clipped_video = next(
+        row for row in first["train"]["video"] if row["id"] == video_row["id"]
+    )
+    assert clipped_video["source_row_id_sha256"] == original_video_row_sha
+    assert len(clipped_video["assets"]["video"]["frames"]) == 16
+    assert len(clipped_video["assets"]["video"]["timestamps"]) == 16
+    assert clipped_video["assets"]["video"]["frame_count"] == 16
+    assert clipped_video["benchmark_view"] == {
+        "transform": "prefix_frame_window",
+        "source_frame_count": 20,
+        "selected_frame_count": 16,
+    }
 
 
 def test_v3_joint_loader_rejects_caption_task_without_paired_text(tmp_path):

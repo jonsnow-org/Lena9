@@ -1360,6 +1360,12 @@ def _loader_worker(plan_path: Path, threads: int) -> dict[str, Any]:
         torch.set_num_threads(threads)
         torch.set_num_interop_threads(1)
         plan = json.loads(plan_path.read_text(encoding="utf-8"))
+        source_bundle_sha = str(plan.get("source_manifest_bundle_sha256", "")).lower()
+        if (
+            len(source_bundle_sha) != 64
+            or any(char not in "0123456789abcdef" for char in source_bundle_sha)
+        ):
+            raise ValueError("loader benchmark requires the validated full manifest-bundle SHA-256")
         iterations = int(plan.get("iterations", 20))
         warmup = int(plan.get("warmup_iterations", 2))
         if iterations < 1 or warmup < 0 or warmup >= iterations:
@@ -1382,7 +1388,10 @@ def _loader_worker(plan_path: Path, threads: int) -> dict[str, Any]:
         initialization_seconds = time.perf_counter() - init_started
         step_latencies: list[float] = []
         family_totals = {
-            family: {"records": 0, "units": 0.0, "pixel_megapixels": 0.0, "asset_bytes": 0}
+            family: {
+                "records": 0, "units": 0.0, "pixel_megapixels": 0.0,
+                "referenced_asset_file_bytes": 0,
+            }
             for family in TASK_GROUPS
         }
         measured_asset_paths = 0
@@ -1428,7 +1437,7 @@ def _loader_worker(plan_path: Path, threads: int) -> dict[str, Any]:
                                 raise ValueError("V3 loader emitted an asset outside its benchmark root") from exc
                             if not asset_path.is_file():
                                 raise FileNotFoundError(f"V3 loader benchmark asset disappeared: {relative}")
-                            totals["asset_bytes"] += asset_path.stat().st_size
+                            totals["referenced_asset_file_bytes"] += asset_path.stat().st_size
                             measured_asset_paths += 1
                 del micro_batches
 
@@ -1461,8 +1470,8 @@ def _loader_worker(plan_path: Path, threads: int) -> dict[str, Any]:
                 "pixel_megapixels_per_second": round(
                     totals["pixel_megapixels"] / measured_seconds, 6
                 ),
-                "asset_bytes_per_second": round(
-                    totals["asset_bytes"] / measured_seconds, 3
+                "referenced_asset_file_bytes_per_second": round(
+                    totals["referenced_asset_file_bytes"] / measured_seconds, 3
                 ),
             }
         return {
@@ -1471,6 +1480,7 @@ def _loader_worker(plan_path: Path, threads: int) -> dict[str, Any]:
             "manifest_sha256": manifest_sha256,
             "train_manifest_sha256": train_manifest_sha256,
             "tokenizer_train_manifest_sha256": str(plan["tokenizer_train_manifest_sha256"]),
+            "source_manifest_bundle_sha256": str(plan["source_manifest_bundle_sha256"]),
             "tokenizer_sha256": tokenizer_sha256,
             "train_manifest_records": train_manifest_records,
             "source_cursor_count": source_cursor_count,
@@ -1504,6 +1514,7 @@ def _loader_worker(plan_path: Path, threads: int) -> dict[str, Any]:
                 "Validation and test rows are used only for manifest/asset integrity checks; the loader indexes and consumes train rows only.",
                 "The tokenizer remains verified against the original full train manifest; the benchmark-only manifest slice cannot be serialized as checkpoint data state.",
                 "Video rows are prefix-clipped only in temporary benchmark manifests to the configured bounded frame count; original corpus assets and manifests are unchanged.",
+                "Referenced asset file sizes are footprint metadata, not an exact count of bytes read from storage.",
                 "This measures data materialization only, not model forward/backward, optimizer updates, a full-corpus epoch, or generation quality.",
             ],
         }
@@ -1516,6 +1527,42 @@ def _loader_worker(plan_path: Path, threads: int) -> dict[str, Any]:
             "optimizer_updates": 0,
             "checkpoint_writes": 0,
         }
+
+
+def _process_tree_memory_accounting(
+    parent_peak_rss_bytes: int,
+    worker_results: list[dict[str, Any]],
+) -> dict[str, Any]:
+    if isinstance(parent_peak_rss_bytes, bool) or parent_peak_rss_bytes < 0:
+        raise ValueError("parent peak RSS must be a non-negative integer")
+    worker_peak_values = [
+        int(item["peak_rss_bytes"])
+        for item in worker_results
+        if isinstance(item.get("peak_rss_bytes"), int) and item["peak_rss_bytes"] > 0
+    ]
+    observed_tree_peaks = [
+        int(item["process_tree_peak_rss_bytes_observed"])
+        for item in worker_results
+        if isinstance(item.get("process_tree_peak_rss_bytes_observed"), int)
+    ]
+    max_worker_peak_rss = max(worker_peak_values, default=0)
+    return {
+        "parent_process_peak_rss_bytes": parent_peak_rss_bytes,
+        "max_worker_process_peak_rss_bytes": max_worker_peak_rss,
+        "observed_process_tree_peak_rss_bytes": max(
+            [parent_peak_rss_bytes, *observed_tree_peaks]
+        ),
+        "conservative_process_tree_rss_upper_bound_bytes": (
+            parent_peak_rss_bytes + max_worker_peak_rss
+        ),
+        "sampling_interval_seconds": 0.02,
+        "method": (
+            "Linux per-process ru_maxrss plus sampled /proc parent+worker RSS, "
+            "including per-family, five-family loader and joint workers; the conservative "
+            "upper bound sums separate per-process maxima and may exceed the true "
+            "simultaneous process-tree peak"
+        ),
+    }
 
 
 def _run_parent(args: argparse.Namespace) -> int:
@@ -1652,6 +1699,7 @@ def _run_parent(args: argparse.Namespace) -> int:
             "assets_root": str(assets_root),
             "tokenizer_path": str(tokenizer_path),
             "tokenizer_train_manifest_sha256": train_manifest_sha,
+            "source_manifest_bundle_sha256": manifest_bundle_sha,
             "iterations": args.loader_iterations,
             "warmup_iterations": args.loader_warmup_iterations,
             "max_text_tokens": 512,
@@ -1760,33 +1808,9 @@ def _run_parent(args: argparse.Namespace) -> int:
         if joint_result.get("status") != "success":
             failed.append(joint_result)
         parent_peak_rss = _max_rss_bytes()
-        worker_peak_values = [
-            int(item["peak_rss_bytes"])
-            for item in [*benchmark_results, joint_result]
-            if isinstance(item.get("peak_rss_bytes"), int) and item["peak_rss_bytes"] > 0
-        ]
-        max_worker_peak_rss = max(worker_peak_values, default=0)
-        observed_tree_peaks = [
-            int(item["process_tree_peak_rss_bytes_observed"])
-            for item in [*benchmark_results, joint_result]
-            if isinstance(item.get("process_tree_peak_rss_bytes_observed"), int)
-        ]
-        memory_accounting = {
-            "parent_process_peak_rss_bytes": parent_peak_rss,
-            "max_worker_process_peak_rss_bytes": max_worker_peak_rss,
-            "observed_process_tree_peak_rss_bytes": max(
-                [parent_peak_rss, *observed_tree_peaks]
-            ),
-            "conservative_process_tree_rss_upper_bound_bytes": (
-                parent_peak_rss + max_worker_peak_rss
-            ),
-            "sampling_interval_seconds": 0.02,
-            "method": (
-                "Linux per-process ru_maxrss plus sampled /proc parent+worker RSS; "
-                "the conservative upper bound sums separate per-process maxima and "
-                "may exceed the true simultaneous process-tree peak"
-            ),
-        }
+        memory_accounting = _process_tree_memory_accounting(
+            parent_peak_rss, [*benchmark_results, loader_result, joint_result],
+        )
         result = {
             "format_version": 1,
             "status": "blocked" if failed else "measured",

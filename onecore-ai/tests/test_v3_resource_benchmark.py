@@ -38,6 +38,22 @@ def test_benchmark_rejects_unsafe_asset_paths(value):
         _safe_relative(value)
 
 
+def test_process_tree_memory_accounting_includes_loader_worker_peak():
+    from onecore.v3.resource_benchmark import _process_tree_memory_accounting
+
+    per_family = {"peak_rss_bytes": 180, "process_tree_peak_rss_bytes_observed": 240}
+    loader = {"peak_rss_bytes": 320, "process_tree_peak_rss_bytes_observed": 370}
+    joint = {"peak_rss_bytes": 280, "process_tree_peak_rss_bytes_observed": 340}
+    result = _process_tree_memory_accounting(
+        150, [per_family, loader, joint],
+    )
+
+    assert result["max_worker_process_peak_rss_bytes"] == 320
+    assert result["observed_process_tree_peak_rss_bytes"] == 370
+    assert result["conservative_process_tree_rss_upper_bound_bytes"] == 470
+    assert "loader" in result["method"]
+
+
 def test_distribution_reports_p95_without_mutating_input():
     values = [9, 1, 5, 3]
     assert _distribution(values) == {
