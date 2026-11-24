@@ -873,3 +873,22 @@ This update supersedes earlier statements in this reference and the README that 
 - To execute the existing job, dispatch `.github/workflows/onecore-ci.yml` on `research/onecore-v3-implementation` with `benchmark_v3_resources=true` and `restore_v3_corpus=false`. Do not dispatch corpus restore again; the validated corpus and tokenizer artifacts are already pinned.
 - No V3 optimizer training or optimizer update was started. The full checkpoint save/restore bound to the real tokenizer, validated manifest fingerprint, production cursors, RNG and parent lineage is still not evidenced. Do not build/start the multi-session trainer or infer production readiness until the resource and full checkpoint gates pass.
 - V3 head at this update: `7e5c0278283145a84dc3f6f67f5cffe31c7de7bf`. Frozen Foundation remains `6d5dd21982f8f4a835e07b0f004b1621be57ba96`; `main` remains `0b5ec69e839bfc6086a358511b54649b03c7be9a`. No new PR, branch, workflow, or merge was created.
+
+
+## 2026-11-24 — Joint five-family CPU memory preflight
+
+**Implementation**
+- The existing manual-only V3 resource benchmark now runs both the per-family inference/forward-backward cases and a separate joint worker.
+- The joint worker loads one bounded, hash-verified external train micro-batch for each of text, tool, image, audio and video; text/tool use the real V3 tokenizer, images retain native dimensions, audio uses the canonical 24 kHz training derivative, and video preserves the selected frame timestamps.
+- It performs backward passes in the required five-family order while accumulating gradients, then allocates the AdamW exp_avg, exp_avg_sq, and scalar step tensors for every trainable parameter without calling optimizer.step. It reports parameter bytes, gradient bytes, AdamW-state bytes, peak RSS, per-family backward throughput and total joint elapsed time.
+- The benchmark explicitly records optimizer_updates=0 and optimizer_step_executed=false; this is resource measurement on one representative real sample per family, not training, a checkpoint, a throughput guarantee for larger batches, or quality evidence.
+- Unit tests cover five-family plan completeness, bounded audio/video selection, exact AdamW-state byte accounting, and unchanged model weights/no optimizer step.
+
+**Implementation and verification**
+- Code/test commit: 229033bf95fa3a7c1f33578f0764d3bf3000ac78.
+- The existing resource benchmark workflow remains manual-only; ordinary push Verify does not execute it. The joint worker has not yet been run against the real artifacts, so no measured RSS/throughput result is claimed.
+- Canonical CI for the documentation head must pass before this change is considered verified. The next safe resource action is the existing manual dispatch with benchmark_v3_resources=true and restore_v3_corpus=false; do not restore or refit the corpus/tokenizer.
+
+**Safety**
+- No workflow, branch, PR, corpus artifact, tokenizer artifact, model weights, checkpoint lineage, or optimizer training run was created or changed by this implementation.
+- V3 remains the only active architecture; Foundation remains the frozen V2 archive; main remains unchanged.
