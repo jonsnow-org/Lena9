@@ -774,3 +774,10 @@ An independent `onecore.v3.checkpoint` format has been implemented in the canoni
 - run/session lineage and parent-checkpoint SHA-256.
 
 Regression tests cover a complete tiny-model training-state round trip and rejection of configuration, tokenizer, manifest, parent-lineage and vocabulary mismatches. The implementation is not yet CI-verified; no V3 training run has started. The checkpoint gate remains closed until the new tests pass in the canonical V3 branch.
+
+
+### V3 corpus-restore dispatch policy — 2026-11-24
+
+The expensive V3 corpus restore is now a manual-only GitHub Actions operation. The V3 CI workflow exposes `workflow_dispatch` input `restore_v3_corpus`, defaulting to `false`; the restore job runs only when an operator explicitly sets it to `true` on `research/onecore-v3-implementation`. Ordinary code pushes and pull-request verification do not download or restore the multi-gigabyte media-progress artifact. The CI concurrency lock uses `cancel-in-progress: false` so a running restore is preserved while later verification is queued.
+
+This dispatch-policy change does not interrupt an already-running Run #605. Run #605 remains the current restore attempt; the queued Run #606 is expected to verify code only after #605 completes.

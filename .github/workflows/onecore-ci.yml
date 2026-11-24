@@ -19,6 +19,13 @@ on:
       - ".github/workflows/onecore-bootstrap.yml"
       - ".github/actions/onecore-acquire/action.yml"
       - ".github/actions/onecore-train/action.yml"
+  workflow_dispatch:
+    inputs:
+      restore_v3_corpus:
+        description: "Restore and publish the external-only V3 corpus from the existing pinned V2 data artifact"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -419,8 +426,8 @@ jobs:
   v3-corpus-restore:
     name: Restore and validate V3 corpus from existing V2 artifact
     needs: verify
-    # Expensive corpus restoration is opt-in: include the marker only on a deliberate restore commit.
-    if: github.ref == 'refs/heads/research/onecore-v3-implementation' && github.event_name == 'push' && contains(github.event.head_commit.message, '[onecore-v3-corpus-restore]')
+    # The multi-gigabyte corpus restore is manual-only and disabled unless explicitly selected.
+    if: github.ref == 'refs/heads/research/onecore-v3-implementation' && github.event_name == 'workflow_dispatch' && inputs.restore_v3_corpus == true
     runs-on: ubuntu-24.04
     timeout-minutes: 350
     steps:

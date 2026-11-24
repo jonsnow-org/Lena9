@@ -33,7 +33,7 @@ professional output quality.
   the artifact reader extracts the existing V2 manifests with HTTP byte ranges rather than
   downloading the 15.8 GB artifact in full. `cli.py` exposes this bounded conversion path.
 - `report.py`: exact instantiated parameter count, config fingerprint and storage-only estimates.
-- `checkpoint.py`: an independent V3-only atomic checkpoint format binding model/optimizer/scheduler/global step to the exact V3 config, tokenizer JSON/hash/vocabulary, validated manifest hash, JSON cursor state, Python/NumPy/Torch CPU RNG and parent-checkpoint lineage.
+- `checkpoint.py`: an independent V3-only atomic checkpoint format binding model/optimizer/scheduler/global step to the exact V3 config, tokenizer JSON/hash/vocabulary, a freshly validated train/validation/test manifest+asset fingerprint, JSON cursor state, Python/NumPy/Torch CPU RNG and parent-checkpoint lineage.
 
 ## Architecture revision 2
 
@@ -63,34 +63,22 @@ or memory improvement until benchmarked.
   fixed 512-position table. Attention is still quadratic; this is not proof of
   efficient long-context scaling. Benchmark memory, throughput, and long-context
   retrieval before selecting production sequence lengths.
-- The independent V3 checkpoint/resume format and strict round-trip/mismatch tests are now implemented; its first CI verification is pending. The existing corpus conversion gate passed in Run #602, while Run #605 repeats the final publication check after the gate-semantics correction. No V3 multi-session training workflow or production inference API exists yet, and media quality is unmeasured.
-- The bounded corpus-restore job uses the optional `corpus-restore` extra. It requires
-  CPU PyTorch 2.11 or newer, TorchCodec 0.17, and FFmpeg shared libraries; the job installs
-  these explicitly and keeps Hugging Face media decoding disabled so the converter can
-  preserve original encoded payloads and perform its own audio/video ingestion.
+- The independent V3 checkpoint/resume format and full-lineage round-trip/mismatch tests are implemented; their first canonical CI verification is queued. The external-only corpus gate passed in Run #602; Run #605 is still completing the final artifact-publication workflow. No V3 multi-session training workflow or production inference API exists yet, and media quality is unmeasured.
+- The bounded corpus-restore job is manual-only: use `workflow_dispatch` and explicitly set `restore_v3_corpus=true`. Normal code pushes run Verify only. Restore uses the optional `corpus-restore` extra, CPU PyTorch 2.11 or newer, TorchCodec 0.17, and FFmpeg shared libraries; the job installs these explicitly and keeps Hugging Face media decoding disabled so the converter can preserve original encoded payloads and perform its own audio/video ingestion.
 - The optional GAN discriminators require a separately configured discriminator
   optimizer and stable alternating updates; this is not yet a full adversarial trainer.
-- The V3 manifest gate is implemented but has not yet been run against the complete
-  recovered external media corpus.
+- The V3 five-family external manifest gate passed 100 train / 10 validation / 10 test per family in Run #602. Run #605 repeats the final artifact-publication step; only its completed report/artifact confirms publication.
 
 ## Next required engineering gates
 
-1. Keep the exact V3 parameter count/config fingerprint frozen; recompute both and FLOPs after every architecture change.
-2. Add modality-specific training losses: image perceptual + diffusion/flow or
-   adversarial objective; audio multi-resolution STFT + waveform/perceptual/adversarial
-   objective; video latent denoising/flow + temporal consistency and sync objectives.
-3. Add paired cross-modal alignment and text-conditioned generation objectives.
-4. Preserve raw source assets and metadata (native image dimensions, video timestamps,
-   frame rate/duration/audio track, audio sample rate/channels/duration); implement an
-   explicit canonical-rate normalization policy before mixed-rate training; the current
-   policy is polyphase resampling to 24 kHz while preserving the raw source.
-5. Run the isolated V3 corpus-restore job against the existing V2 artifact; reuse
-   completed text/tool rows, rehydrate raw media by pinned source hashes, and require the
-   immutable external-only 100/10/10 per-family gate to pass before publishing any corpus.
-6. Benchmark peak activation/optimizer memory, FLOPs, CPU/GPU wall-clock, and scaling
-   at multiple image sizes, clip durations, and audio lengths.
-7. Add round-trip, variable-length, streaming, long-context, and quality evaluations.
-8. Build the V3 multi-session CPU training workflow and inference API only after the corpus gate, the new checkpoint round-trip CI, and measured peak CPU memory/throughput pass. V2 checkpoint weights remain preserved and cannot be loaded as if they were shape-compatible V3 weights.
+1. Complete Run #605 and confirm the final external-only V3 corpus report/artifact; if it fails, resume only from the durable progress artifact and exact pinned source cursors.
+2. Pass CI for the independent checkpoint format and its complete model/optimizer/scheduler/RNG/tokenizer/manifest/cursor/lineage round trip plus all negative mismatch tests.
+3. Build a V3-native tokenizer with exactly 32,000 tokens from external V3 training text only; publish its source manifest and tokenizer SHA-256. Never reuse the V2 tokenizer.
+4. Recompute and freeze exact V3 parameter/FLOPs values, then measure peak CPU RSS and throughput using the validated corpus and real data loader (not storage estimates or synthetic-only smoke batches).
+5. Implement the bounded multi-session CPU trainer that restores the same V3 checkpoint lineage and dataset cursors, then expose V3 inference only after checkpoint and resource gates pass.
+6. Run independent text/tool/image/audio/video validation and held-out test evaluations bound to checkpoint, tokenizer, config and corpus hashes; no promotion threshold is inferred from training loss.
+
+V2 remains a frozen legacy baseline; its weights/checkpoints/optimizer/tokenizer are not imported into V3.
 
 All output-quality claims require measured evidence tied to checkpoint, tokenizer,
 codec, config and dataset-manifest hashes. No quality thresholds are inferred here.

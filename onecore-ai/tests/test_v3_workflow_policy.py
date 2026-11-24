@@ -10,9 +10,13 @@ def test_canonical_onecore_ci_runs_on_v3_only_and_restore_is_explicit():
     assert "branches: [research/onecore-v3-implementation]" in workflow
     assert "cancel-in-progress: false" in workflow
     assert "branches: [research/onecore-foundation, research/onecore-v3-implementation]" not in workflow
+    assert "workflow_dispatch:" in workflow
+    assert "restore_v3_corpus:" in workflow
+    assert "default: false" in workflow
     restore = workflow.split("  v3-corpus-restore:", 1)[1]
-    assert "github.event_name == 'push'" in restore
-    assert "contains(github.event.head_commit.message, '[onecore-v3-corpus-restore]')" in restore
+    assert "github.event_name == 'workflow_dispatch'" in restore
+    assert "inputs.restore_v3_corpus == true" in restore
+    assert "github.event.head_commit.message" not in restore
 
 
 def test_v2_training_is_archived_and_cannot_run_from_canonical_v3():

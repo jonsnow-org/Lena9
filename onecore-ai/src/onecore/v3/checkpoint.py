@@ -21,8 +21,10 @@ from tokenizers import Tokenizer
 
 from .config import V3Config
 from .core import OneCoreV3
+from .manifest import assert_v3_external_coverage, read_v3_manifest
 
 FORMAT_VERSION = 1
+V3_CHECKPOINT_FORMAT_VERSION = FORMAT_VERSION
 ARCHITECTURE_FAMILY = "onecore-v3"
 
 
@@ -80,6 +82,8 @@ def _normalise_lineage(lineage: Mapping[str, Any]) -> dict[str, Any]:
         raise ValueError("lineage.session must be a positive integer")
     if parent is not None:
         _require_sha256(parent, "lineage.parent_checkpoint_sha256")
+    if int(session) > 1 and parent is None:
+        raise ValueError("lineage sessions after session 1 require a parent checkpoint SHA-256")
     value["run_id"] = str(run_id)
     value["session"] = int(session)
     value["parent_checkpoint_sha256"] = parent
@@ -100,16 +104,167 @@ def _normalise_data_state(data_state: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _assert_model_matches_config(model: OneCoreV3, config: V3Config) -> None:
+    shared_layers = list(model.shared_core.layers)
+    temporal_layers = list(model.video_codec.temporal.layers)
+    codebooks = list(model.audio_codec.quantizer.codebooks)
+    audio_encoder_first = model.audio_codec.encoder[0]
+    audio_encoder_last = model.audio_codec.encoder[-1]
+    audio_decoder_first = model.audio_codec.decoder[0]
+    shared_heads_match = bool(shared_layers) and all(
+        int(layer.self_attn.num_heads) == int(config.attention_heads)
+        and abs(float(layer.dropout.p) - float(config.dropout)) <= 1e-12
+        for layer in shared_layers
+    )
+    temporal_heads_match = bool(temporal_layers) and all(
+        int(layer.self_attn.num_heads) == int(config.attention_heads)
+        for layer in temporal_layers
+    )
     checks = {
-        "text_vocab_size": int(model.text_embedding.num_embeddings) == int(config.text_vocab_size),
-        "width": int(model.width) == int(config.width),
-        "layers": len(model.shared_core.layers) == int(config.layers),
+        "text_vocab_size": int(model.text_embedding.num_embeddings) == int(config.text_vocab_size)
+            and int(model.text_head.out_features) == int(config.text_vocab_size),
+        "tied_text_projection": model.text_head.weight is model.text_embedding.weight,
+        "modality_slots": int(model.modality_embedding.num_embeddings) == 5,
+        "width": int(model.width) == int(config.width)
+            and int(model.shared_core.width) == int(config.width)
+            and int(model.image_codec.width) == int(config.width)
+            and int(model.video_codec.width) == int(config.width)
+            and int(model.audio_to_shared.out_channels) == int(config.width)
+            and int(model.shared_to_audio.in_channels) == int(config.width),
+        "layers": len(shared_layers) == int(config.layers),
         "cycles": int(model.shared_core.cycles) == int(config.cycles),
-        "patch_size": int(model.image_codec.patch_size) == int(config.patch_size),
+        "attention_heads": shared_heads_match and temporal_heads_match,
+        "dropout": shared_heads_match,
+        "patch_size": int(model.image_codec.patch_size) == int(config.patch_size)
+            and int(model.video_codec.image_codec.patch_size) == int(config.patch_size),
+        "audio_latent_channels": int(model.audio_codec.latent_channels) == int(config.audio_latent_channels)
+            and int(model.audio_to_shared.in_channels) == int(config.audio_latent_channels)
+            and int(model.shared_to_audio.out_channels) == int(config.audio_latent_channels)
+            and int(audio_encoder_last.out_channels) == int(config.audio_latent_channels),
+        "audio_hidden_channels": int(audio_encoder_first.out_channels) == int(config.audio_hidden_channels)
+            and int(audio_decoder_first.out_channels) == int(config.audio_hidden_channels),
+        "audio_codebook_size": bool(codebooks)
+            and all(int(book.num_embeddings) == int(config.audio_codebook_size) for book in codebooks),
+        "audio_codebook_dimension": bool(codebooks)
+            and all(int(book.embedding_dim) == int(config.audio_latent_channels) for book in codebooks),
+        "audio_quantizer_stages": len(codebooks) == int(config.audio_quantizer_stages),
+        "audio_channels": int(model.audio_codec.channels) == int(config.audio_channels)
+            and int(model.audio_codec.encoder[0].in_channels) == int(config.audio_channels)
+            and int(model.audio_codec.decoder[-1].out_channels) == int(config.audio_channels),
+        "audio_sample_rate": int(model.audio_codec.sample_rate) == int(config.audio_sample_rate),
+        "temporal_layers": len(temporal_layers) == int(config.temporal_layers),
+        "temporal_window_frames": int(model.video_codec.temporal_window_frames) == int(config.temporal_window_frames),
+        "temporal_memory_frames": int(model.video_codec.temporal_memory_frames) == int(config.temporal_memory_frames),
+        "max_image_context_tokens": int(model.max_image_context_tokens) == int(config.max_image_context_tokens),
+        "max_video_context_tokens": int(model.max_video_context_tokens) == int(config.max_video_context_tokens),
+        "max_flow_context_tokens": int(model.max_flow_context_tokens) == int(config.max_flow_context_tokens),
+        "video_generation_chunk_frames": int(model.video_generation_chunk_frames) == int(config.video_generation_chunk_frames),
     }
     mismatched = [name for name, matched in checks.items() if not matched]
     if mismatched:
         raise ValueError("model/config mismatch for: " + ", ".join(mismatched))
+
+
+def fingerprint_validated_v3_manifests(
+    manifest_paths: Mapping[str, str | Path],
+    assets_root: str | Path,
+    *,
+    minimum_train: int = 100,
+    minimum_holdout: int = 10,
+) -> dict[str, Any]:
+    """Validate the exact train/validation/test manifest files and bind their bytes/assets.
+
+    The returned SHA-256 is suitable for checkpoint lineage only after the external-only
+    manifest validator confirms all five families, immutable provenance, asset existence,
+    duplicate rejection and split isolation.
+    """
+    required = {"train", "validation", "test"}
+    if not isinstance(manifest_paths, Mapping) or set(manifest_paths) != required:
+        raise ValueError("manifest_paths must contain exactly train, validation, and test")
+    records: list[dict[str, Any]] = []
+    file_digests: dict[str, dict[str, Any]] = {}
+    for split in ("train", "validation", "test"):
+        path = Path(manifest_paths[split]).resolve()
+        if not path.is_file():
+            raise FileNotFoundError(f"V3 {split} manifest not found: {path}")
+        split_records = list(read_v3_manifest(path))
+        wrong_split = [
+            str(row.get("id", f"line-{index}"))
+            for index, row in enumerate(split_records, 1)
+            if str(row.get("split", "")) != split
+        ]
+        if wrong_split:
+            raise ValueError(
+                f"V3 {split} manifest contains records assigned to another split: "
+                + ", ".join(wrong_split[:5])
+            )
+        records.extend(split_records)
+        file_digests[split] = {
+            "sha256": sha256_file(path),
+            "bytes": path.stat().st_size,
+            "records": len(split_records),
+        }
+    validation = assert_v3_external_coverage(
+        records, assets_root, minimum_train=minimum_train, minimum_holdout=minimum_holdout
+    )
+    identity = {
+        "format": "onecore-v3-validated-manifest-bundle-v1",
+        "splits": file_digests,
+        "asset_sha256": validation["asset_hashes"],
+        "coverage": validation["coverage"],
+    }
+    encoded = json.dumps(
+        identity, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
+    ).encode("utf-8")
+    return {
+        "manifest_sha256": sha256_bytes(encoded),
+        "manifest_files": file_digests,
+        "validation": validation,
+    }
+
+
+def _assert_scheduler_uses_optimizer(scheduler: Any, optimizer: torch.optim.Optimizer) -> None:
+    if scheduler is None or getattr(scheduler, "optimizer", None) is not optimizer:
+        raise ValueError("V3 scheduler must be attached to the exact optimizer being checkpointed")
+
+
+def _validate_optimizer_state_layout(
+    optimizer: torch.optim.Optimizer,
+    saved_state: dict[str, Any],
+) -> None:
+    current_groups = optimizer.param_groups
+    saved_groups = saved_state.get("param_groups")
+    state = saved_state.get("state")
+    if not isinstance(saved_groups, list) or not isinstance(state, dict):
+        raise ValueError("V3 checkpoint optimizer state has an invalid structure")
+    if len(current_groups) != len(saved_groups):
+        raise ValueError("V3 checkpoint optimizer parameter-group count mismatch")
+    saved_id_to_parameter: dict[int, torch.nn.Parameter] = {}
+    for current_group, saved_group in zip(current_groups, saved_groups, strict=True):
+        if not isinstance(saved_group, dict) or not isinstance(saved_group.get("params"), list):
+            raise ValueError("V3 checkpoint optimizer parameter group is invalid")
+        current_parameters = current_group.get("params", [])
+        saved_ids = saved_group["params"]
+        if len(current_parameters) != len(saved_ids):
+            raise ValueError("V3 checkpoint optimizer parameter layout mismatch")
+        for parameter, saved_id in zip(current_parameters, saved_ids, strict=True):
+            if isinstance(saved_id, bool) or not isinstance(saved_id, int) or saved_id in saved_id_to_parameter:
+                raise ValueError("V3 checkpoint optimizer parameter IDs are invalid or duplicated")
+            saved_id_to_parameter[saved_id] = parameter
+    for saved_id, parameter_state in state.items():
+        if isinstance(saved_id, bool) or not isinstance(saved_id, int) or saved_id not in saved_id_to_parameter:
+            raise ValueError("V3 checkpoint optimizer state refers to an unknown parameter")
+        if not isinstance(parameter_state, dict):
+            raise ValueError("V3 checkpoint optimizer parameter state is invalid")
+        parameter = saved_id_to_parameter[saved_id]
+        for key in ("exp_avg", "exp_avg_sq", "max_exp_avg_sq"):
+            value = parameter_state.get(key)
+            if value is not None and (
+                not isinstance(value, torch.Tensor) or value.shape != parameter.shape
+            ):
+                raise ValueError(f"V3 checkpoint optimizer tensor shape mismatch: {key}")
+        step_value = parameter_state.get("step")
+        if isinstance(step_value, torch.Tensor) and step_value.numel() != 1:
+            raise ValueError("V3 checkpoint optimizer step counter must be scalar")
 
 
 def save_v3_checkpoint(
@@ -130,10 +285,9 @@ def save_v3_checkpoint(
         raise TypeError("model must be a OneCoreV3 instance")
     if not isinstance(config, V3Config):
         raise TypeError("config must be a V3Config instance")
-    if global_step < 0:
-        raise ValueError("global_step cannot be negative")
-    if scheduler is None:
-        raise ValueError("V3 resumable checkpoints require scheduler state")
+    if isinstance(global_step, bool) or not isinstance(global_step, int) or global_step < 0:
+        raise ValueError("global_step must be a non-negative integer")
+    _assert_scheduler_uses_optimizer(scheduler, optimizer)
     _assert_model_matches_config(model, config)
     manifest_sha256 = _require_sha256(manifest_sha256, "manifest_sha256")
     tokenizer_bytes, tokenizer_vocab_size, tokenizer_sha256 = _tokenizer_payload(
@@ -227,7 +381,8 @@ def load_v3_checkpoint(
     payload = torch.load(source, map_location=map_location, weights_only=False)
     if not isinstance(payload, dict):
         raise ValueError("V3 checkpoint payload must be a mapping")
-    if payload.get("format_version") != FORMAT_VERSION:
+    format_version = payload.get("format_version")
+    if isinstance(format_version, bool) or not isinstance(format_version, int) or format_version != FORMAT_VERSION:
         raise ValueError("unsupported V3 checkpoint format version")
     if payload.get("architecture_family") != ARCHITECTURE_FAMILY:
         raise ValueError("checkpoint is not a OneCore V3 artifact")
@@ -246,7 +401,8 @@ def load_v3_checkpoint(
     )
     if actual_tokenizer_sha != payload.get("tokenizer_sha256"):
         raise ValueError("V3 checkpoint tokenizer SHA-256 mismatch")
-    if actual_vocab != int(payload.get("tokenizer_vocab_size", -1)):
+    saved_vocab_size = payload.get("tokenizer_vocab_size")
+    if isinstance(saved_vocab_size, bool) or not isinstance(saved_vocab_size, int) or actual_vocab != saved_vocab_size:
         raise ValueError("V3 checkpoint tokenizer vocabulary metadata mismatch")
     if expected_tokenizer_sha256 is not None and actual_tokenizer_sha != expected_tokenizer_sha256:
         raise ValueError("V3 checkpoint tokenizer does not match the expected tokenizer fingerprint")
@@ -260,9 +416,10 @@ def load_v3_checkpoint(
         key in rng_state for key in ("python", "numpy", "torch_cpu")
     ):
         raise ValueError("V3 checkpoint is missing one or more RNG states")
-    step = int(payload.get("global_step", -1))
-    if step < 0:
+    raw_step = payload.get("global_step")
+    if isinstance(raw_step, bool) or not isinstance(raw_step, int) or raw_step < 0:
         raise ValueError("V3 checkpoint global_step is missing or invalid")
+    step = raw_step
     saved_model = payload.get("model_state_dict")
     saved_optimizer = payload.get("optimizer_state_dict")
     saved_scheduler = payload.get("scheduler_state_dict")
@@ -274,6 +431,8 @@ def load_v3_checkpoint(
         raise ValueError("V3 checkpoint is missing scheduler state")
     optimizer_type = f"{type(optimizer).__module__}.{type(optimizer).__qualname__}"
     scheduler_type = f"{type(scheduler).__module__}.{type(scheduler).__qualname__}"
+    _assert_scheduler_uses_optimizer(scheduler, optimizer)
+    _validate_optimizer_state_layout(optimizer, saved_optimizer)
     if payload.get("optimizer_type") != optimizer_type:
         raise ValueError("V3 checkpoint optimizer type mismatch")
     if payload.get("scheduler_type") != scheduler_type:
@@ -309,7 +468,30 @@ def load_v3_checkpoint(
     if not isinstance(torch_state, torch.Tensor) or torch_state.dtype != torch.uint8 or torch_state.ndim != 1:
         raise ValueError("V3 checkpoint Torch CPU RNG state is invalid")
 
-    # Perform state mutation only after all compatibility checks above pass.
+    current_scheduler_state = scheduler.state_dict()
+    if set(current_scheduler_state) != set(saved_scheduler):
+        raise ValueError("V3 checkpoint scheduler state keys do not match the current scheduler")
+    for key, current_value in current_scheduler_state.items():
+        saved_value = saved_scheduler[key]
+        if isinstance(current_value, torch.Tensor):
+            if not isinstance(saved_value, torch.Tensor) or saved_value.shape != current_value.shape:
+                raise ValueError(f"V3 checkpoint scheduler tensor shape mismatch: {key}")
+        elif isinstance(current_value, (int, float, bool, str)):
+            if not isinstance(saved_value, type(current_value)):
+                raise ValueError(f"V3 checkpoint scheduler field type mismatch: {key}")
+        elif isinstance(current_value, (list, tuple)):
+            if not isinstance(saved_value, type(current_value)) or len(saved_value) != len(current_value):
+                raise ValueError(f"V3 checkpoint scheduler field layout mismatch: {key}")
+
+    rng_probe = torch.Generator(device="cpu")
+    try:
+        rng_probe.set_state(torch_state.detach().cpu())
+    except Exception as exc:
+        raise ValueError(f"V3 checkpoint Torch CPU RNG state is invalid: {exc}") from exc
+
+    # All shapes, layouts, config fields, optimizer groups, scheduler fields and RNG
+    # encodings have been checked. Avoid cloning the full model/optimizer: CPU memory
+    # is constrained and duplicate copies would distort the resource benchmark.
     model.load_state_dict(saved_model, strict=True)
     optimizer.load_state_dict(saved_optimizer)
     scheduler.load_state_dict(saved_scheduler)

@@ -1,15 +1,23 @@
 import copy
+import hashlib
+import json
 import random
 
 import numpy as np
 import pytest
 import torch
+from PIL import Image
 from tokenizers import Tokenizer, models, pre_tokenizers
 
-from onecore.v3 import V3Config
+from onecore.v3 import V3Config, V3_CHECKPOINT_FORMAT_VERSION
 from onecore.v3.checkpoint import (
-    load_v3_checkpoint, save_v3_checkpoint, sha256_bytes,
+    fingerprint_validated_v3_manifests, load_v3_checkpoint,
+    save_v3_checkpoint, sha256_bytes,
 )
+
+
+def test_v3_checkpoint_format_version_is_public_and_isolated():
+    assert V3_CHECKPOINT_FORMAT_VERSION == 1
 
 
 def _config():
@@ -75,7 +83,7 @@ def _save(path, model, optimizer, scheduler, config, *, parent=None):
             "families": {"text": {"rows_read": 12}, "image": {"rows_read": 4}},
             "source_cursors": {"fleurs_ar/train": {"offset": 12}},
         },
-        lineage={"run_id": "run-v3-001", "session": 2,
+        lineage={"run_id": "run-v3-001", "session": (2 if parent is not None else 1),
                  "parent_checkpoint_sha256": parent},
     )
     return result, tokenizer, manifest_sha
@@ -174,6 +182,172 @@ def test_v3_checkpoint_rejects_tokenizer_vocab_mismatch_on_save(tmp_path):
         save_v3_checkpoint(
             tmp_path / "invalid.pt", model, optimizer, scheduler, 0, config,
             tokenizer_json=_tokenizer_json(32),
+            manifest_sha256="a" * 64,
+            data_state={},
+            lineage={"run_id": "run-v3-001", "session": 1,
+                     "parent_checkpoint_sha256": None},
+        )
+
+
+def _validated_manifest_fixture(tmp_path):
+    paths = {}
+    for split_index, split in enumerate(("train", "validation", "test")):
+        rows = []
+        asset_dir = tmp_path / split
+        asset_dir.mkdir(parents=True)
+        image_path = asset_dir / "image.png"
+        frame_a = asset_dir / "frame-a.png"
+        frame_b = asset_dir / "frame-b.png"
+        Image.new("RGB", (16, 16), (10 + split_index, 20, 30)).save(image_path)
+        Image.new("RGB", (16, 16), (40, 50 + split_index, 60)).save(frame_a)
+        Image.new("RGB", (16, 16), (70, 80, 90 + split_index)).save(frame_b)
+        audio_path = asset_dir / "audio.wav"
+        audio_path.write_bytes(f"external-audio-{split}".encode())
+        audio_training_path = asset_dir / "audio-training.wav"
+        audio_training_path.write_bytes(f"external-audio-training-{split}".encode())
+
+        def provenance(source, row):
+            return {
+                "source_url": "https://example.org/external-dataset",
+                "data_class": "external",
+                "source_id": source,
+                "source_revision": "c" * 40,
+                "source_row_id_sha256": hashlib.sha256(row.encode()).hexdigest(),
+            }
+
+        rows.extend([
+            {
+                **provenance(f"{split}-text", f"{split}-text-row"),
+                "id": f"{split}-text", "split": split, "task": "text",
+                "text": "A sufficiently long external text row for the manifest gate.",
+            },
+            {
+                **provenance(f"{split}-tool", f"{split}-tool-row"),
+                "id": f"{split}-tool", "split": split, "task": "tool_use",
+                "prompt": "Search for the requested source record.",
+                "response": '{"name":"search","arguments":{"query":"onecore"}}',
+            },
+            {
+                **provenance(f"{split}-image", f"{split}-image-row"),
+                "id": f"{split}-image", "split": split, "task": "image_caption",
+                "caption": "An externally sourced image.", "assets": {
+                    "image": {"source_asset": f"{split}/image.png"},
+                },
+            },
+            {
+                **provenance(f"{split}-audio", f"{split}-audio-row"),
+                "id": f"{split}-audio", "split": split, "task": "audio_text",
+                "transcript": "A short external audio transcript.", "assets": {
+                    "audio": {
+                        "source_asset": f"{split}/audio.wav",
+                        "training_asset": f"{split}/audio-training.wav",
+                    },
+                },
+            },
+            {
+                **provenance(f"{split}-video", f"{split}-video-row"),
+                "id": f"{split}-video", "split": split, "task": "video_caption",
+                "caption": "A two-frame external video.", "assets": {
+                    "video": {"frames": [f"{split}/frame-a.png", f"{split}/frame-b.png"]},
+                },
+            },
+        ])
+        path = tmp_path / f"{split}.jsonl"
+        path.write_text(
+            "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows),
+            encoding="utf-8",
+        )
+        paths[split] = path
+    return paths
+
+
+def test_checkpoint_manifest_fingerprint_validates_all_five_families_and_asset_bytes(tmp_path):
+    paths = _validated_manifest_fixture(tmp_path)
+    first = fingerprint_validated_v3_manifests(
+        paths, tmp_path, minimum_train=1, minimum_holdout=1
+    )
+    assert first["validation"]["passed"]
+    assert first["validation"]["accepted_external_records"] == 15
+    assert set(first["validation"]["coverage"]["train"]) == {
+        "text", "tool", "image", "audio", "video",
+    }
+    assert len(first["manifest_sha256"]) == 64
+
+    (tmp_path / "train" / "image.png").write_bytes(b"changed-external-asset")
+    second = fingerprint_validated_v3_manifests(
+        paths, tmp_path, minimum_train=1, minimum_holdout=1
+    )
+    assert second["manifest_sha256"] != first["manifest_sha256"]
+
+
+def test_checkpoint_manifest_fingerprint_rejects_records_in_wrong_split(tmp_path):
+    paths = _validated_manifest_fixture(tmp_path)
+    validation = json.loads(paths["validation"].read_text(encoding="utf-8").splitlines()[0])
+    validation["split"] = "train"
+    paths["validation"].write_text(
+        json.dumps(validation) + "\n", encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="assigned to another split"):
+        fingerprint_validated_v3_manifests(
+            paths, tmp_path, minimum_train=1, minimum_holdout=1
+        )
+
+
+def test_v3_checkpoint_save_rejects_model_with_config_mismatch(tmp_path):
+    config = _config()
+    model, optimizer, scheduler = _make_training_state(config)
+    changed = V3Config(**{**config.to_dict(), "dropout": 0.1})
+    with pytest.raises(ValueError, match="model/config mismatch.*dropout"):
+        save_v3_checkpoint(
+            tmp_path / "mismatch.pt", model, optimizer, scheduler, 7, changed,
+            tokenizer_json=_tokenizer_json(config.text_vocab_size),
+            manifest_sha256="a" * 64,
+            data_state={},
+            lineage={"run_id": "run-v3-001", "session": 1,
+                     "parent_checkpoint_sha256": None},
+        )
+
+
+def test_v3_checkpoint_rejects_bad_optimizer_tensor_before_mutating_model(tmp_path):
+    config = _config()
+    model, optimizer, scheduler = _make_training_state(config)
+    path = tmp_path / "corrupt-optimizer.pt"
+    _, _, manifest_sha = _save(path, model, optimizer, scheduler, config)
+    payload = torch.load(path, map_location="cpu", weights_only=False)
+    saved_group = payload["optimizer_state_dict"]["param_groups"][0]
+    saved_parameter_id = saved_group["params"][0]
+    payload["optimizer_state_dict"]["state"][saved_parameter_id]["exp_avg"] = torch.zeros(1)
+    torch.save(payload, path)
+
+    with torch.no_grad():
+        for parameter in model.parameters():
+            parameter.add_(0.125)
+    expected_model = copy.deepcopy(model.state_dict())
+    expected_optimizer = copy.deepcopy(optimizer.state_dict())
+    expected_scheduler = copy.deepcopy(scheduler.state_dict())
+
+    with pytest.raises(ValueError, match="optimizer tensor shape mismatch"):
+        load_v3_checkpoint(
+            path, model, optimizer, scheduler, config,
+            expected_manifest_sha256=manifest_sha,
+            expected_parent_checkpoint_sha256=None,
+        )
+
+    _assert_nested_equal(model.state_dict(), expected_model)
+    _assert_nested_equal(optimizer.state_dict(), expected_optimizer)
+    _assert_nested_equal(scheduler.state_dict(), expected_scheduler)
+
+
+def test_v3_checkpoint_save_rejects_scheduler_attached_to_another_optimizer(tmp_path):
+    config = _config()
+    model = config.build_model()
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
+    wrong_optimizer = torch.optim.AdamW(model.parameters(), lr=2e-3)
+    scheduler = torch.optim.lr_scheduler.StepLR(wrong_optimizer, step_size=1)
+    with pytest.raises(ValueError, match="exact optimizer"):
+        save_v3_checkpoint(
+            tmp_path / "wrong-scheduler.pt", model, optimizer, scheduler, 0, config,
+            tokenizer_json=_tokenizer_json(config.text_vocab_size),
             manifest_sha256="a" * 64,
             data_state={},
             lineage={"run_id": "run-v3-001", "session": 1,
