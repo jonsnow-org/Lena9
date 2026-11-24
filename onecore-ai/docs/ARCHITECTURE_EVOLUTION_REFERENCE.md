@@ -852,3 +852,24 @@ This update supersedes earlier statements in this reference and the README that 
 - No V3 optimizer training until measured peak CPU RSS/throughput on actual corpus samples, modality shape/duration profiling, and a full checkpoint save/restore bound to the real tokenizer/manifest/cursors/RNG/lineage all pass.
 - No V3 training orchestrator or production inference API has been implemented yet. No image/audio/video quality evidence exists; professional-quality claims require independent held-out evaluation and human review.
 - Keep V3 as the sole active product branch, Foundation as the frozen V2 archive, and main unchanged.
+
+## 2026-11-24 — Bounded CPU profiler: sequence-length coverage and CI correction
+
+**Implementation**
+- The bounded real-corpus CPU profiler is in `onecore/v3/resource_benchmark.py`. It reads the existing immutable corpus/report/tokenizer artifacts by HTTP Range and extracts only the three manifests plus selected, hash-verified media samples; it does not download or unpack the 24.43 GB corpus archive in full.
+- The profiler now computes actual tokenizer sequence-length distributions for every eligible external train text/tool row using the pinned V3 tokenizer artifact. Encoding is batched (128 rows), only integer lengths are retained, and non-external rows are excluded. A non-train row in the supplied train manifest is a hard error. Output includes count/min/median/p95/max for text and tool sequences alongside existing character and media shape/duration distributions.
+- The benchmark remains measurement-only: isolated CPU workers run inference and forward/backward passes, but no optimizer step or AdamW state allocation occurs. Its measured RSS therefore does not establish the complete optimizer-training memory budget.
+
+**Commit and CI evidence**
+- Profiler implementation: `2f6178ebae18776628047c69c73df9fc17d04769`.
+- Tool-text newline normalization: `46fb9183e564e9b9c7b6f2783791226c7bc9c713`.
+- Train-only tokenizer profiling tests: `5dcd96de1f905e6337674686f8034b68ed5daf19`; valid JSONL fixture correction: `de886174b551b47c237d944f522256ae0c851b68`.
+- Run #624 (ID `45358993328`) on the profiler implementation passed: 281 tests, 24 warnings; compile, exact V3 parameter/FLOP assertions, V2 specification checks, notebooks, FineWeb-2 cursor resume, and workflow isolation passed.
+- Run #627 (ID `45359115282`) exposed one fixture error: the test used task name `tool`, while the canonical V3 manifest task is `tool_use`. The profiler correctly classifies families from `TASK_GROUPS`; the test fixture was corrected in `7e5c0278283145a84dc3f6f67f5cffe31c7de7bf`. No model weights, training state, corpus, or production routing changed.
+- Canonical Verify Run #628 (ID `45359517194`) on `7e5c0278283145a84dc3f6f67f5cffe31c7de7bf` passed: **283 passed, 24 warnings**. Compile, exact parameter/FLOP report, V2 contract, architecture notebook, safe notebook preflights, FineWeb-2 cursor resume, notebook validation, and workflow isolation all passed.
+
+**Resource gate remains open**
+- Runs #622, #623, and #628 were push-triggered. Their `Measure V3 CPU memory and throughput from existing artifacts` jobs were correctly **skipped** because the job is manual-only. No resource benchmark artifact or measured RSS/throughput exists yet.
+- To execute the existing job, dispatch `.github/workflows/onecore-ci.yml` on `research/onecore-v3-implementation` with `benchmark_v3_resources=true` and `restore_v3_corpus=false`. Do not dispatch corpus restore again; the validated corpus and tokenizer artifacts are already pinned.
+- No V3 optimizer training or optimizer update was started. The full checkpoint save/restore bound to the real tokenizer, validated manifest fingerprint, production cursors, RNG and parent lineage is still not evidenced. Do not build/start the multi-session trainer or infer production readiness until the resource and full checkpoint gates pass.
+- V3 head at this update: `7e5c0278283145a84dc3f6f67f5cffe31c7de7bf`. Frozen Foundation remains `6d5dd21982f8f4a835e07b0f004b1621be57ba96`; `main` remains `0b5ec69e839bfc6086a358511b54649b03c7be9a`. No new PR, branch, workflow, or merge was created.
