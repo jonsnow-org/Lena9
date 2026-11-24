@@ -33,6 +33,7 @@ professional output quality.
   the artifact reader extracts the existing V2 manifests with HTTP byte ranges rather than
   downloading the 15.8 GB artifact in full. `cli.py` exposes this bounded conversion path.
 - `report.py`: exact instantiated parameter count, config fingerprint and storage-only estimates.
+- `checkpoint.py`: an independent V3-only atomic checkpoint format binding model/optimizer/scheduler/global step to the exact V3 config, tokenizer JSON/hash/vocabulary, validated manifest hash, JSON cursor state, Python/NumPy/Torch CPU RNG and parent-checkpoint lineage.
 
 ## Architecture revision 2
 
@@ -62,10 +63,7 @@ or memory improvement until benchmarked.
   fixed 512-position table. Attention is still quadratic; this is not proof of
   efficient long-context scaling. Benchmark memory, throughput, and long-context
   retrieval before selecting production sequence lengths.
-- A selective V2-to-V3 converter exists, but the external-only 100/10/10 media gate
-  has not yet passed on the recovered corpus. No V3 corpus artifact, multi-session training
-  workflow, checkpoint/resume format, production inference API, quality benchmark suite,
-  or promotion threshold has been approved or published.
+- The independent V3 checkpoint/resume format and strict round-trip/mismatch tests are now implemented; its first CI verification is pending. The existing corpus conversion gate passed in Run #602, while Run #605 repeats the final publication check after the gate-semantics correction. No V3 multi-session training workflow or production inference API exists yet, and media quality is unmeasured.
 - The bounded corpus-restore job uses the optional `corpus-restore` extra. It requires
   CPU PyTorch 2.11 or newer, TorchCodec 0.17, and FFmpeg shared libraries; the job installs
   these explicitly and keeps Hugging Face media decoding disabled so the converter can
@@ -77,8 +75,7 @@ or memory improvement until benchmarked.
 
 ## Next required engineering gates
 
-1. Derive exact v3 parameter counts and configuration fingerprints from instantiated
-   modules; freeze a versioned YAML config.
+1. Keep the exact V3 parameter count/config fingerprint frozen; recompute both and FLOPs after every architecture change.
 2. Add modality-specific training losses: image perceptual + diffusion/flow or
    adversarial objective; audio multi-resolution STFT + waveform/perceptual/adversarial
    objective; video latent denoising/flow + temporal consistency and sync objectives.
@@ -93,15 +90,7 @@ or memory improvement until benchmarked.
 6. Benchmark peak activation/optimizer memory, FLOPs, CPU/GPU wall-clock, and scaling
    at multiple image sizes, clip durations, and audio lengths.
 7. Add round-trip, variable-length, streaming, long-context, and quality evaluations.
-8. Only then create the v3 training workflow and begin training. V2 checkpoint weights
-   remain preserved and cannot be loaded as if they were shape-compatible v3 weights.
+8. Build the V3 multi-session CPU training workflow and inference API only after the corpus gate, the new checkpoint round-trip CI, and measured peak CPU memory/throughput pass. V2 checkpoint weights remain preserved and cannot be loaded as if they were shape-compatible V3 weights.
 
 All output-quality claims require measured evidence tied to checkpoint, tokenizer,
 codec, config and dataset-manifest hashes. No quality thresholds are inferred here.
-
-
-## Canonical OneCore product decision
-
-OneCore is a single multimodal model, not separate V2 and V3 products and not five independent models. V3 is the canonical active architecture: text and tool tokens plus image/audio/video latents are processed by one shared semantic Transformer core; modality-specific codecs and generation heads remain components of that same model. V2 is preserved as a frozen legacy baseline and source of historical data/evidence only. Never import V2 weights, checkpoints, optimizer state, tokenizer or training manifests into V3. The selective V2 corpus converter reuses eligible externally sourced records and rehydrates raw media with pinned provenance; that is a data migration, not a weight migration.
-
-V3 still requires its own 32,000-token tokenizer, exact parameter/FLOPs report, independent checkpoint/resume lineage, measured CPU resource envelope, and quality evaluation before any training or production-readiness claim.
