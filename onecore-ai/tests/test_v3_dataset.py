@@ -286,7 +286,7 @@ def test_v3_joint_loader_benchmark_manifest_view_keeps_full_tokenizer_provenance
     tokenizer_path = tmp_path / "v3-tokenizer.json"
     _write_exact_v3_test_tokenizer(manifests["train"], tokenizer_path, config)
 
-    with pytest.raises(ValueError, match="train manifest"):
+    with pytest.raises(ValueError, match="training manifest"):
         V3JointDataLoader(
             subset_paths, assets_root, tokenizer_path, config=config,
             max_text_tokens=16, audio_window_seconds=0.001, video_window_frames=2,
