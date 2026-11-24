@@ -899,4 +899,4 @@ This update supersedes earlier statements in this reference and the README that 
 - Corrected joint timing fields to say forward/backward rather than backward-only; the measured interval includes model forward, loss construction and backward.
 - No model, data, optimizer, checkpoint or workflow behavior changed.
 - Implementation commit: 8de02208624e00a33bee694deb83955ae4ccbe67.
-- The preceding Verify run #630 passed on the prior implementation/documentation head; this label-only correction requires its own canonical Verify run before it is treated as verified.
+- Canonical Verify Run #631 (ID `45370635712`) passed on documentation head `47c3eb9ab72412f68b4f22acd27e31e3d8b38009`: **286 passed, 24 warnings**; compile, exact V3 parameter/FLOP checks, V2 specification contract, architecture notebook, safe preflights, FineWeb-2 cursor resume, notebook validation and workflow isolation all passed. The manual CPU resource benchmark and corpus restore were skipped as designed; no measured RSS/throughput artifact exists.
