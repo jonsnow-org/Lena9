@@ -80,3 +80,66 @@ def test_v3_audio_objective_accepts_stereo_waveform():
     assert torch.isfinite(losses["audio_reconstruction_loss"])
     assert "audio_flow_loss" in losses
     assert any(parameter.grad is not None for parameter in model.parameters())
+
+def test_v3_joint_step_accumulates_five_ordered_micro_batches_before_one_update():
+    from types import SimpleNamespace
+    from onecore.v3.training import train_v3_joint_step
+
+    torch.manual_seed(71)
+    model = _tiny_model()
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
+    before = [parameter.detach().clone() for parameter in model.parameters()]
+    batches = (
+        SimpleNamespace(family="text", batch={"text": {
+            "input_ids": torch.randint(0, 128, (1, 8)),
+        }}),
+        SimpleNamespace(family="tool", batch={"tool": {
+            "input_ids": torch.randint(0, 128, (1, 8)),
+            "labels": torch.randint(0, 128, (1, 8)),
+        }}),
+        SimpleNamespace(family="image", batch={"image": {
+            "images": torch.rand(1, 3, 32, 32),
+            "condition_ids": torch.randint(0, 128, (1, 5)),
+        }}),
+        SimpleNamespace(family="audio", batch={"audio": {
+            "waveform": torch.rand(1, 1024),
+            "sample_rate": 24_000,
+            "condition_ids": torch.randint(0, 128, (1, 5)),
+        }}),
+        SimpleNamespace(family="video", batch={"video": {
+            "frames": torch.rand(1, 3, 3, 16, 16),
+            "timestamps": torch.tensor([[0.0, 0.1, 0.2]]),
+            "condition_ids": torch.randint(0, 128, (1, 5)),
+        }}),
+    )
+
+    metrics = train_v3_joint_step(model, optimizer, batches)
+
+    assert metrics["optimizer_updates"] == 1.0
+    assert metrics["family_micro_batches"] == 5.0
+    assert metrics["total"] > 0
+    assert metrics["gradient_norm"] > 0
+    assert all(f"{family}/total" in metrics for family in ("text", "tool", "image", "audio", "video"))
+    assert any(not torch.equal(old, new) for old, new in zip(before, model.parameters(), strict=True))
+
+
+def test_v3_joint_step_rejects_missing_or_reordered_family_batches():
+    from types import SimpleNamespace
+    from onecore.v3.training import train_v3_joint_step
+
+    model = _tiny_model()
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
+    incomplete = tuple(
+        SimpleNamespace(family=family, batch={family: {}})
+        for family in ("text", "tool", "image", "audio")
+    )
+    with pytest.raises(ValueError, match="exactly five"):
+        train_v3_joint_step(model, optimizer, incomplete)
+
+    reordered = tuple(
+        SimpleNamespace(family=family, batch={family: {}})
+        for family in ("tool", "text", "image", "audio", "video")
+    )
+    with pytest.raises(ValueError, match="ordered text, tool, image, audio, video"):
+        train_v3_joint_step(model, optimizer, reordered)
+
