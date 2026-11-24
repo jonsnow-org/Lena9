@@ -148,7 +148,9 @@ def save_v3_checkpoint(
         "global_step": int(global_step),
         "model_state_dict": model.state_dict(),
         "optimizer_state_dict": optimizer.state_dict(),
+        "optimizer_type": f"{type(optimizer).__module__}.{type(optimizer).__qualname__}",
         "scheduler_state_dict": scheduler.state_dict(),
+        "scheduler_type": f"{type(scheduler).__module__}.{type(scheduler).__qualname__}",
         "config": config.to_dict(),
         "config_sha256": config.fingerprint,
         "tokenizer_json": tokenizer_bytes,
@@ -258,23 +260,62 @@ def load_v3_checkpoint(
         key in rng_state for key in ("python", "numpy", "torch_cpu")
     ):
         raise ValueError("V3 checkpoint is missing one or more RNG states")
-    if payload.get("scheduler_state_dict") is None:
-        raise ValueError("V3 checkpoint is missing scheduler state")
-
-    _assert_model_matches_config(model, config)
-    model.load_state_dict(payload["model_state_dict"], strict=True)
-    if payload.get("optimizer_state_dict") is None:
-        raise ValueError("V3 checkpoint is missing optimizer state")
-    optimizer.load_state_dict(payload["optimizer_state_dict"])
-    scheduler.load_state_dict(payload["scheduler_state_dict"])
-
-    random.setstate(rng_state["python"])
-    np.random.set_state(rng_state["numpy"])
-    torch.set_rng_state(rng_state["torch_cpu"].detach().cpu())
-
     step = int(payload.get("global_step", -1))
     if step < 0:
         raise ValueError("V3 checkpoint global_step is missing or invalid")
+    saved_model = payload.get("model_state_dict")
+    saved_optimizer = payload.get("optimizer_state_dict")
+    saved_scheduler = payload.get("scheduler_state_dict")
+    if not isinstance(saved_model, dict):
+        raise ValueError("V3 checkpoint is missing model state")
+    if not isinstance(saved_optimizer, dict):
+        raise ValueError("V3 checkpoint is missing optimizer state")
+    if not isinstance(saved_scheduler, dict):
+        raise ValueError("V3 checkpoint is missing scheduler state")
+    optimizer_type = f"{type(optimizer).__module__}.{type(optimizer).__qualname__}"
+    scheduler_type = f"{type(scheduler).__module__}.{type(scheduler).__qualname__}"
+    if payload.get("optimizer_type") != optimizer_type:
+        raise ValueError("V3 checkpoint optimizer type mismatch")
+    if payload.get("scheduler_type") != scheduler_type:
+        raise ValueError("V3 checkpoint scheduler type mismatch")
+
+    _assert_model_matches_config(model, config)
+    current_model = model.state_dict()
+    if set(saved_model) != set(current_model):
+        raise ValueError("V3 checkpoint model state keys do not match the instantiated model")
+    for name, current_tensor in current_model.items():
+        saved_tensor = saved_model[name]
+        if not isinstance(saved_tensor, torch.Tensor):
+            raise ValueError(f"V3 checkpoint model tensor is invalid: {name}")
+        if saved_tensor.shape != current_tensor.shape or saved_tensor.dtype != current_tensor.dtype:
+            raise ValueError(f"V3 checkpoint model tensor shape/dtype mismatch: {name}")
+
+    current_optimizer_groups = optimizer.state_dict().get("param_groups", [])
+    saved_optimizer_groups = saved_optimizer.get("param_groups", [])
+    if len(current_optimizer_groups) != len(saved_optimizer_groups):
+        raise ValueError("V3 checkpoint optimizer parameter-group count mismatch")
+    for current_group, saved_group in zip(current_optimizer_groups, saved_optimizer_groups, strict=True):
+        if len(current_group.get("params", [])) != len(saved_group.get("params", [])):
+            raise ValueError("V3 checkpoint optimizer parameter layout mismatch")
+
+    python_state = rng_state["python"]
+    numpy_state = rng_state["numpy"]
+    torch_state = rng_state["torch_cpu"]
+    try:
+        random.Random().setstate(python_state)
+        np.random.RandomState().set_state(numpy_state)
+    except Exception as exc:
+        raise ValueError(f"V3 checkpoint Python/NumPy RNG state is invalid: {exc}") from exc
+    if not isinstance(torch_state, torch.Tensor) or torch_state.dtype != torch.uint8 or torch_state.ndim != 1:
+        raise ValueError("V3 checkpoint Torch CPU RNG state is invalid")
+
+    # Perform state mutation only after all compatibility checks above pass.
+    model.load_state_dict(saved_model, strict=True)
+    optimizer.load_state_dict(saved_optimizer)
+    scheduler.load_state_dict(saved_scheduler)
+    random.setstate(python_state)
+    np.random.set_state(numpy_state)
+    torch.set_rng_state(torch_state.detach().cpu())
     payload["lineage"] = lineage
     payload["data_state"] = data_state
     return step, payload
