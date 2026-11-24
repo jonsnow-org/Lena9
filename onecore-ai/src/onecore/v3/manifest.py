@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 from urllib.parse import urlparse
 
@@ -47,11 +47,21 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def validate_v3_manifest(records: Iterable[dict[str, Any]], assets_root: str | Path,
-                          minimum_train: int = 100,
-                          minimum_holdout: int = 10) -> dict[str, Any]:
+def validate_v3_manifest(
+    records: Iterable[dict[str, Any]],
+    assets_root: str | Path,
+    minimum_train: int = 100,
+    minimum_holdout: int = 10,
+    *,
+    trusted_asset_hashes: dict[str, str] | None = None,
+    lazy_assets: bool = False,
+) -> dict[str, Any]:
     """Count only usable external records and reject split/asset leakage."""
     root = Path(assets_root).resolve()
+    if lazy_assets and not isinstance(trusted_asset_hashes, dict):
+        raise ValueError("lazy V3 asset validation requires a trusted SHA-256 map")
+    if not lazy_assets and trusted_asset_hashes is not None:
+        raise ValueError("trusted_asset_hashes is only valid with lazy_assets=True")
     coverage = {split: {group: 0 for group in TASK_GROUPS} for split in SPLITS}
     errors: list[str] = []
     seen_ids: set[str] = set()
@@ -103,18 +113,39 @@ def validate_v3_manifest(records: Iterable[dict[str, Any]], assets_root: str | P
             continue
         valid_assets = True
         for relative in paths:
-            asset_path = (root / relative).resolve()
-            try:
-                asset_path.relative_to(root)
-            except ValueError:
-                errors.append(f"record {record_id}: asset escapes assets root: {relative}")
+            safe_path = PurePosixPath(str(relative).replace("\\", "/"))
+            if (
+                not str(relative).strip()
+                or safe_path.is_absolute()
+                or any(part in {"", ".", ".."} for part in safe_path.parts)
+            ):
+                errors.append(f"record {record_id}: unsafe asset path: {relative}")
                 valid_assets = False
                 continue
-            if not asset_path.is_file():
-                errors.append(f"record {record_id}: missing asset {relative}")
-                valid_assets = False
-                continue
-            digest = _sha256(asset_path)
+            safe = safe_path.as_posix()
+            if lazy_assets:
+                digest = trusted_asset_hashes.get(safe) if trusted_asset_hashes else None
+                if (
+                    not isinstance(digest, str) or len(digest) != 64
+                    or any(char not in "0123456789abcdef" for char in digest.lower())
+                ):
+                    errors.append(f"record {record_id}: asset has no trusted SHA-256: {safe}")
+                    valid_assets = False
+                    continue
+                digest = digest.lower()
+            else:
+                asset_path = (root / safe).resolve()
+                try:
+                    asset_path.relative_to(root)
+                except ValueError:
+                    errors.append(f"record {record_id}: asset escapes assets root: {safe}")
+                    valid_assets = False
+                    continue
+                if not asset_path.is_file():
+                    errors.append(f"record {record_id}: missing asset {safe}")
+                    valid_assets = False
+                    continue
+                digest = _sha256(asset_path)
             prior_asset = asset_splits.get(digest)
             if prior_asset is not None and prior_asset[1] != record_id:
                 prior_split, prior_record = prior_asset
@@ -126,7 +157,7 @@ def validate_v3_manifest(records: Iterable[dict[str, Any]], assets_root: str | P
                 valid_assets = False
                 continue
             asset_splits[digest] = (split, record_id)
-            asset_hashes[relative] = digest
+            asset_hashes[safe] = digest
         if not valid_assets:
             continue
 
@@ -151,10 +182,19 @@ def validate_v3_manifest(records: Iterable[dict[str, Any]], assets_root: str | P
     }
 
 
-def assert_v3_external_coverage(records: Iterable[dict[str, Any]], assets_root: str | Path,
-                                minimum_train: int = 100,
-                                minimum_holdout: int = 10) -> dict[str, Any]:
-    report = validate_v3_manifest(records, assets_root, minimum_train, minimum_holdout)
+def assert_v3_external_coverage(
+    records: Iterable[dict[str, Any]],
+    assets_root: str | Path,
+    minimum_train: int = 100,
+    minimum_holdout: int = 10,
+    *,
+    trusted_asset_hashes: dict[str, str] | None = None,
+    lazy_assets: bool = False,
+) -> dict[str, Any]:
+    report = validate_v3_manifest(
+        records, assets_root, minimum_train, minimum_holdout,
+        trusted_asset_hashes=trusted_asset_hashes, lazy_assets=lazy_assets,
+    )
     if not report["passed"]:
         raise RuntimeError(
             "OneCore v3 external media gate blocked training: "

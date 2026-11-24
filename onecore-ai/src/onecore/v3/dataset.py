@@ -8,7 +8,7 @@ import random
 from array import array
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 from urllib.parse import urlparse
 
 import numpy as np
@@ -117,6 +117,8 @@ class V3JointDataLoader:
         video_window_frames: int | None = 16,
         benchmark_manifest_view: bool = False,
         tokenizer_train_manifest_sha256: str | None = None,
+        trusted_asset_hashes: Mapping[str, str] | None = None,
+        asset_provider: Callable[[str, Path, str], None] | Any | None = None,
     ) -> None:
         if not isinstance(manifest_paths, Mapping) or set(manifest_paths) != {
             "train", "validation", "test"
@@ -163,6 +165,11 @@ class V3JointDataLoader:
         self.manifest_paths = {key: Path(value).resolve() for key, value in manifest_paths.items()}
         self.assets_root = Path(assets_root).resolve()
         self.tokenizer_path = Path(tokenizer_path).resolve()
+        self.asset_provider = asset_provider
+        if asset_provider is not None and not isinstance(trusted_asset_hashes, Mapping):
+            raise ValueError("lazy V3 assets require the conversion report's trusted asset SHA-256 map")
+        if asset_provider is None and trusted_asset_hashes is not None:
+            raise ValueError("trusted asset hashes require an asset provider")
         self.max_text_tokens = max_text_tokens
         self.audio_window_seconds = (
             None if audio_window_seconds is None else float(audio_window_seconds)
@@ -170,7 +177,9 @@ class V3JointDataLoader:
         self.video_window_frames = video_window_frames
 
         self.fingerprint = fingerprint_validated_v3_manifests(
-            self.manifest_paths, self.assets_root, minimum_train=100, minimum_holdout=10
+            self.manifest_paths, self.assets_root, minimum_train=100, minimum_holdout=10,
+            trusted_asset_hashes=(dict(trusted_asset_hashes) if trusted_asset_hashes is not None else None),
+            lazy_assets=asset_provider is not None,
         )
         self.manifest_sha256 = self.fingerprint["manifest_sha256"]
         self.train_manifest_sha256 = self.fingerprint["manifest_files"]["train"]["sha256"]
@@ -382,17 +391,27 @@ class V3JointDataLoader:
             target.relative_to(self.assets_root)
         except ValueError as exc:
             raise ValueError(f"V3 asset escapes assets root: {safe}") from exc
-        if not target.is_file():
-            raise FileNotFoundError(f"V3 asset is missing for {record_id}: {safe}")
         expected = self._asset_hashes.get(safe)
         if not isinstance(expected, str) or len(expected) != 64:
             raise ValueError(f"V3 asset has no validated SHA-256 entry: {safe}")
+        if not target.is_file():
+            if self.asset_provider is None:
+                raise FileNotFoundError(f"V3 asset is missing for {record_id}: {safe}")
+            self.asset_provider(safe, target, expected.lower())
+        if not target.is_file():
+            raise FileNotFoundError(f"V3 lazy asset provider did not materialize {record_id}: {safe}")
         signature = self._stat_signature(target)
         if self._verified_assets.get(safe) != signature:
             if _sha256_file(target) != expected:
                 raise ValueError(f"V3 asset SHA-256 changed after manifest validation: {safe}")
             self._verified_assets[safe] = signature
         return target
+
+    def _release_asset(self, relative: str, target: Path) -> None:
+        release = getattr(self.asset_provider, "release", None)
+        if callable(release):
+            release(relative, target)
+            self._verified_assets.pop(relative, None)
 
     def _read_row(self, cursor_id: str, index: int) -> dict[str, Any]:
         if self._stat_signature(self.manifest_paths["train"]) != self._train_manifest_signature:
@@ -463,8 +482,12 @@ class V3JointDataLoader:
         metadata.update(condition_metadata)
         if family == "image":
             relative = _safe_relative(media["source_asset"])
-            with Image.open(self._resolve_asset(relative, record_id)) as image:
-                pixels = np.asarray(image.convert("RGB"), dtype=np.float32).copy() / 255.0
+            image_path = self._resolve_asset(relative, record_id)
+            try:
+                with Image.open(image_path) as image:
+                    pixels = np.asarray(image.convert("RGB"), dtype=np.float32).copy() / 255.0
+            finally:
+                self._release_asset(relative, image_path)
             tensor = torch.from_numpy(pixels).permute(2, 0, 1).unsqueeze(0).contiguous()
             metadata.update({
                 "width": int(tensor.shape[-1]), "height": int(tensor.shape[-2]),
@@ -479,23 +502,27 @@ class V3JointDataLoader:
             relative = _safe_relative(media["training_asset"])
             path = self._resolve_asset(relative, record_id)
             raw_asset = media.get("source_asset")
-            if isinstance(raw_asset, str) and raw_asset.strip() and raw_asset != relative:
-                self._resolve_asset(_safe_relative(raw_asset), record_id)
-            with sf.SoundFile(str(path)) as stream:
-                rate, channels, total = int(stream.samplerate), int(stream.channels), int(len(stream))
-                if rate != int(self.config.audio_sample_rate):
-                    raise ValueError(f"V3 audio row is not canonical {self.config.audio_sample_rate} Hz")
-                if channels not in (1, int(self.config.audio_channels)):
-                    raise ValueError(f"V3 audio channels are incompatible with config: {record_id}")
-                declared_channels = int(media.get("training_channels", media.get("channels", channels)))
-                if channels != declared_channels or total < 1:
-                    raise ValueError(f"V3 audio metadata/payload mismatch: {record_id}")
-                window = total if self.audio_window_seconds is None else min(
-                    total, max(1, int(round(self.audio_window_seconds * rate)))
-                )
-                start = _window_start(row_hash, epoch, total - window, family)
-                stream.seek(start)
-                samples = stream.read(frames=window, dtype="float32", always_2d=True)
+            # The conversion report already binds the preserved raw source hash.
+            # Training consumes only the canonical derivative; avoid downloading the
+            # potentially much larger raw source file solely for a second existence check.
+            try:
+                with sf.SoundFile(str(path)) as stream:
+                    rate, channels, total = int(stream.samplerate), int(stream.channels), int(len(stream))
+                    if rate != int(self.config.audio_sample_rate):
+                        raise ValueError(f"V3 audio row is not canonical {self.config.audio_sample_rate} Hz")
+                    if channels not in (1, int(self.config.audio_channels)):
+                        raise ValueError(f"V3 audio channels are incompatible with config: {record_id}")
+                    declared_channels = int(media.get("training_channels", media.get("channels", channels)))
+                    if channels != declared_channels or total < 1:
+                        raise ValueError(f"V3 audio metadata/payload mismatch: {record_id}")
+                    window = total if self.audio_window_seconds is None else min(
+                        total, max(1, int(round(self.audio_window_seconds * rate)))
+                    )
+                    start = _window_start(row_hash, epoch, total - window, family)
+                    stream.seek(start)
+                    samples = stream.read(frames=window, dtype="float32", always_2d=True)
+            finally:
+                self._release_asset(relative, path)
             if samples.shape[0] != window:
                 raise ValueError(f"V3 audio window read was incomplete: {record_id}")
             waveform = torch.from_numpy(samples.T.copy()).unsqueeze(0).contiguous()
@@ -519,10 +546,14 @@ class V3JointDataLoader:
         frames = []
         dimensions = set()
         for relative in selected:
-            with Image.open(self._resolve_asset(relative, record_id)) as image:
-                pixels = np.asarray(image.convert("RGB"), dtype=np.float32).copy() / 255.0
-            dimensions.add((int(pixels.shape[0]), int(pixels.shape[1])))
-            frames.append(pixels)
+            frame_path = self._resolve_asset(relative, record_id)
+            try:
+                with Image.open(frame_path) as image:
+                    pixels = np.asarray(image.convert("RGB"), dtype=np.float32).copy() / 255.0
+                dimensions.add((int(pixels.shape[0]), int(pixels.shape[1])))
+                frames.append(pixels)
+            finally:
+                self._release_asset(relative, frame_path)
         if not frames or len(dimensions) != 1:
             raise ValueError(f"V3 video frames are empty or inconsistent: {record_id}")
         video = torch.from_numpy(np.stack(frames)).permute(0, 3, 1, 2).unsqueeze(0).contiguous()
@@ -715,6 +746,9 @@ class V3JointDataLoader:
         stream = getattr(self, "_manifest_stream", None)
         if stream is not None and not stream.closed:
             stream.close()
+        close_provider = getattr(self.asset_provider, "close", None)
+        if callable(close_provider):
+            close_provider()
 
     def __enter__(self) -> "V3JointDataLoader":
         return self

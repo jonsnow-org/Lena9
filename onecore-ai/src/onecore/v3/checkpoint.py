@@ -274,6 +274,8 @@ def fingerprint_validated_v3_manifests(
     *,
     minimum_train: int = 100,
     minimum_holdout: int = 10,
+    trusted_asset_hashes: dict[str, str] | None = None,
+    lazy_assets: bool = False,
 ) -> dict[str, Any]:
     """Stream split manifests and bind their bytes plus validated assets."""
     required = {"train", "validation", "test"}
@@ -315,6 +317,8 @@ def fingerprint_validated_v3_manifests(
         assets_root,
         minimum_train=minimum_train,
         minimum_holdout=minimum_holdout,
+        trusted_asset_hashes=trusted_asset_hashes,
+        lazy_assets=lazy_assets,
     )
     for split in ("train", "validation", "test"):
         current_sha = sha256_file(Path(manifest_paths[split]).resolve())

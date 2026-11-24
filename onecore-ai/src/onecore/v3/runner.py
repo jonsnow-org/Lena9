@@ -73,6 +73,8 @@ def run_v3_training(
     threads: int = 4,
     resume_checkpoint: str | Path | None = None,
     expected_parent_checkpoint_sha256: str | None = None,
+    trusted_asset_hashes: dict[str, str] | None = None,
+    asset_provider: Any | None = None,
 ) -> dict[str, Any]:
     """Train a requested bounded segment and atomically save resumable V3 state."""
     if isinstance(steps, bool) or not isinstance(steps, int) or steps < 1:
@@ -139,6 +141,8 @@ def run_v3_training(
         max_text_tokens=512,
         audio_window_seconds=5.0,
         video_window_frames=16,
+        trusted_asset_hashes=trusted_asset_hashes,
+        asset_provider=asset_provider,
     ) as loader:
         global_step = 0
         session = 1
@@ -261,10 +265,15 @@ def run_v3_training(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run resumable five-family OneCore V3 CPU training")
-    parser.add_argument("--train-manifest", required=True)
-    parser.add_argument("--validation-manifest", required=True)
-    parser.add_argument("--test-manifest", required=True)
+    parser.add_argument("--train-manifest")
+    parser.add_argument("--validation-manifest")
+    parser.add_argument("--test-manifest")
     parser.add_argument("--assets-root", required=True)
+    parser.add_argument("--conversion-report")
+    parser.add_argument("--corpus-artifact-id", type=int)
+    parser.add_argument("--github-repo", default="jonsnow-org/Lena9")
+    parser.add_argument("--github-token", default=os.environ.get("GITHUB_TOKEN"))
+    parser.add_argument("--manifest-output-dir")
     parser.add_argument("--tokenizer", required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--steps", type=int, required=True)
@@ -280,28 +289,68 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--resume-checkpoint")
     parser.add_argument("--expected-parent-checkpoint-sha256")
     args = parser.parse_args(argv)
-    result = run_v3_training(
-        manifest_paths={
+    asset_provider = None
+    trusted_asset_hashes = None
+    manifest_paths = None
+    if args.corpus_artifact_id is not None:
+        if not args.conversion_report or not args.github_token:
+            raise ValueError("remote V3 training requires --conversion-report and --github-token")
+        if args.manifest_output_dir is None:
+            raise ValueError("remote V3 training requires --manifest-output-dir")
+        report = json.loads(Path(args.conversion_report).read_text(encoding="utf-8"))
+        gate = report.get("manifest_gate")
+        if not isinstance(gate, dict) or gate.get("passed") is not True:
+            raise ValueError("pinned V3 conversion report does not prove manifest_gate.passed=true")
+        coverage = gate.get("coverage") or {}
+        for split in ("train", "validation", "test"):
+            minimum = 100 if split == "train" else 10
+            for family in ("text", "tool", "image", "audio", "video"):
+                count = int((coverage.get(split) or {}).get(family, 0))
+                if count < minimum:
+                    raise ValueError(f"pinned V3 corpus coverage is below quota: {split}/{family}={count}")
+        trusted_asset_hashes = gate.get("asset_hashes")
+        if not isinstance(trusted_asset_hashes, dict) or not trusted_asset_hashes:
+            raise ValueError("pinned V3 conversion report is missing its asset SHA-256 map")
+        from .remote_assets import GitHubArtifactAssetProvider, extract_v3_manifest_bundle
+        manifest_paths = extract_v3_manifest_bundle(
+            args.github_repo, args.corpus_artifact_id, args.github_token, args.manifest_output_dir,
+        )
+        asset_provider = GitHubArtifactAssetProvider(
+            args.github_repo, args.corpus_artifact_id, args.github_token, args.assets_root,
+        )
+    else:
+        if not all((args.train_manifest, args.validation_manifest, args.test_manifest)):
+            raise ValueError("local V3 training requires train, validation, and test manifests")
+        manifest_paths = {
             "train": args.train_manifest,
             "validation": args.validation_manifest,
             "test": args.test_manifest,
-        },
-        assets_root=args.assets_root,
-        tokenizer_path=args.tokenizer,
-        output_dir=args.output_dir,
-        steps=args.steps,
-        total_steps=args.total_steps,
-        warmup_steps=args.warmup_steps,
-        learning_rate=args.learning_rate,
-        weight_decay=args.weight_decay,
-        max_grad_norm=args.max_grad_norm,
-        checkpoint_every=args.checkpoint_every,
-        run_id=args.run_id,
-        seed=args.seed,
-        threads=args.threads,
-        resume_checkpoint=args.resume_checkpoint,
-        expected_parent_checkpoint_sha256=args.expected_parent_checkpoint_sha256,
-    )
+        }
+
+    try:
+        result = run_v3_training(
+            manifest_paths=manifest_paths,
+            assets_root=args.assets_root,
+            tokenizer_path=args.tokenizer,
+            output_dir=args.output_dir,
+            steps=args.steps,
+            total_steps=args.total_steps,
+            warmup_steps=args.warmup_steps,
+            learning_rate=args.learning_rate,
+            weight_decay=args.weight_decay,
+            max_grad_norm=args.max_grad_norm,
+            checkpoint_every=args.checkpoint_every,
+            run_id=args.run_id,
+            seed=args.seed,
+            threads=args.threads,
+            resume_checkpoint=args.resume_checkpoint,
+            expected_parent_checkpoint_sha256=args.expected_parent_checkpoint_sha256,
+            trusted_asset_hashes=trusted_asset_hashes,
+            asset_provider=asset_provider,
+        )
+    finally:
+        if asset_provider is not None:
+            asset_provider.close()
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
 
