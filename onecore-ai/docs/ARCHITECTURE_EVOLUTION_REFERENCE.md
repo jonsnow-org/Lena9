@@ -792,3 +792,24 @@ Added the independent `onecore.v3.tokenizer` module and `onecore-v3-tokenizer` p
 - Adds a verifier that reloads the serialized tokenizer and rejects changed bytes, wrong vocabulary, invalid special-token IDs, config mismatch, missing evidence, non-external or non-train evidence, validation/test usage, and manifest mismatch.
 
 Regression tests cover a tiny exact-vocabulary BPE fit, pinned external train-only filtering, invalid revision/row hashes/URLs, bootstrap rejection, special-token evidence and SHA-256 mismatch, output immutability and overwrite refusal. The implementation and tests are committed with CI pending; the actual 32,000-token tokenizer has **not** been trained yet because the final V3 corpus artifact is still awaiting Run #605 completion. Do not label a tokenizer as fitted until the resulting JSON and evidence sidecar exist and verify successfully.
+
+
+### V3 tokenizer-fit failure diagnosis and corrective verification — 2026-11-24
+
+This update supersedes the earlier statement that the first tokenizer fit was merely pending. The existing dedicated tokenizer workflow was already present on the V3 branch; no additional workflow was created in this correction.
+
+**Observed failures and preserved successes**
+- Tokenizer workflow Run #1 (45336109095) completed its source-run/artifact preflight and successfully range-extracted only data/train.jsonl from V3 corpus artifact 14892594659. It did not download the full 24.43 GB corpus ZIP or any image/audio/video assets. The tokenizer fit stopped before output publication on text row hf-c4_ar-000d12d85c1a305d51f51aa4.
+- Root cause: onecore.data.classify_record_data canonically maps external_staged and external_reviewed to external, and the V3 manifest gate uses external_record_is_trainable; however, the tokenizer also required the raw field to equal the literal string external. The row therefore passed the shared external classifier but was rejected by the stricter, inconsistent string comparison.
+- The V3 tokenizer now uses the same external_record_is_trainable predicate as the corpus gate. It still requires train split, immutable source revision, unique source-row SHA-256, valid HTTP(S) source URL, non-empty text and the minimum external train-text count. Bootstrap, synthetic and owner-curated records remain rejected.
+- Verify Run #614 (45336109032) had 260 passing tests and one failure in test_v3_train_manifest_extractor_refuses_to_overwrite_existing_file: optional range-reader dependencies were checked before the existing-file guard. The guard now runs first, so refusing overwrite is deterministic even when requests/remotezip are absent from the lean Verify environment.
+- Regression tests cover acceptance of the canonical external aliases and rejection of owner-curated/bootstrap text. Workflow policy tests require same-commit Verify success, exact source artifact/report digests and sizes, and a passing five-family report before the next fit attempt.
+
+**Pinned evidence and execution**
+- Corpus Run #605 (45325008221) remains the source of truth: manifest gate passed, with train 1100/900/591525/14000/100, validation 165/10/22552/400/10, test 148/10/22758/400/10 in audio/image/text/tool/video order.
+- Corpus artifact: ID 14892594659, 24,432,975,285 bytes, digest sha256:302e6eb082ad82ee892b00153ac068f60505cdf5de5d14f3b82a919e576740a2.
+- Report artifact: ID 14893020087, 892,194 bytes, digest sha256:151677083079aee3cfe5a39cbe07fbd47908e9c74560312cef9c137c64fcd1ba.
+- Request revision 2 pins both artifacts and requests a single retry. The existing tokenizer workflow waits for canonical Verify on the exact commit, checks the source run/branch/SHA and both artifact metadata records, downloads only the small report, rechecks exact five-family coverage, and range-extracts only the train manifest.
+- No tokenizer artifact has been published yet. Do not claim a fitted 32,000-token tokenizer until the JSON and evidence sidecar are uploaded and independently verified. No optimizer training has started.
+
+**Correction commit:** 93498a57d8d7ae3c33fb55ade2375c2f86864f86. Foundation remains the frozen V2 archive; main remains 0b5ec69e839bfc6086a358511b54649b03c7be9a. No new branch or PR was created.
