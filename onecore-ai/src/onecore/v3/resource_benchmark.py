@@ -405,7 +405,7 @@ def _sequence_length_distributions(
             response_text = response if isinstance(response, str) else json.dumps(
                 response, ensure_ascii=False, sort_keys=True
             )
-            value = prompt + "\\n" + response_text
+            value = prompt + "\n" + response_text
         else:
             continue
 
@@ -416,6 +416,7 @@ def _sequence_length_distributions(
     flush("text")
     flush("tool")
     return {family: _distribution(values) for family, values in lengths.items()}
+
 
 def _manifest_bundle_fingerprint(
     manifests: dict[str, Path], gate: dict[str, Any],
