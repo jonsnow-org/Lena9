@@ -77,7 +77,7 @@ def test_v3_flops_respects_video_chunk_memory_and_flow_context_caps():
     video = report["paths"]["video"]["breakdown"]
     assert video["video_temporal_transformer"] > 0
     assert video["shared_recurrent_core"] > 0
-    flow = report["flow_sampling"]["video"]
+    flow = report["flow_sampling"]["modalities"]["video"]
     assert flow["target_tokens"] == 2 * 4  # two generation frames, four spatial patches per frame
     assert flow["effective_target_tokens_after_context_cap"] <= config.max_flow_context_tokens
     assert flow["sampling_dense_flops"] == flow["per_step_dense_flops"] * 3
