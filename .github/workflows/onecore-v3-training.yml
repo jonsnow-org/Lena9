@@ -106,7 +106,7 @@ jobs:
           }
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as stream:
               for key, value in outputs.items():
-                  stream.write(f"{key}={value}\\n")
+                  stream.write(f"{key}={value}\n")
           print({"training_request": outputs, "corpus_artifact_id": expected["corpus_artifact_id"]})
           PY
       - name: Download the independently trained V3 tokenizer
@@ -149,8 +149,8 @@ jobs:
           if not isinstance(asset_hashes, dict) or len(asset_hashes) < 100:
               raise SystemExit("conversion report is missing its validated media asset hash map")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as stream:
-              stream.write(f"tokenizer={token_files[0]}\\n")
-              stream.write(f"conversion_report={reports[0]}\\n")
+              stream.write(f"tokenizer={token_files[0]}\n")
+              stream.write(f"conversion_report={reports[0]}\n")
           print({
               "tokenizer_sha256": token_sha,
               "manifest_gate_passed": True,
@@ -164,24 +164,24 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "${{ runner.temp }}/onecore-v3-assets" "${{ runner.temp }}/onecore-v3-manifests" onecore-ai/run-state/v3
-          /usr/bin/time -v python -m onecore.v3.runner \\
-            --corpus-artifact-id 14892594659 \\
-            --github-repo "${{ github.repository }}" \\
-            --github-token "$GITHUB_TOKEN" \\
-            --conversion-report "${{ steps.inputs.outputs.conversion_report }}" \\
-            --manifest-output-dir "${{ runner.temp }}/onecore-v3-manifests" \\
-            --assets-root "${{ runner.temp }}/onecore-v3-assets" \\
-            --tokenizer "${{ steps.inputs.outputs.tokenizer }}" \\
-            --output-dir onecore-ai/run-state/v3 \\
-            --steps "${{ steps.request.outputs.steps }}" \\
-            --total-steps "${{ steps.request.outputs.total_steps }}" \\
-            --warmup-steps "${{ steps.request.outputs.warmup_steps }}" \\
-            --learning-rate "${{ steps.request.outputs.learning_rate }}" \\
-            --weight-decay "${{ steps.request.outputs.weight_decay }}" \\
-            --max-grad-norm "${{ steps.request.outputs.max_grad_norm }}" \\
-            --checkpoint-every "${{ steps.request.outputs.checkpoint_every }}" \\
-            --run-id "$GITHUB_RUN_ID" \\
-            --seed "${{ steps.request.outputs.seed }}" \\
+          /usr/bin/time -v python -m onecore.v3.runner \
+            --corpus-artifact-id 14892594659 \
+            --github-repo "${{ github.repository }}" \
+            --github-token "$GITHUB_TOKEN" \
+            --conversion-report "${{ steps.inputs.outputs.conversion_report }}" \
+            --manifest-output-dir "${{ runner.temp }}/onecore-v3-manifests" \
+            --assets-root "${{ runner.temp }}/onecore-v3-assets" \
+            --tokenizer "${{ steps.inputs.outputs.tokenizer }}" \
+            --output-dir onecore-ai/run-state/v3 \
+            --steps "${{ steps.request.outputs.steps }}" \
+            --total-steps "${{ steps.request.outputs.total_steps }}" \
+            --warmup-steps "${{ steps.request.outputs.warmup_steps }}" \
+            --learning-rate "${{ steps.request.outputs.learning_rate }}" \
+            --weight-decay "${{ steps.request.outputs.weight_decay }}" \
+            --max-grad-norm "${{ steps.request.outputs.max_grad_norm }}" \
+            --checkpoint-every "${{ steps.request.outputs.checkpoint_every }}" \
+            --run-id "$GITHUB_RUN_ID" \
+            --seed "${{ steps.request.outputs.seed }}" \
             --threads "${{ steps.request.outputs.threads }}"
       - name: Upload the real V3 checkpoint and training evidence
         if: success()
