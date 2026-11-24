@@ -226,6 +226,31 @@ def _assert_scheduler_uses_optimizer(scheduler: Any, optimizer: torch.optim.Opti
     if scheduler is None or getattr(scheduler, "optimizer", None) is not optimizer:
         raise ValueError("V3 scheduler must be attached to the exact optimizer being checkpointed")
 
+def _assert_optimizer_matches_model(
+    model: OneCoreV3,
+    optimizer: torch.optim.Optimizer,
+) -> None:
+    """Require the optimizer to cover this model's trainable parameters exactly once."""
+    expected = {
+        id(parameter)
+        for parameter in model.parameters()
+        if parameter.requires_grad
+    }
+    observed: list[int] = [
+        id(parameter)
+        for group in optimizer.param_groups
+        for parameter in group.get("params", [])
+    ]
+    if len(observed) != len(set(observed)):
+        raise ValueError("V3 optimizer contains duplicated parameters")
+    if set(observed) != expected:
+        missing = len(expected - set(observed))
+        foreign = len(set(observed) - expected)
+        raise ValueError(
+            "V3 optimizer must contain exactly the model's trainable parameters "
+            f"(missing={missing}, foreign={foreign})"
+        )
+
 
 def _validate_optimizer_state_layout(
     optimizer: torch.optim.Optimizer,
@@ -288,6 +313,7 @@ def save_v3_checkpoint(
     if isinstance(global_step, bool) or not isinstance(global_step, int) or global_step < 0:
         raise ValueError("global_step must be a non-negative integer")
     _assert_scheduler_uses_optimizer(scheduler, optimizer)
+    _assert_optimizer_matches_model(model, optimizer)
     _assert_model_matches_config(model, config)
     manifest_sha256 = _require_sha256(manifest_sha256, "manifest_sha256")
     tokenizer_bytes, tokenizer_vocab_size, tokenizer_sha256 = _tokenizer_payload(
@@ -432,6 +458,7 @@ def load_v3_checkpoint(
     optimizer_type = f"{type(optimizer).__module__}.{type(optimizer).__qualname__}"
     scheduler_type = f"{type(scheduler).__module__}.{type(scheduler).__qualname__}"
     _assert_scheduler_uses_optimizer(scheduler, optimizer)
+    _assert_optimizer_matches_model(model, optimizer)
     _validate_optimizer_state_layout(optimizer, saved_optimizer)
     if payload.get("optimizer_type") != optimizer_type:
         raise ValueError("V3 checkpoint optimizer type mismatch")
