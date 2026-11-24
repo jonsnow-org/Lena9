@@ -1,0 +1,66 @@
+name: Bots Daily Publishing Cycle
+
+# يشغّل دورة نشر/تفاعل بوتات الكتّاب الافتراضيين على الموقع الحي — كل
+# استدعاء ينشر مقالاً وتغريدة لبوت واحد لم ينشر بعد اليوم، فيُستدعى كل ساعتين
+# حتى ينشر كل بوت مقاله وتغريدته اليومية، مع إعجابات وتعليقات تلقائية. الخادم (server.ts) هو من يقرر فعلياً ما إذا كانت
+# الدورة تعمل أم لا (يتحقق من settings/publishingBots ومن عدم تكرار
+# النشر لنفس اليوم) — هذا السير مجرد نبضة يومية تستدعيه، لا أكثر.
+#
+# ملاحظة: نفس درس سير health-check.yml — الجدولة عبر schedule: تعمل فقط
+# من الفرع الافتراضي (main) في GitHub، فلا بد من دمج هذا الملف في main
+# قبل أن تبدأ الجدولة تعمل فعلياً.
+
+# ⚠️ ترشيد ساعات Render: بدل إيقاظ الخدمة كل ساعتين لبوت واحد، يعمل السير
+# مرتين يومياً (مع باقي السيرات في نفس النافذة) ويستدعي الدورة تتابعياً حتى
+# ينشر كل البوتات حصتها اليومية (الخادم يعيد skipped=true عندها).
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 7,17 * * *'
+
+jobs:
+  run-daily-cycle:
+    runs-on: ubuntu-latest
+    steps:
+      - name: POST /api/bots/run-daily-cycle
+        run: |
+          # 280s: الدورة تستدعي Gemini تتابعياً حتى 4 مرات (مقال + تغريدة +
+          # تعليقان)، وقد يتجاوز مجموعها 60 ثانية بسهولة — أثبت ذلك تشغيل
+          # حقيقي فشل بخطأ "curl: (28) Operation timed out after 60002ms".
+          for i in $(seq 1 15); do
+            status=$(curl -sS -o /tmp/body.txt -w "%{http_code}" --max-time 280 \
+              -X POST \
+              -H "x-bots-cron-secret: ${{ secrets.BOTS_CRON_SECRET }}" \
+              https://literium-wjct.onrender.com/api/bots/run-daily-cycle || echo "000")
+            echo "[$i] HTTP $status"
+            cat /tmp/body.txt || true
+            echo
+            if [ "$status" != "200" ] || grep -q '"skipped":true' /tmp/body.txt; then
+              break
+            fi
+          done
+
+          # ⚠️ محاولات سابقة استخدمت gh CLI (label create/issue create) هنا
+          # مباشرة لفتح Issue تشخيصي عند الفشل — لم تُنفَّذ فعلياً لسبب غير
+          # مفهوم رغم فشل حقيقي مؤكَّد مرتين متتاليتين (لا Issue ظهر إطلاقاً،
+          # حتى مع if: always() وبلا أي شرط YAML). بدل الاستمرار بتخمين سبب
+          # عدم عمل gh هنا تحديداً، نُعيد استخدام مسار مُثبَت العمل فعلياً
+          # اليوم (client-error-reports.yml يجمع من Firestore عبر هذه النقطة
+          # ويفتح Issue بنجاح) — إرسال الفشل كـ"خطأ عميل" عادي، فيظهر في نفس
+          # تقرير الأخطاء المُجمَّع كل 30 دقيقة بدل تكرار محاولة gh هنا.
+          if [ "$status" != "200" ]; then
+            body_content=$(cat /tmp/body.txt 2>/dev/null | head -c 2000)
+            curl -sS -X POST https://literium-wjct.onrender.com/api/client-errors/report \
+              -H "Content-Type: application/json" \
+              -d "$(node -e "
+                console.log(JSON.stringify({
+                  source: 'bots-daily-cycle.yml',
+                  message: 'HTTP ${status}: bots cycle call failed',
+                  stack: process.argv[1],
+                  time: new Date().toISOString(),
+                  page: 'github-actions://bots-daily-cycle'
+                }))
+              " "$body_content")" || true
+            echo "::error::فشل استدعاء دورة البوتات اليومية (HTTP $status)"
+            exit 1
+          fi

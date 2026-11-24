@@ -1,0 +1,17 @@
+{
+  "schema": "onecore-training-request-v1",
+  "stage": "evaluate_existing",
+  "steps": 150,
+  "purpose": "Re-evaluate the exact saved train-10 checkpoint at optimizer step 1500 with the corrected evaluation code. Preserve external-only validation/test losses and modality metrics; run deterministic synthetic_verified tool episodes only as an engineering regression track; verify immutable external source revisions and row-hash disjointness. Reuse onecore-state-train-10 from run 44985942863 and onecore-corpus-final from run 44925751665. No acquisition, no corpus gate rerun, and no optimizer updates.",
+  "request_id": "onecore-evaluate-existing-run-44985942863-train-10-engineering-eval-v2-20261122",
+  "data_profile": "expanded",
+  "base_corpus_run_id": "44925751665",
+  "start_fresh_joint_training": false,
+  "base_corpus_artifact_name": "onecore-corpus-final",
+  "resume_checkpoint_run_id": "44985942863",
+  "resume_checkpoint_artifact_name": "onecore-state-train-10",
+  "resume_optimizer_step": 1500,
+  "expected_final_optimizer_step": 1500,
+  "jobs": 10,
+  "total_optimizer_steps": 0
+}

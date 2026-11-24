@@ -43,3 +43,10 @@ The initial archive-guard test found duplicate job-level `if` keys in jobs that 
 - Run #58 on commit `c379a824a041fcf53d307d20ff505248c6809df2` concluded `skipped`, confirming the archived push-triggered bootstrap did not execute a job.
 
 The regression test asserts both the parsed expression and exactly one job-level `if` per job. Full Foundation CI on this corrected head remains required; Run #610 tested the prior duplicate-guard commit and is not evidence against this correction.
+
+
+## Full-tree restoration — 2026-11-24
+
+The V2 archive branch was repaired from the last verified complete Foundation tree after an earlier documentation-only update accidentally omitted unrelated repository entries. The repaired Foundation commit preserves the complete repository tree and applies only the intended archive/verification files on top of it. The V2 source, notebook, manifest, checkpoint lineage, and Actions history remain preserved. The canonical V3 branch and `main` are unchanged.
+
+The Foundation CI now also checks the archive guard independently of the unit tests: every job in both legacy V2 training workflows must have exactly one job-level `if: ${{ false }}`.

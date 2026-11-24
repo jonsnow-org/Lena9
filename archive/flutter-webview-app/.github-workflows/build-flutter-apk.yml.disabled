@@ -1,0 +1,816 @@
+name: Build Flutter Android APK
+
+# يبني تطبيق Literium الأصيل (Flutter) — منفصل تماماً عن سير build-apk.yml
+# الخاص بالنسخة السابقة (TWA)، الذي بقي كما هو بلا أي تعديل.
+#
+# ⚠️ هذا السير يشغّل `flutter create` على مشغّل GitHub نفسه (اتصال حقيقي +
+# أدوات Flutter حقيقية) لتوليد مجلد android/ الأصيل تلقائياً، بدل كتابته
+# يدوياً هنا — بنفس منطق سير build-apk.yml مع Bubblewrap سابقاً: لا يوجد
+# Flutter مثبَّت في بيئة كتابة هذا الكود، فتوليد المشروع الأصيل يتم في
+# المكان الوحيد الذي يملك الأداة الحقيقية.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'flutter_app/**'
+      - '.github/workflows/build-flutter-apk.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build-flutter-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # آخر محاولتين فشلتا بنمط متطابق: البناء يتقدّم بنجاح حتى منتصف مهمة
+      # Gradle الثقيلة assembleRelease (بعد رسالة "Already watching path")
+      # ثم يتجمّد بصمت لعدة دقائق قبل أن يصل خطأ من مُشغّل GitHub نفسه
+      # ("received a shutdown signal") يُنهي العملية قسراً — وليس خطأ برمجياً
+      # (pub get ينجح تماماً في كلتا المرتين). تحققنا أن هذا ليس بسبب تجاوز
+      # حد استخدام GitHub Actions المجاني (لوحة الفوترة تُظهر الاستخدام
+      # بالكامل ضمن الباقة المجانية). النمط يطابق مشكلة شائعة وموثّقة في بناء
+      # تطبيقات اندرويد على مشغّلات GitHub القياسية (~14 جيجا فقط): امتلاء
+      # مساحة القرص أثناء مرحلة R8/ضغط الكود الثقيلة (مفعّلة عمداً هنا لحل
+      # مشكلة انهيار التطبيق)، فيتجمّد Gradle ثم يُعتبر المُشغّل غير سليم
+      # ويُقتل خارجياً. هذه الخطوة تحرّر مساحة إضافية كبيرة (إزالة أدوات غير
+      # مستخدَمة هنا مثل .NET/Haskell/حزم ضخمة/صور Docker) قبل البناء —
+      # android: false يحافظ على SDK اندرويد لأننا نحتاجه فعلياً.
+      - name: Free disk space (prevent runner disk exhaustion during Gradle assembleRelease)
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          android: false
+          tool-cache: false
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          # ⚠️ كانت true سابقاً — لكن القرص لم يكن يوماً السبب الفعلي
+          # (٢٩ جيجا متاحة باستمرار عبر كل المحاولات)، وswap-storage:true
+          # في هذا الأمر لا "يضيف" مساحة تبادل بل "يزيل" ملف التبادل
+          # الافتراضي لدى GitHub لاسترجاع مساحة قرص لم نكن نحتاجها أصلاً —
+          # فكنّا فعلياً نُلغي وسادة أمان حقيقية للذاكرة (swap) بأنفسنا في كل
+          # تشغيل، وهو ما قد يفسّر جزئياً لماذا يتذبذب النجاح: أي ارتفاع
+          # طفيف في استهلاك الذاكرة أثناء R8 لم يعد له أي احتياطي يمتصّه.
+          swap-storage: false
+
+      # إضافة مساحة تبادل يدوية إضافية فوق ما تبقّى من GitHub افتراضياً —
+      # احتياط حقيقي أثناء ذروة استهلاك الذاكرة في R8/dexing (Heap + Native
+      # Memory + Metaspace)، بلا أي تكلفة (تخزين قرص فائض فقط، والقرص متوفر
+      # بكثرة). لا يضر إن كان السقف الفعلي للرام أعلى مما نظن؛ فائدته فقط
+      # إن كنا فعلاً قريبين من الحد.
+      - name: Allocate extra swap space
+        run: |
+          free -h
+          sudo fallocate -l 6G /extra-swapfile
+          sudo chmod 600 /extra-swapfile
+          sudo mkswap /extra-swapfile
+          sudo swapon /extra-swapfile
+          free -h
+
+      # مثبَّت على إصدار محدد بدل channel: stable وحدها — قناة stable انتقلت
+      # مؤخراً جداً (خلال آخر يوم أو يومين) إلى Flutter 3.47 الذي يفعّل AGP 9
+      # بدعم Kotlin مدمَج جديد كلياً؛ 3.44 كانت الإصدار المستقر منذ أشهر (مايو
+      # 2026) قبل ذلك. أربعة عشر تشغيلاً متتالياً فشلت جميعها بنفس خطأ ترجمة
+      # Kotlin داخل firebase_auth تحديداً تحت 3.47 — وحقيقة أن firebase_auth
+      # 6.6.0 نُشر قبل ~40 ساعة فقط توحي بأن هذا تعارض طازج بين أحدث إصداري
+      # Flutter وFirebase لم يتكيّف معه أحدهما بعد. التثبيت على 3.44.7
+      # (المسار الأطول اختباراً) يتفادى AGP 9/Kotlin المدمَج كلياً بدل محاولة
+      # إصلاح تعارض في مُصرِّف Kotlin نفسه لا نملك السيطرة عليه.
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.7'
+          channel: stable
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # google-services.json الحقيقي (من Firebase Console → مشروع literium
+      # → إضافة تطبيق Android) — سرّ FLUTTER_GOOGLE_SERVICES_JSON_BASE64،
+      # يُضاف يدوياً من لوحة GitHub Secrets (لا يمكنني إنشاؤه عبر الـ API).
+      - name: Restore google-services.json from secret
+        run: |
+          mkdir -p flutter_app/android/app
+          echo "${{ secrets.FLUTTER_GOOGLE_SERVICES_JSON_BASE64 }}" | base64 -d > flutter_app/android/app/google-services.json
+
+      # نفس مفتاح التوقيع المستخدم للنسخة السابقة (TWA) — سرّان موجودان
+      # أصلاً في هذا المستودع (ANDROID_KEYSTORE_BASE64/PASSWORD)، يُعاد
+      # استخدامهما هنا مباشرة، لا حاجة لأي سر جديد لهذه الخطوة.
+      - name: Restore signing keystore from secret
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > flutter_app/android/app/literium.keystore
+
+      - name: Generate the native android/ project (only if missing)
+        working-directory: flutter_app
+        run: |
+          # نتحقق من settings.gradle تحديداً وليس مجرد وجود مجلد android/ —
+          # مجلد android/app/ يكون موجوداً مسبقاً في هذه المرحلة لأن خطوة
+          # استرجاع google-services.json أعلاه أنشأته عبر mkdir -p لوضع
+          # الملفّين السرّيين فيه، فاختبار "-d android" وحده يعطي نتيجة
+          # خاطئة (يظن المشروع موجوداً) ويتجاوز flutter create بالكامل.
+          if [ ! -f "android/settings.gradle" ] && [ ! -f "android/settings.gradle.kts" ]; then
+            flutter create --platforms=android --org=studio.ai.literium --project-name=literium_app .
+          fi
+
+      # منذ إصدارات Flutter الحديثة (٣.٤٧+ ضمن هذا السير) يولّد flutter create
+      # مشروع Gradle بصيغة Kotlin DSL افتراضياً (settings.gradle.kts،
+      # build.gradle.kts) بدل صيغة Groovy القديمة (.gradle) التي كتبت لها هذه
+      # الخطوة أصلاً — فتُكتشف الصيغة الفعلية وقت التشغيل بدل افتراض واحدة.
+      - name: Wire the Google Services Gradle plugin
+        working-directory: flutter_app
+        run: |
+          python3 - <<'PY'
+          import os
+
+          settings_path = "android/settings.gradle.kts" if os.path.exists("android/settings.gradle.kts") else "android/settings.gradle"
+          is_kts = settings_path.endswith(".kts")
+          text = open(settings_path).read()
+          if "com.google.gms.google-services" not in text:
+              marker = 'id("com.android.application")' if is_kts else 'id "com.android.application"'
+              insert = ('    id("com.google.gms.google-services") version "4.4.2" apply false\n'
+                        if is_kts else
+                        '    id "com.google.gms.google-services" version "4.4.2" apply false\n')
+              idx = text.find(marker)
+              if idx == -1:
+                  raise SystemExit(f"لم يُعثر على كتلة plugins المتوقعة في {settings_path}")
+              line_end = text.find("\n", idx) + 1
+              text = text[:line_end] + insert + text[line_end:]
+              open(settings_path, "w").write(text)
+
+          app_gradle_path = "android/app/build.gradle.kts" if os.path.exists("android/app/build.gradle.kts") else "android/app/build.gradle"
+          is_app_kts = app_gradle_path.endswith(".kts")
+          text = open(app_gradle_path).read()
+          if "com.google.gms.google-services" not in text:
+              if is_app_kts:
+                  idx = text.find("plugins {")
+                  if idx == -1:
+                      raise SystemExit(f"لم يُعثر على كتلة plugins في {app_gradle_path}")
+                  line_end = text.find("\n", idx) + 1
+                  text = text[:line_end] + '    id("com.google.gms.google-services")\n' + text[line_end:]
+              else:
+                  text += '\napply plugin: "com.google.gms.google-services"\n'
+              open(app_gradle_path, "w").write(text)
+          PY
+
+      # مطلوب لـ firebase_crashlytics — نفس منطق كشف Kotlin DSL/Groovy وقت
+      # التشغيل المستخدم في خطوة Google Services أعلاه بالضبط، لأن الحاجة
+      # لهذا السجل ظهرت فقط بعد أن ثبت أن شاشة التشخيص في main.dart لا تظهر
+      # إطلاقاً عند الانهيار الفوري — ما يعني عطلاً أصلياً قبل بدء Dart،
+      # وCrashlytics هو الأداة الوحيدة القادرة على التقاط هذا النوع من
+      # الأعطال بلا حاسوب/ADB لدى المستخدم.
+      - name: Wire the Firebase Crashlytics Gradle plugin
+        working-directory: flutter_app
+        run: |
+          python3 - <<'PY'
+          import os
+
+          settings_path = "android/settings.gradle.kts" if os.path.exists("android/settings.gradle.kts") else "android/settings.gradle"
+          is_kts = settings_path.endswith(".kts")
+          text = open(settings_path).read()
+          if "com.google.firebase.crashlytics" not in text:
+              marker = 'id("com.android.application")' if is_kts else 'id "com.android.application"'
+              insert = ('    id("com.google.firebase.crashlytics") version "3.0.3" apply false\n'
+                        if is_kts else
+                        '    id "com.google.firebase.crashlytics" version "3.0.3" apply false\n')
+              idx = text.find(marker)
+              if idx == -1:
+                  raise SystemExit(f"لم يُعثر على كتلة plugins المتوقعة في {settings_path}")
+              line_end = text.find("\n", idx) + 1
+              text = text[:line_end] + insert + text[line_end:]
+              open(settings_path, "w").write(text)
+
+          app_gradle_path = "android/app/build.gradle.kts" if os.path.exists("android/app/build.gradle.kts") else "android/app/build.gradle"
+          is_app_kts = app_gradle_path.endswith(".kts")
+          text = open(app_gradle_path).read()
+          if "com.google.firebase.crashlytics" not in text:
+              if is_app_kts:
+                  idx = text.find("plugins {")
+                  if idx == -1:
+                      raise SystemExit(f"لم يُعثر على كتلة plugins في {app_gradle_path}")
+                  line_end = text.find("\n", idx) + 1
+                  text = text[:line_end] + '    id("com.google.firebase.crashlytics")\n' + text[line_end:]
+              else:
+                  text += '\napply plugin: "com.google.firebase.crashlytics"\n'
+              open(app_gradle_path, "w").write(text)
+          PY
+
+      - name: Add release signing config
+        working-directory: flutter_app
+        run: |
+          # applicationId ينتج بالفعل studio.ai.literium.literium_app من
+          # خطوة `flutter create --org=... --project-name=...` أعلاه — لا
+          # حاجة لتعديله هنا.
+          #
+          # ⚠️ minifyEnabled/shrinkResources مُفعَّلان هنا عمداً (لم يكونا
+          # مفعّلين سابقاً في محاولة قديمة، وسبّب غيابهما وقتها شكاً بأنهما
+          # قد يكونان الحل). التشخيص الفعلي (تشغيل حقيقي على محاكي داخل CI،
+          # التقاط adb logcat كاملاً) كشف السبب الحقيقي أخيراً بيقين تام:
+          #   java.lang.RuntimeException: Unable to get provider
+          #   androidx.startup.InitializationProvider: ...:
+          #   Failed to create an instance of androidx.work.impl.WorkDatabase
+          # هذا عطل R8 موثَّق ومعروف: مكتبة WorkManager (تستخدمها Google
+          # Mobile Ads SDK داخلياً) تُنشئ قاعدة بياناتها الداخلية
+          # (WorkDatabase) عبر فئة مولَّدة بواسطة Room تحديداً باسم
+          # WorkDatabase_Impl، والتي تُستدعى فقط بالانعكاس (reflection) وقت
+          # التشغيل — لا استدعاء مباشر بالكود يراه R8 عند تحليله الساكن. لذا
+          # R8 يحذفها بصفتها "غير مستخدَمة" رغم أنها ضرورية فعلاً، فيفشل
+          # WorkManager في تهيئة نفسه فور بدء التطبيق (عبر ContentProvider
+          # تلقائي يعمل قبل أي كود لدينا) وينهار التطبيق فوراً — بالضبط
+          # النمط المُلاحَظ. قواعد consumer-rules المرفقة مع كل مكتبة لا
+          # تكفي هنا (خلافاً للافتراض السابق) لأن هذا النمط تحديداً معروف
+          # بأنه يفلت منها أحياناً حسب إصدار AGP/R8. الحل الموثَّق: قواعد
+          # -keep صريحة لفئات WorkManager/Room المولَّدة.
+          python3 - <<'PY'
+          import os
+
+          app_gradle_path = "android/app/build.gradle.kts" if os.path.exists("android/app/build.gradle.kts") else "android/app/build.gradle"
+          is_kts = app_gradle_path.endswith(".kts")
+
+          proguard_path = "android/app/proguard-rules.pro"
+          if not os.path.exists(proguard_path):
+              open(proguard_path, "w").write(
+                  "# قواعد إضافية محلية يحتاجها R8 فعلياً رغم قواعد consumer-rules "
+                  "المرفقة مع كل مكتبة.\n"
+                  "# WorkManager (تستخدمه Google Mobile Ads SDK داخلياً) يُنشئ قاعدة "
+                  "بياناته عبر فئة Room مولَّدة تُستدعى بالانعكاس فقط، فيحذفها R8 "
+                  "خطأً ويسبب انهياراً فورياً عند بدء التطبيق (مؤكَّد فعلياً عبر "
+                  "تشغيل حقيقي على محاكي داخل CI والتقاط adb logcat):\n"
+                  "#   Failed to create an instance of androidx.work.impl.WorkDatabase\n"
+                  "-keep class androidx.work.** { *; }\n"
+                  "-keep class * extends androidx.work.ListenableWorker { "
+                  "<init>(android.content.Context, androidx.work.WorkerParameters); }\n"
+                  "-keepclassmembers class * extends androidx.room.RoomDatabase { "
+                  "public static <methods>; }\n"
+              )
+
+          text = open(app_gradle_path).read()
+          if "signingConfigs" not in text:
+              if is_kts:
+                  signing_block = '''
+          android {
+              signingConfigs {
+                  create("release") {
+                      storeFile = file("literium.keystore")
+                      storePassword = System.getenv("KEYSTORE_PASSWORD")
+                      keyAlias = "literium"
+                      keyPassword = System.getenv("KEYSTORE_PASSWORD")
+                  }
+              }
+              buildTypes {
+                  release {
+                      signingConfig = signingConfigs.getByName("release")
+                      isMinifyEnabled = true
+                      isShrinkResources = true
+                      proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+                  }
+              }
+          }
+          '''
+              else:
+                  signing_block = '''
+          android {
+              signingConfigs {
+                  release {
+                      storeFile file("literium.keystore")
+                      storePassword System.getenv("KEYSTORE_PASSWORD")
+                      keyAlias "literium"
+                      keyPassword System.getenv("KEYSTORE_PASSWORD")
+                  }
+              }
+              buildTypes {
+                  release {
+                      signingConfig signingConfigs.release
+                      minifyEnabled true
+                      shrinkResources true
+                      proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+                  }
+              }
+          }
+          '''
+              text += signing_block
+              open(app_gradle_path, "w").write(text)
+          PY
+
+      # ⚠️ تراجع: خطوة "Fix ABI filters" (تعيين ndk.abiFilters يدوياً) وأيضاً
+      # محاولة --split-per-abi اللاحقة حُذفتا كلتاهما — كلتاهما ضيّقتا
+      # الإعلان عن المعماريات المدعومة، وكلتاهما (رغم اختلاف الآلية تماماً)
+      # أنتجتا حزمة رفض مثبِّت اندرويد تثبيتها بالكامل على جهاز حقيقي نظيف
+      # تماماً (لا تعارض تحديث، ولا فساد تنزيل). القرار النهائي: توسيع
+      # المحتوى الفعلي بدل تضييق الإعلان — انظر الشرح الكامل عند خطوة
+      # البناء أدناه.
+
+      # كل المحاولات السابقة لتفعيل Built-in Kotlin أو حقن checker-qual كانت
+      # في الاتجاه الخاطئ. السجل الحقيقي (تشغيل رقم 15) كشف السبب الفعلي بلا
+      # أي لبس: cloud_firestore يطبّق 'kotlin-android' مباشرة (بلا أي شرط)،
+      # وAGP 9+ يرفض ذلك بخطأ صريح: "The 'org.jetbrains.kotlin.android'
+      # plugin is no longer required for Kotlin support since AGP 9.0" —
+      # ويقترح Gradle نفسه الحل رسمياً في نص الخطأ: تعيين
+      # android.builtInKotlin=false وandroid.newDsl=false معاً لتعطيل سلوك
+      # AGP 9 الجديد والعودة لمسار الترجمة القديم الذي تعمل عليه كل حزم
+      # FlutterFire فعلياً منذ شهور طويلة. هذا عكس ما فعلته الخطوة السابقة
+      # تماماً (كانت تُفعّل true بدل false) — كانت مبنية على قراءة خاطئة
+      # لتحذير غامض قبل أن يتوفر سجل الخطأ الصريح هذا.
+      # آخر أربع محاولات فشلت جميعها بنفس نمط "shutdown signal"/exit 143 —
+      # لكن التشغيل الرابع (بعد تعطيل org.gradle.vfs.watch أعلاه) أثبت أن
+      # رسالة "Already watching path" لم تكن السبب فعلياً: اختفت الرسالة
+      # تماماً من السجل، وحدث نفس العطل مجدداً — هذه المرة بصمت أقصر بكثير
+      # (~39 ثانية بدل ٤-٦ دقائق) قبل القتل، والسجل أظهر لأول مرة عمليتي
+      # java يتيمتين تُنهيان قسراً ("Terminate orphan process ... java")،
+      # أي أن أكثر من عملية JVM كانت تعمل بالتوازي أثناء مرحلة R8/dexing
+      # الثقيلة. استبعدنا أيضاً تجاوز حد GitHub Actions المجاني وامتلاء
+      # القرص (٢٩ جيجا متاحة، وتحرير ١٦ جيجا إضافية لم يُغيّر شيئاً) — فكل
+      # الأدلة المتبقية (تعدّد عمليات JVM، تقصّر نافذة الصمت مع كل تعديل)
+      # تشير لضغط فعلي على الذاكرة (RAM) أثناء R8، لا القرص أو VFS watch.
+      # الإعدادات التالية تحدّ استهلاك JVM للذاكرة صراحة، وتُلغي التوازي بين
+      # عمليات Gradle المتعددة (كل عملية JVM إضافية تضيف عبئاً كاملاً على
+      # الذاكرة)، بدل ترك الإعداد الافتراضي يخمّن موارد جهاز أقوى من الفعلي.
+      - name: Disable AGP 9 built-in Kotlin (official Gradle-suggested workaround) + Gradle VFS watch + cap JVM memory/parallelism
+        working-directory: flutter_app
+        run: |
+          python3 - <<'PY'
+          import os, re
+
+          path = "android/gradle.properties"
+          text = open(path).read() if os.path.exists(path) else ""
+          for key, value in (
+              ("android.builtInKotlin", "false"),
+              ("android.newDsl", "false"),
+              ("org.gradle.vfs.watch", "false"),
+              # خُفِّض من 4096m إلى 2560m: الـ 4 جيجا كانت للـ heap وحده،
+              # ولا تُحسب معه الذاكرة الأصلية التي يستهلكها R8 والمكوّنات
+              # المساعدة (Metaspace, native memory) — ترك هامش أكبر للنظام
+              # ولهذه الذاكرة الأصلية بدل تخصيص كل شيء تقريباً للـ heap.
+              ("org.gradle.jvmargs", "-Xmx2560m -XX:+UseG1GC -XX:+UnlockExperimentalVMOptions -XX:+UseStringDeduplication"),
+              ("org.gradle.daemon", "false"),
+              ("org.gradle.parallel", "false"),
+              # من 2 إلى 1: يمنع أي احتمال لتشغيل مهمتي R8/dexing في آن
+              # واحد، وهو بالضبط النمط الذي أظهرته السجلات الأخيرة (عمليتا
+              # java يتيمتان معاً وقت القتل).
+              ("org.gradle.workers.max", "1"),
+          ):
+              pattern = rf'^{re.escape(key)}=.*$'
+              line = f'{key}={value}'
+              if re.search(pattern, text, re.MULTILINE):
+                  text = re.sub(pattern, line, text, flags=re.MULTILINE)
+              else:
+                  if text and not text.endswith("\n"):
+                      text += "\n"
+                  text += line + "\n"
+          open(path, "w").write(text)
+          PY
+
+      # ⚠️ خطوة "Add AdMob App ID to AndroidManifest.xml" أُزيلت نهائياً: كان
+      # التطبيق يعيد بناء واجهة Dart مستقلة عن الموقع (شاشات منفصلة) تستخدم
+      # AdMob لإعلاناتها الخاصة — استُبدل ذلك بالكامل بغلاف WebView يعرض
+      # الموقع الحي نفسه بالضبط، والموقع له نظام إعلاناته الخاص (PropellerAds/
+      # Adsterra/Monetag + حملات داخلية) الذي يعمل الآن من داخل نفس صفحاته
+      # المعروضة في الـWebView — لا حاجة لأي AdMob SDK منفصل بعد الآن.
+
+      # Crashlytics مُوصَّل فعلاً (الخطوة أعلاه) لكنه لم يستقبل ولو تقرير
+      # عطل واحد عبر جهازين ومحاولات عديدة — وهذا لا يثبت بالضرورة أن
+      # العطل يسبق كل كود Java/Kotlin: قد يكون العطل يتكرر بنفس النقطة في
+      # كل مرة، فلا تحصل Crashlytics أبداً على "تشغيل تالٍ ناجح" لترفع
+      # تقرير العطل السابق المخزَّن محلياً (ترفعه فقط عند بدء ناجح لاحق).
+      # لذا هذه الخطوة تضيف شبكة أمان مستقلة تماماً عن Crashlytics: معالج
+      # عطل مخصَّص يُثبَّت في attachBaseContext لتطبيق Android (أبكر نقطة
+      # متاحة فعلياً — قبل حتى ContentProvider الخاص بـ Firebase/Crashlytics
+      # نفسه) يعرض نص العطل الكامل مباشرة على الشاشة بدل اختفاء التطبيق
+      # بصمت، مع زر نسخ — لا يحتاج المستخدم حاسوباً أو adb أو أي إعداد.
+      - name: Install early crash-catcher (no-computer/no-adb diagnostics)
+        working-directory: flutter_app
+        run: |
+          python3 - <<'PY'
+          import os
+
+          pkg_dir = "android/app/src/main/kotlin/studio/ai/literium/literium_app"
+          os.makedirs(pkg_dir, exist_ok=True)
+
+          application_kt = '''package studio.ai.literium.literium_app
+
+          import android.app.Application
+          import android.content.Context
+          import android.content.Intent
+          import java.io.PrintWriter
+          import java.io.StringWriter
+
+          class CrashHandlerApplication : Application() {
+
+              override fun attachBaseContext(base: Context) {
+                  super.attachBaseContext(base)
+
+                  Thread.setDefaultUncaughtExceptionHandler { _, throwable ->
+                      try {
+                          val writer = StringWriter()
+                          throwable.printStackTrace(PrintWriter(writer))
+                          val trace = writer.toString()
+
+                          val intent = Intent(applicationContext, CrashReportActivity::class.java).apply {
+                              addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                              putExtra(CrashReportActivity.EXTRA_TRACE, trace)
+                          }
+                          applicationContext.startActivity(intent)
+                      } catch (inner: Throwable) {
+                          // إن فشل عرض شاشة العطل نفسها، لا داعٍ لإخفاء أي شيء إضافي هنا.
+                      } finally {
+                          android.os.Process.killProcess(android.os.Process.myPid())
+                          Runtime.getRuntime().exit(1)
+                      }
+                  }
+              }
+          }
+          '''
+
+          activity_kt = '''package studio.ai.literium.literium_app
+
+          import android.app.Activity
+          import android.content.ClipData
+          import android.content.ClipboardManager
+          import android.graphics.Color
+          import android.os.Bundle
+          import android.util.TypedValue
+          import android.view.ViewGroup
+          import android.widget.Button
+          import android.widget.LinearLayout
+          import android.widget.ScrollView
+          import android.widget.TextView
+          import android.widget.Toast
+
+          class CrashReportActivity : Activity() {
+
+              companion object {
+                  const val EXTRA_TRACE = "crash_trace"
+              }
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+
+                  val trace = intent.getStringExtra(EXTRA_TRACE) ?: "لا يوجد نص عطل متاح"
+
+                  val root = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      setPadding(32, 96, 32, 32)
+                      setBackgroundColor(Color.WHITE)
+                  }
+
+                  val title = TextView(this).apply {
+                      text = "حدث عطل — الرجاء نسخ النص أدناه وإرساله"
+                      setTextColor(Color.BLACK)
+                      setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
+                      setPadding(0, 0, 0, 24)
+                  }
+                  root.addView(title)
+
+                  val copyButton = Button(this).apply {
+                      text = "نسخ نص العطل"
+                      setOnClickListener {
+                          val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+                          clipboard.setPrimaryClip(ClipData.newPlainText("crash", trace))
+                          Toast.makeText(this@CrashReportActivity, "تم النسخ", Toast.LENGTH_SHORT).show()
+                      }
+                  }
+                  root.addView(copyButton)
+
+                  val closeButton = Button(this).apply {
+                      text = "إغلاق"
+                      setOnClickListener { finishAndRemoveTask() }
+                  }
+                  root.addView(closeButton)
+
+                  val traceView = TextView(this).apply {
+                      text = trace
+                      setTextColor(Color.DKGRAY)
+                      setTextIsSelectable(true)
+                      setPadding(0, 24, 0, 0)
+                  }
+                  root.addView(traceView)
+
+                  val scroll = ScrollView(this).apply {
+                      layoutParams = ViewGroup.LayoutParams(
+                          ViewGroup.LayoutParams.MATCH_PARENT,
+                          ViewGroup.LayoutParams.MATCH_PARENT
+                      )
+                      addView(root)
+                  }
+
+                  setContentView(scroll)
+              }
+          }
+          '''
+
+          def dedent(s: str) -> str:
+              lines = s.split("\n")
+              return "\n".join(line[10:] if line.startswith(" " * 10) else line for line in lines)
+
+          open(os.path.join(pkg_dir, "CrashHandlerApplication.kt"), "w").write(dedent(application_kt))
+          open(os.path.join(pkg_dir, "CrashReportActivity.kt"), "w").write(dedent(activity_kt))
+
+          import re as _re
+
+          manifest_path = "android/app/src/main/AndroidManifest.xml"
+          text = open(manifest_path).read()
+
+          if "CrashHandlerApplication" not in text:
+              idx = text.find("<application")
+              if idx == -1:
+                  raise SystemExit("لم يُعثر على وسم <application> في AndroidManifest.xml")
+              tag_end = text.find(">", idx)
+              tag = text[idx:tag_end]
+              # ⚠️ قالب Flutter الافتراضي يضع بالفعل android:name="${applicationName}"
+              # (متغيّر Gradle يُحلَّل عادة إلى android.app.Application العادية) —
+              # فحص "هل يوجد android:name؟" وحده كان يجدها موجودة فعلاً ويتجاوز
+              # الحقن تماماً، فتبقى فئتنا مُصرَّفة داخل APK لكن غير مربوطة أبداً
+              # كفئة التطبيق الفعلية. يجب استبدال القيمة الموجودة دائماً، لا
+              # تخطي الحقن لمجرد وجود أي قيمة سابقة.
+              if "android:name=" in tag:
+                  tag = _re.sub(
+                      r'android:name="[^"]*"',
+                      'android:name="studio.ai.literium.literium_app.CrashHandlerApplication"',
+                      tag,
+                      count=1,
+                  )
+              else:
+                  tag = tag + ' android:name="studio.ai.literium.literium_app.CrashHandlerApplication"'
+              text = text[:idx] + tag + text[tag_end:]
+
+          if "CrashReportActivity" not in text:
+              activity_tag = (
+                  '        <activity\n'
+                  '            android:name="studio.ai.literium.literium_app.CrashReportActivity"\n'
+                  '            android:exported="false"/>\n'
+              )
+              text = text.replace("</application>", activity_tag + "    </application>")
+
+          open(manifest_path, "w").write(text)
+
+          # ⚠️ الطباعة السابقة كانت تبحث سطراً سطراً عن "<application" فتلتقط
+          # فقط بداية الوسم (وسم <application> في قالب Flutter يمتد لعدة
+          # أسطر، وandroid:name يقع في سطر لاحق منفصل) — فلا تثبت شيئاً فعلياً
+          # عن نجاح الاستبدال. هذه المرة نبحث عن الوسم كاملاً عبر الأسطر
+          # (re.DOTALL) ونطبعه بالكامل — دليل قاطع لا لبس فيه.
+          full_tag_match = _re.search(r'<application.*?>', text, _re.DOTALL)
+          full_tag = full_tag_match.group(0) if full_tag_match else "!! لم يُعثر على وسم <application> إطلاقاً !!"
+          print("===== وسم <application> الكامل بعد الحقن =====")
+          print(full_tag)
+          print("===== يحتوي CrashHandlerApplication؟ ->", "CrashHandlerApplication" in full_tag, "=====")
+          if "CrashHandlerApplication" not in full_tag:
+              raise SystemExit("فشل حقن CrashHandlerApplication في وسم <application> — أوقف البناء بدل المتابعة بصمت.")
+
+          proguard_path = "android/app/proguard-rules.pro"
+          rules = open(proguard_path).read() if os.path.exists(proguard_path) else ""
+          if "CrashHandlerApplication" not in rules:
+              rules += (
+                  "\n# شبكة أمان تشخيص العطل الفوري — يجب ألّا يحذفها R8 مهما حدث.\n"
+                  "-keep class studio.ai.literium.literium_app.CrashHandlerApplication { *; }\n"
+                  "-keep class studio.ai.literium.literium_app.CrashReportActivity { *; }\n"
+              )
+              open(proguard_path, "w").write(rules)
+          PY
+
+      # تراجع: خطوة "Disable Firebase/AdMob automatic native init" أُزيلت.
+      # كانت مبنية على افتراض أن سبب الانهيار الفوري هو غياب خدمات Google
+      # Play على جهاز المستخدم الأول (Redmi 10) — لكن الجهاز الثاني (الذي
+      # يملك خدمات Google Play، بدليل نافذة "توقف" التي يعرضها Android نفسه
+      # عند رصد انهيار حقيقي) ينهار بنفس الطريقة أيضاً، ما يُسقط ذلك
+      # الافتراض. والأسوأ: إزالة FirebaseInitProvider مع إبقاء
+      # CrashlyticsInitProvider (مزوّد Crashlytics الأصلي) فعّالاً قد يكون
+      # سبب عطل جديد بحد ذاته — إذ يُحتمل أن يعتمد مزوّد Crashlytics على
+      # وجود تطبيق Firebase افتراضي جاهز مسبقاً عبر FirebaseInitProvider،
+      # وهو ما يفسّر أيضاً لماذا لم يصل ولو تقرير عطل واحد لـ Crashlytics
+      # عبر جهازين ومحاولات عديدة. العودة للتهيئة التلقائية الافتراضية
+      # (السلوك المُختبَر والموثّق فعلياً لملايين تطبيقات Firebase الأخرى)
+      # أكثر أماناً من إبقاء تعديل غير مثبَت الفائدة.
+
+      # ⚠️ إذن INTERNET لم يعد مضموناً بالدمج التلقائي: النسخة السابقة من
+      # التطبيق كانت تعتمد على firebase_auth/cloud_firestore/http/
+      # google_mobile_ads، وكل هذه الحزم تطلب هذا الإذن ضمن AndroidManifest
+      # الخاص بها فيُدمَج تلقائياً. بعد التحول لغلاف WebView فقط (يعرض
+      # الموقع الحي مباشرة بدل إعادة بناء واجهة منفصلة)، لم تعد أي من هذه
+      # الحزم موجودة — فقد التأكيد الضمني على هذا الإذن. بلا هذا الإذن
+      # صراحة، كل تحميل صفحة داخل الـWebView وكل رفع لتقارير Crashlytics
+      # يفشل صامتاً على نسخة الإصدار (Release)، فيبقى التطبيق شاشة بيضاء
+      # للأبد رغم اتصال الجهاز الفعلي بالإنترنت.
+      - name: Ensure INTERNET permission (no longer guaranteed via dependency manifest merge)
+        working-directory: flutter_app
+        run: |
+          python3 - <<'PY'
+          path = "android/app/src/main/AndroidManifest.xml"
+          text = open(path).read()
+          needed = [
+              '<uses-permission android:name="android.permission.INTERNET"/>',
+              '<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>',
+          ]
+          added = [tag for tag in needed if tag.split('"')[1] not in text]
+          if added:
+              idx = text.find("<application")
+              if idx == -1:
+                  raise SystemExit("لم يُعثر على وسم <application> في AndroidManifest.xml")
+              text = text[:idx] + "\n".join(added) + "\n\n    " + text[idx:]
+              open(path, "w").write(text)
+          print("===== أذونات الشبكة بعد التأكيد =====")
+          for line in open(path):
+              if "uses-permission" in line:
+                  print(line.strip())
+          PY
+
+      - name: flutter pub get
+        working-directory: flutter_app
+        run: flutter pub get
+
+      # ⚠️ تاريخ طويل من المحاولات حول هذا الأمر تحديداً — التسلسل الكامل مهم
+      # لفهم القرار النهائي:
+      #  1. بناء 4 معماريات معاً (الافتراضي) سبّب فشل CI متكرراً بنمط
+      #     "shutdown signal"/exit 143 (ضغط ذاكرة أثناء R8/dexing).
+      #  2. تقييد البناء الفعلي على arm64-v8a وحدها (--target-platform
+      #     android-arm64 بلا أي شيء آخر) أصلح مشكلة CI فعلاً — لكن Flutter
+      #     Gradle Plugin (منذ 3.35) يضع abiFilters افتراضية عريضة
+      #     (armeabi-v7a + arm64-v8a + x86_64) في حزمة APK بصرف النظر عن
+      #     --target-platform ما لم يُستخدَم --split-per-abi. فتُعلن الحزمة
+      #     دعم armeabi-v7a رغم عدم وجود أي كود مُصرَّف لها فعلاً — وتفاعل
+      #     داخلي بين Google Mobile Ads SDK ومحمّل Flutter الأصلي طلب هذه
+      #     المعمارية تحديداً فانهار التطبيق فوراً على جهاز حقيقي:
+      #     "Could not find 'libflutter.so'. Looked for: [armeabi-v7a,
+      #     armeabi], but only found: [arm64-v8a]" — التقطته شاشة معالج
+      #     العطل المُضافة أعلاه، أول دليل حقيقي من جهاز فعلي في كل الجلسة.
+      #  3. حاولنا تضييق الإعلان ليطابق الواقع (arm64-v8a فقط) بطريقتين
+      #     مختلفتين تماماً: تعديل abiFilters يدوياً في build.gradle، ثم
+      #     (بعد فشل الأولى) عبر --split-per-abi الرسمية من Flutter نفسها.
+      #     **كلتاهما أنتجتا حزمة فشل تثبيتها بالكامل** ("التطبيق ليس
+      #     مثبتًا") على جهاز حقيقي — تأكَّد لاحقاً أنه جهاز نظيف تماماً بلا
+      #     أي نسخة سابقة مثبَّتة إطلاقاً، فليس تعارض تحديث. أياً كانت
+      #     الآلية، تضييق الإعلان دون تضييق موازٍ فعلي في المحتوى يبدو
+      #     يكسر شيئاً أعمق في تجميع/توقيع الحزمة لا نفهمه بدقة بعد.
+      #  4. الحل الحالي: بدل تضييق الإعلان، وسّعنا المحتوى الفعلي ليطابق
+      #     الإعلان بدلاً من ذلك — نُصرِّف armeabi-v7a فعلاً (وليس فقط
+      #     arm64-v8a) عبر --target-platform android-arm,android-arm64 بلا
+      #     أي abiFilters/split-per-abi على الإطلاق. الحزمة تعود لملف واحد
+      #     باسمه القديم (app-release.apk) يحوي معماريتين حقيقيتين فعلاً —
+      #     فحين يبحث أي كود (داخلي أو من مكتبة SDK) عن armeabi-v7a، يجده
+      #     فعلاً بدل أن يواجه إعلاناً بلا محتوى مطابق. يُضاعف هذا حِمل
+      #     R8/dexing تقريباً (معماريتان بدل واحدة) لا أربع مرات كالوضع
+      #     الأصلي — احتياطات الذاكرة القائمة (swap، حد JVM، عامل واحد)
+      #     تبقى مطبَّقة وقد تكفي لهذا الحجم الأصغر بكثير من المحاولة #1.
+      - name: Build signed release APK
+        working-directory: flutter_app
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          # عملية Kotlin daemon منفصلة تماماً عن Gradle daemon (المُعطَّل
+          # أعلاه عبر org.gradle.daemon=false) — هذه عملية JVM إضافية
+          # مستقلة تديرها kotlin-gradle-plugin نفسها للترجمة التزايدية،
+          # لا فائدة منها في بناء CI لمرة واحدة، وتضيف عبء ذاكرة كامل آخر.
+          GRADLE_OPTS: "-Dorg.gradle.kotlin.daemon.enabled=false"
+        # ⚠️ --build-number مطلوب صراحة هنا: pubspec.yaml يحمل رقم إصدار ثابت
+        # (0.2.0+2) لم يتغيّر عبر كل بنايات نسخة WebView المتتالية، فكانت كل
+        # حزمة APK جديدة تحمل نفس versionCode بالضبط رغم اختلاف محتواها —
+        # أندرويد يرفض تثبيت أي حزمة فوق أخرى مثبَّتة إن لم يكن رقم إصدارها
+        # أعلى صراحة (بصرف النظر عن توقيعها)، فيطلب حذف النسخة القديمة يدوياً
+        # قبل كل تثبيت جديد. ${{ github.run_number }} يتصاعد تلقائياً مع كل
+        # تشغيل لهذا السير تحديداً، فيضمن رقماً أعلى دائماً بلا أي تتبّع يدوي.
+        run: flutter build apk --release --target-platform android-arm,android-arm64 --build-number=${{ github.run_number }}
+
+      # ⚠️ المستخدم أبلغ أن التثبيت ظل يطلب حذف النسخة السابقة حتى بعد إضافة
+      # --build-number أعلاه — بدل افتراض أن الإصلاح فعّال (نفس خطأ "الإصلاح
+      # الصامت غير المتحقَّق منه" الذي تكرر عدة مرات في هذا المشروع)، اطبع
+      # رقم الإصدار الفعلي المُضمَّن في الـAPK الناتج حقاً عبر aapt — دليل
+      # قاطع بدل افتراض.
+      - name: Verify built APK's actual versionCode
+        run: |
+          AAPT=$(find /usr/local/lib/android/sdk/build-tools -name aapt 2>/dev/null | sort -V | tail -1)
+          if [ -z "$AAPT" ]; then
+            AAPT=$(find "${ANDROID_HOME:-/usr}" "${ANDROID_SDK_ROOT:-/usr}" -name aapt 2>/dev/null | sort -V | tail -1)
+          fi
+          echo "===== معلومات الحزمة الفعلية من aapt ====="
+          "$AAPT" dump badging flutter_app/build/app/outputs/flutter-apk/app-release.apk | grep "^package:"
+
+      - name: Upload signed APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Literium-flutter-signed-apk
+          path: flutter_app/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+
+      # ⚠️ زر "تحميل التطبيق" في الموقع يقدّم public/downloads/Literium.apk
+      # مباشرة — وهذا الملف لم يكن يُحدَّث هنا إطلاقاً منذ هذا السير (build-
+      # flutter-apk.yml) صار مصدر الـAPK الفعلي؛ كان لا يزال يحمل آخر بناء
+      # من سير TWA القديم (build-apk.yml)، أقدم بكثير وغير مرتبط إطلاقاً
+      # بأي عمل حديث على نسخة WebView — أي زائر يضغط الزر كان يحصل على
+      # تطبيق مختلف تماماً عمّا بُني هنا. نفس نمط خطوة "Publish built APK
+      # as the in-app download" في build-apk.yml، لكن الدفع هنا لفرع هذا
+      # التشغيل نفسه (github.ref_name) لا لـ main — لأن التسليم الفعلي لهذا
+      # المشروع حالياً يتم عبر حزمة zip من رأس هذا الفرع تحديداً (AI Studio
+      # لا يسحب من git تلقائياً على أي حال، النشر هناك يدوي دوماً).
+      - name: Sync in-app download button with this build
+        run: |
+          cp flutter_app/build/app/outputs/flutter-apk/app-release.apk public/downloads/Literium.apk
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add public/downloads/Literium.apk
+          if git diff --cached --quiet; then
+            echo "No change in the built APK — skipping commit."
+            exit 0
+          fi
+          git commit -m "Sync in-app download with latest Flutter WebView APK build [skip ci]"
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:${{ github.ref_name }}; then
+              exit 0
+            fi
+            echo "Push rejected (attempt $attempt) — rebasing onto latest origin/${{ github.ref_name }} and retrying..."
+            git fetch origin ${{ github.ref_name }}
+            git rebase origin/${{ github.ref_name }}
+            sleep 3
+          done
+          echo "::error::Failed to push the synced APK after 5 attempts."
+          exit 1
+
+      # ⚠️ تصحيح: التشغيل السابق أثبت أن "ترجمة ABI" على صورة x86_64 (حتى
+      # بمستوى API 35) لا تعمل فعلياً لتحميل مكتبات .so أصلية عبر dlopen —
+      # ظهر بوضوح: "libflutter.so is for EM_AARCH64 instead of EM_X86_64".
+      # هذا عطل ناتج عن منهجية الاختبار نفسها (تشغيل APK مبني arm64-only
+      # على محاكي x86_64)، لا عطلاً حقيقياً في التطبيق — جهاز المستخدم
+      # الحقيقي arm64 أصلاً فلن يواجه هذا إطلاقاً. لضمان تشخيص نظيف لا
+      # يتشوّش بهذا الفارق المعماري، نبني نسخة x64 منفصلة هنا **للتشخيص
+      # فقط** (لا تُرفع كملف تسليم — الملف المُسلَّم أعلاه يبقى arm64 دائماً،
+      # وهو ما يثبَّته المستخدم فعلياً)، فتعمل مكتباتها الأصلية بشكل طبيعي
+      # تماماً على معمارية المحاكي نفسها.
+      - name: Build x64 diagnostic-only APK (never shipped — emulator testing only)
+        working-directory: flutter_app
+        continue-on-error: true
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          GRADLE_OPTS: "-Dorg.gradle.kotlin.daemon.enabled=false"
+        run: flutter build apk --release --target-platform android-x64 --split-per-abi
+
+      # ⚠️ خطوة تشخيصية مستقلة تماماً عن التسليم أعلاه (الذي اكتمل بالفعل) —
+      # المستخدم لا يملك حاسوباً ولا adb، فلا وسيلة لديه لمعرفة سبب الانهيار
+      # الفوري على جهازه الحقيقي مباشرة. الحل: ننقل adb إلى هنا بدلاً من ذلك.
+      # نُشغّل نسخة x64 التشخيصية أعلاه (وليس ملف arm64 المُسلَّم — نفس الكود
+      # والإعدادات بالضبط، فرق المعمارية المستهدفة فقط) على محاكي اندرويد
+      # داخل هذا التشغيل نفسه، ونلتقط سجل logcat الحقيقي — الذي يكشف ليس فقط
+      # استثناءات Java (يلتقطها معالج العطل المُضاف أعلاه أيضاً) بل أيضاً
+      # الانهيارات الأصلية (native/SIGSEGV) التي لا يستطيع أي معالج Java على
+      # الإطلاق التقاطها مهما بكّرنا تثبيته — تتكفّل بها أداة debuggerd
+      # الخاصة بنظام اندرويد نفسه وتظهر في logcat تلقائياً بلا أي كود إضافي
+      # منا.
+      # continue-on-error: true لأن هذه خطوة تشخيص إضافي فقط — تعثّرها (مثلاً
+      # فشل إقلاع المحاكي) يجب ألا يُظهر البناء الناجح فعلياً كفاشل.
+      - name: Enable KVM for the diagnostic emulator
+        continue-on-error: true
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      # ⚠️ محاولة سابقة كتبت منطق if/then/fi مباشرة داخل حقل script: أدناه —
+      # فشلت بخطأ صياغة غامض ("end of file unexpected (expecting fi")،
+      # واتضح من السجل أن reactivecircus/android-emulator-runner ينفّذ كل
+      # سطر من script: في استدعاء `sh -c` منفصل تماماً (سطر بسطر)، لا كسكربت
+      # bash متصل واحد — فأي بنية تحتاج أكثر من سطر (if/then/fi، أو متغيّر
+      # يُقرأ في سطر لاحق) تتفكك ولا تعمل. الحل: كتابة المنطق كاملاً في ملف
+      # سكربت حقيقي أولاً (bash عادي يعمل بشكل طبيعي تماماً)، ثم استدعاؤه من
+      # script: كسطر واحد فقط — يتفادى القيد كلياً.
+      - name: Write emulator diagnostic script
+        run: |
+          mkdir -p /tmp/diag
+          cat > /tmp/diag/run.sh <<'DIAGSH'
+          #!/bin/bash
+          set -x
+          echo "DIAG: نظام $(adb shell getprop ro.build.version.release), معمارية $(adb shell getprop ro.product.cpu.abi)"
+          adb logcat -c
+          echo "DIAG_INSTALL_START"
+          adb install -r flutter_app/build/app/outputs/flutter-apk/app-x86_64-release.apk 2>&1 | tail -5
+          echo "DIAG_INSTALL_END"
+          echo "DIAG_LAUNCH_START"
+          adb shell am start -n studio.ai.literium.literium_app/studio.ai.literium.literium_app.MainActivity 2>&1 | tail -5
+          echo "DIAG_LAUNCH_END"
+          sleep 25
+          PSOUT=$(adb shell ps | grep literium || true)
+          if [ -z "$PSOUT" ]; then
+            echo "DIAG_RESULT: انهارت العملية أو لم تبدأ — غير موجودة بعد 25 ثانية"
+          else
+            echo "DIAG_RESULT: العملية ما زالت حية بعد 25 ثانية -> $PSOUT"
+          fi
+          echo "DIAG_FILTERED_LOGCAT_START"
+          adb logcat -d | grep -iE "literium|FATAL EXCEPTION|AndroidRuntime|Fatal signal|backtrace|DEBUG.*pid|Process.*died|ActivityManager: (Start proc|Force finishing|Killing|Displayed)|ANR in|Unable to instantiate|ClassNotFoundException|UnsatisfiedLinkError|NoClassDefFoundError" || echo "لا توجد أي أسطر مطابقة — لا FATAL ولا ذِكر لاسم الحزمة إطلاقاً في كامل السجل."
+          echo "DIAG_FILTERED_LOGCAT_END"
+          DIAGSH
+          chmod +x /tmp/diag/run.sh
+
+      - name: Diagnostic run on emulator — capture real crash log (no user phone/adb needed)
+        continue-on-error: true
+        timeout-minutes: 12
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot
+          disable-animations: true
+          script: bash /tmp/diag/run.sh

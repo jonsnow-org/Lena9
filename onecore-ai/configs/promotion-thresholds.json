@@ -1,0 +1,58 @@
+{
+  "schema": "onecore-quality-thresholds-v1",
+  "status": "not-approved",
+  "note": "Do not fill these with arbitrary values. Run a reviewed benchmark, agree on measurable thresholds, then set each required key. Loss limits are upper bounds; codebook usage and normalized entropy are lower bounds; max-code concentration is an upper bound. Validation and test thresholds must be calibrated separately. Promotion also requires executed tool-behaviour metrics with separately calibrated validation and held-out test success-rate thresholds, including both steps of a two-step workflow. Native T-LDM masked-span loss must also be benchmarked and approved separately on validation and held-out test data.",
+  "required_keys": {
+    "validation_loss_metrics": [
+      "text_loss",
+      "tool_use",
+      "image_reconstruction",
+      "audio_reconstruction",
+      "video_sequence"
+    ],
+    "test_loss_metrics": [
+      "test_text_loss",
+      "test_tool_use",
+      "test_image_reconstruction",
+      "test_audio_reconstruction",
+      "test_video_sequence"
+    ],
+    "validation_codebook_usage": [
+      "min_vision_usage_fraction",
+      "max_vision_max_code_fraction",
+      "min_vision_normalized_entropy",
+      "min_audio_usage_fraction",
+      "max_audio_max_code_fraction",
+      "min_audio_normalized_entropy",
+      "min_motion_usage_fraction",
+      "max_motion_max_code_fraction",
+      "min_motion_normalized_entropy"
+    ],
+    "test_codebook_usage": [
+      "test_min_vision_usage_fraction",
+      "test_max_vision_max_code_fraction",
+      "test_min_vision_normalized_entropy",
+      "test_min_audio_usage_fraction",
+      "test_max_audio_max_code_fraction",
+      "test_min_audio_normalized_entropy",
+      "test_min_motion_usage_fraction",
+      "test_max_motion_max_code_fraction",
+      "test_min_motion_normalized_entropy"
+    ],
+    "validation_tool_behavior": [
+      "min_tool_execution_success_rate"
+    ],
+    "test_tool_behavior": [
+      "test_min_tool_execution_success_rate"
+    ],
+    "native_tldm_validation_metrics": [
+      "native_tldm_max_masked_span_loss"
+    ],
+    "native_tldm_test_metrics": [
+      "test_native_tldm_max_masked_span_loss"
+    ]
+  },
+  "thresholds": {
+    "tool_behavior_regression_floor": 0.9
+  }
+}
