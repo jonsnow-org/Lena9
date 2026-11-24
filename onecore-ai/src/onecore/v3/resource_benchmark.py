@@ -754,6 +754,7 @@ def _joint_worker(
 
         model.zero_grad(set_to_none=True)
         family_results: dict[str, dict[str, Any]] = {}
+        joint_forward_backward_started = time.perf_counter()
         for family in order:
             loaded, units, input_metadata = inputs[family]
             family_started = time.perf_counter()
@@ -808,11 +809,12 @@ def _joint_worker(
                 "units": float(units),
                 "unit_name": unit_name,
                 "input_metadata": input_metadata,
-                "backward_seconds": round(elapsed, 6),
-                "backward_units_per_second": round(float(units) / max(elapsed, 1e-9), 6),
+                "forward_backward_seconds": round(elapsed, 6),
+                "forward_backward_units_per_second": round(float(units) / max(elapsed, 1e-9), 6),
                 "loss_diagnostic_only": round(float(sum(loss_values) / max(1, len(loss_values))), 8),
             }
 
+        joint_forward_backward_seconds = time.perf_counter() - joint_forward_backward_started
         gradient_bytes = sum(
             parameter.grad.numel() * parameter.grad.element_size()
             for parameter in model.parameters()
@@ -827,15 +829,13 @@ def _joint_worker(
         peak_rss = _max_rss_bytes()
         return {
             "status": "success",
-            "benchmark_kind": "joint_five_family_backward_plus_adamw_state_preallocation_no_step",
+            "benchmark_kind": "joint_five_family_forward_backward_plus_adamw_state_preallocation_no_step",
             "micro_batch_order": list(order),
             "micro_batch_count": len(order),
             "family_results": family_results,
             "model_init_seconds": round(model_init_seconds, 6),
             "input_load_seconds": round(input_load_seconds, 6),
-            "joint_backward_seconds": round(sum(
-                item["backward_seconds"] for item in family_results.values()
-            ), 6),
+            "joint_forward_backward_seconds": round(joint_forward_backward_seconds, 6),
             "parameter_count": optimizer_memory["parameter_count"],
             "parameter_bytes": optimizer_memory["parameter_bytes"],
             "gradient_bytes": gradient_bytes,
@@ -855,7 +855,7 @@ def _joint_worker(
     except Exception as exc:
         return {
             "status": "failed",
-            "benchmark_kind": "joint_five_family_backward_plus_adamw_state_preallocation_no_step",
+            "benchmark_kind": "joint_five_family_forward_backward_plus_adamw_state_preallocation_no_step",
             "error": f"{type(exc).__name__}: {str(exc)}",
             "traceback": traceback.format_exc()[-5000:],
             "optimizer_updates": 0,
@@ -1155,7 +1155,7 @@ def _run_parent(args: argparse.Namespace) -> int:
         result = {
             "format_version": 1,
             "status": "blocked" if failed else "measured",
-            "benchmark_kind": "cpu_per_family_plus_joint_five_microbatch_backward_and_adamw_state_preallocation_without_optimizer_step",
+            "benchmark_kind": "cpu_per_family_plus_joint_five_microbatch_forward_backward_and_adamw_state_preallocation_without_optimizer_step",
             "created_at_utc": datetime.now(timezone.utc).isoformat(),
             "github_run_id": os.environ.get("GITHUB_RUN_ID"),
             "artifacts": artifact_info,
