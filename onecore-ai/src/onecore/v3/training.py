@@ -230,3 +230,65 @@ def train_v3_discriminator_step(
     return {name: float(value.detach().cpu()) for name, value in terms.items()} | {
         "total_discriminator_loss": float(total.detach().cpu())
     }
+
+V3_JOINT_FAMILY_ORDER = ("text", "tool", "image", "audio", "video")
+
+
+def train_v3_joint_step(
+    model: OneCoreV3,
+    optimizer: torch.optim.Optimizer,
+    micro_batches: Any,
+    *,
+    objective: OneCoreV3Objective | None = None,
+    max_grad_norm: float = 1.0,
+) -> dict[str, float]:
+    """Apply one optimizer update after accumulating one real micro-batch per family.
+
+    The five family losses are averaged, gradients are accumulated without
+    retaining prior-family computation graphs, then clipped and stepped once.
+    The caller advances its scheduler only after this function succeeds.
+    """
+    if max_grad_norm <= 0:
+        raise ValueError("max_grad_norm must be positive")
+    items = tuple(micro_batches)
+    if len(items) != len(V3_JOINT_FAMILY_ORDER):
+        raise ValueError("V3 joint step requires exactly five family micro-batches")
+    observed = tuple(getattr(item, "family", None) for item in items)
+    if observed != V3_JOINT_FAMILY_ORDER:
+        raise ValueError(
+            "V3 joint micro-batches must be ordered text, tool, image, audio, video"
+        )
+    objective = objective or OneCoreV3Objective(model)
+    model.train()
+    optimizer.zero_grad(set_to_none=True)
+    totals: list[torch.Tensor] = []
+    metrics: dict[str, float] = {}
+    for item in items:
+        batch = getattr(item, "batch", None)
+        if not isinstance(batch, dict) or len(batch) != 1:
+            raise ValueError("each V3 family micro-batch must contain exactly its own objective batch")
+        family = next(iter(batch))
+        if family != item.family:
+            raise ValueError("V3 micro-batch family identity does not match its payload")
+        losses = objective(batch)
+        total = losses.get("total")
+        if not isinstance(total, torch.Tensor) or total.ndim != 0:
+            raise ValueError(f"V3 objective returned no scalar total loss for {family}")
+        (total / len(V3_JOINT_FAMILY_ORDER)).backward()
+        totals.append(total.detach())
+        for name, value in losses.items():
+            if name == "total":
+                continue
+            if not isinstance(value, torch.Tensor) or value.ndim != 0:
+                raise ValueError(f"V3 objective returned a non-scalar loss term: {family}/{name}")
+            metrics[f"{family}/{name}"] = float(value.detach().cpu())
+        metrics[f"{family}/total"] = float(total.detach().cpu())
+
+    norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
+    optimizer.step()
+    metrics["total"] = float(torch.stack(totals).mean().cpu())
+    metrics["gradient_norm"] = float(norm.detach().cpu())
+    metrics["optimizer_updates"] = 1.0
+    metrics["family_micro_batches"] = float(len(items))
+    return metrics
+
