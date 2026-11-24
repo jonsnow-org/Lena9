@@ -8,8 +8,7 @@ WORKFLOWS = ROOT / ".github" / "workflows"
 
 
 def _load_workflow(path: Path):
-    # BaseLoader keeps the GitHub Actions key "on" as a string (PyYAML 1.1
-    # SafeLoader otherwise treats it as a boolean).
+    # BaseLoader preserves GitHub Actions' "on" key as a string.
     return yaml.load(path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
 
 
@@ -17,7 +16,17 @@ def _assert_all_jobs_disabled(path: Path) -> None:
     workflow = _load_workflow(path)
     jobs = workflow.get("jobs")
     assert isinstance(jobs, dict) and jobs
-    assert all(str(job.get("if", "")).strip() == "${{ false }}" for job in jobs.values())
+    for name, job in jobs.items():
+        assert job.get("if") == "${{ false }}", f"legacy job {name} must be disabled"
+        # A duplicated job-level if can override the archive guard in YAML parsers.
+        lines = path.read_text(encoding="utf-8").splitlines()
+        start = next(i for i, line in enumerate(lines) if line == f"  {name}:")
+        stop = next(
+            (i for i in range(start + 1, len(lines)) if lines[i].startswith("  ") and not lines[i].startswith("    ")),
+            len(lines),
+        )
+        job_if_count = sum(1 for line in lines[start + 1:stop] if line.startswith("    if:"))
+        assert job_if_count == 1, f"legacy job {name} must have exactly one job-level if"
 
 
 def test_v2_archive_bootstrap_has_no_runnable_job():

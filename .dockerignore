@@ -1,9 +1,0 @@
-node_modules
-dist
-android-native
-archive
-docs
-.git
-*.log
-.env
-.env.*

@@ -1,8 +1,0 @@
-.gradle/
-build/
-local.properties
-*.iml
-.idea/
-app/google-services.json
-app/literium.keystore
-app/build/
