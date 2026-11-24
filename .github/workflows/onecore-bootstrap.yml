@@ -20,7 +20,7 @@ env:
 jobs:
   prepare:
     # Frozen V2 archive: optimizer work is prohibited on this legacy baseline.
-    if: false
+    if: ${{ false }}
     name: Validate code and training contract
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -159,7 +159,7 @@ jobs:
 
   acquire_corpus:
     # Frozen V2 archive: optimizer work is prohibited on this legacy baseline.
-    if: false
+    if: ${{ false }}
     name: Up to six bounded acquisition sessions on one persistent CPU runner
     needs: prepare
     if: ${{ needs.prepare.outputs.request_stage == 'acquire' }}
@@ -193,7 +193,7 @@ jobs:
 
   finalize_acquisition:
     # Frozen V2 archive: optimizer work is prohibited on this legacy baseline.
-    if: false
+    if: ${{ false }}
     name: Select the latest durable corpus snapshot
     needs: [prepare, acquire_corpus]
     if: always()
@@ -266,7 +266,7 @@ jobs:
 
   dataset_gate:
     # Frozen V2 archive: optimizer work is prohibited on this legacy baseline.
-    if: false
+    if: ${{ false }}
     name: Final multimodal coverage and split-integrity gate
     needs: finalize_acquisition
     if: ${{ always() && needs.finalize_acquisition.result == 'success' && needs.finalize_acquisition.outputs.complete == 'true' && needs.finalize_acquisition.outputs.request_stage != 'train_existing' && needs.finalize_acquisition.outputs.request_stage != 'evaluate_existing' }}
@@ -484,7 +484,7 @@ jobs:
 
   resume_notice:
     # Frozen V2 archive: optimizer work is prohibited on this legacy baseline.
-    if: false
+    if: ${{ false }}
     name: Preserve acquisition progress for the next bounded run
     needs: finalize_acquisition
     if: ${{ always() && needs.finalize_acquisition.result == 'success' && needs.finalize_acquisition.outputs.complete != 'true' }}
@@ -507,7 +507,7 @@ jobs:
 
   train_all:
     # Frozen V2 archive: optimizer work is prohibited on this legacy baseline.
-    if: false
+    if: ${{ false }}
     name: Ten sequential 150-step CPU training sessions on one persistent runner
     needs: [dataset_gate, prepare]
     if: ${{ always() && needs.prepare.result == 'success' && (needs.dataset_gate.result == 'success' || (needs.dataset_gate.result == 'skipped' && needs.prepare.outputs.request_stage == 'train_existing')) }}
@@ -694,7 +694,7 @@ jobs:
 
   evaluate:
     # Frozen V2 archive: optimizer work is prohibited on this legacy baseline.
-    if: false
+    if: ${{ false }}
     name: Independent validation, test and checkpoint report
     needs: [train_all, prepare]
     if: ${{ always() && needs.train_all.result == 'success' }}
@@ -883,7 +883,7 @@ jobs:
 
   evaluate_existing:
     # Frozen V2 archive: optimizer work is prohibited on this legacy baseline.
-    if: false
+    if: ${{ false }}
     name: Re-evaluate an exact saved checkpoint without training
     needs: [prepare, finalize_acquisition]
     if: ${{ always() && needs.prepare.result == 'success' && needs.prepare.outputs.request_stage == 'evaluate_existing' && needs.finalize_acquisition.result == 'success' && needs.finalize_acquisition.outputs.complete == 'true' }}

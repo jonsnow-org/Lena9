@@ -41,7 +41,7 @@ concurrency:
 jobs:
   train:
     # Frozen V2 archive: optimizer work is prohibited on this legacy baseline.
-    if: false
+    if: ${{ false }}
     name: "OneCore ${{ inputs.stage }} segment"
     runs-on: ubuntu-24.04
     timeout-minutes: 350

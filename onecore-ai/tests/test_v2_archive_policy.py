@@ -17,7 +17,7 @@ def _assert_all_jobs_disabled(path: Path) -> None:
     workflow = _load_workflow(path)
     jobs = workflow.get("jobs")
     assert isinstance(jobs, dict) and jobs
-    assert all(str(job.get("if", "")).lower() == "false" for job in jobs.values())
+    assert all(str(job.get("if", "")).strip() == "${{ false }}" for job in jobs.values())
 
 
 def test_v2_archive_bootstrap_has_no_runnable_job():
