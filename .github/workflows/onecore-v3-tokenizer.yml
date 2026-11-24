@@ -83,7 +83,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip setuptools wheel
           python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
-          python -m pip install "tokenizers>=0.19,<1" "PyYAML>=6,<7" "requests>=2.31,<3" "remotezip>=0.12,<1"
+          python -m pip install "tokenizers>=0.19,<1" "PyYAML>=6,<7" "numpy>=1.26,<3" "requests>=2.31,<3" "remotezip>=0.12,<1"
           python -m pip install --no-deps -e onecore-ai
 
       - name: Range-extract only V3 train.jsonl from the published corpus

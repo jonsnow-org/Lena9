@@ -220,9 +220,12 @@ def test_v3_train_manifest_extractor_downloads_only_one_zip_member(monkeypatch, 
         def close(self):
             pass
 
-    monkeypatch.setattr(
-        artifact.requests, "get", lambda *args, **kwargs: RedirectResponse()
-    )
+    class FakeRequests:
+        @staticmethod
+        def get(*args, **kwargs):
+            return RedirectResponse()
+
+    monkeypatch.setattr(artifact, "requests", FakeRequests)
 
     class FakeRemoteZip:
         def __init__(self, url, **kwargs):
