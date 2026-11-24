@@ -127,7 +127,7 @@ def test_sequence_length_distributions_use_real_tokenizer_and_external_train_onl
     ]
     manifest = tmp_path / "train.jsonl"
     manifest.write_text(
-        "".join(json.dumps(item) + "\\n" for item in rows),
+        "".join(json.dumps(item) + "\n" for item in rows),
         encoding="utf-8",
     )
 
@@ -156,7 +156,7 @@ def test_sequence_length_distributions_reject_non_train_rows(tmp_path):
         "task": "text",
         "data_class": "external",
         "text": "must not be profiled",
-    }) + "\\n", encoding="utf-8")
+    }) + "\n", encoding="utf-8")
 
     with pytest.raises(ValueError, match="only the V3 train manifest"):
         _sequence_length_distributions(manifest, tokenizer_path)
