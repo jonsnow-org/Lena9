@@ -47,3 +47,24 @@ def test_v3_tokenizer_workflow_is_pinned_idempotent_and_does_not_train():
     assert "validation_or_test_rows_used" in workflow
     assert "onecore.v3.training" not in workflow
     assert "train_v3_step(" not in workflow
+
+
+def test_v3_tokenizer_fit_waits_for_same_sha_ci_and_rechecks_source_evidence():
+    import json
+    request_data = json.loads(
+        (ROOT / "onecore-ai" / "v3-tokenizer-request.json").read_text(encoding="utf-8")
+    )
+    workflow = (WORKFLOWS / "onecore-v3-tokenizer.yml").read_text(encoding="utf-8")
+    assert request_data["fit_revision"] == 2
+    assert request_data["source_artifact_digest"].startswith("sha256:")
+    assert request_data["source_artifact_size_bytes"] == 24432975285
+    assert request_data["source_report_artifact_id"] == 14893020087
+    assert request_data["source_report_artifact_size_bytes"] == 892194
+    assert "Wait for canonical V3 Verify on this exact commit" in workflow
+    assert "GITHUB_SHA" in workflow
+    assert "source_report_artifact_digest" in workflow
+    assert "source_artifact_digest" in workflow
+    assert "onecore-v3-conversion-report-45325008221" in workflow
+    assert "manifest_gate" in workflow
+    assert "actions/download-artifact@v7" in workflow
+    assert "train_v3_step(" not in workflow

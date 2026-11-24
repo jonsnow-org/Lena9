@@ -5,11 +5,17 @@
   "source_run_sha": "cee4165e16e11a12bf490bdbd4bf6be2fe031f69",
   "source_artifact_id": 14892594659,
   "source_artifact_name": "onecore-v3-corpus-45325008221",
-  "source_artifact_minimum_bytes": 1000000000,
   "train_manifest_member": "data/train.jsonl",
   "minimum_text_records": 100,
   "minimum_characters": 24,
   "min_frequency": 2,
   "output_artifact_name": "onecore-v3-tokenizer-45325008221",
-  "tokenizer_file_name": "onecore-v3-tokenizer-run605-vocab32000.json"
+  "tokenizer_file_name": "onecore-v3-tokenizer-run605-vocab32000.json",
+  "fit_revision": 2,
+  "source_artifact_digest": "sha256:302e6eb082ad82ee892b00153ac068f60505cdf5de5d14f3b82a919e576740a2",
+  "source_artifact_size_bytes": 24432975285,
+  "source_report_artifact_id": 14893020087,
+  "source_report_artifact_name": "onecore-v3-conversion-report-45325008221",
+  "source_report_artifact_digest": "sha256:151677083079aee3cfe5a39cbe07fbd47908e9c74560312cef9c137c64fcd1ba",
+  "source_report_artifact_size_bytes": 892194
 }

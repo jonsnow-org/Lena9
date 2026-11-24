@@ -64,7 +64,7 @@ or memory improvement until benchmarked.
   fixed 512-position table. Attention is still quadratic; this is not proof of
   efficient long-context scaling. Benchmark memory, throughput, and long-context
   retrieval before selecting production sequence lengths.
-- The independent V3 checkpoint/resume format and full-lineage round-trip/mismatch tests are implemented; canonical V3 Verify Run #608 passed. The V3 tokenizer training/verification utility is implemented but has not yet been fitted to the final recovered corpus. The external-only corpus gate passed in Run #602; Run #605 is still completing the final artifact-publication workflow. No V3 multi-session training workflow or production inference API exists yet, and media quality is unmeasured.
+- The independent V3 checkpoint/resume format and full-lineage round-trip/mismatch tests are implemented; canonical V3 Verify Run #608 passed. Run #605 completed the final corpus publication. The first real tokenizer fit attempt range-extracted the train manifest successfully but stopped on a raw data_class alias mismatch before publishing a tokenizer; the canonical external-classifier fix is being verified. No V3 multi-session training workflow or production inference API exists yet, and media quality is unmeasured.
 - The bounded corpus-restore job is manual-only: use `workflow_dispatch` and explicitly set `restore_v3_corpus=true`. Normal code pushes run Verify only. Restore uses the optional `corpus-restore` extra, CPU PyTorch 2.11 or newer, TorchCodec 0.17, and FFmpeg shared libraries; the job installs these explicitly and keeps Hugging Face media decoding disabled so the converter can preserve original encoded payloads and perform its own audio/video ingestion.
 - The optional GAN discriminators require a separately configured discriminator
   optimizer and stable alternating updates; this is not yet a full adversarial trainer.
@@ -73,8 +73,8 @@ or memory improvement until benchmarked.
 ## Next required engineering gates
 
 1. Run #605 completed successfully and published the validated V3 corpus artifact; do not rerun media restoration for this pinned corpus.
-2. Pass CI for the independent checkpoint format and its complete model/optimizer/scheduler/RNG/tokenizer/manifest/cursor/lineage round trip plus all negative mismatch tests.
-3. Use the dedicated `onecore-v3-tokenizer.yml` workflow to range-extract only `data/train.jsonl`, fit the exact 32,000-token external-only tokenizer, verify its evidence sidecar, and preserve its SHA-256 for the V3 checkpoint. The V3-native trainer is implemented; the actual corpus tokenizer has not yet been fitted. Never reuse the V2 tokenizer.
+2. Preserve the passing Run #608 checkpoint CI evidence; the latest Verify failure is isolated to the artifact overwrite-guard test and is being corrected without changing checkpoint lineage.
+3. Re-run the existing dedicated `onecore-v3-tokenizer.yml` workflow after canonical V3 Verify passes. Its first attempt successfully range-extracted only `data/train.jsonl` but rejected the external_staged data-class alias before fitting; the tokenizer now follows the same canonical external classifier as the manifest gate. Verify the exact 32,000-token JSON/evidence and preserve its SHA-256. Never reuse the V2 tokenizer.
 4. Recompute and freeze exact V3 parameter/FLOPs values, then measure peak CPU RSS and throughput using the validated corpus and real data loader (not storage estimates or synthetic-only smoke batches).
 5. Implement the bounded multi-session CPU trainer that restores the same V3 checkpoint lineage and dataset cursors, then expose V3 inference only after checkpoint and resource gates pass.
 6. Run independent text/tool/image/audio/video validation and held-out test evaluations bound to checkpoint, tokenizer, config and corpus hashes; no promotion threshold is inferred from training loss.
@@ -88,7 +88,7 @@ codec, config and dataset-manifest hashes. No quality thresholds are inferred he
 ### V3 tokenizer implementation — 2026-11-24
 
 Added the independent `onecore.v3.tokenizer` module and `onecore-v3-tokenizer` package command:
-- Reads the V3 train manifest only, selects `task=text`, requires explicit `data_class=external`, HTTP(S) source URL, immutable source revision and unique source-row SHA-256. Rejects bootstrap/synthetic/owner-curated rows, non-train records, duplicate IDs/source rows, short rows and invalid provenance.
+- Reads the V3 train manifest only, selects `task=text`, uses the canonical external data-classifier (including external_staged/external_reviewed aliases), HTTP(S) source URL, immutable source revision and unique source-row SHA-256. Rejects bootstrap/synthetic/owner-curated rows, non-train records, duplicate IDs/source rows, short rows and invalid provenance.
 - Fits byte-level BPE with NFC normalization and the exact `V3Config.text_vocab_size` (32,000 by default); it does not import V2 tokenizer vocabulary or files.
 - Writes tokenizer JSON and a sidecar evidence document containing config/manifest/tokenizer SHA-256, text-row digest, actual vocabulary, special-token IDs and the external train-only contract. Existing artifacts are never overwritten.
 - Adds a verifier that reloads the serialized tokenizer and rejects changed bytes, wrong vocabulary, invalid special-token IDs, config mismatch, missing evidence, non-external or non-train evidence, validation/test usage, and manifest mismatch.
@@ -99,3 +99,11 @@ Regression tests cover a tiny exact-vocabulary BPE fit, pinned external train-on
 ### V3 tokenizer request and execution — 2026-11-24
 
 The dedicated workflow reads the successful Run #605 corpus artifact by immutable run and artifact IDs. It uses HTTP byte-range access to extract only `data/train.jsonl`; it does not download the 24.43 GB media archive. It fits and verifies the exact 32,000-token V3 byte-level BPE vocabulary with external train text only, then publishes tokenizer JSON and SHA-256 evidence as an Actions artifact. The workflow is idempotent and refuses to overwrite or silently refit an existing tokenizer artifact. This step does not perform model optimizer updates.
+
+
+### Tokenizer fit diagnosis and corrective work — 2026-11-24
+
+- Tokenizer workflow Run #1 (45336109095) passed source-artifact preflight and range-extracted only data/train.jsonl from artifact 14892594659. It did not download the 24.43 GB media archive and did not publish a tokenizer artifact.
+- The fit step stopped on row hf-c4_ar-000d12d85c1a305d51f51aa4 because the tokenizer required the literal data_class string external. The shared data classifier already maps external_staged and external_reviewed to canonical external, and the V3 manifest gate uses that same classifier. The fix is to rely on external_record_is_trainable while retaining immutable source revision, row hash, HTTP(S) source URL and split checks.
+- Verify Run #614 failed one test (260 passed): the artifact overwrite guard was checked after optional requests/remotezip dependency availability. The guard now checks an existing output path first, so refusing overwrite is deterministic even in the lean Verify environment.
+- The existing tokenizer workflow is hardened to wait for successful Verify on the exact commit, validate the pinned corpus and report artifact digests/sizes, download only the small report, and recheck exact five-family coverage before the next fit attempt. This does not create another workflow or start optimizer training.

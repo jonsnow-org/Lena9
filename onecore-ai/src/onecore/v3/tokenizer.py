@@ -72,7 +72,7 @@ def iter_external_v3_train_text(
             raise ValueError(f"duplicate V3 train text record id: {record_id}")
         seen_ids.add(record_id)
 
-        if record.get("data_class") != "external" or not external_record_is_trainable(record):
+        if not external_record_is_trainable(record):
             raise ValueError(
                 f"V3 tokenizer rejects non-external or synthetic text row: {record_id}"
             )

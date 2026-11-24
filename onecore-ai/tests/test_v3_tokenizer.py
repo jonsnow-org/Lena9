@@ -64,6 +64,7 @@ def test_iter_external_v3_train_text_filters_non_text_and_requires_external_line
     ("record", "message"),
     [
         ({**_external_text_record(1), "data_class": "bootstrap"}, "non-external or synthetic"),
+        ({**_external_text_record(1), "data_class": "owner_curated"}, "non-external or synthetic"),
         ({**_external_text_record(1), "split": "validation"}, "train records only"),
         ({**_external_text_record(1), "source_revision": "main"}, "immutable source revision"),
         ({**_external_text_record(1), "source_row_id_sha256": "bad"}, "immutable source revision"),
@@ -182,3 +183,13 @@ def test_train_v3_tokenizer_refuses_to_overwrite_existing_artifacts(tmp_path):
         train_v3_tokenizer(
             manifest, output, config=_tiny_config(), minimum_text_records=100
         )
+
+
+@pytest.mark.parametrize("data_class", ["external_staged", "external_reviewed"])
+def test_iter_external_v3_train_text_accepts_canonical_external_aliases(tmp_path, data_class):
+    path = tmp_path / "train.jsonl"
+    _write_train_manifest(path, [{**_external_text_record(1), "data_class": data_class}])
+    records = list(iter_external_v3_train_text(path))
+    assert len(records) == 1
+    assert records[0]["id"] == "external-text-1"
+    assert records[0]["source_revision"] == "a" * 40

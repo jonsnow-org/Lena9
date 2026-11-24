@@ -2,7 +2,7 @@
 
 **One unified, multimodal research model initialized randomly from scratch.** No pretrained model weights, adapters, teacher-model outputs, or model downloads are used.
 
-OneCore is isolated under `onecore-ai/` in `jonsnow-org/Lena9` and developed only on `research/onecore-foundation`. Workflows are path-filtered and pinned to their triggering commit. The request-file training workflow uses the shared, non-cancelling `onecore-training-v2` lock; a newer request does not cancel an active training lineage.
+OneCore is isolated under `onecore-ai/` in `jonsnow-org/Lena9` and actively developed only on `research/onecore-v3-implementation`. The `research/onecore-foundation` branch is a frozen V2 legacy/reference archive. V3 corpus restoration and tokenizer fitting are bounded data-preparation operations; no optimizer training starts before tokenizer, checkpoint and measured CPU-resource gates pass.
 
 ## Canonical OneCore architecture policy
 
@@ -81,9 +81,11 @@ See `docs/corrected-spec-v2.md` for the exact engineering contract; `docs/traini
 
 ## Active OneCore V3 engineering status
 
-- The active architecture is `onecore-v3-prototype-2`, with one shared semantic core (four unique Transformer blocks reused over three cycles) and image/audio/video modality codecs/flow heads.
-- The current exact instantiated budget is 39,906,568 trainable parameters with config SHA-256 `6c879331c75da434c58680050f94035dc15626e7af4847db1b36e055c47d7708`. Storage estimates are not peak memory and are not a resource benchmark.
-- The V3 external-only corpus manifest gate passed the five-family 100/10/10 minimums in Run #602; the current Run #605 is repeating publication after the gate-semantics correction. No V3 model checkpoint or V3 training run has been approved.
-- Remaining requirements: publish the final corpus artifact; run CI on the V3 checkpoint and tokenizer regression suites; then fit and verify the V3-native 32,000-token tokenizer from external train text; measure peak CPU RSS/throughput on the validated corpus; recompute exact V3 FLOPs; then build a bounded multi-session CPU trainer and V3 inference API. The tokenizer fit/verify utility is implemented but has not yet been run on the final corpus.
-- V3 codecs remain untrained and quality is unmeasured. Do not call the model production-ready or claim professional media generation until independent, checkpoint-bound evaluation establishes it.
+- The active and only OneCore product architecture is onecore-v3-prototype-2: one shared semantic core with image/audio/video modality codecs and flow heads. V2 remains a frozen legacy/reference archive; no V2 weights, optimizer state, checkpoints or tokenizer are imported into V3.
+- Exact V3 budget: 39,906,568 trainable parameters; config SHA-256 6c879331c75da434c58680050f94035dc15626e7af4847db1b36e055c47d7708; 123 state tensors. Parameter and optimizer storage estimates are not peak CPU memory.
+- Run #605 completed and published the external-only five-family corpus. Artifact 14892594659 is 24,432,975,285 bytes; digest sha256:302e6eb082ad82ee892b00153ac068f60505cdf5de5d14f3b82a919e576740a2. The manifest gate passed; 1,302 non-external rows and 37 unmatched extra legacy rows remain explicit audit counts.
+- Run #608 passed canonical Verify with 256 tests and 18 warnings, including the V3 checkpoint/tokenizer regression suites.
+- The first real tokenizer fit attempt successfully range-extracted only data/train.jsonl from the pinned artifact, but fitting stopped because the tokenizer compared raw data_class labels literally and rejected external_staged rows that the canonical data classifier correctly maps to external. No tokenizer artifact was published. The same push exposed one CI test-ordering bug in the overwrite guard; both are being corrected with regression coverage.
+- The existing dedicated tokenizer workflow now waits for same-commit V3 Verify, checks exact corpus/report artifact digests and sizes, revalidates the five-family gate, then fits and verifies the exact 32,000-token BPE using canonical external classification. It still performs no model optimizer updates and does not download the full media archive.
+- Next gates: successful real tokenizer artifact and evidence, exact V3 FLOPs, measured peak CPU RSS/throughput, full real-manifest checkpoint continuity, then bounded multi-session CPU training and inference. No V3 optimizer training has started; media quality remains unmeasured.
 

@@ -36,6 +36,47 @@ jobs:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: onecore-ai/pyproject.toml
+      - name: Wait for canonical V3 Verify on this exact commit
+        run: |
+          python - <<'PY'
+          import json, os, time
+          from urllib.request import Request, urlopen
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          token = os.environ["GH_TOKEN"]
+          expected_sha = os.environ["GITHUB_SHA"]
+          headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
+          deadline = time.monotonic() + 2700
+
+          def get(path):
+              with urlopen(Request(f"https://api.github.com/repos/{repo}{path}", headers=headers), timeout=45) as response:
+                  return json.loads(response.read().decode("utf-8"))
+
+          while time.monotonic() < deadline:
+              runs = get("/actions/runs?branch=research/onecore-v3-implementation&per_page=100").get("workflow_runs", [])
+              matches = [
+                  run for run in runs
+                  if run.get("path") == ".github/workflows/onecore-ci.yml"
+                  and run.get("head_sha") == expected_sha
+              ]
+              if matches:
+                  current = max(matches, key=lambda run: run.get("created_at", ""))
+                  if current.get("status") == "completed":
+                      if current.get("conclusion") != "success":
+                          raise RuntimeError(
+                              f"canonical V3 Verify failed for {expected_sha}: {current.get('conclusion')}"
+                          )
+                      print({
+                          "verify_run_id": current.get("id"),
+                          "head_sha": expected_sha,
+                          "conclusion": current.get("conclusion"),
+                      })
+                      break
+              time.sleep(15)
+          else:
+              raise TimeoutError(f"canonical V3 Verify did not complete within 45 minutes for {expected_sha}")
+          PY
+
 
       - name: Check source corpus and prevent duplicate tokenizer fitting
         id: preflight
@@ -44,25 +85,68 @@ jobs:
           import json, os
           from pathlib import Path
           from urllib.request import Request, urlopen
+
           repo = os.environ["GITHUB_REPOSITORY"]
           token = os.environ["GH_TOKEN"]
           request_data = json.loads(Path("onecore-ai/v3-tokenizer-request.json").read_text(encoding="utf-8"))
           headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
+
           def get(path):
               with urlopen(Request(f"https://api.github.com/repos/{repo}{path}", headers=headers), timeout=45) as response:
                   return json.loads(response.read().decode("utf-8"))
+
           source_run = get(f"/actions/runs/{request_data['source_run_id']}")
-          if source_run.get("conclusion") != "success" or source_run.get("head_sha") != request_data["source_run_sha"]:
-              raise RuntimeError("pinned V3 corpus source run did not pass its exact SHA/conclusion check")
+          expected_run = {
+              "head_sha": request_data["source_run_sha"],
+              "head_branch": "research/onecore-v3-implementation",
+              "path": ".github/workflows/onecore-ci.yml",
+              "event": "push",
+              "status": "completed",
+              "conclusion": "success",
+          }
+          actual_run = {key: source_run.get(key) for key in expected_run}
+          if actual_run != expected_run:
+              raise RuntimeError(f"pinned V3 corpus source run mismatch: {actual_run}")
+
           artifacts = get(f"/actions/runs/{request_data['source_run_id']}/artifacts?per_page=100").get("artifacts", [])
           source = [item for item in artifacts if int(item.get("id", 0)) == int(request_data["source_artifact_id"])]
           if len(source) != 1:
               raise RuntimeError("pinned V3 corpus artifact id is missing or ambiguous")
-          item = source[0]
-          if item.get("name") != request_data["source_artifact_name"] or item.get("expired") is True:
-              raise RuntimeError("pinned V3 corpus artifact name/retention status is invalid")
-          if int(item.get("size_in_bytes", 0)) < int(request_data["source_artifact_minimum_bytes"]):
-              raise RuntimeError("pinned V3 corpus artifact is unexpectedly small")
+          source_item = source[0]
+          expected_source = {
+              "name": request_data["source_artifact_name"],
+              "digest": request_data["source_artifact_digest"],
+              "size_in_bytes": int(request_data["source_artifact_size_bytes"]),
+              "expired": False,
+          }
+          actual_source = {
+              "name": source_item.get("name"),
+              "digest": source_item.get("digest"),
+              "size_in_bytes": int(source_item.get("size_in_bytes", 0)),
+              "expired": source_item.get("expired"),
+          }
+          if actual_source != expected_source:
+              raise RuntimeError(f"pinned V3 corpus artifact metadata mismatch: {actual_source}")
+
+          reports = [item for item in artifacts if int(item.get("id", 0)) == int(request_data["source_report_artifact_id"])]
+          if len(reports) != 1:
+              raise RuntimeError("pinned V3 conversion report artifact id is missing or ambiguous")
+          report_item = reports[0]
+          expected_report = {
+              "name": request_data["source_report_artifact_name"],
+              "digest": request_data["source_report_artifact_digest"],
+              "size_in_bytes": int(request_data["source_report_artifact_size_bytes"]),
+              "expired": False,
+          }
+          actual_report = {
+              "name": report_item.get("name"),
+              "digest": report_item.get("digest"),
+              "size_in_bytes": int(report_item.get("size_in_bytes", 0)),
+              "expired": report_item.get("expired"),
+          }
+          if actual_report != expected_report:
+              raise RuntimeError(f"pinned V3 conversion report metadata mismatch: {actual_report}")
+
           runs = get("/actions/runs?branch=research/onecore-v3-implementation&per_page=100").get("workflow_runs", [])
           already_published = False
           for run in runs:
@@ -72,9 +156,12 @@ jobs:
               if any(a.get("name") == request_data["output_artifact_name"] and not a.get("expired", False) for a in existing):
                   already_published = True
                   break
+
           print(f"source_run_id={request_data['source_run_id']}")
           print(f"source_artifact_id={request_data['source_artifact_id']}")
-          print(f"source_artifact_bytes={item['size_in_bytes']}")
+          print(f"source_artifact_bytes={source_item['size_in_bytes']}")
+          print(f"source_artifact_digest={source_item['digest']}")
+          print(f"source_report_artifact_id={request_data['source_report_artifact_id']}")
           print(f"already_published={str(already_published).lower()}")
           PY
 
@@ -85,6 +172,53 @@ jobs:
           python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
           python -m pip install "tokenizers>=0.19,<1" "PyYAML>=6,<7" "numpy>=1.26,<3" "requests>=2.31,<3" "remotezip>=0.12,<1"
           python -m pip install --no-deps -e onecore-ai
+
+      - name: Download the small pinned V3 conversion report
+        if: steps.preflight.outputs.already_published != 'true'
+        uses: actions/download-artifact@v7
+        with:
+          name: onecore-v3-conversion-report-45325008221
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 45325008221
+          path: ${{ runner.temp }}/onecore-v3-tokenizer-input/report
+
+      - name: Revalidate the five-family external-only corpus gate
+        if: steps.preflight.outputs.already_published != 'true'
+        env:
+          REPORT_DIR: ${{ runner.temp }}/onecore-v3-tokenizer-input/report
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+
+          path = Path(os.environ["REPORT_DIR"]) / "onecore-v3-conversion-report.json"
+          report = json.loads(path.read_text(encoding="utf-8"))
+          expected = {
+              "train": {"audio": 1100, "image": 900, "text": 591525, "tool": 14000, "video": 100},
+              "validation": {"audio": 165, "image": 10, "text": 22552, "tool": 400, "video": 10},
+              "test": {"audio": 148, "image": 10, "text": 22758, "tool": 400, "video": 10},
+          }
+          gate = report.get("manifest_gate") or {}
+          if gate.get("passed") is not True or report.get("blocked") is not False:
+              raise RuntimeError("pinned V3 corpus report does not prove a passing manifest gate")
+          if gate.get("coverage") != expected:
+              raise RuntimeError(f"pinned V3 coverage differs from the approved report: {gate.get('coverage')}")
+          if report.get("errors") != [] or report.get("synthetic_records_added", 0) != 0:
+              raise RuntimeError("pinned V3 corpus report contains errors or synthetic records")
+          if report.get("acquisition_incomplete") is not False:
+              raise RuntimeError("pinned V3 corpus acquisition is incomplete")
+          skipped = report.get("skipped") or {}
+          if skipped.get("not_external_data_class") != 1302 or skipped.get("pinned_source_row_not_found") != 37:
+              raise RuntimeError(f"pinned V3 skipped-row audit changed: {skipped}")
+          print({
+              "manifest_gate": "passed",
+              "coverage": gate["coverage"],
+              "non_external_skipped": skipped["not_external_data_class"],
+              "unmatched_legacy_rows": skipped["pinned_source_row_not_found"],
+              "restoration_incomplete": report.get("restoration_incomplete"),
+          })
+          PY
 
       - name: Range-extract only V3 train.jsonl from the published corpus
         if: steps.preflight.outputs.already_published != 'true'

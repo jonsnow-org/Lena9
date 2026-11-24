@@ -195,6 +195,10 @@ def extract_v3_train_manifest(
     output_path: str | Path,
 ) -> dict[str, object]:
     """Range-extract only V3 data/train.jsonl; do not download its media archive."""
+    target = Path(output_path).resolve()
+    if target.exists():
+        raise FileExistsError(f"refusing to overwrite existing V3 train manifest: {target}")
+
     if requests is None or RemoteZip is None:
         raise RuntimeError(
             "range artifact extraction requires the optional dependency group: "
@@ -204,10 +208,6 @@ def extract_v3_train_manifest(
         raise ValueError("GITHUB_TOKEN is required to read the V3 corpus artifact")
     if artifact_id < 1:
         raise ValueError("artifact_id must be positive")
-
-    target = Path(output_path).resolve()
-    if target.exists():
-        raise FileExistsError(f"refusing to overwrite existing V3 train manifest: {target}")
     target.parent.mkdir(parents=True, exist_ok=True)
 
     api_url = (
