@@ -74,3 +74,21 @@ def test_manifest_bundle_fingerprint_matches_serialized_identity(tmp_path):
         identity, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
     ).encode("utf-8")).hexdigest()
     assert digest == expected
+
+
+def test_tokenizer_artifact_filename_is_taken_from_its_own_evidence():
+    from onecore.v3.resource_benchmark import _tokenizer_members
+
+    names = [
+        "onecore-v3-tokenizer-run605-vocab32000.json",
+        "tokenizer-run-summary.json",
+        "onecore-v3-tokenizer-run605-vocab32000.json.evidence.json",
+    ]
+    evidence = {"tokenizer_file": "onecore-v3-tokenizer-run605-vocab32000.json"}
+    assert _tokenizer_members(names, evidence) == (
+        "onecore-v3-tokenizer-run605-vocab32000.json",
+        "onecore-v3-tokenizer-run605-vocab32000.json.evidence.json",
+        "onecore-v3-tokenizer-run605-vocab32000.json",
+    )
+    with pytest.raises(ValueError, match="plain tokenizer JSON filename"):
+        _tokenizer_members(names, {"tokenizer_file": "../tokenizer.json"})

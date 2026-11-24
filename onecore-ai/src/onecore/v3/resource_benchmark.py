@@ -116,6 +116,14 @@ def _unique_basename(names: list[str], basename: str) -> str:
         raise ValueError(f"expected exactly one artifact member named {basename!r}; found {len(matches)}")
     return matches[0]
 
+def _tokenizer_members(names: list[str], evidence: dict[str, Any]) -> tuple[str, str, str]:
+    filename = evidence.get("tokenizer_file")
+    if not isinstance(filename, str) or not filename or PurePosixPath(filename).name != filename:
+        raise ValueError("tokenizer evidence must name a plain tokenizer JSON filename")
+    tokenizer_member = _unique_basename(names, filename)
+    evidence_member = _unique_basename(names, filename + ".evidence.json")
+    return tokenizer_member, evidence_member, filename
+
 
 def _safe_relative(value: Any) -> str:
     raw = str(value or "").replace("\\", "/")
@@ -711,10 +719,25 @@ def _run_parent(args: argparse.Namespace) -> int:
         tokenizer_root.mkdir()
         with RemoteZip(tokenizer_url, support_suffix_range=False) as archive:
             names = archive.namelist()
-            tokenizer_member = _unique_basename(names, "onecore-v3-tokenizer.json")
-            evidence_member = _unique_basename(names, "onecore-v3-tokenizer.json.evidence.json")
-            tokenizer_path = tokenizer_root / "onecore-v3-tokenizer.json"
-            evidence_path = tokenizer_root / "onecore-v3-tokenizer.json.evidence.json"
+            evidence_candidates = [
+                name for name in names
+                if PurePosixPath(str(name).replace("\\", "/")).name.endswith(".json.evidence.json")
+            ]
+            if len(evidence_candidates) != 1:
+                raise ValueError(
+                    "tokenizer artifact must contain exactly one JSON evidence sidecar; "
+                    f"found {len(evidence_candidates)}"
+                )
+            with archive.open(evidence_candidates[0]) as stream:
+                evidence_payload = stream.read(2 * 1024 * 1024 + 1)
+            if len(evidence_payload) > 2 * 1024 * 1024:
+                raise ValueError("tokenizer evidence sidecar exceeds the bounded size limit")
+            evidence_metadata = json.loads(evidence_payload.decode("utf-8"))
+            tokenizer_member, evidence_member, tokenizer_filename = _tokenizer_members(
+                names, evidence_metadata,
+            )
+            tokenizer_path = tokenizer_root / tokenizer_filename
+            evidence_path = tokenizer_path.with_name(tokenizer_path.name + ".evidence.json")
             _extract_member(archive, tokenizer_member, tokenizer_path)
             _extract_member(archive, evidence_member, evidence_path)
 
