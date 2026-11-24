@@ -880,7 +880,7 @@ This update supersedes earlier statements in this reference and the README that 
 **Implementation**
 - The existing manual-only V3 resource benchmark now runs both the per-family inference/forward-backward cases and a separate joint worker.
 - The joint worker loads one bounded, hash-verified external train micro-batch for each of text, tool, image, audio and video; text/tool use the real V3 tokenizer, images retain native dimensions, audio uses the canonical 24 kHz training derivative, and video preserves the selected frame timestamps.
-- It performs backward passes in the required five-family order while accumulating gradients, then allocates the AdamW exp_avg, exp_avg_sq, and scalar step tensors for every trainable parameter without calling optimizer.step. It reports parameter bytes, gradient bytes, AdamW-state bytes, peak RSS, per-family backward throughput and total joint elapsed time.
+- It performs forward/backward passes in the required five-family order while accumulating gradients, then allocates the AdamW exp_avg, exp_avg_sq, and scalar step tensors for every trainable parameter without calling optimizer.step. It reports parameter bytes, gradient bytes, AdamW-state bytes, peak RSS, per-family forward/backward throughput and total joint elapsed time.
 - The benchmark explicitly records optimizer_updates=0 and optimizer_step_executed=false; this is resource measurement on one representative real sample per family, not training, a checkpoint, a throughput guarantee for larger batches, or quality evidence.
 - Unit tests cover five-family plan completeness, bounded audio/video selection, exact AdamW-state byte accounting, and unchanged model weights/no optimizer step.
 
@@ -892,3 +892,11 @@ This update supersedes earlier statements in this reference and the README that 
 **Safety**
 - No workflow, branch, PR, corpus artifact, tokenizer artifact, model weights, checkpoint lineage, or optimizer training run was created or changed by this implementation.
 - V3 remains the only active architecture; Foundation remains the frozen V2 archive; main remains unchanged.
+
+
+## 2026-11-24 — Joint benchmark metric-label correction
+
+- Corrected joint timing fields to say forward/backward rather than backward-only; the measured interval includes model forward, loss construction and backward.
+- No model, data, optimizer, checkpoint or workflow behavior changed.
+- Implementation commit: 8de02208624e00a33bee694deb83955ae4ccbe67.
+- The preceding Verify run #630 passed on the prior implementation/documentation head; this label-only correction requires its own canonical Verify run before it is treated as verified.
