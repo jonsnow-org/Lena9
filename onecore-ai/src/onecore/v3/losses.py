@@ -45,11 +45,14 @@ def audio_multiresolution_stft_loss(predicted: torch.Tensor, target: torch.Tenso
     if predicted.ndim == 2:
         predicted = predicted.unsqueeze(1)
         target = target.unsqueeze(1)
-    if predicted.ndim != 3 or predicted.shape[1] != 1:
-        raise ValueError("audio must be mono [B,T] or [B,1,T]")
+    if predicted.ndim != 3 or predicted.shape[1] not in (1, 2):
+        raise ValueError("audio must be mono [B,T] or mono/stereo [B,C,T] with C in {1,2}")
     if not fft_sizes or any(size < 16 for size in fft_sizes):
         raise ValueError("fft_sizes must contain values >=16")
-    pred_wave, target_wave = predicted[:, 0].float(), target[:, 0].float()
+    # Flatten batch and channel axes so each mono/stereo channel contributes
+    # equally to the waveform and multi-resolution spectral losses.
+    pred_wave = predicted.float().reshape(-1, predicted.shape[-1])
+    target_wave = target.float().reshape(-1, target.shape[-1])
     loss = waveform_weight * F.l1_loss(pred_wave, target_wave)
     for n_fft in fft_sizes:
         hop = max(1, n_fft // 4)

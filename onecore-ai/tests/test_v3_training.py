@@ -61,3 +61,22 @@ def test_v3_objective_rejects_empty_batches():
         assert "at least one modality" in str(exc)
     else:
         raise AssertionError("empty joint batch must fail")
+
+
+def test_v3_audio_objective_accepts_stereo_waveform():
+    torch.manual_seed(37)
+    model = _tiny_model()
+    objective = OneCoreV3Objective(model)
+    waveform = torch.rand(2, 2, 2048)
+
+    losses = objective({
+        "audio": {
+            "waveform": waveform,
+            "sample_rate": 24_000,
+        }
+    })
+    losses["total"].backward()
+
+    assert torch.isfinite(losses["audio_reconstruction_loss"])
+    assert "audio_flow_loss" in losses
+    assert any(parameter.grad is not None for parameter in model.parameters())

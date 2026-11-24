@@ -1,3 +1,4 @@
+import pytest
 import torch
 
 from onecore.v3.losses import (
@@ -51,3 +52,21 @@ def test_v3_video_temporal_and_cross_modal_alignment_losses():
     assert torch.isfinite(alignment)
     assert fake_video.grad is not None
     assert left.grad is not None
+
+
+def test_v3_multiresolution_audio_loss_supports_stereo_and_rejects_more_channels():
+    real = torch.randn(2, 2, 2048)
+    fake = torch.randn(2, 2, 2048, requires_grad=True)
+    reconstruction = audio_multiresolution_stft_loss(
+        fake, real, fft_sizes=(128, 256, 512),
+    )
+    reconstruction.backward()
+
+    assert torch.isfinite(reconstruction)
+    assert fake.grad is not None
+    assert fake.grad.shape == fake.shape
+
+    with pytest.raises(ValueError, match="mono/stereo"):
+        audio_multiresolution_stft_loss(
+            torch.randn(1, 3, 512), torch.randn(1, 3, 512),
+        )
