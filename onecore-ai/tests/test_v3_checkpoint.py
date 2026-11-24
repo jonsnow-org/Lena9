@@ -18,6 +18,8 @@ from onecore.v3.checkpoint import (
 
 def test_v3_checkpoint_format_version_is_public_and_isolated():
     assert V3_CHECKPOINT_FORMAT_VERSION == 1
+    from onecore.v3 import V3_DATA_STATE_FORMAT_VERSION
+    assert V3_DATA_STATE_FORMAT_VERSION == 1
 
 
 def _config():
@@ -72,6 +74,54 @@ def _assert_nested_equal(left, right):
         assert left == right
 
 
+def _data_state(manifest_sha, rows=12):
+    families = {}
+    source_cursors = {}
+    for family in ("text", "tool", "image", "audio", "video"):
+        source_id = f"fixture-{family}"
+        revision = "c" * 40
+        families[family] = {
+            "rows_consumed": rows,
+            "last_record_id": f"{family}-record-{rows}" if rows else None,
+        }
+        source_cursors[f"{family}::{source_id}@{revision}"] = {
+            "family": family,
+            "source_id": source_id,
+            "source_revision": revision,
+            "source_url": f"https://example.org/{source_id}",
+            "data_class": "external",
+            "split": "train",
+            "rows_consumed": rows,
+            "cursor_state": {"mode": "offset", "offset": rows},
+            "last_source_row_id_sha256": (
+                hashlib.sha256(f"{family}-source-row-{rows}".encode()).hexdigest()
+                if rows else None
+            ),
+        }
+    return {
+        "format_version": 1,
+        "manifest_sha256": manifest_sha,
+        "split": "train",
+        "families": families,
+        "source_cursors": source_cursors,
+    }
+
+
+def _save_data_state(path, data_state, *, global_step=0):
+    config = _config()
+    model = config.build_model()
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.8)
+    return save_v3_checkpoint(
+        path, model, optimizer, scheduler, global_step, config,
+        tokenizer_json=_tokenizer_json(config.text_vocab_size),
+        manifest_sha256="a" * 64,
+        data_state=data_state,
+        lineage={"run_id": "run-v3-data-state", "session": 1,
+                 "parent_checkpoint_sha256": None},
+    )
+
+
 def _save(path, model, optimizer, scheduler, config, *, parent=None):
     tokenizer = _tokenizer_json(config.text_vocab_size)
     manifest_sha = "a" * 64
@@ -79,14 +129,75 @@ def _save(path, model, optimizer, scheduler, config, *, parent=None):
         path, model, optimizer, scheduler, 7, config,
         tokenizer_json=tokenizer,
         manifest_sha256=manifest_sha,
-        data_state={
-            "families": {"text": {"rows_read": 12}, "image": {"rows_read": 4}},
-            "source_cursors": {"fleurs_ar/train": {"offset": 12}},
-        },
+        data_state=_data_state(manifest_sha, rows=12),
         lineage={"run_id": "run-v3-001", "session": (2 if parent is not None else 1),
                  "parent_checkpoint_sha256": parent},
     )
     return result, tokenizer, manifest_sha
+
+
+def test_v3_checkpoint_rejects_data_state_manifest_mismatch(tmp_path):
+    state = _data_state("b" * 64, rows=0)
+    with pytest.raises(ValueError, match="data-state manifest fingerprint mismatch"):
+        _save_data_state(tmp_path / "bad-manifest.pt", state)
+
+
+def test_v3_checkpoint_requires_all_five_family_cursors(tmp_path):
+    state = _data_state("a" * 64, rows=0)
+    state["families"].pop("video")
+    with pytest.raises(ValueError, match="exactly text, tool, image, audio and video"):
+        _save_data_state(tmp_path / "missing-family.pt", state)
+
+
+def test_v3_checkpoint_rejects_validation_or_test_source_cursors(tmp_path):
+    state = _data_state("a" * 64, rows=0)
+    cursor = next(iter(state["source_cursors"].values()))
+    cursor["split"] = "validation"
+    with pytest.raises(ValueError, match="only the train split"):
+        _save_data_state(tmp_path / "heldout-cursor.pt", state)
+
+
+def test_v3_checkpoint_rejects_non_external_or_mutably_pinned_source_cursors(tmp_path):
+    state = _data_state("a" * 64, rows=0)
+    cursor = next(iter(state["source_cursors"].values()))
+    cursor["data_class"] = "bootstrap"
+    with pytest.raises(ValueError, match="external-only"):
+        _save_data_state(tmp_path / "bootstrap-cursor.pt", state)
+
+    state = _data_state("a" * 64, rows=0)
+    cursor = next(iter(state["source_cursors"].values()))
+    cursor["source_revision"] = "latest"
+    with pytest.raises(ValueError, match="mutable reference"):
+        _save_data_state(tmp_path / "mutable-revision.pt", state)
+
+
+def test_v3_checkpoint_rejects_source_cursor_count_mismatch(tmp_path):
+    state = _data_state("a" * 64, rows=12)
+    state["families"]["text"]["rows_consumed"] = 11
+    with pytest.raises(ValueError, match="cursor totals do not match"):
+        _save_data_state(tmp_path / "cursor-count-mismatch.pt", state, global_step=7)
+
+
+def test_v3_checkpoint_rejects_consumed_cursor_without_source_row_identity(tmp_path):
+    state = _data_state("a" * 64, rows=12)
+    cursor = next(iter(state["source_cursors"].values()))
+    cursor["last_source_row_id_sha256"] = None
+    with pytest.raises(ValueError, match="last_source_row_id_sha256"):
+        _save_data_state(tmp_path / "missing-row-identity.pt", state, global_step=7)
+
+
+def test_v3_checkpoint_rejects_cursor_offset_mismatch(tmp_path):
+    state = _data_state("a" * 64, rows=12)
+    cursor = next(iter(state["source_cursors"].values()))
+    cursor["cursor_state"]["offset"] = 11
+    with pytest.raises(ValueError, match="offset does not match rows_consumed"):
+        _save_data_state(tmp_path / "offset-mismatch.pt", state, global_step=7)
+
+
+def test_v3_checkpoint_requires_each_joint_family_to_advance_with_global_step(tmp_path):
+    state = _data_state("a" * 64, rows=2)
+    with pytest.raises(ValueError, match="fewer records than global_step"):
+        _save_data_state(tmp_path / "short-family-cursor.pt", state, global_step=3)
 
 
 def test_v3_checkpoint_round_trips_full_training_lineage_and_rng(tmp_path):
@@ -128,7 +239,11 @@ def test_v3_checkpoint_round_trips_full_training_lineage_and_rng(tmp_path):
     assert payload["tokenizer_sha256"] == saved["tokenizer_sha256"]
     assert payload["tokenizer_vocab_size"] == config.text_vocab_size
     assert payload["manifest_sha256"] == manifest_sha
-    assert payload["data_state"]["source_cursors"]["fleurs_ar/train"]["offset"] == 12
+    assert payload["data_state"]["manifest_sha256"] == manifest_sha
+    assert payload["data_state"]["families"]["video"]["rows_consumed"] == 12
+    text_cursor = payload["data_state"]["source_cursors"]["text::fixture-text@" + "c" * 40]
+    assert text_cursor["cursor_state"]["offset"] == 12
+    assert text_cursor["last_source_row_id_sha256"] == hashlib.sha256(b"text-source-row-12").hexdigest()
     assert payload["lineage"]["run_id"] == "run-v3-001"
     assert payload["lineage"]["session"] == 2
     assert payload["lineage"]["parent_checkpoint_sha256"] == parent_sha

@@ -14,6 +14,7 @@ import re
 import tempfile
 from pathlib import Path
 from typing import Any, Mapping
+from urllib.parse import urlparse
 
 import numpy as np
 import torch
@@ -25,6 +26,8 @@ from .manifest import assert_v3_external_coverage, read_v3_manifest
 
 FORMAT_VERSION = 1
 V3_CHECKPOINT_FORMAT_VERSION = FORMAT_VERSION
+V3_DATA_STATE_FORMAT_VERSION = 1
+V3_DATA_FAMILIES = ("text", "tool", "image", "audio", "video")
 ARCHITECTURE_FAMILY = "onecore-v3"
 
 
@@ -94,13 +97,113 @@ def _normalise_lineage(lineage: Mapping[str, Any]) -> dict[str, Any]:
     return value
 
 
-def _normalise_data_state(data_state: Mapping[str, Any]) -> dict[str, Any]:
+def _normalise_data_state(
+    data_state: Mapping[str, Any],
+    *,
+    manifest_sha256: str,
+    global_step: int,
+) -> dict[str, Any]:
+    """Validate a train-only, five-family cursor snapshot before checkpoint I/O."""
     if not isinstance(data_state, Mapping):
-        raise TypeError("data_state must be a mapping containing dataset cursors")
+        raise TypeError("data_state must be a mapping containing V3 training cursors")
     try:
-        return json.loads(json.dumps(dict(data_state), sort_keys=True, allow_nan=False))
+        value = json.loads(json.dumps(dict(data_state), sort_keys=True, allow_nan=False))
     except (TypeError, ValueError) as exc:
         raise ValueError(f"data_state must be JSON-serializable: {exc}") from exc
+
+    version = value.get("format_version")
+    if isinstance(version, bool) or not isinstance(version, int) or version != V3_DATA_STATE_FORMAT_VERSION:
+        raise ValueError("unsupported V3 data-state format version")
+    if value.get("manifest_sha256") != manifest_sha256:
+        raise ValueError("V3 data-state manifest fingerprint mismatch")
+    if value.get("split") != "train":
+        raise ValueError("V3 checkpoint data-state may contain only the train split")
+
+    families = value.get("families")
+    if not isinstance(families, dict) or set(families) != set(V3_DATA_FAMILIES):
+        raise ValueError("V3 data-state must contain exactly text, tool, image, audio and video families")
+
+    family_counts: dict[str, int] = {}
+    for family in V3_DATA_FAMILIES:
+        state = families[family]
+        if not isinstance(state, dict):
+            raise ValueError(f"V3 data-state family cursor is invalid: {family}")
+        rows_consumed = state.get("rows_consumed")
+        if isinstance(rows_consumed, bool) or not isinstance(rows_consumed, int) or rows_consumed < 0:
+            raise ValueError(f"V3 data-state rows_consumed must be a non-negative integer: {family}")
+        last_record_id = state.get("last_record_id")
+        if rows_consumed == 0 and last_record_id is not None:
+            raise ValueError(f"V3 data-state empty family has a last_record_id: {family}")
+        if rows_consumed > 0 and (not isinstance(last_record_id, str) or not last_record_id.strip()):
+            raise ValueError(f"V3 data-state consumed family is missing last_record_id: {family}")
+        family_counts[family] = rows_consumed
+
+    source_cursors = value.get("source_cursors")
+    if not isinstance(source_cursors, dict):
+        raise ValueError("V3 data-state source_cursors must be a mapping")
+    cursor_totals = {family: 0 for family in V3_DATA_FAMILIES}
+    mutable_revisions = {"main", "master", "latest", "head"}
+    for cursor_id, cursor in source_cursors.items():
+        if not isinstance(cursor_id, str) or not cursor_id.strip() or not isinstance(cursor, dict):
+            raise ValueError("V3 source cursor identity or payload is invalid")
+        family = cursor.get("family")
+        if family not in V3_DATA_FAMILIES:
+            raise ValueError(f"V3 source cursor has an unsupported family: {family}")
+        source_id = cursor.get("source_id")
+        revision = cursor.get("source_revision")
+        source_url = cursor.get("source_url")
+        if not isinstance(source_id, str) or not source_id.strip():
+            raise ValueError("V3 source cursor is missing source_id")
+        if not isinstance(revision, str) or not revision.strip():
+            raise ValueError("V3 source cursor is missing immutable source_revision")
+        if revision.strip().lower() in mutable_revisions or revision.strip().lower().startswith("refs/heads/"):
+            raise ValueError("V3 source cursor source_revision is a mutable reference, not a pinned revision")
+        parsed_url = urlparse(source_url) if isinstance(source_url, str) else None
+        if parsed_url is None or parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
+            raise ValueError("V3 source cursor requires an immutable HTTP(S) source_url")
+        if cursor.get("data_class") != "external":
+            raise ValueError("V3 checkpoint source cursors must be external-only")
+        if cursor.get("split") != "train":
+            raise ValueError("V3 checkpoint source cursors may contain only the train split")
+
+        rows_consumed = cursor.get("rows_consumed")
+        if isinstance(rows_consumed, bool) or not isinstance(rows_consumed, int) or rows_consumed < 0:
+            raise ValueError("V3 source cursor rows_consumed must be a non-negative integer")
+        cursor_state = cursor.get("cursor_state")
+        if not isinstance(cursor_state, dict):
+            raise ValueError("V3 source cursor cursor_state must be a mapping")
+        mode = cursor_state.get("mode")
+        if mode == "offset":
+            offset = cursor_state.get("offset")
+            if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0 or offset != rows_consumed:
+                raise ValueError("V3 source cursor offset does not match rows_consumed")
+        elif mode == "state_dict":
+            state_dict = cursor_state.get("state_dict")
+            if not isinstance(state_dict, (dict, list)):
+                raise ValueError("V3 state_dict cursor mode requires a mapping or list state_dict")
+        else:
+            raise ValueError("V3 source cursor mode must be offset or state_dict")
+
+        last_source_row = cursor.get("last_source_row_id_sha256")
+        if rows_consumed > 0:
+            _require_sha256(last_source_row, "source_cursor.last_source_row_id_sha256")
+        elif last_source_row is not None:
+            _require_sha256(last_source_row, "source_cursor.last_source_row_id_sha256")
+
+        expected_cursor_id = f"{family}::{source_id}@{revision}"
+        if cursor_id != expected_cursor_id:
+            raise ValueError("V3 source cursor key does not match its family/source/revision identity")
+        cursor_totals[family] += rows_consumed
+
+    for family in V3_DATA_FAMILIES:
+        if cursor_totals[family] != family_counts[family]:
+            raise ValueError(f"V3 source cursor totals do not match family rows_consumed: {family}")
+        if global_step > 0 and family_counts[family] < global_step:
+            raise ValueError(
+                f"V3 joint checkpoint family {family} consumed fewer records than global_step"
+            )
+
+    return value
 
 
 def _assert_model_matches_config(model: OneCoreV3, config: V3Config) -> None:
@@ -320,7 +423,9 @@ def save_v3_checkpoint(
         tokenizer_json, config.text_vocab_size
     )
     lineage_value = _normalise_lineage(lineage)
-    data_state_value = _normalise_data_state(data_state)
+    data_state_value = _normalise_data_state(
+        data_state, manifest_sha256=manifest_sha256, global_step=global_step,
+    )
 
     payload = {
         "format_version": FORMAT_VERSION,
@@ -436,7 +541,6 @@ def load_v3_checkpoint(
     lineage = _normalise_lineage(payload.get("lineage") or {})
     if lineage.get("parent_checkpoint_sha256") != expected_parent_checkpoint_sha256:
         raise ValueError("V3 checkpoint parent lineage mismatch")
-    data_state = _normalise_data_state(payload.get("data_state") or {})
     rng_state = payload.get("rng_state")
     if not isinstance(rng_state, dict) or not all(
         key in rng_state for key in ("python", "numpy", "torch_cpu")
@@ -446,6 +550,11 @@ def load_v3_checkpoint(
     if isinstance(raw_step, bool) or not isinstance(raw_step, int) or raw_step < 0:
         raise ValueError("V3 checkpoint global_step is missing or invalid")
     step = raw_step
+    data_state = _normalise_data_state(
+        payload.get("data_state"),
+        manifest_sha256=expected_manifest_sha256,
+        global_step=step,
+    )
     saved_model = payload.get("model_state_dict")
     saved_optimizer = payload.get("optimizer_state_dict")
     saved_scheduler = payload.get("scheduler_state_dict")

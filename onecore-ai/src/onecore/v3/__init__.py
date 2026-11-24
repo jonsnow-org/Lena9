@@ -6,7 +6,8 @@ from .audio import AudioEncoding, NeuralAudioCodec, ResidualVectorQuantizer
 from .core import OneCoreV3, SharedSemanticCore
 from .config import V3Config
 from .checkpoint import (
-    V3_CHECKPOINT_FORMAT_VERSION, fingerprint_validated_v3_manifests,
+    V3_CHECKPOINT_FORMAT_VERSION, V3_DATA_STATE_FORMAT_VERSION,
+    fingerprint_validated_v3_manifests,
     load_v3_checkpoint, save_v3_checkpoint,
 )
 from .training import OneCoreV3Objective, V3ObjectiveWeights, train_v3_discriminator_step, train_v3_step
@@ -23,7 +24,8 @@ from .vision import ImageEncoding, VariableResolutionImageCodec
 __all__ = [
     "AudioEncoding", "NeuralAudioCodec", "ResidualVectorQuantizer",
     "OneCoreV3", "SharedSemanticCore", "V3Config",
-    "V3_CHECKPOINT_FORMAT_VERSION", "save_v3_checkpoint", "load_v3_checkpoint",
+    "V3_CHECKPOINT_FORMAT_VERSION", "V3_DATA_STATE_FORMAT_VERSION",
+    "save_v3_checkpoint", "load_v3_checkpoint",
     "fingerprint_validated_v3_manifests",
     "V3_SPECIAL_TOKENS", "iter_external_v3_train_text",
     "train_v3_tokenizer", "verify_v3_tokenizer",
