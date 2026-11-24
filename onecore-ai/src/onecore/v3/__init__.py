@@ -11,6 +11,7 @@ from .checkpoint import (
     load_v3_checkpoint, save_v3_checkpoint,
 )
 from .training import OneCoreV3Objective, V3ObjectiveWeights, train_v3_discriminator_step, train_v3_step
+from .dataset import V3JointDataLoader, V3JointMicroBatch
 from .manifest import assert_v3_external_coverage, read_v3_manifest, validate_v3_manifest
 from .tokenizer import (
     SPECIAL_TOKENS as V3_SPECIAL_TOKENS,
@@ -30,6 +31,7 @@ __all__ = [
     "V3_SPECIAL_TOKENS", "iter_external_v3_train_text",
     "train_v3_tokenizer", "verify_v3_tokenizer",
     "OneCoreV3Objective", "V3ObjectiveWeights", "train_v3_step", "train_v3_discriminator_step",
+    "V3JointDataLoader", "V3JointMicroBatch",
     "assert_v3_external_coverage", "read_v3_manifest", "validate_v3_manifest",
     "ImageEncoding", "VariableResolutionImageCodec",
     "TemporalVideoCodec", "VideoEncoding",

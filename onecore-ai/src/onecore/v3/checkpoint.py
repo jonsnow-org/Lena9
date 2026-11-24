@@ -7,6 +7,7 @@ manifest, data cursors, RNG states, and parent-checkpoint lineage.
 from __future__ import annotations
 
 import hashlib
+from itertools import chain
 import json
 import os
 import random
@@ -274,41 +275,52 @@ def fingerprint_validated_v3_manifests(
     minimum_train: int = 100,
     minimum_holdout: int = 10,
 ) -> dict[str, Any]:
-    """Validate the exact train/validation/test manifest files and bind their bytes/assets.
-
-    The returned SHA-256 is suitable for checkpoint lineage only after the external-only
-    manifest validator confirms all five families, immutable provenance, asset existence,
-    duplicate rejection and split isolation.
-    """
+    """Stream split manifests and bind their bytes plus validated assets."""
     required = {"train", "validation", "test"}
     if not isinstance(manifest_paths, Mapping) or set(manifest_paths) != required:
         raise ValueError("manifest_paths must contain exactly train, validation, and test")
-    records: list[dict[str, Any]] = []
+
     file_digests: dict[str, dict[str, Any]] = {}
+    split_iterators = []
     for split in ("train", "validation", "test"):
         path = Path(manifest_paths[split]).resolve()
         if not path.is_file():
             raise FileNotFoundError(f"V3 {split} manifest not found: {path}")
-        split_records = list(read_v3_manifest(path))
-        wrong_split = [
-            str(row.get("id", f"line-{index}"))
-            for index, row in enumerate(split_records, 1)
-            if str(row.get("split", "")) != split
-        ]
-        if wrong_split:
-            raise ValueError(
-                f"V3 {split} manifest contains records assigned to another split: "
-                + ", ".join(wrong_split[:5])
-            )
-        records.extend(split_records)
         file_digests[split] = {
             "sha256": sha256_file(path),
             "bytes": path.stat().st_size,
-            "records": len(split_records),
+            "records": 0,
         }
+
+        def iter_split(
+            manifest_path: Path = path,
+            expected_split: str = split,
+            digest_key: str = split,
+        ):
+            count = 0
+            for index, row in enumerate(read_v3_manifest(manifest_path), 1):
+                if str(row.get("split", "")) != expected_split:
+                    raise ValueError(
+                        f"V3 {expected_split} manifest contains a row assigned to "
+                        f"another split at record {index}"
+                    )
+                count += 1
+                yield row
+            file_digests[digest_key]["records"] = count
+
+        split_iterators.append(iter_split())
+
     validation = assert_v3_external_coverage(
-        records, assets_root, minimum_train=minimum_train, minimum_holdout=minimum_holdout
+        chain.from_iterable(split_iterators),
+        assets_root,
+        minimum_train=minimum_train,
+        minimum_holdout=minimum_holdout,
     )
+    for split in ("train", "validation", "test"):
+        current_sha = sha256_file(Path(manifest_paths[split]).resolve())
+        if current_sha != file_digests[split]["sha256"]:
+            raise RuntimeError(f"V3 {split} manifest changed during fingerprint validation")
+
     identity = {
         "format": "onecore-v3-validated-manifest-bundle-v1",
         "splits": file_digests,
@@ -323,7 +335,6 @@ def fingerprint_validated_v3_manifests(
         "manifest_files": file_digests,
         "validation": validation,
     }
-
 
 def _assert_scheduler_uses_optimizer(scheduler: Any, optimizer: torch.optim.Optimizer) -> None:
     if scheduler is None or getattr(scheduler, "optimizer", None) is not optimizer:
