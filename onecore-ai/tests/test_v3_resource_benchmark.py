@@ -7,7 +7,9 @@ import torch
 from onecore.v3.resource_benchmark import (
     _build_joint_plan,
     _distribution,
+    _joint_worker,
     _manifest_bundle_fingerprint,
+    _objective_batch_for_family,
     _preallocate_adamw_state,
     _safe_relative,
     _unique_basename,
@@ -243,3 +245,127 @@ def test_adamw_state_preallocation_rejects_non_adamw_optimizer():
     optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
     with pytest.raises(TypeError, match="requires torch.optim.AdamW"):
         _preallocate_adamw_state(optimizer)
+
+
+def test_objective_batch_builder_matches_each_v3_family_contract():
+    from types import SimpleNamespace
+
+    config = SimpleNamespace(audio_sample_rate=24_000)
+    text_ids = torch.tensor([[1, 2, 3]])
+    tool_ids = torch.tensor([[3, 2, 1]])
+    images = torch.rand(1, 3, 8, 8)
+    waveform = torch.rand(1, 2, 24)
+    frames = torch.rand(1, 2, 3, 8, 8)
+    timestamps = torch.tensor([[0.0, 0.04]])
+
+    assert _objective_batch_for_family("text", text_ids, config, {})["text"]["input_ids"] is text_ids
+    assert _objective_batch_for_family("tool", tool_ids, config, {})["tool"]["input_ids"] is tool_ids
+    assert _objective_batch_for_family("image", images, config, {})["image"]["images"] is images
+    audio_batch = _objective_batch_for_family(
+        "audio", waveform, config, {"sample_rate": 24_000}
+    )
+    assert audio_batch["audio"]["waveform"] is waveform
+    assert audio_batch["audio"]["sample_rate"] == 24_000
+    video_batch = _objective_batch_for_family(
+        "video", (frames, timestamps), config, {}
+    )
+    assert video_batch["video"]["frames"] is frames
+    assert video_batch["video"]["timestamps"] is timestamps
+
+    with pytest.raises(ValueError, match="canonical sample rate"):
+        _objective_batch_for_family("audio", waveform, config, {"sample_rate": 48_000})
+    with pytest.raises(ValueError, match="frames and timestamps"):
+        _objective_batch_for_family("video", frames, config, {})
+    with pytest.raises(ValueError, match="unsupported objective"):
+        _objective_batch_for_family("unknown", text_ids, config, {})
+
+
+def test_joint_worker_uses_onecore_v3_objective_for_all_five_micro_batches(
+    monkeypatch, tmp_path,
+):
+    from types import SimpleNamespace
+    from onecore.v3 import resource_benchmark as benchmark
+
+    order = ("text", "tool", "image", "audio", "video")
+    loaded = {
+        "text": torch.tensor([[1, 2]], dtype=torch.long),
+        "tool": torch.tensor([[2, 3]], dtype=torch.long),
+        "image": torch.ones(1, 3, 2, 2),
+        "audio": torch.ones(1, 1, 8),
+        "video": (
+            torch.ones(1, 2, 3, 2, 2),
+            torch.tensor([[0.0, 0.04]]),
+        ),
+    }
+    metadata = {
+        "text": {}, "tool": {}, "image": {},
+        "audio": {"sample_rate": 24_000}, "video": {},
+    }
+    calls = []
+    models = []
+    initial_weights = []
+
+    class TinyConfig:
+        audio_sample_rate = 24_000
+
+        def build_model(self):
+            model = torch.nn.Linear(1, 1, bias=False)
+            models.append(model)
+            initial_weights.append(model.weight.detach().clone())
+            return model
+
+    class OneCoreV3Objective:
+        def __init__(self, model):
+            self.model = model
+            self.weights = SimpleNamespace(
+                text=1.0, tool=1.0, image_flow=1.0, image_reconstruction=1.0,
+                image_adversarial=0.1, audio_flow=1.0, audio_reconstruction=1.0,
+                audio_commitment=0.25, audio_adversarial=0.1, video_flow=1.0,
+                video_reconstruction=1.0, video_temporal=1.0, alignment=0.1,
+            )
+            self.image_discriminator = None
+            self.audio_discriminator = None
+
+        def __call__(self, batch):
+            family, payload = next(iter(batch.items()))
+            calls.append((family, payload))
+            loss = self.model.weight.square().sum()
+            return {"total": loss, f"{family}_loss": loss}
+
+    def fake_load(plan, tokenizer_path):
+        family = plan["family"]
+        return loaded[family], 2, metadata[family]
+
+    monkeypatch.setattr(benchmark, "V3Config", TinyConfig)
+    monkeypatch.setattr(benchmark, "OneCoreV3Objective", OneCoreV3Objective)
+    monkeypatch.setattr(benchmark, "_load_worker_input", fake_load)
+    monkeypatch.setattr(benchmark, "_load_current_rss_bytes", lambda: 1024)
+    monkeypatch.setattr(benchmark, "_max_rss_bytes", lambda: 2048)
+    monkeypatch.setattr(benchmark.torch, "set_num_threads", lambda value: None)
+    monkeypatch.setattr(benchmark.torch, "set_num_interop_threads", lambda value: None)
+    monkeypatch.setattr(benchmark.torch.cuda, "is_available", lambda: False)
+
+    plan_path = tmp_path / "joint-plan.json"
+    plan_path.write_text(json.dumps({
+        "families": {
+            family: {"family": family, "record_id": f"{family}-sample"}
+            for family in order
+        }
+    }), encoding="utf-8")
+
+    result = _joint_worker(plan_path, tmp_path / "tokenizer.json", 4)
+
+    assert result["status"] == "success"
+    assert [family for family, _payload in calls] == list(order)
+    assert result["micro_batch_order"] == list(order)
+    assert result["joint_objective"]["name"] == "OneCoreV3Objective"
+    assert result["joint_objective"]["alignment_loss_included"] is False
+    assert result["joint_objective"]["optional_discriminators_included"] is False
+    assert all(
+        f"{family}_loss" in result["family_results"][family]["objective_terms"]
+        for family in order
+    )
+    assert result["optimizer_updates"] == 0
+    assert result["optimizer_step_executed"] is False
+    assert result["optimizer_state_allocated"] is True
+    assert torch.equal(models[0].weight.detach(), initial_weights[0])

@@ -42,6 +42,7 @@ from onecore.v3.config import V3Config
 from onecore.v3.manifest import TASK_GROUPS, read_v3_manifest
 from onecore.v3.report import build_report
 from onecore.v3.tokenizer import sha256_file, verify_v3_tokenizer
+from onecore.v3.training import OneCoreV3Objective
 
 
 def _sha256(data: bytes) -> str:
@@ -585,6 +586,36 @@ def _load_worker_input(plan: dict[str, Any], tokenizer_path: Path | None) -> tup
     raise ValueError(f"unsupported benchmark family: {family}")
 
 
+def _objective_batch_for_family(
+    family: str,
+    loaded: Any,
+    config: V3Config,
+    input_metadata: dict[str, Any],
+) -> dict[str, Any]:
+    """Build the exact one-family micro-batch accepted by OneCoreV3Objective."""
+    if family in {"text", "tool"}:
+        return {family: {"input_ids": loaded}}
+    if family == "image":
+        return {"image": {"images": loaded}}
+    if family == "audio":
+        sample_rate = input_metadata.get("sample_rate")
+        if (
+            isinstance(sample_rate, bool)
+            or not isinstance(sample_rate, int)
+            or sample_rate != int(config.audio_sample_rate)
+        ):
+            raise ValueError(
+                "audio objective micro-batch must carry the configured canonical sample rate"
+            )
+        return {"audio": {"waveform": loaded, "sample_rate": sample_rate}}
+    if family == "video":
+        if not isinstance(loaded, tuple) or len(loaded) != 2:
+            raise ValueError("video objective micro-batch must contain frames and timestamps")
+        frames, timestamps = loaded
+        return {"video": {"frames": frames, "timestamps": timestamps}}
+    raise ValueError(f"unsupported objective micro-batch family: {family}")
+
+
 def _worker(plan_path: Path, tokenizer_path: Path | None, threads: int,
             iterations: int) -> dict[str, Any]:
     started = time.perf_counter()
@@ -699,6 +730,7 @@ def _worker(plan_path: Path, tokenizer_path: Path | None, threads: int,
             "peak_rss_growth_bytes": max(0, peak_rss - baseline_peak),
             "cpu_threads": threads,
             "iterations": iterations,
+            "backward_objective": "reconstruction_diagnostic_only",
             "optimizer_step_executed": False,
             "elapsed_seconds": round(time.perf_counter() - started, 6),
         }
@@ -752,52 +784,37 @@ def _joint_worker(
         baseline_current = _load_current_rss_bytes()
         baseline_peak = _max_rss_bytes()
 
+        objective = OneCoreV3Objective(model)
+        objective_weights = dict(vars(objective.weights))
+        alignment_loss_included = False
         model.zero_grad(set_to_none=True)
         family_results: dict[str, dict[str, Any]] = {}
         joint_forward_backward_started = time.perf_counter()
         for family in order:
             loaded, units, input_metadata = inputs[family]
             family_started = time.perf_counter()
-            loss_values: list[float] = []
-
-            if family in {"text", "tool"}:
-                logits = model.forward_text(loaded)
-                loss = F.cross_entropy(
-                    logits[:, :-1].reshape(-1, logits.shape[-1]),
-                    loaded[:, 1:].reshape(-1),
+            batch = _objective_batch_for_family(
+                family, loaded, config, input_metadata,
+            )
+            losses = objective(batch)
+            total_loss = losses.get("total")
+            if not isinstance(total_loss, torch.Tensor) or total_loss.ndim != 0:
+                raise ValueError(
+                    f"OneCoreV3Objective returned no scalar total loss for {family}"
                 )
-                loss.backward()
-                loss_values.append(float(loss.detach()))
-
-            elif family == "image":
-                reconstruction, _encoding = model.forward_image(loaded)
-                loss = F.mse_loss(reconstruction, loaded)
-                loss.backward()
-                loss_values.append(float(loss.detach()))
-
-            elif family == "audio":
-                reconstruction, encoding = model.forward_audio(
-                    loaded, sample_rate=config.audio_sample_rate,
-                )
-                loss = F.mse_loss(reconstruction, loaded) + encoding.commitment_loss
-                loss.backward()
-                loss_values.append(float(loss.detach()))
-
-            else:
-                video, timestamps = loaded
-                offset = 0
-                for reconstruction in model.forward_video_chunks(
-                    video,
-                    timestamps=timestamps,
-                    frame_chunk_size=config.video_generation_chunk_frames,
-                ):
-                    expected = video[:, offset:offset + reconstruction.shape[1]]
-                    loss = F.mse_loss(reconstruction, expected)
-                    loss.backward()
-                    loss_values.append(float(loss.detach()))
-                    offset += reconstruction.shape[1]
-                if offset != video.shape[1]:
-                    raise RuntimeError("joint video micro-batch did not process every selected frame")
+            total_loss.backward()
+            objective_terms: dict[str, float] = {}
+            for name, value in losses.items():
+                if name == "total":
+                    continue
+                if not isinstance(value, torch.Tensor) or value.ndim != 0:
+                    raise ValueError(
+                        f"OneCoreV3Objective returned a non-scalar loss term: {family}/{name}"
+                    )
+                objective_terms[name] = float(value.detach())
+            alignment_loss_included = alignment_loss_included or (
+                "alignment_loss" in objective_terms
+            )
 
             elapsed = time.perf_counter() - family_started
             unit_name = {
@@ -809,9 +826,10 @@ def _joint_worker(
                 "units": float(units),
                 "unit_name": unit_name,
                 "input_metadata": input_metadata,
+                "objective_terms": objective_terms,
+                "loss_diagnostic_only": round(float(total_loss.detach()), 8),
                 "forward_backward_seconds": round(elapsed, 6),
                 "forward_backward_units_per_second": round(float(units) / max(elapsed, 1e-9), 6),
-                "loss_diagnostic_only": round(float(sum(loss_values) / max(1, len(loss_values))), 8),
             }
 
         joint_forward_backward_seconds = time.perf_counter() - joint_forward_backward_started
@@ -829,9 +847,22 @@ def _joint_worker(
         peak_rss = _max_rss_bytes()
         return {
             "status": "success",
-            "benchmark_kind": "joint_five_family_forward_backward_plus_adamw_state_preallocation_no_step",
+            "benchmark_kind": "joint_five_family_onecore_v3_objective_plus_adamw_state_preallocation_no_step",
             "micro_batch_order": list(order),
             "micro_batch_count": len(order),
+            "joint_objective": {
+                "name": "OneCoreV3Objective",
+                "weights": objective_weights,
+                "alignment_loss_included": alignment_loss_included,
+                "optional_discriminators_included": (
+                    objective.image_discriminator is not None
+                    or objective.audio_discriminator is not None
+                ),
+                "gradient_accumulation": (
+                    "one backward per family in text/tool/image/audio/video order; "
+                    "gradients retained across the five micro-batches"
+                ),
+            },
             "family_results": family_results,
             "model_init_seconds": round(model_init_seconds, 6),
             "input_load_seconds": round(input_load_seconds, 6),
@@ -855,7 +886,7 @@ def _joint_worker(
     except Exception as exc:
         return {
             "status": "failed",
-            "benchmark_kind": "joint_five_family_forward_backward_plus_adamw_state_preallocation_no_step",
+            "benchmark_kind": "joint_five_family_onecore_v3_objective_plus_adamw_state_preallocation_no_step",
             "error": f"{type(exc).__name__}: {str(exc)}",
             "traceback": traceback.format_exc()[-5000:],
             "optimizer_updates": 0,
@@ -1155,7 +1186,7 @@ def _run_parent(args: argparse.Namespace) -> int:
         result = {
             "format_version": 1,
             "status": "blocked" if failed else "measured",
-            "benchmark_kind": "cpu_per_family_plus_joint_five_microbatch_forward_backward_and_adamw_state_preallocation_without_optimizer_step",
+            "benchmark_kind": "cpu_per_family_diagnostics_plus_joint_five_microbatch_v3_objective_and_adamw_state_preallocation_without_optimizer_step",
             "created_at_utc": datetime.now(timezone.utc).isoformat(),
             "github_run_id": os.environ.get("GITHUB_RUN_ID"),
             "artifacts": artifact_info,
@@ -1197,9 +1228,9 @@ def _run_parent(args: argparse.Namespace) -> int:
             "limitations": [
                 "All samples are immutable external V3 train records from the validated corpus artifact.",
                 "The model is randomly initialized; this is a resource measurement, not a quality evaluation.",
-                "Each case measures inference and forward/backward latency in an isolated CPU process.",
-                "No optimizer step is executed. The joint case preallocates AdamW moment tensors for every trainable parameter without changing model weights.",
-                "The joint case uses one bounded real train micro-batch per family; it is a measured resource sample, not a full training run or a quality result.",
+                "Per-family isolated cases measure forward latency and reconstruction-only backward diagnostics; their backward rates are not the full training objective.",
+                "The joint case executes OneCoreV3Objective once per family micro-batch, calls backward in the required five-family order, and accumulates gradients. It then preallocates AdamW state without calling optimizer.step or changing model weights.",
+                "The joint case uses one bounded real train micro-batch per family; optional GAN discriminators and paired alignment loss are absent unless the selected sample provides condition_ids. It is a measured resource sample, not a full training run or a quality result.",
                 "Image resolution is native; audio is the preserved 24 kHz training derivative; video uses original stored frame PNGs and timestamps.",
                 "No source acquisition, corpus conversion, tokenizer fitting, V2 import, or checkpoint mutation occurs.",
             ],
