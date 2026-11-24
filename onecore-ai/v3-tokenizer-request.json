@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "architecture_version": "onecore-v3-prototype-2",
+  "source_run_id": 45325008221,
+  "source_run_sha": "cee4165e16e11a12bf490bdbd4bf6be2fe031f69",
+  "source_artifact_id": 14892594659,
+  "source_artifact_name": "onecore-v3-corpus-45325008221",
+  "source_artifact_minimum_bytes": 1000000000,
+  "train_manifest_member": "data/train.jsonl",
+  "minimum_text_records": 100,
+  "minimum_characters": 24,
+  "min_frequency": 2,
+  "output_artifact_name": "onecore-v3-tokenizer-45325008221",
+  "tokenizer_file_name": "onecore-v3-tokenizer-run605-vocab32000.json"
+}

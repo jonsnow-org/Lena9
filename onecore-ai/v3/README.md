@@ -64,17 +64,17 @@ or memory improvement until benchmarked.
   fixed 512-position table. Attention is still quadratic; this is not proof of
   efficient long-context scaling. Benchmark memory, throughput, and long-context
   retrieval before selecting production sequence lengths.
-- The independent V3 checkpoint/resume format and full-lineage round-trip/mismatch tests are implemented; their first canonical CI verification is queued. The V3 tokenizer training/verification utility is implemented but has not yet been fitted to the final recovered corpus. The external-only corpus gate passed in Run #602; Run #605 is still completing the final artifact-publication workflow. No V3 multi-session training workflow or production inference API exists yet, and media quality is unmeasured.
+- The independent V3 checkpoint/resume format and full-lineage round-trip/mismatch tests are implemented; canonical V3 Verify Run #608 passed. The V3 tokenizer training/verification utility is implemented but has not yet been fitted to the final recovered corpus. The external-only corpus gate passed in Run #602; Run #605 is still completing the final artifact-publication workflow. No V3 multi-session training workflow or production inference API exists yet, and media quality is unmeasured.
 - The bounded corpus-restore job is manual-only: use `workflow_dispatch` and explicitly set `restore_v3_corpus=true`. Normal code pushes run Verify only. Restore uses the optional `corpus-restore` extra, CPU PyTorch 2.11 or newer, TorchCodec 0.17, and FFmpeg shared libraries; the job installs these explicitly and keeps Hugging Face media decoding disabled so the converter can preserve original encoded payloads and perform its own audio/video ingestion.
 - The optional GAN discriminators require a separately configured discriminator
   optimizer and stable alternating updates; this is not yet a full adversarial trainer.
-- The V3 five-family external manifest gate passed 100 train / 10 validation / 10 test per family in Run #602. Run #605 repeats the final artifact-publication step; only its completed report/artifact confirms publication.
+- The V3 five-family external manifest gate and final artifact publication completed successfully in Run #605. The tokenizer is a separate train-only CPU step and does not start model optimizer updates.
 
 ## Next required engineering gates
 
-1. Complete Run #605 and confirm the final external-only V3 corpus report/artifact; if it fails, resume only from the durable progress artifact and exact pinned source cursors.
+1. Run #605 completed successfully and published the validated V3 corpus artifact; do not rerun media restoration for this pinned corpus.
 2. Pass CI for the independent checkpoint format and its complete model/optimizer/scheduler/RNG/tokenizer/manifest/cursor/lineage round trip plus all negative mismatch tests.
-3. After Run #605 publishes the final corpus, execute `onecore-v3-tokenizer train` against `data/train.jsonl`, verify the exact 32,000-token artifact and evidence with `onecore-v3-tokenizer verify`, and bind its SHA-256 to the V3 checkpoint. The V3-native trainer is implemented; the actual corpus tokenizer has not yet been fitted. Never reuse the V2 tokenizer.
+3. Use the dedicated `onecore-v3-tokenizer.yml` workflow to range-extract only `data/train.jsonl`, fit the exact 32,000-token external-only tokenizer, verify its evidence sidecar, and preserve its SHA-256 for the V3 checkpoint. The V3-native trainer is implemented; the actual corpus tokenizer has not yet been fitted. Never reuse the V2 tokenizer.
 4. Recompute and freeze exact V3 parameter/FLOPs values, then measure peak CPU RSS and throughput using the validated corpus and real data loader (not storage estimates or synthetic-only smoke batches).
 5. Implement the bounded multi-session CPU trainer that restores the same V3 checkpoint lineage and dataset cursors, then expose V3 inference only after checkpoint and resource gates pass.
 6. Run independent text/tool/image/audio/video validation and held-out test evaluations bound to checkpoint, tokenizer, config and corpus hashes; no promotion threshold is inferred from training loss.
@@ -93,4 +93,9 @@ Added the independent `onecore.v3.tokenizer` module and `onecore-v3-tokenizer` p
 - Writes tokenizer JSON and a sidecar evidence document containing config/manifest/tokenizer SHA-256, text-row digest, actual vocabulary, special-token IDs and the external train-only contract. Existing artifacts are never overwritten.
 - Adds a verifier that reloads the serialized tokenizer and rejects changed bytes, wrong vocabulary, invalid special-token IDs, config mismatch, missing evidence, non-external or non-train evidence, validation/test usage, and manifest mismatch.
 
-Regression tests cover a tiny exact-vocabulary BPE fit, pinned external train-only filtering, invalid revision/row hashes/URLs, bootstrap rejection, special-token evidence and SHA-256 mismatch, output immutability and overwrite refusal. The implementation and tests are committed with CI pending; the actual 32,000-token tokenizer has **not** been trained yet because the final V3 corpus artifact is still awaiting Run #605 completion. Do not label a tokenizer as fitted until the resulting JSON and evidence sidecar exist and verify successfully.
+Regression tests cover a tiny exact-vocabulary BPE fit, pinned external train-only filtering, invalid revision/row hashes/URLs, bootstrap rejection, special-token evidence and SHA-256 mismatch, output immutability and overwrite refusal. The tokenizer implementation/tests passed V3 Verify Run #608. The actual 32,000-token tokenizer is **not yet fitted**; the dedicated corpus-bound workflow performs the one-time fit after CI. Do not label a tokenizer as fitted until the resulting JSON and evidence sidecar exist and verify successfully.
+
+
+### V3 tokenizer request and execution — 2026-11-24
+
+The dedicated workflow reads the successful Run #605 corpus artifact by immutable run and artifact IDs. It uses HTTP byte-range access to extract only `data/train.jsonl`; it does not download the 24.43 GB media archive. It fits and verifies the exact 32,000-token V3 byte-level BPE vocabulary with external train text only, then publishes tokenizer JSON and SHA-256 evidence as an Actions artifact. The workflow is idempotent and refuses to overwrite or silently refit an existing tokenizer artifact. This step does not perform model optimizer updates.

@@ -25,3 +25,25 @@ def test_v2_training_is_archived_and_cannot_run_from_canonical_v3():
     bootstrap = (WORKFLOWS / "onecore-bootstrap.yml").read_text(encoding="utf-8")
     assert "OneCore V2 (ARCHIVED)" in bootstrap
     assert "branches: [research/onecore-foundation]" in bootstrap
+
+
+
+def test_v3_tokenizer_workflow_is_pinned_idempotent_and_does_not_train():
+    import json
+    request_data = json.loads(
+        (ROOT / "onecore-ai" / "v3-tokenizer-request.json").read_text(encoding="utf-8")
+    )
+    workflow = (WORKFLOWS / "onecore-v3-tokenizer.yml").read_text(encoding="utf-8")
+    assert request_data["source_run_id"] == 45325008221
+    assert request_data["source_artifact_id"] == 14892594659
+    assert request_data["source_artifact_name"] == "onecore-v3-corpus-45325008221"
+    assert request_data["minimum_text_records"] >= 100
+    assert request_data["output_artifact_name"] == "onecore-v3-tokenizer-45325008221"
+    assert "workflow_dispatch:" in workflow
+    assert 'paths: ["onecore-ai/v3-tokenizer-request.json"]' in workflow
+    assert "cancel-in-progress: false" in workflow
+    assert "extract_v3_train_manifest" in workflow
+    assert "onecore.v3.tokenizer" in workflow
+    assert "validation_or_test_rows_used" in workflow
+    assert "onecore.v3.training" not in workflow
+    assert "train_v3_step(" not in workflow
