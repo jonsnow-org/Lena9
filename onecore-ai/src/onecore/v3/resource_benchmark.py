@@ -39,6 +39,7 @@ except ImportError:  # supplied only by the explicit corpus-restore extra
 
 from onecore.data import external_record_is_trainable, has_immutable_external_provenance
 from onecore.v3.config import V3Config
+from onecore.v3.dataset import CONDITION_FIELDS, _window_start
 from onecore.v3.manifest import TASK_GROUPS, read_v3_manifest
 from onecore.v3.report import build_report
 from onecore.v3.tokenizer import sha256_file, verify_v3_tokenizer
@@ -206,6 +207,8 @@ def _select_train_samples(
     selected: dict[str, dict[str, Any]] = {}
     best: dict[str, tuple[float, dict[str, Any]]] = {}
     fallback: dict[str, tuple[float, dict[str, Any]]] = {}
+    best_conditioned: dict[str, tuple[float, dict[str, Any]]] = {}
+    fallback_conditioned: dict[str, tuple[float, dict[str, Any]]] = {}
     stats: dict[str, list[float]] = {
         "text_characters": [], "tool_characters": [],
         "image_megapixels": [], "image_width": [], "image_height": [],
@@ -233,6 +236,13 @@ def _select_train_samples(
             "source_revision": str(row.get("source_revision", "")),
             "source_row_id_sha256": str(row.get("source_row_id_sha256", "")),
         }
+        condition_field = CONDITION_FIELDS.get(str(row.get("task", "")))
+        if condition_field is not None:
+            condition_text = row.get(condition_field)
+            if not isinstance(condition_text, str) or not condition_text.strip():
+                continue
+            candidate["condition_field"] = condition_field
+            candidate["condition_text"] = condition_text.strip()
 
         if family == "text":
             text_value = row.get("text")
@@ -280,6 +290,11 @@ def _select_train_samples(
                 best[family] = (megapixels, candidate)
             if megapixels < fallback.get(family, (float("inf"), {}))[0]:
                 fallback[family] = (megapixels, candidate)
+            if condition_field is not None:
+                if megapixels <= max_image_megapixels and megapixels > best_conditioned.get(family, (-1.0, {}))[0]:
+                    best_conditioned[family] = (megapixels, candidate)
+                if megapixels < fallback_conditioned.get(family, (float("inf"), {}))[0]:
+                    fallback_conditioned[family] = (megapixels, candidate)
 
         elif family == "audio":
             media = (row.get("assets") or {}).get("audio") or {}
@@ -308,6 +323,11 @@ def _select_train_samples(
                 best[family] = (duration, candidate)
             if duration < fallback.get(family, (float("inf"), {}))[0]:
                 fallback[family] = (duration, candidate)
+            if condition_field is not None:
+                if duration <= max_audio_seconds and duration > best_conditioned.get(family, (-1.0, {}))[0]:
+                    best_conditioned[family] = (duration, candidate)
+                if duration < fallback_conditioned.get(family, (float("inf"), {}))[0]:
+                    fallback_conditioned[family] = (duration, candidate)
 
         else:
             media = (row.get("assets") or {}).get("video") or {}
@@ -350,9 +370,19 @@ def _select_train_samples(
                 best[family] = (score, candidate)
             if megapixels < fallback.get(family, (float("inf"), {}))[0]:
                 fallback[family] = (megapixels, candidate)
+            if condition_field is not None:
+                if megapixels <= max_video_megapixels and score > best_conditioned.get(family, (-1.0, {}))[0]:
+                    best_conditioned[family] = (score, candidate)
+                if megapixels < fallback_conditioned.get(family, (float("inf"), {}))[0]:
+                    fallback_conditioned[family] = (megapixels, candidate)
 
     for family in ("text", "tool", "image", "audio", "video"):
-        value = best.get(family) or fallback.get(family)
+        value = (
+            best_conditioned.get(family)
+            or best.get(family)
+            or fallback_conditioned.get(family)
+            or fallback.get(family)
+        )
         if value is None:
             raise ValueError(f"no immutable external train sample is available for {family}")
         selected[family] = value[1]
@@ -591,12 +621,26 @@ def _objective_batch_for_family(
     loaded: Any,
     config: V3Config,
     input_metadata: dict[str, Any],
+    condition_ids: torch.Tensor | None = None,
 ) -> dict[str, Any]:
     """Build the exact one-family micro-batch accepted by OneCoreV3Objective."""
+    if condition_ids is not None and (
+        not isinstance(condition_ids, torch.Tensor)
+        or condition_ids.ndim != 2
+        or condition_ids.dtype not in (torch.int32, torch.int64)
+        or condition_ids.shape[0] != 1
+        or condition_ids.shape[1] < 1
+    ):
+        raise ValueError("media condition_ids must be a non-empty integer tensor [1,T]")
     if family in {"text", "tool"}:
+        if condition_ids is not None:
+            raise ValueError("text/tool batches already contain their semantic text input")
         return {family: {"input_ids": loaded}}
     if family == "image":
-        return {"image": {"images": loaded}}
+        payload = {"images": loaded}
+        if condition_ids is not None:
+            payload["condition_ids"] = condition_ids
+        return {"image": payload}
     if family == "audio":
         sample_rate = input_metadata.get("sample_rate")
         if (
@@ -607,12 +651,18 @@ def _objective_batch_for_family(
             raise ValueError(
                 "audio objective micro-batch must carry the configured canonical sample rate"
             )
-        return {"audio": {"waveform": loaded, "sample_rate": sample_rate}}
+        payload = {"waveform": loaded, "sample_rate": sample_rate}
+        if condition_ids is not None:
+            payload["condition_ids"] = condition_ids
+        return {"audio": payload}
     if family == "video":
         if not isinstance(loaded, tuple) or len(loaded) != 2:
             raise ValueError("video objective micro-batch must contain frames and timestamps")
         frames, timestamps = loaded
-        return {"video": {"frames": frames, "timestamps": timestamps}}
+        payload = {"frames": frames, "timestamps": timestamps}
+        if condition_ids is not None:
+            payload["condition_ids"] = condition_ids
+        return {"video": payload}
     raise ValueError(f"unsupported objective micro-batch family: {family}")
 
 
@@ -793,8 +843,27 @@ def _joint_worker(
         for family in order:
             loaded, units, input_metadata = inputs[family]
             family_started = time.perf_counter()
+            raw_condition_ids = family_plans[family].get("condition_ids")
+            condition_ids = None
+            if raw_condition_ids is not None:
+                if (
+                    not isinstance(raw_condition_ids, list)
+                    or not raw_condition_ids
+                    or any(
+                        isinstance(value, bool) or not isinstance(value, int) or value < 0
+                        for value in raw_condition_ids
+                    )
+                ):
+                    raise ValueError(f"joint {family} condition_ids must be a non-empty list of token IDs")
+                condition_ids = torch.tensor(raw_condition_ids, dtype=torch.long).unsqueeze(0)
+                for key in (
+                    "condition_field", "condition_text_sha256", "condition_tokens",
+                    "source_condition_tokens", "condition_window_start",
+                ):
+                    if key in family_plans[family]:
+                        input_metadata[key] = family_plans[family][key]
             batch = _objective_batch_for_family(
-                family, loaded, config, input_metadata,
+                family, loaded, config, input_metadata, condition_ids=condition_ids,
             )
             losses = objective(batch)
             total_loss = losses.get("total")
@@ -825,6 +894,7 @@ def _joint_worker(
                 "record_id": family_plans[family]["record_id"],
                 "units": float(units),
                 "unit_name": unit_name,
+                "conditioned": condition_ids is not None,
                 "input_metadata": input_metadata,
                 "objective_terms": objective_terms,
                 "loss_diagnostic_only": round(float(total_loss.detach()), 8),
@@ -854,6 +924,13 @@ def _joint_worker(
                 "name": "OneCoreV3Objective",
                 "weights": objective_weights,
                 "alignment_loss_included": alignment_loss_included,
+                "conditioned_families": [
+                    family for family in order if family_plans[family].get("condition_ids") is not None
+                ],
+                "alignment_note": (
+                    "single-record micro-batches can use paired text conditions, "
+                    "but do not form a contrastive batch for alignment loss"
+                ),
                 "optional_discriminators_included": (
                     objective.image_discriminator is not None
                     or objective.audio_discriminator is not None
@@ -934,6 +1011,39 @@ def _build_plans(selected: dict[str, dict[str, Any]], tokenizer_path: Path,
     return plans
 
 
+def _condition_plan_fields(
+    sample: dict[str, Any], family: str, tokenizer: Tokenizer,
+) -> dict[str, Any]:
+    field = sample.get("condition_field")
+    value = sample.get("condition_text")
+    if field is None and value is None:
+        return {}
+    expected_field = {"image": "caption", "audio": "transcript", "video": "caption"}.get(family)
+    if field != expected_field or not isinstance(value, str) or not value.strip():
+        raise ValueError(f"joint {family} paired condition metadata is invalid")
+    row_hash = str(sample.get("source_row_id_sha256", "")).strip().lower()
+    if len(row_hash) != 64 or any(char not in "0123456789abcdef" for char in row_hash):
+        raise ValueError(f"joint {family} paired condition has no immutable row hash")
+    text_value = value.strip()
+    token_ids = tokenizer.encode(text_value).ids
+    total_tokens = len(token_ids)
+    if not token_ids:
+        raise ValueError(f"joint {family} paired condition tokenization is empty")
+    if total_tokens > 512:
+        start = _window_start(row_hash, 0, total_tokens - 512, f"{family}_condition")
+        token_ids = token_ids[start:start + 512]
+    else:
+        start = 0
+    return {
+        "condition_ids": token_ids,
+        "condition_field": field,
+        "condition_text_sha256": hashlib.sha256(text_value.encode("utf-8")).hexdigest(),
+        "condition_tokens": len(token_ids),
+        "source_condition_tokens": total_tokens,
+        "condition_window_start": start,
+    }
+
+
 def _build_joint_plan(
     selected: dict[str, dict[str, Any]],
     tokenizer_path: Path,
@@ -966,6 +1076,7 @@ def _build_joint_plan(
         "record_id": image["record_id"],
         "image_path": image["local_paths"][0],
     }
+    families["image"].update(_condition_plan_fields(image, "image", tokenizer))
 
     audio = selected["audio"]
     audio_duration = float(audio.get("duration_seconds", 0.0))
@@ -977,6 +1088,7 @@ def _build_joint_plan(
         "audio_path": audio["local_paths"][0],
         "target_seconds": min(audio_duration, max_audio_seconds),
     }
+    families["audio"].update(_condition_plan_fields(audio, "audio", tokenizer))
 
     video = selected["video"]
     frame_paths = list(video.get("local_paths") or [])[:max_video_frames]
@@ -991,6 +1103,7 @@ def _build_joint_plan(
         "timestamp_unit": video.get("timestamp_unit"),
         "target_frames": len(frame_paths),
     }
+    families["video"].update(_condition_plan_fields(video, "video", tokenizer))
 
     return {
         "format_version": 1,

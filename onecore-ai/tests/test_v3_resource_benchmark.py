@@ -182,14 +182,21 @@ def test_joint_plan_contains_one_bounded_micro_batch_for_each_family(tmp_path):
     selected = {
         "text": {"record_id": "text-1", "text": "one two three four"},
         "tool": {"record_id": "tool-1", "text": "one two three"},
-        "image": {"record_id": "image-1", "local_paths": ["image.png"]},
+        "image": {
+            "record_id": "image-1", "local_paths": ["image.png"],
+            "condition_field": "caption", "condition_text": "one two",
+            "source_row_id_sha256": "a" * 64,
+        },
         "audio": {
             "record_id": "audio-1", "local_paths": ["audio-24k.wav"],
-            "duration_seconds": 3.5,
+            "duration_seconds": 3.5, "condition_field": "transcript",
+            "condition_text": "two three", "source_row_id_sha256": "b" * 64,
         },
         "video": {
             "record_id": "video-1", "local_paths": ["frame-0.png", "frame-1.png", "frame-2.png"],
             "timestamps": [0.0, 0.5, 1.0], "timestamp_unit": "seconds",
+            "condition_field": "caption", "condition_text": "three four",
+            "source_row_id_sha256": "c" * 64,
         },
     }
 
@@ -204,6 +211,16 @@ def test_joint_plan_contains_one_bounded_micro_batch_for_each_family(tmp_path):
     assert plan["families"]["audio"]["target_seconds"] == 2.0
     assert plan["families"]["video"]["frame_paths"] == ["frame-0.png", "frame-1.png"]
     assert plan["families"]["video"]["timestamps"] == [0.0, 0.5]
+    for family, text_value, field in (
+        ("image", "one two", "caption"),
+        ("audio", "two three", "transcript"),
+        ("video", "three four", "caption"),
+    ):
+        planned = plan["families"][family]
+        assert planned["condition_field"] == field
+        assert planned["condition_ids"] == tokenizer.encode(text_value).ids
+        assert planned["condition_tokens"] == len(planned["condition_ids"])
+        assert len(planned["condition_text_sha256"]) == 64
 
 
 def test_adamw_state_preallocation_measures_moments_without_updating_weights():
@@ -260,17 +277,25 @@ def test_objective_batch_builder_matches_each_v3_family_contract():
 
     assert _objective_batch_for_family("text", text_ids, config, {})["text"]["input_ids"] is text_ids
     assert _objective_batch_for_family("tool", tool_ids, config, {})["tool"]["input_ids"] is tool_ids
-    assert _objective_batch_for_family("image", images, config, {})["image"]["images"] is images
+    condition_ids = torch.tensor([[1, 2]], dtype=torch.long)
+    image_batch = _objective_batch_for_family(
+        "image", images, config, {}, condition_ids=condition_ids
+    )["image"]
+    assert image_batch["images"] is images
+    assert image_batch["condition_ids"] is condition_ids
     audio_batch = _objective_batch_for_family(
-        "audio", waveform, config, {"sample_rate": 24_000}
+        "audio", waveform, config, {"sample_rate": 24_000},
+        condition_ids=condition_ids,
     )
     assert audio_batch["audio"]["waveform"] is waveform
     assert audio_batch["audio"]["sample_rate"] == 24_000
+    assert audio_batch["audio"]["condition_ids"] is condition_ids
     video_batch = _objective_batch_for_family(
-        "video", (frames, timestamps), config, {}
+        "video", (frames, timestamps), config, {}, condition_ids=condition_ids
     )
     assert video_batch["video"]["frames"] is frames
     assert video_batch["video"]["timestamps"] is timestamps
+    assert video_batch["video"]["condition_ids"] is condition_ids
 
     with pytest.raises(ValueError, match="canonical sample rate"):
         _objective_batch_for_family("audio", waveform, config, {"sample_rate": 48_000})
@@ -348,7 +373,18 @@ def test_joint_worker_uses_onecore_v3_objective_for_all_five_micro_batches(
     plan_path = tmp_path / "joint-plan.json"
     plan_path.write_text(json.dumps({
         "families": {
-            family: {"family": family, "record_id": f"{family}-sample"}
+            family: {
+                "family": family, "record_id": f"{family}-sample",
+                **(
+                    {
+                        "condition_ids": [1, 2],
+                        "condition_field": "transcript" if family == "audio" else "caption",
+                        "condition_text_sha256": "a" * 64,
+                        "condition_tokens": 2,
+                    }
+                    if family in {"image", "audio", "video"} else {}
+                ),
+            }
             for family in order
         }
     }), encoding="utf-8")
@@ -360,7 +396,11 @@ def test_joint_worker_uses_onecore_v3_objective_for_all_five_micro_batches(
     assert result["micro_batch_order"] == list(order)
     assert result["joint_objective"]["name"] == "OneCoreV3Objective"
     assert result["joint_objective"]["alignment_loss_included"] is False
+    assert result["joint_objective"]["conditioned_families"] == ["image", "audio", "video"]
     assert result["joint_objective"]["optional_discriminators_included"] is False
+    for family, payload in calls:
+        if family in {"image", "audio", "video"}:
+            assert payload["condition_ids"].tolist() == [[1, 2]]
     assert all(
         f"{family}_loss" in result["family_results"][family]["objective_terms"]
         for family in order
@@ -369,3 +409,56 @@ def test_joint_worker_uses_onecore_v3_objective_for_all_five_micro_batches(
     assert result["optimizer_step_executed"] is False
     assert result["optimizer_state_allocated"] is True
     assert torch.equal(models[0].weight.detach(), initial_weights[0])
+
+
+def test_select_train_samples_preserves_same_row_media_conditions(tmp_path):
+    import hashlib
+
+    from onecore.v3.resource_benchmark import _select_train_samples
+
+    def base(record_id, task, **payload):
+        return {
+            "id": record_id, "split": "train", "task": task,
+            "data_class": "external",
+            "source_url": "https://example.org/dataset",
+            "source_id": "dataset-v1", "source_revision": "a" * 40,
+            "source_row_id_sha256": hashlib.sha256(record_id.encode()).hexdigest(),
+            **payload,
+        }
+
+    rows = [
+        base("text-1", "text", text="A sufficiently long external text row."),
+        base("tool-1", "tool_use", prompt="Find the item", response={"ok": True}),
+        base("image-1", "image_caption", caption="A red boat on a lake.", assets={
+            "image": {"source_asset": "raw/image.png", "width": 2, "height": 2},
+        }),
+        base("audio-1", "audio_text", transcript="A spoken weather report.", assets={
+            "audio": {
+                "source_asset": "raw/audio.wav", "training_asset": "raw/audio.wav",
+                "sample_rate": 24_000, "training_sample_rate": 24_000,
+                "training_channels": 1, "training_samples": 24_000,
+            },
+        }),
+        base("video-1", "video_caption", caption="A person opens a door.", assets={
+            "video": {
+                "frames": ["frames/0.png", "frames/1.png"],
+                "timestamps": [0.0, 0.04], "timestamp_unit": "seconds",
+                "frame_count": 2, "width": 2, "height": 2,
+                "duration_seconds": 0.08, "fps": 25.0,
+            },
+        }),
+    ]
+    manifest = tmp_path / "train.jsonl"
+    manifest.write_text("".join(json.dumps(row) + chr(10) for row in rows), encoding="utf-8")
+
+    selected, _stats = _select_train_samples(
+        manifest, max_image_megapixels=1.0, max_audio_seconds=5.0,
+        max_video_megapixels=1.0, max_video_frames=2,
+    )
+
+    assert selected["image"]["condition_field"] == "caption"
+    assert selected["image"]["condition_text"] == "A red boat on a lake."
+    assert selected["audio"]["condition_field"] == "transcript"
+    assert selected["audio"]["condition_text"] == "A spoken weather report."
+    assert selected["video"]["condition_field"] == "caption"
+    assert selected["video"]["condition_text"] == "A person opens a door."
