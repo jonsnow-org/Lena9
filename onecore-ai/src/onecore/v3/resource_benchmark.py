@@ -360,6 +360,63 @@ def _select_train_samples(
     return selected, summaries
 
 
+
+def _sequence_length_distributions(
+    train_manifest: Path,
+    tokenizer_path: Path,
+    *,
+    batch_size: int = 128,
+) -> dict[str, dict[str, float | int] | None]:
+    """Measure real tokenizer sequence lengths over external train text/tool rows.
+
+    Encoding is batched and bounded; only integer lengths are retained, never the
+    full tokenized corpus. Validation/test and non-external rows cannot enter the
+    reported distributions.
+    """
+    if batch_size < 1:
+        raise ValueError("sequence-length batch_size must be positive")
+    tokenizer = Tokenizer.from_file(str(tokenizer_path))
+    pending: dict[str, list[str]] = {"text": [], "tool": []}
+    lengths: dict[str, list[int]] = {"text": [], "tool": []}
+
+    def flush(family: str) -> None:
+        values = pending[family]
+        if not values:
+            return
+        encoded = tokenizer.encode_batch(values, add_special_tokens=True)
+        lengths[family].extend(len(item.ids) for item in encoded)
+        values.clear()
+
+    for row in read_v3_manifest(train_manifest):
+        if str(row.get("split", "")) != "train":
+            raise ValueError("sequence-length profiling accepts only the V3 train manifest")
+        if not external_record_is_trainable(row) or not has_immutable_external_provenance(row):
+            continue
+        family = _family(str(row.get("task", "")))
+        if family == "text":
+            value = row.get("text")
+            if not isinstance(value, str) or not value.strip():
+                continue
+        elif family == "tool":
+            prompt = row.get("prompt")
+            if not isinstance(prompt, str) or not prompt.strip():
+                continue
+            response = row.get("response")
+            response_text = response if isinstance(response, str) else json.dumps(
+                response, ensure_ascii=False, sort_keys=True
+            )
+            value = prompt + "\\n" + response_text
+        else:
+            continue
+
+        pending[family].append(value)
+        if len(pending[family]) >= batch_size:
+            flush(family)
+
+    flush("text")
+    flush("tool")
+    return {family: _distribution(values) for family, values in lengths.items()}
+
 def _manifest_bundle_fingerprint(
     manifests: dict[str, Path], gate: dict[str, Any],
 ) -> tuple[str, dict[str, Any]]:
@@ -748,6 +805,9 @@ def _run_parent(args: argparse.Namespace) -> int:
         tokenizer_evidence.pop("tokenizer_path", None)
         tokenizer_evidence.pop("evidence_path", None)
         manifest_bundle_sha, manifest_files = _manifest_bundle_fingerprint(manifest_paths, gate)
+        sequence_distributions = _sequence_length_distributions(
+            manifest_paths["train"], tokenizer_path,
+        )
 
         for family in ("text", "tool"):
             sample = selected[family]
@@ -814,6 +874,7 @@ def _run_parent(args: argparse.Namespace) -> int:
                 "threads": args.threads,
             },
             "shape_distributions": distributions,
+            "sequence_length_distributions": sequence_distributions,
             "selected_samples": {
                 family: {
                     key: value for key, value in sample.items()
