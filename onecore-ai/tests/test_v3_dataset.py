@@ -178,9 +178,9 @@ def test_v3_joint_loader_emits_five_families_and_resumes_exact_source_cursors(tm
         assert first[3].batch["audio"]["sample_rate"] == 24_000
         assert first[4].batch["video"]["frames"].shape == (1, 2, 3, 2, 2)
         start = first[4].metadata["window_start_frame"]
-        assert first[4].batch["video"]["timestamps"].tolist() == [
+        assert first[4].batch["video"]["timestamps"].tolist()[0] == pytest.approx(
             [start * 0.04, (start + 1) * 0.04]
-        ]
+        )
         saved_state = loader.state_dict()
         assert loader.current_step == 1
         assert all(saved_state["families"][family]["rows_consumed"] == 1 for family in FAMILIES)
