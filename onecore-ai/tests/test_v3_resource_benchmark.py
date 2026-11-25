@@ -18,6 +18,99 @@ from onecore.v3.resource_benchmark import (
 )
 
 
+def test_pinned_artifact_metadata_checks_the_complete_immutable_identity(monkeypatch):
+    from onecore.v3 import resource_benchmark as benchmark
+
+    pinned = benchmark.PINNED_V3_BENCHMARK_ARTIFACTS["corpus"]
+    metadata = {
+        "id": pinned["artifact_id"],
+        "name": pinned["name"],
+        "size_in_bytes": pinned["size_in_bytes"],
+        "digest": pinned["digest"],
+        "expired": False,
+        "workflow_run": {"id": pinned["workflow_run_id"]},
+    }
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return metadata
+
+    monkeypatch.setattr(benchmark.requests, "get", lambda *args, **kwargs: FakeResponse())
+    result = benchmark._pinned_artifact_metadata(
+        "jonsnow-org/Lena9", "test-token", "corpus",
+        pinned["artifact_id"], pinned["workflow_run_id"],
+    )
+
+    assert result == {
+        "id": pinned["artifact_id"],
+        "name": pinned["name"],
+        "size_in_bytes": pinned["size_in_bytes"],
+        "digest": pinned["digest"],
+        "workflow_run_id": pinned["workflow_run_id"],
+        "expired": False,
+    }
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement"),
+    [
+        ("id", 1),
+        ("name", "different-artifact"),
+        ("size_in_bytes", 1),
+        ("digest", "sha256:" + "0" * 64),
+    ],
+)
+def test_artifact_metadata_rejects_any_pinned_identity_drift(monkeypatch, field, replacement):
+    from onecore.v3 import resource_benchmark as benchmark
+
+    pinned = benchmark.PINNED_V3_BENCHMARK_ARTIFACTS["corpus"]
+    metadata = {
+        "id": pinned["artifact_id"],
+        "name": pinned["name"],
+        "size_in_bytes": pinned["size_in_bytes"],
+        "digest": pinned["digest"],
+        "expired": False,
+        "workflow_run": {"id": pinned["workflow_run_id"]},
+    }
+    metadata[field] = replacement
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return metadata
+
+    monkeypatch.setattr(benchmark.requests, "get", lambda *args, **kwargs: FakeResponse())
+    with pytest.raises(RuntimeError, match=f"pinned V3 {field} mismatch"):
+        benchmark._artifact_metadata(
+            "jonsnow-org/Lena9", pinned["artifact_id"], "test-token",
+            pinned["workflow_run_id"],
+            expected_name=pinned["name"],
+            expected_size_in_bytes=pinned["size_in_bytes"],
+            expected_digest=pinned["digest"],
+        )
+
+
+def test_pinned_artifact_metadata_rejects_changed_cli_artifact_or_run_id():
+    from onecore.v3 import resource_benchmark as benchmark
+
+    pinned = benchmark.PINNED_V3_BENCHMARK_ARTIFACTS["corpus"]
+    with pytest.raises(RuntimeError, match="must use pinned artifact"):
+        benchmark._pinned_artifact_metadata(
+            "jonsnow-org/Lena9", "test-token", "corpus",
+            pinned["artifact_id"] + 1, pinned["workflow_run_id"],
+        )
+    with pytest.raises(RuntimeError, match="must use pinned artifact"):
+        benchmark._pinned_artifact_metadata(
+            "jonsnow-org/Lena9", "test-token", "corpus",
+            pinned["artifact_id"], pinned["workflow_run_id"] + 1,
+        )
+
+
 def test_artifact_member_selectors_require_one_exact_match():
     assert _unique_suffix(
         ["data/train.jsonl", "data/assets/a.png"], "data/train.jsonl"

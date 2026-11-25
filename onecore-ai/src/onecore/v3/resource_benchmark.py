@@ -59,8 +59,41 @@ def _artifact_headers(token: str) -> dict[str, str]:
     }
 
 
-def _artifact_metadata(repo: str, artifact_id: int, token: str,
-                       expected_run_id: int) -> dict[str, Any]:
+PINNED_V3_BENCHMARK_ARTIFACTS: dict[str, dict[str, Any]] = {
+    "corpus": {
+        "artifact_id": 14892594659,
+        "workflow_run_id": 45325008221,
+        "name": "onecore-v3-corpus-45325008221",
+        "size_in_bytes": 24_432_975_285,
+        "digest": "sha256:302e6eb082ad82ee892b00153ac068f60505cdf5de5d14f3b82a919e576740a2",
+    },
+    "conversion_report": {
+        "artifact_id": 14893020087,
+        "workflow_run_id": 45325008221,
+        "name": "onecore-v3-conversion-report-45325008221",
+        "size_in_bytes": 892_194,
+        "digest": "sha256:151677083079aee3cfe5a39cbe07fbd47908e9c74560312cef9c137c64fcd1ba",
+    },
+    "tokenizer": {
+        "artifact_id": 14894835517,
+        "workflow_run_id": 45336933362,
+        "name": "onecore-v3-tokenizer-45325008221",
+        "size_in_bytes": 394_036,
+        "digest": "sha256:47246c85500ed2647aacfd00187dacf4dedae1f10b180910ff55f71463851bd6",
+    },
+}
+
+
+def _artifact_metadata(
+    repo: str,
+    artifact_id: int,
+    token: str,
+    expected_run_id: int,
+    *,
+    expected_name: str,
+    expected_size_in_bytes: int,
+    expected_digest: str,
+) -> dict[str, Any]:
     if requests is None or RemoteZip is None:
         raise RuntimeError("resource benchmark requires onecore-ai[corpus-restore]")
     response = requests.get(
@@ -71,19 +104,66 @@ def _artifact_metadata(repo: str, artifact_id: int, token: str,
     metadata = response.json()
     if metadata.get("expired"):
         raise RuntimeError(f"required V3 artifact {artifact_id} is expired")
+
+    actual_id = int(metadata.get("id", -1))
+    actual_name = str(metadata.get("name", ""))
+    actual_size = int(metadata.get("size_in_bytes", -1))
+    actual_digest = metadata.get("digest")
     workflow_run = metadata.get("workflow_run") or {}
-    if int(workflow_run.get("id", -1)) != int(expected_run_id):
-        raise RuntimeError(
-            f"artifact {artifact_id} belongs to run {workflow_run.get('id')}, "
-            f"expected immutable run {expected_run_id}"
-        )
-    return {
-        "id": int(metadata["id"]),
-        "name": str(metadata.get("name", "")),
-        "size_in_bytes": int(metadata.get("size_in_bytes", 0)),
-        "expired": bool(metadata.get("expired", False)),
-        "workflow_run_id": int(workflow_run["id"]),
+    actual_run_id = int(workflow_run.get("id", -1))
+    expected = {
+        "id": int(artifact_id),
+        "name": expected_name,
+        "size_in_bytes": int(expected_size_in_bytes),
+        "digest": expected_digest,
+        "workflow_run_id": int(expected_run_id),
     }
+    actual = {
+        "id": actual_id,
+        "name": actual_name,
+        "size_in_bytes": actual_size,
+        "digest": actual_digest,
+        "workflow_run_id": actual_run_id,
+    }
+    for field, expected_value in expected.items():
+        if actual[field] != expected_value:
+            raise RuntimeError(
+                f"pinned V3 {field} mismatch for artifact {artifact_id}: "
+                f"actual={actual[field]!r}, expected={expected_value!r}"
+            )
+    return {
+        **actual,
+        "expired": bool(metadata.get("expired", False)),
+    }
+
+
+def _pinned_artifact_metadata(
+    repo: str,
+    token: str,
+    kind: str,
+    requested_artifact_id: int,
+    requested_run_id: int,
+) -> dict[str, Any]:
+    pinned = PINNED_V3_BENCHMARK_ARTIFACTS.get(kind)
+    if pinned is None:
+        raise ValueError(f"unknown pinned V3 benchmark artifact kind: {kind}")
+    if (
+        int(requested_artifact_id) != pinned["artifact_id"]
+        or int(requested_run_id) != pinned["workflow_run_id"]
+    ):
+        raise RuntimeError(
+            f"resource benchmark {kind} must use pinned artifact "
+            f"{pinned['artifact_id']} from run {pinned['workflow_run_id']}"
+        )
+    return _artifact_metadata(
+        repo,
+        pinned["artifact_id"],
+        token,
+        pinned["workflow_run_id"],
+        expected_name=pinned["name"],
+        expected_size_in_bytes=pinned["size_in_bytes"],
+        expected_digest=pinned["digest"],
+    )
 
 
 def _signed_artifact_url(repo: str, artifact_id: int, token: str) -> str:
@@ -1576,12 +1656,18 @@ def _run_parent(args: argparse.Namespace) -> int:
     output.parent.mkdir(parents=True, exist_ok=True)
 
     artifact_info = {
-        "corpus": _artifact_metadata(args.github_repo, args.corpus_artifact_id,
-                                     args.github_token, args.expected_corpus_run_id),
-        "conversion_report": _artifact_metadata(args.github_repo, args.report_artifact_id,
-                                                args.github_token, args.expected_report_run_id),
-        "tokenizer": _artifact_metadata(args.github_repo, args.tokenizer_artifact_id,
-                                        args.github_token, args.expected_tokenizer_run_id),
+        "corpus": _pinned_artifact_metadata(
+            args.github_repo, args.github_token, "corpus",
+            args.corpus_artifact_id, args.expected_corpus_run_id,
+        ),
+        "conversion_report": _pinned_artifact_metadata(
+            args.github_repo, args.github_token, "conversion_report",
+            args.report_artifact_id, args.expected_report_run_id,
+        ),
+        "tokenizer": _pinned_artifact_metadata(
+            args.github_repo, args.github_token, "tokenizer",
+            args.tokenizer_artifact_id, args.expected_tokenizer_run_id,
+        ),
     }
     with tempfile.TemporaryDirectory(prefix="onecore-v3-resource-benchmark-") as temporary:
         root = Path(temporary)
