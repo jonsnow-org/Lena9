@@ -1131,3 +1131,10 @@ This update supersedes earlier statements in this reference and the README that 
 - Left the multi-gigabyte corpus restore restricted to the V3 research branch. Left V3 optimizer training blocked pending real CPU resource evidence and artifact-backed checkpoint audit. This change does not enable automatic CPU measurement or any optimizer updates.
 - Updated `test_v3_workflow_policy.py` to assert the new default-branch path and the retained manual-only guards. The main branch before this change was `12cb5c65ca683802fd27888bed3950255278caec`.
 - The connected GitHub repository action available in this session exposes GET/read operations and rerun operations, but no workflow-dispatch request. Thus the workflow is now configured for a manual run on `main`; the connected action surface still cannot submit that dispatch directly. Do not claim a CPU measurement exists until a run with event `workflow_dispatch`, head branch `main`, and the benchmark job conclusion `success` has actually completed.
+
+## 2026-11-25 — One-shot main-branch CPU benchmark trigger
+
+- The connected GitHub Actions tool surface still has no workflow-dispatch write operation. To avoid asking the owner to switch branches or repeat the manual UI action, added a narrow one-shot trigger to the existing `onecore-ci.yml`: a push on `main` only starts the CPU benchmark when its commit message contains the exact token `[onecore-cpu-benchmark]`.
+- The normal UI route remains supported: on `main` or the V3 research branch, `workflow_dispatch` still requires `benchmark_v3_resources=true` and `restore_v3_corpus=false`. The one-shot push route is restricted to `main` and the exact marker; it cannot start corpus restore.
+- The benchmark consumes only the already-pinned corpus/report/tokenizer artifacts and records real CPU peak RSS/throughput. It performs no corpus restore and no optimizer update. A normal push without the marker runs Verify only.
+- Added a policy test for the explicit commit-message trigger. This is a deliberate one-time execution path, not a scheduled or generally automatic benchmark.

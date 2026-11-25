@@ -70,7 +70,7 @@ def test_v3_tokenizer_fit_waits_for_same_sha_ci_and_rechecks_source_evidence():
     assert "train_v3_step(" not in workflow
 
 
-def test_v3_resource_benchmark_is_manual_only_and_uses_range_reads():
+def test_v3_resource_benchmark_requires_explicit_opt_in_and_uses_range_reads():
     workflow = (WORKFLOWS / "onecore-ci.yml").read_text(encoding="utf-8")
     assert "benchmark_v3_resources:" in workflow
     assert "default: false" in workflow
@@ -80,6 +80,8 @@ def test_v3_resource_benchmark_is_manual_only_and_uses_range_reads():
     assert "inputs.restore_v3_corpus != true" in benchmark
     assert "github.ref == 'refs/heads/main'" in benchmark
     assert "github.ref == 'refs/heads/research/onecore-v3-implementation'" in benchmark
+    assert "github.event_name == 'push'" in benchmark
+    assert "contains(github.event.head_commit.message, '[onecore-cpu-benchmark]')" in benchmark
     assert "onecore.v3.resource_benchmark" in benchmark
     assert "--corpus-artifact-id 14892594659" in benchmark
     assert "--report-artifact-id 14893020087" in benchmark
