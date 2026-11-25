@@ -18,6 +18,16 @@ from onecore.v3.resource_benchmark import (
 )
 
 
+
+def _mock_artifact_metadata_http(monkeypatch, benchmark, response):
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(
+        benchmark, "requests",
+        SimpleNamespace(get=lambda *args, **kwargs: response),
+    )
+    monkeypatch.setattr(benchmark, "RemoteZip", object())
+
 def test_pinned_artifact_metadata_checks_the_complete_immutable_identity(monkeypatch):
     from onecore.v3 import resource_benchmark as benchmark
 
@@ -38,7 +48,7 @@ def test_pinned_artifact_metadata_checks_the_complete_immutable_identity(monkeyp
         def json(self):
             return metadata
 
-    monkeypatch.setattr(benchmark.requests, "get", lambda *args, **kwargs: FakeResponse())
+    _mock_artifact_metadata_http(monkeypatch, benchmark, FakeResponse())
     result = benchmark._pinned_artifact_metadata(
         "jonsnow-org/Lena9", "test-token", "corpus",
         pinned["artifact_id"], pinned["workflow_run_id"],
@@ -84,7 +94,7 @@ def test_artifact_metadata_rejects_any_pinned_identity_drift(monkeypatch, field,
         def json(self):
             return metadata
 
-    monkeypatch.setattr(benchmark.requests, "get", lambda *args, **kwargs: FakeResponse())
+    _mock_artifact_metadata_http(monkeypatch, benchmark, FakeResponse())
     with pytest.raises(RuntimeError, match=f"pinned V3 {field} mismatch"):
         benchmark._artifact_metadata(
             "jonsnow-org/Lena9", pinned["artifact_id"], "test-token",
