@@ -2057,7 +2057,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--iterations", type=int, default=MIN_MEASURED_ITERATIONS)
     parser.add_argument("--max-image-megapixels", type=float, default=2.0)
     parser.add_argument("--max-audio-seconds", type=float, default=5.0)
-    parser.add_argument("--max-video-megapixel-frames", type=float, default=16.0)
+    parser.add_argument("--max-video-megapixel-frames", type=float, default=None)
+    parser.add_argument("--max-video-megapixels", type=float, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--max-video-frames", type=int, default=16)
     parser.add_argument("--worker-timeout-seconds", type=int, default=1800)
     parser.add_argument("--tokenizer-json")
@@ -2067,6 +2068,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--loader-iterations", type=int, default=22)
     parser.add_argument("--loader-warmup-iterations", type=int, default=2)
     args = parser.parse_args(argv)
+
+    if args.max_video_megapixel_frames is not None and args.max_video_megapixels is not None:
+        parser.error("max-video-megapixel-frames and legacy max-video-megapixels are mutually exclusive")
+    if args.max_video_megapixel_frames is None:
+        if args.max_video_megapixels is None:
+            args.max_video_megapixel_frames = 16.0
+        else:
+            # Preserve the existing CI invocation: per-frame megapixels × frame window = total sample budget.
+            args.max_video_megapixel_frames = args.max_video_megapixels * args.max_video_frames
 
     if args.threads < 1 or args.max_video_frames < 1:
         parser.error("threads and max-video-frames must be positive")

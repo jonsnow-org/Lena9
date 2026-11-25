@@ -397,7 +397,7 @@ def test_v3_loader_benchmark_sampling_is_deterministic_and_external_only(tmp_pat
     kwargs = {
         "max_image_megapixels": 2.0,
         "max_audio_seconds": 5.0,
-        "max_video_megapixel_frames": 16.0,
+        "max_video_megapixels": 1.0,
         "max_video_frames": 16,
     }
     first, stats = _select_loader_benchmark_rows(manifests, **kwargs)
@@ -418,11 +418,9 @@ def test_v3_loader_benchmark_sampling_is_deterministic_and_external_only(tmp_pat
     assert len(clipped_video["assets"]["video"]["timestamps"]) == 16
     assert clipped_video["assets"]["video"]["frame_count"] == 16
     assert clipped_video["benchmark_view"] == {
-        "transform": "prefix_frame_window_under_megapixel_frame_budget",
+        "transform": "prefix_frame_window",
         "source_frame_count": 20,
         "selected_frame_count": 16,
-        "source_megapixels_per_frame": 4e-06,
-        "selected_megapixel_frames": 64e-06,
     }
 
 

@@ -684,7 +684,8 @@ def test_parent_benchmark_defaults_to_five_measured_iterations_and_rejects_short
     assert benchmark.main(["--github-token", "test-token"]) == 0
     assert captured["iterations"] == 5
     assert captured["video_budget"] == 16.0
-
+    assert benchmark.main(["--github-token", "test-token", "--max-video-megapixels", "1"]) == 0
+    assert captured["video_budget"] == 16.0
     with pytest.raises(SystemExit) as error:
         benchmark.main(["--iterations", "4", "--worker-plan", "unused.json"])
     assert error.value.code == 2
