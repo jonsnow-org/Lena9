@@ -46,7 +46,12 @@ def _successful_job(jobs: list[dict[str, Any]], name: str) -> dict[str, Any]:
 
 def verify_resource_benchmark_artifact(repo: str, run_id: str | int, token: str) -> dict[str, Any]:
     """Verify the source run, both required jobs, and its immutable report artifact."""
-    if not isinstance(repo, str) or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
+    parts = repo.split("/") if isinstance(repo, str) else []
+    if (
+        len(parts) != 2
+        or any(part in {"", ".", ".."} for part in parts)
+        or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo)
+    ):
         raise ValueError("repository must be an owner/name pair")
     if not isinstance(token, str) or not token.strip():
         raise ValueError("a GitHub Actions read token is required")

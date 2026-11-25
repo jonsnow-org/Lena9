@@ -113,7 +113,8 @@ def test_v3_training_consumes_only_a_verified_manual_resource_benchmark_artifact
     workflow = (WORKFLOWS / "onecore-v3-training.yml").read_text(encoding="utf-8")
     assert "resource_benchmark_run_id:" in workflow
     assert "onecore.v3.resource_evidence" in workflow
-    assert "Measure V3 CPU memory and throughput from existing artifacts" in workflow
+    evidence_module = (ROOT / "onecore-ai" / "src" / "onecore" / "v3" / "resource_evidence.py").read_text(encoding="utf-8")
+    assert 'BENCHMARK_JOB_NAME = "Measure V3 CPU memory and throughput from existing artifacts"' in evidence_module
     assert "actions/download-artifact@v7" in workflow
     assert "steps.resource-evidence.outputs.artifact_name" in workflow
     assert "run-id: ${{ inputs.resource_benchmark_run_id }}" in workflow
