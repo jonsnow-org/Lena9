@@ -28,6 +28,12 @@ android {
         versionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 1
         versionName = "1.0"
         vectorDrawables.useSupportLibrary = true
+        // الافتراضي (المعتمد منذ 2026-11-16): شاشات Compose الأصلية (ui/screens).
+        // -PnativeUi=false فقط لبناء نسخة WebView القديمة للمقارنة.
+        buildConfigField(
+            "boolean", "NATIVE_UI",
+            ((project.findProperty("nativeUi") as String?) != "false").toString()
+        )
     }
 
     signingConfigs {
@@ -59,6 +65,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     packaging {

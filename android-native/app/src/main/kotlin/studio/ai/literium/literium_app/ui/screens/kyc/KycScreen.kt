@@ -1,53 +1,22 @@
 package studio.ai.literium.literium_app.ui.screens.kyc
 
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.MenuAnchorType
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Snackbar
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -57,7 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -65,209 +34,97 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil3.compose.AsyncImage
+import studio.ai.literium.literium_app.ui.theme.Lu
+import studio.ai.literium.literium_app.ui.theme.LuIcon
+import studio.ai.literium.literium_app.ui.theme.Tw
+import studio.ai.literium.literium_app.ui.theme.TwButton
+import studio.ai.literium.literium_app.ui.theme.TwError
+import studio.ai.literium.literium_app.ui.theme.TwInput
+import studio.ai.literium.literium_app.ui.theme.TwLabeled
+import studio.ai.literium.literium_app.ui.theme.TwLoading
+import studio.ai.literium.literium_app.ui.theme.TwPage
+import studio.ai.literium.literium_app.ui.theme.isDark
+import studio.ai.literium.literium_app.ui.theme.twClickable
+import studio.ai.literium.literium_app.ui.theme.twText
 
+/** التحقق من الهوية — KycModal.tsx: ثلاث حالات (موثّق/قيد المراجعة/نموذج) وبطاقات إشعار rounded-2xl. */
 @Composable
-@OptIn(ExperimentalMaterial3Api::class)
 fun KycScreen(navController: NavController, viewModel: KycViewModel = viewModel()) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
-    val snackbarHostState = remember { SnackbarHostState() }
+    val dark = isDark
+    val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> uri?.let { viewModel.onImagePicked(context, it) } }
 
-    val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        uri?.let { viewModel.onImagePicked(context, it) }
-    }
+    TwPage(title = "التحقق من الهوية (KYC)", onClose = { navController.popBackStack() }) {
+        when {
+            state.isLoading -> TwLoading()
+            state.isVerified -> Result(Lu.CheckCircle2, Tw.emerald500, "حسابك موثق ومعتمد بنجاح ✓",
+                "تمت مراجعة الوثيقة الرسمية (${state.idType}: ${state.idNumber}) واعتماد حسابك. يمكنك الآن سحب وإيداع الأرباح بحرية كاملة.",
+                "إتمام والعودة للتطبيق") { navController.popBackStack() }
+            state.isPending || state.justSubmitted -> Result(Lu.Clock, Tw.amber500, "تم إرسال طلب التوثيق — قيد المراجعة",
+                "استلمنا وثيقتك (${state.idType}: ${state.idNumber}) وسيراجعها فريق ليتيريوم يدوياً خلال 24 إلى 48 ساعة. سيصلك إشعار فور اعتماد حسابك.",
+                "حسناً، فهمت") { navController.popBackStack() }
+            else -> Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                if (state.isRejected) Notice(Lu.AlertCircle, Color(0xFFDC2626), "تم رفض طلب التوثيق السابق. راجع بياناتك وأرسل طلباً جديداً بمعلومات ووثيقة صحيحة وواضحة.", dark, red = true)
+                state.error?.let { Notice(Lu.AlertCircle, Color(0xFFDC2626), it, dark, red = true) }
+                Notice(Lu.Lock, Tw.teal600, "صورة وثيقتك تُرفع مباشرة إلى خوادمنا الداخلية بشكل آمن ومشفَّر، ولا يمكن لأي طرف — بما فيك أنت بعد اعتمادها — عرضها مرة أخرى. تُستخدم فقط لمطابقة اسمها مع اسم حسابك آلياً، وتحسباً لأي أمور قانونية مستقبلية.", dark, red = false)
 
-    LaunchedEffect(state.error) {
-        state.error?.let {
-            snackbarHostState.showSnackbar(it)
-            viewModel.clearError()
-        }
-    }
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("التحقق من الهوية (KYC)") },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "عودة")
+                TwLabeled("نوع الوثيقة الرسمية") {
+                    var open by remember { mutableStateOf(false) }
+                    Box {
+                        val s = RoundedCornerShape(12.dp)
+                        Row(Modifier.fillMaxWidth().clip(s).background(if (dark) Tw.slate800 else Tw.slate50).border(1.dp, if (dark) Tw.slate700 else Tw.slate200, s).twClickable { open = true }.padding(horizontal = 14.dp, vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text(state.idType, style = twText(14, FontWeight.Normal, 20), color = if (dark) Tw.white else Tw.slate900)
+                            LuIcon(Lu.ChevronDown, 16.dp, Tw.slate400)
+                        }
+                        DropdownMenu(expanded = open, onDismissRequest = { open = false }, containerColor = if (dark) Tw.slate800 else Tw.white) {
+                            KYC_ID_TYPES.forEach { opt -> DropdownMenuItem(text = { Text(opt, style = twText(13, FontWeight.Medium, 20)) }, onClick = { viewModel.onIdTypeChange(opt); open = false }) }
+                        }
                     }
                 }
-            )
-        },
-        snackbarHost = { SnackbarHost(snackbarHostState) { Snackbar(it) } }
-    ) { padding ->
-        if (state.isLoading) {
-            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            return@Scaffold
-        }
-
-        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(20.dp)) {
-            when {
-                state.isVerified -> ResultCard(
-                    icon = Icons.Filled.CheckCircle,
-                    tint = MaterialTheme.colorScheme.primary,
-                    title = "حسابك موثق ومعتمد بنجاح ✓",
-                    message = "تمت مراجعة وثيقتك واعتماد حسابك. يمكنك الآن سحب وإيداع الأرباح بحرية كاملة، وتُحتسب أرباح الإعلانات والمبيعات لحسابك عند استيفاء بقية شروط منشئ المحتوى.",
-                    buttonLabel = "إتمام والعودة",
-                    onButtonClick = { navController.popBackStack() }
-                )
-                state.isPending || state.justSubmitted -> ResultCard(
-                    icon = Icons.Filled.Schedule,
-                    tint = MaterialTheme.colorScheme.tertiary,
-                    title = "تم إرسال طلب التوثيق — قيد المراجعة",
-                    message = "استلمنا وثيقتك وسيراجعها فريق ليتيريوم يدوياً خلال 24 إلى 48 ساعة. سيصلك إشعار فور اعتماد حسابك.",
-                    buttonLabel = "حسناً، فهمت",
-                    onButtonClick = { navController.popBackStack() }
-                )
-                else -> KycForm(state, viewModel, pickImage)
-            }
-
-            Spacer(Modifier.height(20.dp))
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-                Column(Modifier.padding(14.dp)) {
-                    Text("لماذا التحقق من الهوية إلزامي؟", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "التحقق من الهوية شرط إلزامي أخير لاحتساب أرباح الإعلانات والمبيعات لحسابك — بالإضافة إلى شروط المتابعين والمشاهدات وعمر الحساب وعدد المقالات المنشورة. الكتابة والنشر متاحان لك دائماً بلا أي شرط.",
-                        style = MaterialTheme.typography.bodySmall
-                    )
+                TwLabeled("رقم الوثيقة / الهوية") { TwInput(state.idNumber, viewModel::onIdNumberChange, placeholder = "مثال: SA1092841...") }
+                TwLabeled("صورة واضحة للوثيقة (يظهر فيها اسمك كاملاً)") {
+                    val picked = state.previewUri
+                    if (picked != null) {
+                        val s = RoundedCornerShape(16.dp)
+                        AsyncImage(picked, "معاينة الوثيقة", Modifier.fillMaxWidth().height(160.dp).clip(s).border(2.dp, Tw.teal600, s).twClickable { pickImage.launch("image/*") }, contentScale = ContentScale.Crop)
+                    } else {
+                        val s = RoundedCornerShape(16.dp)
+                        Column(Modifier.fillMaxWidth().clip(s).border(2.dp, if (dark) Tw.slate700 else Tw.slate300, s).twClickable { pickImage.launch("image/*") }.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            LuIcon(Lu.Camera, 24.dp, Tw.slate500)
+                            Text("انقر لاختيار صورة الوثيقة", style = twText(12, FontWeight.Bold, 16), color = Tw.slate500)
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                LuIcon(Lu.Upload, 12.dp, Tw.slate500)
+                                Text("JPG أو PNG، حتى 8 ميغابايت", style = twText(10, FontWeight.Normal, 15), color = Tw.slate500)
+                            }
+                        }
+                    }
                 }
+                TwButton(if (state.isSubmitting) "جاري رفع الوثيقة والتحقق..." else "إرسال طلب التوثيق (KYC)", { viewModel.submit(context) }, enabled = state.canSubmit, loading = state.isSubmitting, container = Tw.teal600)
             }
         }
     }
 }
 
 @Composable
-private fun ResultCard(
-    icon: ImageVector,
-    tint: Color,
-    title: String,
-    message: String,
-    buttonLabel: String,
-    onButtonClick: () -> Unit
-) {
-    Column(Modifier.fillMaxWidth().padding(vertical = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(56.dp))
-        Spacer(Modifier.height(12.dp))
-        Text(title, fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
-        Spacer(Modifier.height(8.dp))
-        Text(message, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
-        Spacer(Modifier.height(16.dp))
-        Button(onClick = onButtonClick) { Text(buttonLabel) }
+private fun Notice(icon: androidx.compose.ui.graphics.vector.ImageVector, tone: Color, text: String, dark: Boolean, red: Boolean) {
+    val s = RoundedCornerShape(16.dp)
+    val bg = if (red) (if (dark) Color(0xFF450A0A).copy(alpha = 0.40f) else Color(0xFFFEF2F2)) else (if (dark) Color(0xFF042F2E).copy(alpha = 0.40f) else Color(0xFFF0FDFA))
+    val br = if (red) (if (dark) Color(0xFF991B1B) else Color(0xFFFECACA)) else (if (dark) Color(0xFF115E59) else Color(0xFF99F6E4))
+    val fg = if (red) (if (dark) Color(0xFFFECACA) else Color(0xFF7F1D1D)) else (if (dark) Color(0xFF99F6E4) else Color(0xFF134E4A))
+    Row(Modifier.fillMaxWidth().clip(s).background(bg).border(1.dp, br, s).padding(14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        LuIcon(icon, 16.dp, tone, Modifier.padding(top = 2.dp))
+        Text(text, style = twText(12, FontWeight.Normal, 20), color = fg)
     }
 }
 
 @Composable
-@OptIn(ExperimentalMaterial3Api::class)
-private fun KycForm(
-    state: KycUiState,
-    viewModel: KycViewModel,
-    pickImage: ActivityResultLauncher<String>
-) {
-    if (state.isRejected) {
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer), modifier = Modifier.fillMaxWidth()) {
-            Row(Modifier.padding(12.dp)) {
-                Icon(Icons.Filled.Warning, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    "تم رفض طلب التوثيق السابق. راجع بياناتك وأرسل طلباً جديداً بمعلومات ووثيقة صحيحة وواضحة.",
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
-        }
-        Spacer(Modifier.height(14.dp))
-    }
-
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
-        Row(Modifier.padding(12.dp)) {
-            Icon(Icons.Filled.Lock, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text(
-                "صورة وثيقتك تُرفع مباشرة إلى خوادمنا بشكل آمن ومشفَّر ولا تُعرض علناً أبداً. تُستخدم فقط لمطابقة اسمها مع اسم حسابك آلياً.",
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
-    }
-
-    Spacer(Modifier.height(16.dp))
-    var dropdownExpanded by remember { mutableStateOf(false) }
-    ExposedDropdownMenuBox(expanded = dropdownExpanded, onExpandedChange = { dropdownExpanded = it }) {
-        OutlinedTextField(
-            value = state.idType,
-            onValueChange = {},
-            readOnly = true,
-            label = { Text("نوع الوثيقة الرسمية") },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = dropdownExpanded) },
-            modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable)
-        )
-        DropdownMenu(expanded = dropdownExpanded, onDismissRequest = { dropdownExpanded = false }) {
-            KYC_ID_TYPES.forEach { option ->
-                DropdownMenuItem(
-                    text = { Text(option) },
-                    onClick = {
-                        viewModel.onIdTypeChange(option)
-                        dropdownExpanded = false
-                    }
-                )
-            }
-        }
-    }
-
-    Spacer(Modifier.height(14.dp))
-    OutlinedTextField(
-        value = state.idNumber,
-        onValueChange = viewModel::onIdNumberChange,
-        label = { Text("رقم الوثيقة / الهوية") },
-        modifier = Modifier.fillMaxWidth()
-    )
-
-    Spacer(Modifier.height(14.dp))
-    Text("صورة واضحة للوثيقة (يظهر فيها اسمك كاملاً)", style = MaterialTheme.typography.labelMedium)
-    Spacer(Modifier.height(6.dp))
-    if (state.previewUri != null) {
-        AsyncImage(
-            model = state.previewUri,
-            contentDescription = "معاينة الوثيقة",
-            modifier = Modifier.fillMaxWidth().height(180.dp)
-                .clip(RoundedCornerShape(16.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "تغيير الصورة",
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.clickable { pickImage.launch("image/*") }
-        )
-    } else {
-        Box(
-            Modifier.fillMaxWidth().height(140.dp)
-                .border(2.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(16.dp))
-                .clickable { pickImage.launch("image/*") },
-            contentAlignment = Alignment.Center
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(Icons.Filled.CameraAlt, contentDescription = null)
-                Spacer(Modifier.height(6.dp))
-                Text("انقر لاختيار صورة الوثيقة", style = MaterialTheme.typography.labelMedium)
-                Text("JPG أو PNG، حتى 8 ميغابايت", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-    }
-
-    Spacer(Modifier.height(20.dp))
-    val context = LocalContext.current
-    Button(
-        onClick = { viewModel.submit(context) },
-        enabled = state.canSubmit,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        if (state.isSubmitting) {
-            CircularProgressIndicator(Modifier.size(18.dp), color = MaterialTheme.colorScheme.onPrimary)
-            Spacer(Modifier.width(8.dp))
-            Text("جاري رفع الوثيقة والتحقق...")
-        } else {
-            Text("إرسال طلب التوثيق (KYC)")
-        }
+private fun Result(icon: androidx.compose.ui.graphics.vector.ImageVector, tone: Color, title: String, body: String, cta: String, onDone: () -> Unit) {
+    val dark = isDark
+    Column(Modifier.fillMaxWidth().padding(vertical = 24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Box(Modifier.size(64.dp).clip(RoundedCornerShape(24.dp)).background(tone.copy(alpha = 0.10f)), contentAlignment = Alignment.Center) { LuIcon(icon, 40.dp, tone) }
+        Text(title, style = twText(18, FontWeight.Black, 28).copy(textAlign = TextAlign.Center), color = if (dark) Tw.white else Tw.slate900)
+        Text(body, style = twText(12, FontWeight.Normal, 20).copy(textAlign = TextAlign.Center), color = if (dark) Tw.slate400 else Tw.slate500)
+        TwButton(cta, onDone, container = Tw.teal600)
     }
 }

@@ -1,61 +1,49 @@
 package studio.ai.literium.literium_app.ui.screens.admin.tabs
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Block
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Campaign
-import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import studio.ai.literium.literium_app.data.model.User
-import studio.ai.literium.literium_app.ui.diagnostics.diagnoseTouchTarget
-import studio.ai.literium.literium_app.ui.diagnostics.reportIfLowContrast
-import studio.ai.literium.literium_app.ui.diagnostics.rememberOverflowReporter
 import studio.ai.literium.literium_app.ui.screens.admin.AdminViewModel
 import studio.ai.literium.literium_app.ui.screens.admin.components.BalanceAdjustDialog
 import studio.ai.literium.literium_app.ui.screens.admin.components.BroadcastDialog
 import studio.ai.literium.literium_app.ui.screens.admin.components.KycReviewDialog
+import studio.ai.literium.literium_app.ui.theme.Lu
+import studio.ai.literium.literium_app.ui.theme.LuIcon
+import studio.ai.literium.literium_app.ui.theme.Tw
+import studio.ai.literium.literium_app.ui.theme.brand
+import studio.ai.literium.literium_app.ui.theme.twClickable
+import studio.ai.literium.literium_app.ui.theme.twText
 
-private val ROLE_OPTIONS = listOf("reader" to "قارئ", "writer" to "كاتب", "advertiser" to "معلن", "admin" to "مدير")
+private val ROLE_OPTIONS = listOf("reader" to "قارئ", "writer" to "كاتب", "advertiser" to "معلن", "admin" to "مدير / Admin")
 
-/**
- * "إدارة المستخدمين والحسابات" — Compose port of `AdminUsersTab.tsx`:
- * search/role/status filters, per-user role change / verified-badge toggle
- * / ban / KYC review / balance adjust / profile preview, plus the
- * mass-broadcast entry point. KYC review and balance adjustment open as
- * dialogs (matching the source's modal pattern), not separate tabs.
- */
+/** "إدارة المستخدمين والحسابات" — ترجمة حرفية لـ AdminUsersTab.tsx. */
 @Composable
 fun UsersTab(
     viewModel: AdminViewModel,
@@ -71,80 +59,41 @@ fun UsersTab(
     var showBroadcast by remember { mutableStateOf(false) }
 
     val pendingKycCount = users.count { it.kycDetails?.status == "pending" }
-
+    val q = searchQuery.trim().lowercase()
     val filtered = users.filter { u ->
         if (roleFilter != "all" && u.role != roleFilter) return@filter false
         if (statusFilter == "verified" && u.isVerified != true && u.isKycVerified != true) return@filter false
         if (statusFilter == "kyc_pending" && u.kycDetails?.status != "pending") return@filter false
         if (statusFilter == "banned" && u.isBanned != true) return@filter false
-        if (searchQuery.isNotBlank()) {
-            val q = searchQuery.trim().lowercase()
-            val matches = u.fullName.lowercase().contains(q) || u.email.lowercase().contains(q) ||
-                u.username.lowercase().contains(q) || u.id.lowercase().contains(q)
-            if (!matches) return@filter false
-        }
+        if (q.isNotEmpty() && !(u.fullName.lowercase().contains(q) || u.email.lowercase().contains(q) || u.username.lowercase().contains(q) || u.id.lowercase().contains(q))) return@filter false
         true
     }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        item {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
-            ) {
-                Text(
-                    "إدارة المستخدمين (${users.size})",
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f).padding(end = 8.dp),
-                    maxLines = 2,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                    onTextLayout = rememberOverflowReporter("رأس تبويب المستخدمين")
-                )
-                Button(
-                    onClick = { showBroadcast = true },
-                    modifier = Modifier.diagnoseTouchTarget("زر إرسال تعميم")
-                ) {
-                    Icon(Icons.Filled.Campaign, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Text(" إرسال تعميم", modifier = Modifier.padding(start = 4.dp))
-                }
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
+        AdmCard(bg = Tw.slate900.copy(alpha = 0.9f)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                LuIcon(Lu.Users, 20.dp, brand.s400)
+                Text("إدارة المستخدمين والحسابات", style = twText(16, FontWeight.Bold, 24), color = Color.White)
             }
+            Text("التحكم في الرتب، توثيق الهوية KYC، تعديل الأرصدة، وإرسال التعميمات الجماعية.", Modifier.padding(top = 2.dp, bottom = 16.dp), style = twText(12, FontWeight.Normal, 16), color = Tw.slate400)
+            AdmButton("إرسال تعميم لجميع المستخدمين", { showBroadcast = true }, brand.s600, icon = Lu.Megaphone, size = 12, modifier = Modifier)
         }
-        item {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                label = { Text("البحث بالاسم أو البريد أو المعرّف...") },
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("all" to "الكل", "admin" to "الإدارة", "writer" to "الكتاب", "advertiser" to "المعلنون", "reader" to "القراء")
-                    .forEach { (key, label) ->
-                        FilterChip(selected = roleFilter == key, onClick = { roleFilter = key }, label = { Text(label) })
-                    }
-            }
-        }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf(
-                    "all" to "الحالة: الكل", "verified" to "موثق",
-                    "kyc_pending" to "بانتظار KYC ($pendingKycCount)", "banned" to "محظور"
-                ).forEach { (key, label) ->
-                    FilterChip(selected = statusFilter == key, onClick = { statusFilter = key }, label = { Text(label) })
-                }
-            }
+
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            AdmSearch(searchQuery, { searchQuery = it }, "البحث بالاسم، المعرف (@)، البريد الإلكتروني أو ID...")
+            AdmSegment(listOf("all" to "الكل", "admin" to "الإدارة", "writer" to "الكتاب", "advertiser" to "المعلنون", "reader" to "القراء"), roleFilter, brand.s600) { roleFilter = it }
+            AdmSegment(
+                listOf("all" to "الحالة: الكل", "verified" to "موثق", "kyc_pending" to "بانتظار KYC ($pendingKycCount)", "banned" to "محظور"),
+                statusFilter, Color(0xFF2563EB)
+            ) { statusFilter = it }
         }
 
         if (filtered.isEmpty()) {
-            item { EmptyHint("لا يوجد مستخدمون يطابقون شروط البحث الحالية.") }
+            AdmEmpty("لا يوجد مستخدمون يطابقون شروط البحث الحالية.")
         } else {
-            items(filtered, key = { it.id }) { u -> UserRow(u, currentUser, viewModel, onOpenProfile, { kycTarget = u }, { balanceTarget = u }) }
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                filtered.forEach { u -> UserRow(u, currentUser, viewModel, onOpenProfile, { kycTarget = u }, { balanceTarget = u }) }
+            }
         }
     }
 
@@ -153,48 +102,15 @@ fun UsersTab(
     if (showBroadcast) BroadcastDialog(viewModel, users.size) { showBroadcast = false }
 }
 
-/**
- * Rounded colored-pill icon toggle matching `AdminUsersTab.tsx`'s verify/ban buttons — a plain
- * default-tint [IconButton] rendered as flat gray/black with no fill at all, which is what made these
- * look "colorless" compared to the web's `bg-blue-500/20`/`bg-rose-500` pills. Inactive state uses a
- * dim outlined pill (`bg-slate-950`/`border-slate-800`) so it still reads as a real button, not just a
- * bare icon.
- */
 @Composable
-private fun StatusPillIconButton(
-    active: Boolean,
-    activeContainer: androidx.compose.ui.graphics.Color,
-    activeContent: androidx.compose.ui.graphics.Color,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    contentDescription: String,
-    onClick: () -> Unit
-) {
-    val inactiveContainer = androidx.compose.ui.graphics.Color(0xFF020617)
-    val inactiveContent = androidx.compose.ui.graphics.Color(0xFF94A3B8)
-    val inactiveBorder = androidx.compose.ui.graphics.Color(0xFF1E293B)
-    val resolvedContainer = if (active) activeContainer else inactiveContainer
-    val resolvedContent = if (active) activeContent else inactiveContent
-    reportIfLowContrast(
-        tag = "زر $contentDescription (${if (active) "مفعّل" else "غير مفعّل"})",
-        foreground = resolvedContent,
-        background = resolvedContainer
-    )
-    androidx.compose.material3.Surface(
-        onClick = onClick,
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
-        color = resolvedContainer,
-        border = if (active) null else androidx.compose.foundation.BorderStroke(1.dp, inactiveBorder),
-        modifier = Modifier.size(36.dp).diagnoseTouchTarget("زر $contentDescription")
-    ) {
-        Box(Modifier.fillMaxWidth().padding(6.dp), contentAlignment = androidx.compose.ui.Alignment.Center) {
-            Icon(
-                icon,
-                contentDescription = contentDescription,
-                tint = if (active) activeContent else inactiveContent,
-                modifier = Modifier.size(18.dp)
-            )
-        }
-    }
+private fun IconPill(icon: androidx.compose.ui.graphics.vector.ImageVector, active: Boolean, activeBg: Color, activeFg: Color, activeBorder: Color?, onClick: () -> Unit) {
+    val s = RoundedCornerShape(12.dp)
+    Box(
+        Modifier.clip(s).background(if (active) activeBg else Tw.slate950)
+            .border(1.dp, if (active) (activeBorder ?: Color.Transparent) else Tw.slate800, s)
+            .twClickable { onClick() }.padding(6.dp),
+        contentAlignment = Alignment.Center
+    ) { LuIcon(icon, 16.dp, if (active) activeFg else Tw.slate400) }
 }
 
 @Composable
@@ -207,79 +123,54 @@ private fun UserRow(
     onOpenBalance: () -> Unit
 ) {
     val isSelf = u.id == currentUser.id
-    val isKycPending = u.kycDetails?.status == "pending"
-    var roleMenuOpen by remember { mutableStateOf(false) }
+    val kycPending = u.kycDetails?.status == "pending"
+    val banned = u.isBanned == true
+    var roleMenu by remember { mutableStateOf(false) }
 
-    studio.ai.literium.literium_app.ui.theme.DarkCard {
-        Column(Modifier.padding(12.dp)) {
-            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                AsyncImage(
-                    model = u.avatarUrl, contentDescription = u.fullName,
-                    modifier = Modifier.size(44.dp).clip(CircleShape)
-                )
-                Column(Modifier.padding(start = 10.dp).weight(1f)) {
-                    Text(u.fullName, fontWeight = FontWeight.Bold)
-                    Text("@${u.username} • ${u.email}", fontSize = 11.sp, color = studio.ai.literium.literium_app.ui.theme.SlateMuted)
-                    Text(
-                        "المحفظة: $${"%.2f".format(u.walletBalance ?: 0.0)} • للسحب: $${"%.2f".format(u.availableBalance ?: 0.0)} • مجمّد: $${"%.2f".format(u.pendingEarnings ?: 0.0)}",
-                        fontSize = 11.sp, color = studio.ai.literium.literium_app.ui.theme.SlateMuted
-                    )
-                    if (u.isBanned == true) Text("محظور", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
-                    if (isKycPending) Text("طلب توثيق KYC جديد ⏳", color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.Bold)
+    AdmCard(
+        bg = if (banned) Color(0xFF4C0519).copy(alpha = 0.10f) else if (kycPending) Color(0xFF451A03).copy(alpha = 0.10f) else Tw.slate900,
+        border = if (banned) Adm.rose500.copy(alpha = 0.4f) else if (kycPending) Adm.amber500.copy(alpha = 0.4f) else Tw.slate800
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            AsyncImage(u.avatarUrl, u.fullName, Modifier.size(48.dp).clip(RoundedCornerShape(16.dp)).border(1.dp, Tw.slate800, RoundedCornerShape(16.dp)), contentScale = ContentScale.Crop)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                AdmFlow {
+                    Text(u.fullName, style = twText(14, FontWeight.Bold, 20), color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (u.isVerified == true) LuIcon(Lu.CheckCircle2, 16.dp, Adm.blue400)
+                    if (u.isKycVerified == true) LuIcon(Lu.ShieldCheck, 16.dp, Adm.emerald400)
+                    if (banned) AdmBadge("محظور", Color.White, Adm.rose500, null, mono = false)
+                    if (kycPending) AdmBadge("طلب توثيق KYC جديد ⏳", Tw.slate950, Adm.amber500, null, mono = false)
                 }
+                Text("@${u.username} • ${u.email}", style = twText(12, FontWeight.Normal, 16), color = Tw.slate400, fontFamily = Adm.mono, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("المحفظة: ${Adm.usd(u.walletBalance ?: 0.0)} • متاح للسحب: ${Adm.usd(u.availableBalance ?: 0.0)} • أرباح مجمّدة: ${Adm.usd(u.pendingEarnings ?: 0.0)}",
+                    Modifier.padding(top = 2.dp), style = twText(11, FontWeight.Normal, 16), color = Tw.slate400)
             }
-
-            Row(
-                Modifier.fillMaxWidth().padding(top = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                if (!isSelf) {
-                    Box {
-                        OutlinedButton(onClick = { roleMenuOpen = true }) {
-                            Text(ROLE_OPTIONS.firstOrNull { it.first == u.role }?.second ?: u.role)
-                        }
-                        DropdownMenu(expanded = roleMenuOpen, onDismissRequest = { roleMenuOpen = false }) {
-                            ROLE_OPTIONS.forEach { (key, label) ->
-                                DropdownMenuItem(text = { Text(label) }, onClick = {
-                                    viewModel.setUserRole(u.id, key)
-                                    roleMenuOpen = false
-                                })
-                            }
+        }
+        AdmFlow {
+            if (!isSelf) {
+                Box {
+                    Row(
+                        Modifier.clip(RoundedCornerShape(12.dp)).background(Tw.slate950).border(1.dp, Tw.slate800, RoundedCornerShape(12.dp))
+                            .twClickable { roleMenu = true }.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(ROLE_OPTIONS.firstOrNull { it.first == u.role }?.second ?: u.role, style = twText(12, FontWeight.Bold, 16), color = Tw.slate300)
+                        LuIcon(Lu.ChevronDown, 14.dp, Tw.slate400)
+                    }
+                    DropdownMenu(expanded = roleMenu, onDismissRequest = { roleMenu = false }) {
+                        ROLE_OPTIONS.forEach { (key, label) ->
+                            DropdownMenuItem(text = { Text(label) }, onClick = { viewModel.setUserRole(u.id, key); roleMenu = false })
                         }
                     }
                 }
-                if (isKycPending) {
-                    Button(
-                        onClick = onOpenKyc,
-                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                            containerColor = studio.ai.literium.literium_app.ui.theme.BrandAmber,
-                            contentColor = androidx.compose.ui.graphics.Color(0xFF020617)
-                        )
-                    ) { Text("تدقيق الهوية") }
-                }
-                OutlinedButton(onClick = onOpenBalance) { Text("تعديل الرصيد") }
-                if (!isSelf) {
-                    StatusPillIconButton(
-                        active = u.isVerified == true,
-                        activeContainer = androidx.compose.ui.graphics.Color(0xFF3B82F6).copy(alpha = 0.2f),
-                        activeContent = androidx.compose.ui.graphics.Color(0xFF93C5FD),
-                        icon = Icons.Filled.CheckCircle,
-                        contentDescription = "توثيق",
-                        onClick = { viewModel.setUserVerified(u.id, u.isVerified != true) }
-                    )
-                    StatusPillIconButton(
-                        active = u.isBanned == true,
-                        activeContainer = androidx.compose.ui.graphics.Color(0xFFF43F5E),
-                        activeContent = androidx.compose.ui.graphics.Color.White,
-                        icon = Icons.Filled.Block,
-                        contentDescription = "حظر",
-                        onClick = { viewModel.setUserBanned(u.id, u.isBanned != true) }
-                    )
-                }
-                IconButton(onClick = { onOpenProfile(u.id) }) {
-                    Icon(Icons.Filled.Visibility, contentDescription = "معاينة")
-                }
             }
+            if (kycPending) AdmButton("تدقيق الهوية", onOpenKyc, Adm.amber500, Tw.slate950, icon = Lu.UserCheck)
+            AdmButton("تعديل الرصيد", onOpenBalance, Adm.emerald600.copy(alpha = 0.2f), Color(0xFF6EE7B7), Adm.emerald500.copy(alpha = 0.3f), Lu.DollarSign)
+            if (!isSelf) {
+                IconPill(Lu.CheckCircle2, u.isVerified == true, Adm.blue500.copy(alpha = 0.2f), Adm.blue300, Adm.blue500.copy(alpha = 0.3f)) { viewModel.setUserVerified(u.id, u.isVerified != true) }
+                IconPill(Lu.Ban, banned, Adm.rose500, Color.White, Adm.rose500) { viewModel.setUserBanned(u.id, !banned) }
+            }
+            IconPill(Lu.Eye, false, Color.Transparent, Color.Transparent, null) { onOpenProfile(u.id) }
         }
     }
 }

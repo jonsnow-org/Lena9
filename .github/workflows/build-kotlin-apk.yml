@@ -19,6 +19,11 @@ name: Build Kotlin Native Android APK
 
 on:
   workflow_dispatch:
+    inputs:
+      native_ui:
+        description: 'واجهات Compose الأصلية (الافتراضي والمعتمد). أوقفه فقط لبناء نسخة WebView قديمة للمقارنة — تُنشر باسم Literium-webview.apk ولا تمس Literium.apk'
+        type: boolean
+        default: true
   push:
     branches: [main, claude/project-error-analysis-zhu2ux]
     paths:
@@ -107,7 +112,11 @@ jobs:
         working-directory: android-native
         env:
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-        run: gradle :app:assembleRelease :app:bundleRelease -PversionCode=${{ github.run_number }} --stacktrace
+        run: |
+          set -o pipefail
+          # يُحذف ضجيج stack-trace الخاص بـGradle (أسطر "at ...") ليبقى سجل الفشل مقروءاً (أخطاء Kotlin "e: ...")
+          gradle :app:assembleRelease :app:bundleRelease -PversionCode=${{ github.run_number }} -PnativeUi=${{ (github.event_name == 'workflow_dispatch' && inputs.native_ui == false) && 'false' || 'true' }} --stacktrace 2>&1 | grep -v -E '^[0-9TZ:.-]*\s+at |^\s+at |^\s*\.\.\. [0-9]+ more'
+
 
       - name: Verify built APK's actual versionCode
         run: |
@@ -142,10 +151,18 @@ jobs:
       # الفرع، لا عبر main مباشرة.
       - name: Sync in-app download button with this build
         run: |
-          cp android-native/app/build/outputs/apk/release/app-release.apk public/downloads/Literium.apk
+          # النسخة المعتمدة = Kotlin/Compose الأصلية، تُنشر دائماً باسم Literium.apk
+          # (الرابط الوحيد الذي يستخدمه زر التحميل في الموقع وصفحة إصدارات GitHub
+          # ونظام الترويج في مستودع Ttbik). نسخة WebView القديمة (للمقارنة فقط) باسم مستقل.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.native_ui }}" = "false" ]; then
+            TARGET=public/downloads/Literium-webview.apk
+          else
+            TARGET=public/downloads/Literium.apk
+          fi
+          cp android-native/app/build/outputs/apk/release/app-release.apk "$TARGET"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add public/downloads/Literium.apk
+          git add "$TARGET"
           if git diff --cached --quiet; then
             echo "No change in the built APK — skipping commit."
             exit 0
@@ -166,11 +183,11 @@ jobs:
       # قناة توزيع رسمية بلا أي حساب متجر: صفحة إصدارات GitHub للمستودع نفسه —
       # رابط ثابت لكل نسخة، وتطبيق Obtainium يتابعها ويحدّث التطبيق تلقائياً.
       - name: Prepare release asset
-        if: github.ref_name == 'main'
+        if: github.ref_name == 'main' && !(github.event_name == 'workflow_dispatch' && inputs.native_ui == false)
         run: cp android-native/app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/Literium.apk"
 
       - name: Publish GitHub Release
-        if: github.ref_name == 'main'
+        if: github.ref_name == 'main' && !(github.event_name == 'workflow_dispatch' && inputs.native_ui == false)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
