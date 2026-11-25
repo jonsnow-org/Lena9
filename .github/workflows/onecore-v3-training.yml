@@ -4,6 +4,12 @@ name: OneCore V3 — real five-family CPU training
 # full artifact-backed V3 checkpoint save/restore audit both pass.
 on:
   workflow_dispatch:
+    inputs:
+      resource_benchmark_run_id:
+        description: "Successful manual OneCore CI run containing the measured V3 CPU resource artifact"
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -45,7 +51,7 @@ jobs:
   train:
     name: Train OneCore V3 from the pinned external corpus
     needs: verify
-    if: false  # Re-enable only after all pre-training gates are evidenced.
+    if: github.ref == 'refs/heads/research/onecore-v3-implementation' && inputs.resource_benchmark_run_id != '' && false  # Keep blocked until resource and checkpoint audits are approved.
     runs-on: ubuntu-24.04
     timeout-minutes: 350
     steps:
@@ -106,6 +112,60 @@ jobs:
               for key, value in outputs.items():
                   stream.write(f"{key}={value}\n")
           print({"training_request": outputs, "corpus_artifact_id": expected["corpus_artifact_id"]})
+          PY
+      - name: Verify selected manual CPU benchmark run and artifact
+        id: resource-evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RESOURCE_BENCHMARK_RUN_ID: ${{ inputs.resource_benchmark_run_id }}
+        run: |
+          PYTHONPATH=onecore-ai/src python -m onecore.v3.resource_evidence \
+            --repo "$GITHUB_REPOSITORY" \
+            --run-id "$RESOURCE_BENCHMARK_RUN_ID" \
+            --output "$RUNNER_TEMP/onecore-v3-resource-artifact.json"
+      - name: Download measured V3 CPU resource evidence
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ steps.resource-evidence.outputs.artifact_name }}
+          run-id: ${{ inputs.resource_benchmark_run_id }}
+          repository: ${{ github.repository }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/onecore-v3-resource-evidence
+      - name: Verify downloaded CPU resource report
+        id: resource-report
+        run: |
+          python - <<'PY'
+          import hashlib, json, os, shutil
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"])
+          reports = list((root / "onecore-v3-resource-evidence").rglob("onecore-v3-resource-benchmark.json"))
+          metadata_path = root / "onecore-v3-resource-artifact.json"
+          if len(reports) != 1 or not metadata_path.is_file():
+              raise SystemExit(f"expected one benchmark report and verified artifact metadata, found {reports}")
+          metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+          report_path = reports[0]
+          report = json.loads(report_path.read_text(encoding="utf-8"))
+          if report.get("status") != "measured" or report.get("optimizer_updates") != 0:
+              raise SystemExit("resource report is not a measured zero-optimizer-update CPU benchmark")
+          expected_name = f"onecore-v3-resource-benchmark-{metadata.get('run_id')}"
+          if metadata.get("artifact_name") != expected_name or not str(metadata.get("artifact_digest", "")).startswith("sha256:"):
+              raise SystemExit("resource artifact metadata is not bound to the selected benchmark run")
+          if metadata.get("artifact_expired") is not False:
+              raise SystemExit("resource benchmark artifact is expired or its expiry state is unknown")
+          evidence_sha = hashlib.sha256(report_path.read_bytes()).hexdigest()
+          state_dir = Path("onecore-ai/run-state/v3")
+          state_dir.mkdir(parents=True, exist_ok=True)
+          shutil.copy2(metadata_path, state_dir / "resource-evidence-artifact.json")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"path={report_path.resolve()}\n")
+          print({
+              "resource_report_sha256": evidence_sha,
+              "artifact_id": metadata.get("artifact_id"),
+              "artifact_digest": metadata.get("artifact_digest"),
+              "benchmark_run_id": metadata.get("run_id"),
+              "benchmark_head_sha": metadata.get("head_sha"),
+          })
           PY
       - name: Download the independently trained V3 tokenizer
         uses: actions/download-artifact@v7
@@ -193,6 +253,7 @@ jobs:
             --max-grad-norm "${{ steps.request.outputs.max_grad_norm }}" \
             --checkpoint-every "${{ steps.request.outputs.checkpoint_every }}" \
             --run-id "$GITHUB_RUN_ID" \
+            --resource-evidence "${{ steps.resource-report.outputs.path }}" \
             --seed "${{ steps.request.outputs.seed }}" \
             --threads "${{ steps.request.outputs.threads }}"
       - name: Upload the real V3 checkpoint and training evidence
@@ -205,6 +266,7 @@ jobs:
             onecore-ai/run-state/v3/tokenizer.json
             onecore-ai/run-state/v3/tokenizer.evidence.json
             onecore-ai/run-state/v3/train_result.json
+            onecore-ai/run-state/v3/resource-evidence-artifact.json
           if-no-files-found: error
           retention-days: 90
       - name: Publish training result summary

@@ -97,7 +97,7 @@ def test_v3_training_workflow_is_blocked_until_resource_and_checkpoint_gates_pas
     assert "on:\n  workflow_dispatch:" in workflow
     assert "\n  push:" not in workflow
     train = workflow.split("  train:", 1)[1]
-    assert "    if: false" in train
+    assert "if: github.ref == 'refs/heads/research/onecore-v3-implementation' && inputs.resource_benchmark_run_id != '' && false" in train
     assert "Run the first real five-family optimizer update" in train
 
 
@@ -106,3 +106,17 @@ def test_v3_runner_requires_measured_cpu_resource_evidence():
     assert 'parser.add_argument("--resource-evidence", required=True)' in runner
     assert "resource_evidence_path=args.resource_evidence" in runner
     assert "_validate_resource_evidence(" in runner
+
+
+
+def test_v3_training_consumes_only_a_verified_manual_resource_benchmark_artifact():
+    workflow = (WORKFLOWS / "onecore-v3-training.yml").read_text(encoding="utf-8")
+    assert "resource_benchmark_run_id:" in workflow
+    assert "onecore.v3.resource_evidence" in workflow
+    assert "Measure V3 CPU memory and throughput from existing artifacts" in workflow
+    assert "actions/download-artifact@v7" in workflow
+    assert "steps.resource-evidence.outputs.artifact_name" in workflow
+    assert "run-id: ${{ inputs.resource_benchmark_run_id }}" in workflow
+    assert '--resource-evidence "${{ steps.resource-report.outputs.path }}"' in workflow
+    assert "resource-evidence-artifact.json" in workflow
+    assert "if: github.ref == 'refs/heads/research/onecore-v3-implementation' && inputs.resource_benchmark_run_id != '' && false" in workflow
