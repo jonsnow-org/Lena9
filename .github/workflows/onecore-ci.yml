@@ -2,7 +2,7 @@ name: OneCore — CI and notebook integrity
 
 on:
   push:
-    branches: [research/onecore-v3-implementation]
+    branches: [main, research/onecore-v3-implementation]
     paths:
       - "onecore-ai/**"
       - ".github/workflows/onecore-ci.yml"
@@ -614,7 +614,7 @@ jobs:
     name: Measure V3 CPU memory and throughput from existing artifacts
     needs: verify
     # Never overlap a corpus restore. This job is manual-only and performs no optimizer updates.
-    if: github.ref == 'refs/heads/research/onecore-v3-implementation' && github.event_name == 'workflow_dispatch' && inputs.benchmark_v3_resources == true && inputs.restore_v3_corpus != true
+    if: (github.ref == 'refs/heads/research/onecore-v3-implementation' || github.ref == 'refs/heads/main') && github.event_name == 'workflow_dispatch' && inputs.benchmark_v3_resources == true && inputs.restore_v3_corpus != true
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     steps:

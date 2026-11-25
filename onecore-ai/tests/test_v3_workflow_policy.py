@@ -5,9 +5,9 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = ROOT / ".github" / "workflows"
 
 
-def test_canonical_onecore_ci_runs_on_v3_only_and_restore_is_explicit():
+def test_canonical_onecore_ci_verifies_default_main_and_v3_and_restore_is_explicit():
     workflow = (WORKFLOWS / "onecore-ci.yml").read_text(encoding="utf-8")
-    assert "branches: [research/onecore-v3-implementation]" in workflow
+    assert "branches: [main, research/onecore-v3-implementation]" in workflow
     assert "cancel-in-progress: false" in workflow
     assert "branches: [research/onecore-foundation, research/onecore-v3-implementation]" not in workflow
     assert "workflow_dispatch:" in workflow
@@ -78,6 +78,8 @@ def test_v3_resource_benchmark_is_manual_only_and_uses_range_reads():
     assert "github.event_name == 'workflow_dispatch'" in benchmark
     assert "inputs.benchmark_v3_resources == true" in benchmark
     assert "inputs.restore_v3_corpus != true" in benchmark
+    assert "github.ref == 'refs/heads/main'" in benchmark
+    assert "github.ref == 'refs/heads/research/onecore-v3-implementation'" in benchmark
     assert "onecore.v3.resource_benchmark" in benchmark
     assert "--corpus-artifact-id 14892594659" in benchmark
     assert "--report-artifact-id 14893020087" in benchmark
