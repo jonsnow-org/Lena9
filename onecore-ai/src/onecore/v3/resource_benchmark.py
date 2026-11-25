@@ -7,6 +7,7 @@ five-family loader slice, and performs no optimizer steps or checkpoint writes.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import hashlib
 import json
 import math
@@ -187,6 +188,82 @@ def _signed_artifact_url(repo: str, artifact_id: int, token: str) -> str:
         response.close()
 
 
+class _RefreshingArtifactSession:
+    """Refresh short-lived GitHub Actions artifact URLs after storage rejects them."""
+
+    def __init__(self, initial_url: str, refresh_url: Any, *, session: Any = None):
+        if not isinstance(initial_url, str) or not initial_url:
+            raise ValueError("initial signed artifact URL must be non-empty")
+        if not callable(refresh_url):
+            raise TypeError("refresh_url must be callable")
+        if session is None:
+            if requests is None:
+                raise RuntimeError("artifact range reads require the corpus-restore extra")
+            session = requests.Session()
+        self._url = initial_url
+        self._refresh_url = refresh_url
+        self._session = session
+        self._closed = False
+
+    def _request(self, method: str, **kwargs: Any) -> Any:
+        if self._closed:
+            raise RuntimeError("artifact session is closed")
+        request = getattr(self._session, method, None)
+        if not callable(request):
+            raise TypeError(f"artifact session does not support {method}")
+        response = request(self._url, **kwargs)
+        status = getattr(response, "status_code", None)
+        if status == 403:
+            close = getattr(response, "close", None)
+            if callable(close):
+                close()
+            self._url = self._refresh_url()
+            response = request(self._url, **kwargs)
+            status = getattr(response, "status_code", None)
+        if isinstance(status, int) and status >= 400:
+            close = getattr(response, "close", None)
+            if callable(close):
+                close()
+            raise RuntimeError(
+                f"HTTP {status} while reading a pinned GitHub Actions artifact; signed URL redacted"
+            )
+        return response
+
+    def get(self, _url: str, **kwargs: Any) -> Any:
+        # RemoteZip retains its original URL; this session deliberately uses the
+        # refreshed URL after a storage 403 without rebuilding the ZIP reader.
+        return self._request("get", **kwargs)
+
+    def head(self, _url: str, **kwargs: Any) -> Any:
+        return self._request("head", **kwargs)
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        close = getattr(self._session, "close", None)
+        if callable(close):
+            close()
+
+
+@contextmanager
+def _open_remote_zip(repo: str, artifact_id: int, token: str):
+    if requests is None or RemoteZip is None:
+        raise RuntimeError("artifact range reads require onecore-ai[corpus-restore]")
+    initial_url = _signed_artifact_url(repo, artifact_id, token)
+    session = _RefreshingArtifactSession(
+        initial_url,
+        lambda: _signed_artifact_url(repo, artifact_id, token),
+    )
+    try:
+        with RemoteZip(
+            initial_url, session=session, support_suffix_range=False
+        ) as archive:
+            yield archive
+    finally:
+        session.close()
+
+
 def _unique_suffix(names: list[str], suffix: str) -> str:
     normalized = [str(name).replace("\\", "/") for name in names]
     matches = [name for name in normalized if name == suffix or name.endswith("/" + suffix)]
@@ -263,9 +340,8 @@ def _extract_verified_asset(
 
 
 def _read_conversion_report(repo: str, artifact_id: int, token: str) -> tuple[dict[str, Any], bytes]:
-    url = _signed_artifact_url(repo, artifact_id, token)
     matches: list[tuple[dict[str, Any], bytes]] = []
-    with RemoteZip(url, support_suffix_range=False) as archive:
+    with _open_remote_zip(repo, artifact_id, token) as archive:
         for name in archive.namelist():
             if not str(name).lower().endswith(".json"):
                 continue
@@ -1751,13 +1827,12 @@ def _run_parent(args: argparse.Namespace) -> int:
                 if count < minimum:
                     raise RuntimeError(f"V3 manifest gate coverage below quota: {split}/{family}={count}")
 
-        corpus_url = _signed_artifact_url(args.github_repo, args.corpus_artifact_id, args.github_token)
         data_root = root / "corpus" / "data"
         data_root.mkdir(parents=True)
         manifest_paths: dict[str, Path] = {}
         loader_manifest_paths: dict[str, Path] = {}
         loader_selection: dict[str, Any] = {}
-        with RemoteZip(corpus_url, support_suffix_range=False) as archive:
+        with _open_remote_zip(args.github_repo, args.corpus_artifact_id, args.github_token) as archive:
             names = archive.namelist()
             for split in ("train", "validation", "test"):
                 member = _unique_suffix(names, f"data/{split}.jsonl")
@@ -1805,10 +1880,9 @@ def _run_parent(args: argparse.Namespace) -> int:
                             )
                             extracted_loader_assets.add(relative)
 
-        tokenizer_url = _signed_artifact_url(args.github_repo, args.tokenizer_artifact_id, args.github_token)
         tokenizer_root = root / "tokenizer"
         tokenizer_root.mkdir()
-        with RemoteZip(tokenizer_url, support_suffix_range=False) as archive:
+        with _open_remote_zip(args.github_repo, args.tokenizer_artifact_id, args.github_token) as archive:
             names = archive.namelist()
             evidence_candidates = [
                 name for name in names

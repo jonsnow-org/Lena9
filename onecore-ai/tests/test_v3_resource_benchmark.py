@@ -781,3 +781,95 @@ def test_loader_video_quota_uses_adaptive_native_resolution_frame_windows(monkey
 
     for split, path in manifests.items():
         assert path.read_text(encoding="utf-8") == originals[split]
+
+
+def test_refreshing_artifact_session_retries_expired_signed_urls_for_get_and_head():
+    from onecore.v3 import resource_benchmark as benchmark
+
+    class Response:
+        def __init__(self, status_code):
+            self.status_code = status_code
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    class FakeSession:
+        def __init__(self, responses):
+            self.responses = list(responses)
+            self.calls = []
+            self.closed = False
+
+        def get(self, url, **kwargs):
+            self.calls.append(("get", url, kwargs))
+            return self.responses.pop(0)
+
+        def head(self, url, **kwargs):
+            self.calls.append(("head", url, kwargs))
+            return self.responses.pop(0)
+
+        def close(self):
+            self.closed = True
+
+    for method in ("get", "head"):
+        expired = Response(403)
+        accepted = Response(206 if method == "get" else 200)
+        fake = FakeSession([expired, accepted])
+        refreshes = []
+        old_url = "https://artifact.invalid/archive.zip?sig=expired-secret"
+        new_url = "https://artifact.invalid/archive.zip?sig=fresh-secret"
+        client = benchmark._RefreshingArtifactSession(
+            old_url,
+            lambda: (refreshes.append(True) or new_url),
+            session=fake,
+        )
+        response = getattr(client, method)(
+            "the-original-remotezip-url",
+            headers={"Range": "bytes=10-20"},
+            stream=True,
+        )
+
+        assert response is accepted
+        assert refreshes == [True]
+        assert expired.closed is True
+        assert [call[1] for call in fake.calls] == [old_url, new_url]
+        assert all(call[2]["headers"]["Range"] == "bytes=10-20" for call in fake.calls)
+        client.close()
+        assert fake.closed is True
+
+
+def test_refreshing_artifact_session_redacts_signed_url_after_second_403():
+    from onecore.v3 import resource_benchmark as benchmark
+
+    class Response:
+        def __init__(self):
+            self.status_code = 403
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    class FakeSession:
+        def __init__(self, responses):
+            self.responses = list(responses)
+            self.urls = []
+
+        def get(self, url, **kwargs):
+            self.urls.append(url)
+            return self.responses.pop(0)
+
+    first, second = Response(), Response()
+    old_url = "https://artifact.invalid/archive.zip?sig=expired-secret"
+    new_url = "https://artifact.invalid/archive.zip?sig=fresh-secret"
+    fake = FakeSession([first, second])
+    client = benchmark._RefreshingArtifactSession(
+        old_url, lambda: new_url, session=fake
+    )
+
+    with pytest.raises(RuntimeError, match="signed URL redacted") as error:
+        client.get("ignored", headers={"Range": "bytes=0-1"}, stream=True)
+
+    assert fake.urls == [old_url, new_url]
+    assert old_url not in str(error.value)
+    assert new_url not in str(error.value)
+    assert first.closed is True and second.closed is True
