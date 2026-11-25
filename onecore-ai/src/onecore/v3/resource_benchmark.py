@@ -307,12 +307,37 @@ def _family(task: str) -> str | None:
     return next((name for name, tasks in TASK_GROUPS.items() if task in tasks), None)
 
 
+def _bounded_video_frame_count(
+    source_frame_count: int,
+    megapixels_per_frame: float,
+    *,
+    max_video_megapixel_frames: float,
+    max_video_frames: int,
+) -> int:
+    """Bound video sample memory by total native-resolution megapixel-frames."""
+    if (
+        source_frame_count < 1
+        or not math.isfinite(megapixels_per_frame)
+        or megapixels_per_frame <= 0
+        or not math.isfinite(max_video_megapixel_frames)
+        or max_video_megapixel_frames <= 0
+        or max_video_frames < 1
+    ):
+        return 0
+    frames_by_pixel_budget = math.floor(
+        (max_video_megapixel_frames + 1e-9) / megapixels_per_frame
+    )
+    if frames_by_pixel_budget < 1:
+        return 0
+    return min(source_frame_count, max_video_frames, frames_by_pixel_budget)
+
+
 def _select_train_samples(
     train_manifest: Path,
     *,
     max_image_megapixels: float,
     max_audio_seconds: float,
-    max_video_megapixels: float,
+    max_video_megapixel_frames: float,
     max_video_frames: int,
 ) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
     selected: dict[str, dict[str, Any]] = {}
@@ -457,7 +482,14 @@ def _select_train_samples(
                 stats["video_megapixels_per_frame"].append(megapixels)
             if isinstance(fps, (int, float)) and fps > 0:
                 stats["video_fps"].append(float(fps))
-            safe_frames = [_safe_relative(item) for item in frames[:max_video_frames]]
+            selected_frame_count = _bounded_video_frame_count(
+                len(frames), megapixels,
+                max_video_megapixel_frames=max_video_megapixel_frames,
+                max_video_frames=max_video_frames,
+            )
+            if selected_frame_count < 1:
+                continue
+            safe_frames = [_safe_relative(item) for item in frames[:selected_frame_count]]
             timestamps = media.get("timestamps")
             if isinstance(timestamps, list):
                 if len(timestamps) != len(frames):
@@ -465,6 +497,7 @@ def _select_train_samples(
                 timestamps = timestamps[:len(safe_frames)]
             else:
                 timestamps = None
+            selected_megapixel_frames = megapixels * len(safe_frames)
             candidate.update({
                 "asset_paths": safe_frames,
                 "frame_count": frame_count,
@@ -473,19 +506,15 @@ def _select_train_samples(
                 "timestamp_unit": media.get("timestamp_unit"),
                 "width": width, "height": height,
                 "megapixels_per_frame": megapixels,
+                "video_megapixel_frames": selected_megapixel_frames,
                 "duration_seconds": duration,
                 "fps": fps,
             })
-            score = float(len(safe_frames))
-            if megapixels <= max_video_megapixels and score > best.get(family, (-1.0, {}))[0]:
+            score = selected_megapixel_frames
+            if score > best.get(family, (-1.0, {}))[0]:
                 best[family] = (score, candidate)
-            if megapixels < fallback.get(family, (float("inf"), {}))[0]:
-                fallback[family] = (megapixels, candidate)
-            if condition_field is not None:
-                if megapixels <= max_video_megapixels and score > best_conditioned.get(family, (-1.0, {}))[0]:
-                    best_conditioned[family] = (score, candidate)
-                if megapixels < fallback_conditioned.get(family, (float("inf"), {}))[0]:
-                    fallback_conditioned[family] = (megapixels, candidate)
+            if condition_field is not None and score > best_conditioned.get(family, (-1.0, {}))[0]:
+                best_conditioned[family] = (score, candidate)
 
     for family in ("text", "tool", "image", "audio", "video"):
         value = (
@@ -508,7 +537,7 @@ def _select_loader_benchmark_rows(
     *,
     max_image_megapixels: float,
     max_audio_seconds: float,
-    max_video_megapixels: float,
+    max_video_megapixel_frames: float,
     max_video_frames: int,
     seed: int = 20261124,
 ) -> tuple[dict[str, dict[str, list[dict[str, Any]]]], dict[str, Any]]:
@@ -516,7 +545,7 @@ def _select_loader_benchmark_rows(
     required = {"train", "validation", "test"}
     if set(manifest_paths) != required:
         raise ValueError("loader benchmark requires train, validation and test manifests")
-    if min(max_image_megapixels, max_audio_seconds, max_video_megapixels) <= 0 or max_video_frames < 1:
+    if min(max_image_megapixels, max_audio_seconds, max_video_megapixel_frames) <= 0 or max_video_frames < 1:
         raise ValueError("loader benchmark resource caps must be positive")
 
     rows_by_split: dict[str, dict[str, list[dict[str, Any]]]] = {}
@@ -567,26 +596,34 @@ def _select_loader_benchmark_rows(
                 media = (row.get("assets") or {}).get("video") or {}
                 frames = media.get("frames")
                 width, height = int(media.get("width", 0)), int(media.get("height", 0))
-                if (
-                    not isinstance(frames, list) or not frames
-                    or min(width, height) < 1
-                    or width * height / 1_000_000 > max_video_megapixels
-                ):
+                megapixels = width * height / 1_000_000 if min(width, height) > 0 else 0.0
+                if not isinstance(frames, list) or not frames:
                     rejected_by_cap[family] += 1
                     continue
-                if len(frames) > max_video_frames:
-                    original_count = len(frames)
-                    media["frames"] = frames[:max_video_frames]
-                    media["frame_count"] = len(media["frames"])
-                    timestamps = media.get("timestamps")
-                    if isinstance(timestamps, list):
-                        if len(timestamps) != original_count:
-                            raise ValueError(f"V3 video timestamps mismatch for benchmark row {record_id}")
-                        media["timestamps"] = timestamps[:max_video_frames]
+                original_count = len(frames)
+                selected_frame_count = _bounded_video_frame_count(
+                    original_count, megapixels,
+                    max_video_megapixel_frames=max_video_megapixel_frames,
+                    max_video_frames=max_video_frames,
+                )
+                if selected_frame_count < 1:
+                    rejected_by_cap[family] += 1
+                    continue
+                timestamps = media.get("timestamps")
+                if isinstance(timestamps, list) and len(timestamps) != original_count:
+                    raise ValueError(f"V3 video timestamps mismatch for benchmark row {record_id}")
+                media["frames"] = frames[:selected_frame_count]
+                media["frame_count"] = selected_frame_count
+                if isinstance(timestamps, list):
+                    media["timestamps"] = timestamps[:selected_frame_count]
+                selected_megapixel_frames = megapixels * selected_frame_count
+                if selected_frame_count < original_count:
                     candidate["benchmark_view"] = {
-                        "transform": "prefix_frame_window",
+                        "transform": "prefix_frame_window_under_megapixel_frame_budget",
                         "source_frame_count": original_count,
-                        "selected_frame_count": len(media["frames"]),
+                        "selected_frame_count": selected_frame_count,
+                        "source_megapixels_per_frame": megapixels,
+                        "selected_megapixel_frames": selected_megapixel_frames,
                     }
 
             seen[family] += 1
@@ -623,11 +660,11 @@ def _select_loader_benchmark_rows(
         "resource_caps": {
             "image_megapixels": max_image_megapixels,
             "audio_seconds": max_audio_seconds,
-            "video_megapixels_per_frame": max_video_megapixels,
+            "video_megapixel_frames_per_record": max_video_megapixel_frames,
             "video_frames": max_video_frames,
         },
         "coverage": selection_stats,
-        "video_prefix_clipping": "preserve source row identity and timestamps; select first bounded frames only in benchmark manifests",
+        "video_prefix_clipping": "preserve native frame dimensions, source row identity and timestamp prefix; bound each sample by total megapixel-frames",
     }
 
 
@@ -1732,7 +1769,7 @@ def _run_parent(args: argparse.Namespace) -> int:
                 manifest_paths["train"],
                 max_image_megapixels=args.max_image_megapixels,
                 max_audio_seconds=args.max_audio_seconds,
-                max_video_megapixels=args.max_video_megapixels,
+                max_video_megapixel_frames=args.max_video_megapixel_frames,
                 max_video_frames=args.max_video_frames,
             )
             assets_root = data_root / "assets"
@@ -1750,7 +1787,7 @@ def _run_parent(args: argparse.Namespace) -> int:
                 manifest_paths,
                 max_image_megapixels=args.max_image_megapixels,
                 max_audio_seconds=args.max_audio_seconds,
-                max_video_megapixels=args.max_video_megapixels,
+                max_video_megapixel_frames=args.max_video_megapixel_frames,
                 max_video_frames=args.max_video_frames,
             )
             loader_manifest_paths = _write_loader_benchmark_manifests(
@@ -2020,7 +2057,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--iterations", type=int, default=MIN_MEASURED_ITERATIONS)
     parser.add_argument("--max-image-megapixels", type=float, default=2.0)
     parser.add_argument("--max-audio-seconds", type=float, default=5.0)
-    parser.add_argument("--max-video-megapixels", type=float, default=1.0)
+    parser.add_argument("--max-video-megapixel-frames", type=float, default=16.0)
     parser.add_argument("--max-video-frames", type=int, default=16)
     parser.add_argument("--worker-timeout-seconds", type=int, default=1800)
     parser.add_argument("--tokenizer-json")
@@ -2035,7 +2072,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("threads and max-video-frames must be positive")
     if args.iterations < MIN_MEASURED_ITERATIONS:
         parser.error(f"per-family throughput benchmark requires at least {MIN_MEASURED_ITERATIONS} measured iterations")
-    if args.max_image_megapixels <= 0 or args.max_audio_seconds <= 0 or args.max_video_megapixels <= 0:
+    if args.max_image_megapixels <= 0 or args.max_audio_seconds <= 0 or args.max_video_megapixel_frames <= 0:
         parser.error("media benchmark limits must be positive")
     worker_modes = [bool(args.worker_plan), bool(args.joint_plan), bool(args.loader_plan)]
     if sum(worker_modes) > 1:

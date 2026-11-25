@@ -651,7 +651,7 @@ jobs:
             --threads 4 --iterations 5 \
             --max-image-megapixels 2 \
             --max-audio-seconds 5 \
-            --max-video-megapixels 1 \
+            --max-video-megapixel-frames 16 \
             --max-video-frames 16 \
             --output "$RUNNER_TEMP/onecore-v3-resource-benchmark.json"
 

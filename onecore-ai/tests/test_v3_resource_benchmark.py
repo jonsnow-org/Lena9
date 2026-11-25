@@ -682,3 +682,95 @@ def test_parent_benchmark_defaults_to_five_measured_iterations_and_rejects_short
     with pytest.raises(SystemExit) as error:
         benchmark.main(["--iterations", "4", "--worker-plan", "unused.json"])
     assert error.value.code == 2
+
+
+def test_video_budget_preserves_native_resolution_and_bounds_total_megapixel_frames():
+    from onecore.v3.resource_benchmark import _bounded_video_frame_count
+
+    assert _bounded_video_frame_count(
+        24, 1920 * 1080 / 1_000_000,
+        max_video_megapixel_frames=16.0, max_video_frames=16,
+    ) == 7
+    assert _bounded_video_frame_count(
+        24, 1280 * 720 / 1_000_000,
+        max_video_megapixel_frames=16.0, max_video_frames=16,
+    ) == 16
+    assert _bounded_video_frame_count(
+        24, 3840 * 2160 / 1_000_000,
+        max_video_megapixel_frames=16.0, max_video_frames=16,
+    ) == 1
+    assert _bounded_video_frame_count(
+        1, 7680 * 4320 / 1_000_000,
+        max_video_megapixel_frames=16.0, max_video_frames=16,
+    ) == 0
+
+
+def test_loader_video_quota_uses_adaptive_native_resolution_frame_windows(monkeypatch, tmp_path):
+    from pathlib import Path
+    from onecore.v3 import resource_benchmark as benchmark
+
+    monkeypatch.setattr(benchmark, "TASK_GROUPS", {"video": {"video_caption"}})
+    monkeypatch.setattr(benchmark, "external_record_is_trainable", lambda _row: True)
+    monkeypatch.setattr(benchmark, "has_immutable_external_provenance", lambda _row: True)
+
+    manifests = {}
+    originals = {}
+    for split, count in (("train", 100), ("validation", 10), ("test", 10)):
+        rows = []
+        for index in range(count):
+            record_id = f"{split}-video-{index:03d}"
+            rows.append({
+                "id": record_id,
+                "split": split,
+                "task": "video_caption",
+                "source_id": "pinned-video-dataset",
+                "source_revision": "a" * 40,
+                "source_row_id_sha256": "b" * 64,
+                "caption": "A continuous video clip.",
+                "assets": {
+                    "video": {
+                        "frames": [f"assets/video/{record_id}/frame-{frame:03d}.png" for frame in range(24)],
+                        "timestamps": [frame / 24 for frame in range(24)],
+                        "width": 1920,
+                        "height": 1080,
+                        "frame_count": 24,
+                    }
+                },
+            })
+        path = tmp_path / f"{split}.jsonl"
+        payload = "".join(json.dumps(row, sort_keys=True) + "\\n" for row in rows)
+        path.write_text(payload, encoding="utf-8")
+        manifests[split] = path
+        originals[split] = payload
+
+    selected, report = benchmark._select_loader_benchmark_rows(
+        manifests,
+        max_image_megapixels=2.0,
+        max_audio_seconds=5.0,
+        max_video_megapixel_frames=16.0,
+        max_video_frames=16,
+    )
+
+    for split, quota in (("train", 100), ("validation", 10), ("test", 10)):
+        rows = selected[split]["video"]
+        assert len(rows) == quota
+        assert report["coverage"][split]["video"] == {
+            "eligible_external_rows_within_caps": quota,
+            "rejected_by_resource_caps": 0,
+            "selected_rows": quota,
+        }
+        for row in rows:
+            video = row["assets"]["video"]
+            assert (video["width"], video["height"]) == (1920, 1080)
+            assert len(video["frames"]) == 7
+            assert video["frame_count"] == 7
+            assert len(video["timestamps"]) == 7
+            view = row["benchmark_view"]
+            assert view["transform"] == "prefix_frame_window_under_megapixel_frame_budget"
+            assert view["source_frame_count"] == 24
+            assert view["selected_frame_count"] == 7
+            assert view["selected_megapixel_frames"] <= 16.0
+            assert view["selected_megapixel_frames"] == pytest.approx(14.5152)
+
+    for split, path in manifests.items():
+        assert path.read_text(encoding="utf-8") == originals[split]
