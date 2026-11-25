@@ -26,6 +26,7 @@ class ModelConfig:
     max_video_frames: int = 4
     thinker_latents: int = 16
     dropout: float = 0.05
+    adaptive_tolerance: float = 0.015
     expected_parameter_count: int | None = None
 
     def __post_init__(self) -> None:
@@ -35,6 +36,8 @@ class ModelConfig:
             raise ValueError("width must be divisible by attention_heads")
         if self.image_size % self.patch_size:
             raise ValueError("image_size must be divisible by patch_size")
+        if self.adaptive_tolerance < 0:
+            raise ValueError("adaptive_tolerance cannot be negative")
         if self.thinker_latents < 1:
             raise ValueError("thinker_latents must be positive")
         values = (

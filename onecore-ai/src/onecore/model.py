@@ -522,7 +522,7 @@ class OneCore(nn.Module):
     @torch.no_grad()
     def forward_hidden_adaptive(self, ids: torch.Tensor, min_cycles: int = 1,
                                 max_cycles: int | None = None,
-                                tolerance: float = 0.015) -> tuple[torch.Tensor, int]:
+                                tolerance: float | None = None) -> tuple[torch.Tensor, int]:
         """Inference-time recurrent compute, stopping when next-token distributions stabilize.
 
         Training uses the configured fixed cycle count. This parameter-free
@@ -531,6 +531,10 @@ class OneCore(nn.Module):
         if ids.ndim != 2 or ids.shape[1] > self.cfg.max_sequence_length:
             raise ValueError("invalid token tensor for adaptive inference")
         max_cycles = max_cycles or self.cfg.recurrent_cycles
+        if tolerance is None:
+            tolerance = self.cfg.adaptive_tolerance
+        if tolerance < 0:
+            raise ValueError("adaptive tolerance cannot be negative")
         if not 1 <= min_cycles <= max_cycles <= self.cfg.recurrent_cycles:
             raise ValueError("adaptive cycles must be within configured recurrent depth")
         positions = torch.arange(ids.shape[1], device=ids.device).unsqueeze(0)
