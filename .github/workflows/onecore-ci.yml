@@ -648,7 +648,7 @@ jobs:
             --expected-report-run-id 45325008221 \
             --tokenizer-artifact-id 14894835517 \
             --expected-tokenizer-run-id 45336933362 \
-            --threads 4 --iterations 2 \
+            --threads 4 --iterations 5 \
             --max-image-megapixels 2 \
             --max-audio-seconds 5 \
             --max-video-megapixels 1 \

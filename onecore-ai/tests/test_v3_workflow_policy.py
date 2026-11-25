@@ -82,6 +82,7 @@ def test_v3_resource_benchmark_is_manual_only_and_uses_range_reads():
     assert "--corpus-artifact-id 14892594659" in benchmark
     assert "--report-artifact-id 14893020087" in benchmark
     assert "--tokenizer-artifact-id 14894835517" in benchmark
+    assert "--iterations 5" in benchmark
     assert "actions/download-artifact@" not in benchmark
     assert "optimizer updates" in benchmark
 

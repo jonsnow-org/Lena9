@@ -204,20 +204,21 @@ def test_family_worker_warms_backward_before_measuring_throughput(monkeypatch, t
         "family": "text", "record_id": "external-text-sample", "target_tokens": 2,
     }), encoding="utf-8")
 
-    result = benchmark._worker(plan, None, threads=1, iterations=2)
+    result = benchmark._worker(plan, None, threads=1, iterations=5)
 
     assert result["status"] == "success", result
     assert result["warmup_forward_passes"] == 1
     assert result["warmup_forward_backward_passes"] == 1
-    assert result["measured_iterations"] == 2
+    assert result["measured_iterations"] == 5
+    assert result["inference_seconds_distribution"]["count"] == 5
+    assert result["forward_backward_seconds_distribution"]["count"] == 5
+    assert result["inference_units_per_second_distribution"]["count"] == 5
+    assert result["forward_backward_units_per_second_distribution"]["count"] == 5
     assert result["optimizer_step_executed"] is False
-    assert events == [
-        ("forward", False),
-        ("forward", True), "backward",
-        ("forward", False),
-        ("forward", True), "backward",
-        ("forward", False),
-        ("forward", True), "backward",
+    assert events == [("forward", False), ("forward", True), "backward"] + [
+        event
+        for _ in range(5)
+        for event in (("forward", False), ("forward", True), "backward")
     ]
     assert models[0].scale.item() == 1.0
     assert result["inference_seconds_mean"] > 0
@@ -663,3 +664,21 @@ def test_monitored_subprocess_samples_parent_and_worker_rss():
 
     assert completed.returncode == 0
     assert observed_tree_peak >= baseline_parent_rss + 16 * 1024 * 1024
+
+
+def test_parent_benchmark_defaults_to_five_measured_iterations_and_rejects_short_runs(monkeypatch):
+    from onecore.v3 import resource_benchmark as benchmark
+
+    captured = {}
+
+    def fake_run_parent(args):
+        captured["iterations"] = args.iterations
+        return 0
+
+    monkeypatch.setattr(benchmark, "_run_parent", fake_run_parent)
+    assert benchmark.main(["--github-token", "test-token"]) == 0
+    assert captured["iterations"] == 5
+
+    with pytest.raises(SystemExit) as error:
+        benchmark.main(["--iterations", "4", "--worker-plan", "unused.json"])
+    assert error.value.code == 2

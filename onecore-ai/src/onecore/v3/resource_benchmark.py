@@ -46,6 +46,8 @@ from onecore.v3.report import build_report
 from onecore.v3.tokenizer import sha256_file, verify_v3_tokenizer
 from onecore.v3.training import OneCoreV3Objective
 
+MIN_MEASURED_ITERATIONS = 5
+
 
 def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
@@ -1099,8 +1101,16 @@ def _worker(plan_path: Path, tokenizer_path: Path | None, threads: int,
             "input_load_seconds": round(input_load_seconds, 6),
             "inference_seconds_mean": round(mean_inference, 6),
             "forward_backward_seconds_mean": round(mean_backward, 6),
+            "inference_seconds_distribution": _distribution(inference_times),
+            "forward_backward_seconds_distribution": _distribution(backward_times),
             "inference_units_per_second": round(throughput_units / max(mean_inference, 1e-9), 6),
             "forward_backward_units_per_second": round(throughput_units / max(mean_backward, 1e-9), 6),
+            "inference_units_per_second_distribution": _distribution([
+                throughput_units / max(value, 1e-9) for value in inference_times
+            ]),
+            "forward_backward_units_per_second_distribution": _distribution([
+                throughput_units / max(value, 1e-9) for value in backward_times
+            ]),
             "mean_loss_diagnostic_only": round(float(np.mean(losses)), 8),
             "peak_rss_bytes": peak_rss,
             "baseline_current_rss_bytes": baseline_current,
@@ -2007,7 +2017,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--expected-tokenizer-run-id", type=int, default=45336933362)
     parser.add_argument("--output", default="onecore-v3-resource-benchmark.json")
     parser.add_argument("--threads", type=int, default=4)
-    parser.add_argument("--iterations", type=int, default=2)
+    parser.add_argument("--iterations", type=int, default=MIN_MEASURED_ITERATIONS)
     parser.add_argument("--max-image-megapixels", type=float, default=2.0)
     parser.add_argument("--max-audio-seconds", type=float, default=5.0)
     parser.add_argument("--max-video-megapixels", type=float, default=1.0)
@@ -2021,8 +2031,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--loader-warmup-iterations", type=int, default=2)
     args = parser.parse_args(argv)
 
-    if args.threads < 1 or args.iterations < 1 or args.max_video_frames < 1:
-        parser.error("threads, iterations and max-video-frames must be positive")
+    if args.threads < 1 or args.max_video_frames < 1:
+        parser.error("threads and max-video-frames must be positive")
+    if args.iterations < MIN_MEASURED_ITERATIONS:
+        parser.error(f"per-family throughput benchmark requires at least {MIN_MEASURED_ITERATIONS} measured iterations")
     if args.max_image_megapixels <= 0 or args.max_audio_seconds <= 0 or args.max_video_megapixels <= 0:
         parser.error("media benchmark limits must be positive")
     worker_modes = [bool(args.worker_plan), bool(args.joint_plan), bool(args.loader_plan)]
