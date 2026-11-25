@@ -86,6 +86,11 @@ def test_v3_resource_benchmark_is_manual_only_and_uses_range_reads():
     assert "optimizer updates" in benchmark
 
 
+def test_v3_training_workflow_changes_trigger_canonical_verify():
+    workflow = (WORKFLOWS / "onecore-ci.yml").read_text(encoding="utf-8")
+    assert workflow.count('".github/workflows/onecore-v3-training.yml"') == 2
+
+
 def test_v3_training_workflow_is_blocked_until_resource_and_checkpoint_gates_pass():
     workflow = (WORKFLOWS / "onecore-v3-training.yml").read_text(encoding="utf-8")
     assert "on:\n  workflow_dispatch:" in workflow

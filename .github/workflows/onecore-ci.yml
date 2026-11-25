@@ -8,6 +8,7 @@ on:
       - ".github/workflows/onecore-ci.yml"
       - ".github/workflows/onecore-training.yml"
       - ".github/workflows/onecore-bootstrap.yml"
+      - ".github/workflows/onecore-v3-training.yml"
       - ".github/actions/onecore-acquire/action.yml"
       - ".github/actions/onecore-train/action.yml"
   pull_request:
@@ -17,6 +18,7 @@ on:
       - ".github/workflows/onecore-ci.yml"
       - ".github/workflows/onecore-training.yml"
       - ".github/workflows/onecore-bootstrap.yml"
+      - ".github/workflows/onecore-v3-training.yml"
       - ".github/actions/onecore-acquire/action.yml"
       - ".github/actions/onecore-train/action.yml"
   workflow_dispatch:
