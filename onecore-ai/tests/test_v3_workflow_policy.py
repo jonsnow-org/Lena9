@@ -13,7 +13,7 @@ def test_canonical_onecore_ci_verifies_default_main_and_v3_and_restore_is_explic
     assert "workflow_dispatch:" in workflow
     assert "restore_v3_corpus:" in workflow
     assert "default: false" in workflow
-    restore = workflow.split("  v3-corpus-restore:", 1)[1]
+    restore = workflow.split("  v3-corpus-restore:", 1)[1].split("  v3-resource-benchmark:", 1)[0]
     assert "github.event_name == 'workflow_dispatch'" in restore
     assert "inputs.restore_v3_corpus == true" in restore
     assert "github.event.head_commit.message" not in restore
