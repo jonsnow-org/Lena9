@@ -1051,8 +1051,20 @@ def _worker(plan_path: Path, tokenizer_path: Path | None, threads: int,
                 raise RuntimeError("video benchmark did not process every selected frame")
             return float(sum(losses) / max(1, len(losses)))
 
+        warmup_forward_started = time.perf_counter()
         with torch.no_grad():
             run_pass(False)
+        warmup_forward_seconds = time.perf_counter() - warmup_forward_started
+
+        # Materialize autograd/gradient buffers before measuring steady-state
+        # forward+backward throughput. This remains diagnostic-only: no optimizer
+        # exists in this worker and no parameter update is performed.
+        model.zero_grad(set_to_none=True)
+        warmup_forward_backward_started = time.perf_counter()
+        run_pass(True)
+        warmup_forward_backward_seconds = time.perf_counter() - warmup_forward_backward_started
+        model.zero_grad(set_to_none=True)
+
         inference_times: list[float] = []
         backward_times: list[float] = []
         losses: list[float] = []
@@ -1098,6 +1110,11 @@ def _worker(plan_path: Path, tokenizer_path: Path | None, threads: int,
             "iterations": iterations,
             "backward_objective": "reconstruction_diagnostic_only",
             "optimizer_step_executed": False,
+            "warmup_forward_passes": 1,
+            "warmup_forward_seconds": round(warmup_forward_seconds, 6),
+            "warmup_forward_backward_passes": 1,
+            "warmup_forward_backward_seconds": round(warmup_forward_backward_seconds, 6),
+            "measured_iterations": iterations,
             "elapsed_seconds": round(time.perf_counter() - started, 6),
         }
     except Exception as exc:

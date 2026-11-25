@@ -166,6 +166,64 @@ def test_distribution_reports_p95_without_mutating_input():
     assert _distribution([]) is None
 
 
+def test_family_worker_warms_backward_before_measuring_throughput(monkeypatch, tmp_path):
+    from onecore.v3 import resource_benchmark as benchmark
+
+    events = []
+    models = []
+
+    class TinyModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.scale = torch.nn.Parameter(torch.tensor(1.0))
+            self.scale.register_hook(lambda _gradient: events.append("backward"))
+
+        def forward_text(self, input_ids):
+            events.append(("forward", torch.is_grad_enabled()))
+            return self.scale * torch.ones((*input_ids.shape, 3))
+
+    class TinyConfig:
+        def build_model(self):
+            model = TinyModel()
+            models.append(model)
+            return model
+
+    monkeypatch.setattr(benchmark, "V3Config", TinyConfig)
+    monkeypatch.setattr(
+        benchmark, "_load_worker_input",
+        lambda *_args: (torch.tensor([[0, 1]], dtype=torch.long), 2, {}),
+    )
+    monkeypatch.setattr(benchmark, "_load_current_rss_bytes", lambda: 1024)
+    monkeypatch.setattr(benchmark, "_max_rss_bytes", lambda: 2048)
+    monkeypatch.setattr(benchmark.torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(benchmark.torch, "set_num_threads", lambda _value: None)
+    monkeypatch.setattr(benchmark.torch, "set_num_interop_threads", lambda _value: None)
+
+    plan = tmp_path / "family-worker-plan.json"
+    plan.write_text(json.dumps({
+        "family": "text", "record_id": "external-text-sample", "target_tokens": 2,
+    }), encoding="utf-8")
+
+    result = benchmark._worker(plan, None, threads=1, iterations=2)
+
+    assert result["status"] == "success", result
+    assert result["warmup_forward_passes"] == 1
+    assert result["warmup_forward_backward_passes"] == 1
+    assert result["measured_iterations"] == 2
+    assert result["optimizer_step_executed"] is False
+    assert events == [
+        ("forward", False),
+        ("forward", True), "backward",
+        ("forward", False),
+        ("forward", True), "backward",
+        ("forward", False),
+        ("forward", True), "backward",
+    ]
+    assert models[0].scale.item() == 1.0
+    assert result["inference_seconds_mean"] > 0
+    assert result["forward_backward_seconds_mean"] > 0
+
+
 def test_manifest_bundle_fingerprint_matches_serialized_identity(tmp_path):
     import hashlib
 
