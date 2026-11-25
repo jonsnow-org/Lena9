@@ -98,3 +98,10 @@ def test_v3_training_workflow_is_blocked_until_resource_and_checkpoint_gates_pas
     train = workflow.split("  train:", 1)[1]
     assert "    if: false" in train
     assert "Run the first real five-family optimizer update" in train
+
+
+def test_v3_runner_requires_measured_cpu_resource_evidence():
+    runner = (ROOT / "onecore-ai" / "src" / "onecore" / "v3" / "runner.py").read_text(encoding="utf-8")
+    assert 'parser.add_argument("--resource-evidence", required=True)' in runner
+    assert "resource_evidence_path=args.resource_evidence" in runner
+    assert "_validate_resource_evidence(" in runner

@@ -55,6 +55,154 @@ def _set_seed(seed: int) -> None:
     torch.manual_seed(seed)
 
 
+def _validate_resource_evidence(
+    path: str | Path | None,
+    *,
+    config_fingerprint: str,
+    manifest_sha256: str,
+    train_manifest_sha256: str,
+    tokenizer_sha256: str,
+    threads: int,
+) -> str:
+    """Fail closed unless measured CPU evidence matches this exact V3 input."""
+    if path is None:
+        raise ValueError(
+            "V3 optimizer training is blocked until a measured CPU resource benchmark report is supplied"
+        )
+    report_path = Path(path).resolve()
+    if not report_path.is_file():
+        raise FileNotFoundError(f"V3 CPU resource benchmark report not found: {report_path}")
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"V3 CPU resource benchmark report is unreadable: {exc}") from exc
+    if not isinstance(report, dict):
+        raise ValueError("V3 CPU resource benchmark report must be a JSON object")
+    if (
+        isinstance(report.get("format_version"), bool)
+        or report.get("format_version") != 1
+        or report.get("status") != "measured"
+    ):
+        raise ValueError("V3 CPU resource benchmark must have format_version=1 and status=measured")
+    if report.get("benchmark_kind") != (
+        "cpu_v3_joint_loader_plus_per_family_diagnostics_and_joint_objective_without_optimizer_step"
+    ):
+        raise ValueError("V3 CPU resource benchmark kind is not the full five-family resource pass")
+    if report.get("config_sha256") != config_fingerprint:
+        raise ValueError("V3 CPU resource benchmark config fingerprint mismatch")
+    if report.get("manifest_bundle_sha256") != manifest_sha256:
+        raise ValueError("V3 CPU resource benchmark manifest bundle fingerprint mismatch")
+    if report.get("train_manifest_sha256") != train_manifest_sha256:
+        raise ValueError("V3 CPU resource benchmark train-manifest fingerprint mismatch")
+    tokenizer = report.get("tokenizer")
+    if not isinstance(tokenizer, dict) or tokenizer.get("tokenizer_sha256") != tokenizer_sha256:
+        raise ValueError("V3 CPU resource benchmark tokenizer SHA-256 mismatch")
+
+    cpu = report.get("cpu")
+    if not isinstance(cpu, dict) or cpu.get("cuda_available") is not False:
+        raise ValueError("V3 CPU resource benchmark must prove CUDA is unavailable")
+    if cpu.get("threads") != threads:
+        raise ValueError("V3 CPU resource benchmark thread count does not match the training request")
+    updates = report.get("optimizer_updates")
+    if isinstance(updates, bool) or not isinstance(updates, int) or updates != 0:
+        raise ValueError("V3 CPU resource benchmark must contain zero optimizer updates")
+
+    model_report = report.get("model_report")
+    if (
+        not isinstance(model_report, dict)
+        or model_report.get("config_sha256") != config_fingerprint
+        or model_report.get("trainable_parameters") != 39_906_568
+    ):
+        raise ValueError("V3 CPU resource benchmark model report does not match the exact V3 architecture")
+
+    gate = report.get("manifest_gate")
+    if not isinstance(gate, dict) or gate.get("passed") is not True:
+        raise ValueError("V3 CPU resource benchmark does not bind a passed external-only manifest gate")
+    coverage = gate.get("coverage")
+    minimums = {"train": 100, "validation": 10, "test": 10}
+    families = ("text", "tool", "image", "audio", "video")
+    for split, minimum in minimums.items():
+        counts = coverage.get(split) if isinstance(coverage, dict) else None
+        if not isinstance(counts, dict):
+            raise ValueError(f"V3 CPU resource benchmark is missing {split} family coverage")
+        for family in families:
+            count = counts.get(family)
+            if isinstance(count, bool) or not isinstance(count, int) or count < minimum:
+                raise ValueError(
+                    f"V3 CPU resource benchmark coverage is below quota: {split}/{family}"
+                )
+
+    benchmarks = report.get("benchmarks")
+    if not isinstance(benchmarks, list) or not benchmarks or any(
+        not isinstance(item, dict) or item.get("status") != "success"
+        for item in benchmarks
+    ):
+        raise ValueError("V3 CPU resource benchmark contains a failed or missing per-family case")
+
+    joint = report.get("joint_training_memory")
+    if not isinstance(joint, dict) or joint.get("status") != "success":
+        raise ValueError("V3 CPU resource benchmark joint five-family memory case did not succeed")
+    joint_updates = joint.get("optimizer_updates")
+    if (
+        isinstance(joint_updates, bool)
+        or not isinstance(joint_updates, int)
+        or joint_updates != 0
+        or joint.get("optimizer_step_executed") is not False
+        or joint.get("optimizer_state_allocated") is not True
+        or joint.get("cpu_threads") != threads
+    ):
+        raise ValueError("V3 CPU resource benchmark joint case is not a zero-update CPU measurement")
+
+    loader = report.get("data_loader_benchmark")
+    if not isinstance(loader, dict) or loader.get("status") != "success":
+        raise ValueError("V3 production data-loader resource benchmark did not succeed")
+    if (
+        loader.get("source_manifest_bundle_sha256") != manifest_sha256
+        or loader.get("tokenizer_train_manifest_sha256") != train_manifest_sha256
+        or loader.get("tokenizer_sha256") != tokenizer_sha256
+    ):
+        raise ValueError("V3 production data-loader benchmark is bound to different training inputs")
+    loader_updates = loader.get("optimizer_updates")
+    checkpoint_writes = loader.get("checkpoint_writes")
+    if (
+        loader.get("benchmark_manifest_view") is not True
+        or loader.get("checkpointable") is not False
+        or isinstance(loader_updates, bool)
+        or not isinstance(loader_updates, int)
+        or loader_updates != 0
+        or isinstance(checkpoint_writes, bool)
+        or not isinstance(checkpoint_writes, int)
+        or checkpoint_writes != 0
+        or loader.get("cpu_threads") != threads
+    ):
+        raise ValueError("V3 production data-loader benchmark is not an isolated zero-update measurement")
+
+    def require_positive(value: Any, label: str) -> None:
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(float(value))
+            or float(value) <= 0
+        ):
+            raise ValueError(f"V3 CPU resource benchmark is missing positive measured {label}")
+
+    require_positive(joint.get("peak_rss_bytes"), "joint peak RSS")
+    require_positive(joint.get("optimizer_state_bytes"), "AdamW state allocation")
+    require_positive(loader.get("peak_rss_bytes"), "production loader peak RSS")
+    require_positive(loader.get("joint_steps_per_second"), "production loader throughput")
+    require_positive(loader.get("measured_joint_steps"), "production loader measured steps")
+
+    memory = report.get("memory_accounting")
+    if not isinstance(memory, dict):
+        raise ValueError("V3 CPU resource benchmark is missing process-tree memory accounting")
+    require_positive(memory.get("observed_process_tree_peak_rss_bytes"), "process-tree peak RSS")
+    require_positive(
+        memory.get("conservative_process_tree_rss_upper_bound_bytes"),
+        "conservative process-tree RSS upper bound",
+    )
+    return sha256_file(report_path)
+
+
 def run_v3_training(
     *,
     manifest_paths: dict[str, str | Path],
@@ -69,6 +217,7 @@ def run_v3_training(
     max_grad_norm: float,
     checkpoint_every: int,
     run_id: str,
+    resource_evidence_path: str | Path,
     seed: int = 20261124,
     threads: int = 4,
     resume_checkpoint: str | Path | None = None,
@@ -112,26 +261,10 @@ def run_v3_training(
 
     config = V3Config()
     output = Path(output_dir).resolve()
-    output.mkdir(parents=True, exist_ok=True)
     tokenizer = Path(tokenizer_path).resolve()
     if not tokenizer.is_file():
         raise FileNotFoundError(f"V3 tokenizer JSON not found: {tokenizer}")
     tokenizer_bytes = tokenizer.read_bytes()
-
-    model: OneCoreV3 = config.build_model().cpu()
-    optimizer = torch.optim.AdamW(
-        model.parameters(),
-        lr=learning_rate,
-        betas=(0.9, 0.95),
-        eps=1e-8,
-        weight_decay=weight_decay,
-    )
-    scheduler = torch.optim.lr_scheduler.LambdaLR(
-        optimizer,
-        lr_lambda=lambda step: _learning_rate_multiplier(
-            step, warmup_steps=warmup_steps, total_steps=total_steps
-        ),
-    )
 
     with V3JointDataLoader(
         manifest_paths,
@@ -144,6 +277,29 @@ def run_v3_training(
         trusted_asset_hashes=trusted_asset_hashes,
         asset_provider=asset_provider,
     ) as loader:
+        resource_evidence_sha256 = _validate_resource_evidence(
+            resource_evidence_path,
+            config_fingerprint=config.fingerprint,
+            manifest_sha256=loader.manifest_sha256,
+            train_manifest_sha256=loader.train_manifest_sha256,
+            tokenizer_sha256=loader.tokenizer_sha256,
+            threads=threads,
+        )
+        output.mkdir(parents=True, exist_ok=True)
+        model: OneCoreV3 = config.build_model().cpu()
+        optimizer = torch.optim.AdamW(
+            model.parameters(),
+            lr=learning_rate,
+            betas=(0.9, 0.95),
+            eps=1e-8,
+            weight_decay=weight_decay,
+        )
+        scheduler = torch.optim.lr_scheduler.LambdaLR(
+            optimizer,
+            lr_lambda=lambda step: _learning_rate_multiplier(
+                step, warmup_steps=warmup_steps, total_steps=total_steps
+            ),
+        )
         global_step = 0
         session = 1
         parent_sha = None
@@ -222,6 +378,7 @@ def run_v3_training(
                     "architecture_family": "onecore-v3",
                     "architecture_version": config.architecture_version,
                     "config_sha256": config.fingerprint,
+                    "resource_evidence_sha256": resource_evidence_sha256,
                     "parameter_count": parameter_count,
                     "optimizer_step": global_step,
                     "segment_start_step": segment_start,
@@ -284,6 +441,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-grad-norm", type=float, default=1.0)
     parser.add_argument("--checkpoint-every", type=int, default=1)
     parser.add_argument("--run-id", required=True)
+    parser.add_argument("--resource-evidence", required=True)
     parser.add_argument("--seed", type=int, default=20261124)
     parser.add_argument("--threads", type=int, default=4)
     parser.add_argument("--resume-checkpoint")
@@ -341,6 +499,7 @@ def main(argv: list[str] | None = None) -> int:
             max_grad_norm=args.max_grad_norm,
             checkpoint_every=args.checkpoint_every,
             run_id=args.run_id,
+            resource_evidence_path=args.resource_evidence,
             seed=args.seed,
             threads=args.threads,
             resume_checkpoint=args.resume_checkpoint,
