@@ -620,9 +620,9 @@ def test_select_train_samples_preserves_same_row_media_conditions(tmp_path):
         }),
         base("video-1", "video_caption", caption="A person opens a door.", assets={
             "video": {
-                "frames": ["frames/0.png", "frames/1.png"],
-                "timestamps": [0.0, 0.04], "timestamp_unit": "seconds",
-                "frame_count": 2, "width": 2, "height": 2,
+                "frames": [f"frames/{index}.png" for index in range(24)],
+                "timestamps": [index / 24 for index in range(24)], "timestamp_unit": "seconds",
+                "frame_count": 24, "width": 1920, "height": 1080,
                 "duration_seconds": 0.08, "fps": 25.0,
             },
         }),
@@ -632,7 +632,7 @@ def test_select_train_samples_preserves_same_row_media_conditions(tmp_path):
 
     selected, _stats = _select_train_samples(
         manifest, max_image_megapixels=1.0, max_audio_seconds=5.0,
-        max_video_megapixels=1.0, max_video_frames=2,
+        max_video_megapixel_frames=16.0, max_video_frames=16,
     )
 
     assert selected["image"]["condition_field"] == "caption"
@@ -641,6 +641,10 @@ def test_select_train_samples_preserves_same_row_media_conditions(tmp_path):
     assert selected["audio"]["condition_text"] == "A spoken weather report."
     assert selected["video"]["condition_field"] == "caption"
     assert selected["video"]["condition_text"] == "A person opens a door."
+    assert len(selected["video"]["asset_paths"]) == 7
+    assert selected["video"]["benchmark_frame_count"] == 7
+    assert selected["video"]["video_megapixel_frames"] <= 16.0
+    assert len(selected["video"]["timestamps"]) == 7
 
 
 
@@ -673,11 +677,13 @@ def test_parent_benchmark_defaults_to_five_measured_iterations_and_rejects_short
 
     def fake_run_parent(args):
         captured["iterations"] = args.iterations
+        captured["video_budget"] = args.max_video_megapixel_frames
         return 0
 
     monkeypatch.setattr(benchmark, "_run_parent", fake_run_parent)
     assert benchmark.main(["--github-token", "test-token"]) == 0
     assert captured["iterations"] == 5
+    assert captured["video_budget"] == 16.0
 
     with pytest.raises(SystemExit) as error:
         benchmark.main(["--iterations", "4", "--worker-plan", "unused.json"])
@@ -738,7 +744,7 @@ def test_loader_video_quota_uses_adaptive_native_resolution_frame_windows(monkey
                 },
             })
         path = tmp_path / f"{split}.jsonl"
-        payload = "".join(json.dumps(row, sort_keys=True) + "\\n" for row in rows)
+        payload = "".join(json.dumps(row, sort_keys=True) + chr(10) for row in rows)
         path.write_text(payload, encoding="utf-8")
         manifests[split] = path
         originals[split] = payload
