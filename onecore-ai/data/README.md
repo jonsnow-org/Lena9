@@ -12,7 +12,7 @@ The registry connects:
 - Video and temporal data: MSR-VTT, WebVid-10M, ShareGPT4Video, HD-VILA-100M, YouCook2, FineVideo, LAION BVD-V-55M, BVD-A-10M, BVD-I-300M, InternVid-10M-FLT and Panda-70M.
 - Evaluation metadata: GigaSpeechBench.
 
-All usable records enter one shared OneCore checkpoint. Images/video become 64×64 frames; audio becomes 80-bin log-mel features; text, tool actions and all media tokens use the same vocabulary, recurrent core and trainable parameter set.
+All five task families share one OneCore checkpoint. Images/video become 64×64 frames; audio becomes 80-bin log-mel features; text, tool actions and all media tokens use the same vocabulary, recurrent core and trainable parameter set. Only externally imported records are eligible for real tokenizer fitting and optimizer updates.
 
 ## Manifest contract
 
@@ -44,9 +44,14 @@ Audio features are normalized to mono 16 kHz and 80-bin log-mel arrays. Video in
 
 The waveform decoder remains approximate (mel pseudoinverse plus Griffin–Lim), not a trained production vocoder.
 
-## All available data
+## Real-training eligibility
 
-The training iterator includes every usable record in the train split: imported datasets, the deterministic Bootstrap curriculum, verified or unverified synthetic curricula, and locally owner-created examples. Nothing is excluded solely because of its source category. Each class is counted in training reports.
+Only records classified as `external` are used to fit the tokenizer or enter optimizer updates. This applies to text, tool, image, audio, and video families. The tokenizer corpus is built from the same external-only training records as the optimizer sampler, and its class counts are recorded in checkpoint metadata and training reports.
 
-Every data record must still be structurally usable for its task. Image, audio and video examples need readable payloads; text and tool examples need their corresponding content. Metadata-only catalogue entries remain indexed separately until their actual payload is available. Validation and test retain all available data classes but never enter optimizer updates.
+Bootstrap, synthetic, and owner-curated records may remain in the repository for engineering smoke tests and diagnostics, but they are excluded from the real tokenizer corpus and optimizer inputs. Image, audio, and video training records still require readable media payloads; metadata-only catalogue rows remain outside the training manifests until their real payload is available. Validation and test stay held out and are never used for tokenizer fitting or gradient updates.
 
+
+
+## Immutable external provenance
+
+Every externally imported manifest row must retain a non-empty `source_id`, a pinned immutable `source_revision` (40–64 hexadecimal characters), and a 64-character `source_row_id_sha256`. Manifest validation rejects missing or malformed provenance, and split-integrity validation rejects the same source row appearing in more than one of train, validation, or test. These checks do not introduce a license filter and do not rewrite attribution or source-rights metadata.

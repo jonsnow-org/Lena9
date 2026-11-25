@@ -39,6 +39,8 @@ concurrency:
 
 jobs:
   train:
+    # V2 is the frozen legacy baseline; the canonical V3 line must never run this optimizer.
+    if: false
     name: "OneCore ${{ inputs.stage }} segment"
     runs-on: ubuntu-24.04
     timeout-minutes: 350
@@ -216,9 +218,9 @@ jobs:
         if: ${{ inputs.stage != 'smoke' }}
         env:
           ONECORE_SKIP_ACQUISITION: "1"
-          ONECORE_REQUIRED_TASKS: ${{ inputs.stage == 'evaluate' && 'text,tool,image,audio,video' || inputs.stage == 'multimodal' && 'text,tool,image,audio,video' || 'text' }}
-          ONECORE_MIN_TRAIN_RECORDS: "25"
-          ONECORE_MIN_HOLDOUT_RECORDS: "5"
+          ONECORE_REQUIRED_TASKS: "text,tool,image,audio,video"
+          ONECORE_MIN_TRAIN_RECORDS: "100"
+          ONECORE_MIN_HOLDOUT_RECORDS: "10"
         run: |
           jupyter nbconvert --to notebook --execute onecore-ai/notebooks/02_data_gate.ipynb \
             --output 02_data_gate.executed.ipynb \

@@ -23,7 +23,7 @@ from .audio import log_mel_spectrogram
 from .data import external_record_is_trainable, is_immutable_source_revision
 from .crawlers import StatefulStreamCursor, notebook_for_source
 from .stack_v2 import (
-    StackAccessRequired, contains_exposed_secret, fetch_stack_content, has_allowed_stack_license,
+    StackAccessRequired, contains_exposed_secret, fetch_stack_content,
     redact_personal_contacts, stack_credentials_present,
 )
 
@@ -230,6 +230,20 @@ def _external_asset_report(project_root: str | Path, split: str) -> dict[str, An
         "missing_asset_files": missing,
         "unique_asset_bytes": total_bytes,
     }
+
+
+def external_asset_report_by_split(project_root: str | Path) -> dict[str, dict[str, Any]]:
+    """Build a fresh media-asset snapshot from the final split manifests.
+
+    Acquisition reports may be resumed and gain rows after an earlier snapshot.
+    Always call this at finalization instead of trusting a previously persisted
+    external_media_assets section.
+    """
+    return {
+        split: _external_asset_report(project_root, split)
+        for split in ("train", "validation", "test")
+    }
+
 
 def _stable_split(
     source_id: str, row_id: str, seed: str = "onecore-shard-v1",
@@ -643,15 +657,10 @@ def _record_from_row(
             if answer:
                 text = f"Question: {question}\nAnswer: {answer}" if question else answer
     if adapter == "stack_v2_code":
-        # Stack v2 exposes per-file provenance and an inferred license class.
-        # Do not request SWH bytes for non-permissive, vendor, generated, or
-        # out-of-scope languages; this saves crawler time and avoids needless GETs.
-        if str(row.get("license_type") or "").strip().casefold() != "permissive":
-            return None
+        # Fetch code regardless of license metadata. Keep quality/safety filters:
+        # vendor/generated files, unsupported languages, exposed secrets and
+        # unsafe payloads remain excluded before records enter the corpus.
         if bool(row.get("is_vendor")) or bool(row.get("is_generated")):
-            return None
-        allowlist = {str(value) for value in (source.get("license_allowlist") or [])}
-        if not has_allowed_stack_license(row, allowlist):
             return None
         allowed_languages = {str(value).strip().casefold() for value in (source.get("allowed_languages") or [])}
         language = str(row.get("language") or "").strip()
@@ -963,7 +972,7 @@ def _append_manifests(project_root: Path, rows_by_split: dict[str, list[dict[str
     return counts
 
 def task_coverage(project_root: str | Path) -> dict[str, dict[str, int]]:
-    """Count usable records with decoded payloads; exclude metadata-only rows."""
+    """Count only usable external records with decoded payloads; exclude bootstrap/synthetic and metadata-only rows."""
     root = Path(project_root).resolve()
     assets_root = (root / "data" / "assets").resolve()
     task_groups = {
@@ -983,6 +992,7 @@ def task_coverage(project_root: str | Path) -> dict[str, dict[str, int]]:
         usable = [
             record for record in records
             if str(record.get("split", "")) == split
+            and external_record_is_trainable(record)
             and _external_record_has_usable_payload(record, assets_root)
         ]
         coverage[split] = {
@@ -993,7 +1003,7 @@ def task_coverage(project_root: str | Path) -> dict[str, dict[str, int]]:
 
 def assert_task_coverage(
     project_root: str | Path, required_tasks: set[str],
-    minimum_train: int = 25, minimum_holdout: int = 5,
+    minimum_train: int = 100, minimum_holdout: int = 10,
 ) -> dict[str, dict[str, int]]:
     coverage = task_coverage(project_root)
     failures = []

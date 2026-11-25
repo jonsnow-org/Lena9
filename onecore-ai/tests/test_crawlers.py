@@ -6,7 +6,7 @@ from onecore.crawlers import (
     notebook_cursor_summary,
     notebook_for_source,
 )
-from onecore.stack_v2 import fetch_stack_content, has_allowed_stack_license
+from onecore.stack_v2 import fetch_stack_content
 
 
 class FakeIterable:
@@ -97,12 +97,7 @@ def test_notebook_assignment_for_each_data_family():
     assert notebook_for_source({"adapter": "video"}) == "04_multimodal_curriculum"
 
 
-def test_stack_v2_license_allowlist_and_streaming_swh_content():
-    assert has_allowed_stack_license({"detected_licenses": ["MIT", "Apache-2.0"]})
-    assert has_allowed_stack_license({"detected_licenses": [], "gha_license_id": "MIT"})
-    assert not has_allowed_stack_license({"detected_licenses": ["GPL-3.0-only"]})
-    assert not has_allowed_stack_license({"detected_licenses": [], "gha_license_id": "GPL-3.0-only"})
-    assert not has_allowed_stack_license({"detected_licenses": [], "gha_license_id": ""})
+def test_stack_v2_streaming_swh_content_is_independent_of_license_metadata():
 
     code = b"def useful_function(value):\n    return value + 1\n"
     class Body(io.BytesIO):
@@ -141,8 +136,7 @@ def test_fineweb2_and_stack_v2_are_real_streaming_sources_with_notebook_ownershi
     assert stack["notebook_id"] == "03_text_pretraining"
     assert stack["required_for_training"] is False
     assert stack["minimum_accepted_records"] >= 10_000
-    assert "MIT" in stack["license_allowlist"]
-    assert "GPL-3.0-only" not in stack["license_allowlist"]
+    assert "license_allowlist" not in stack
     assert stack["split_group_field"] == "directory_id"
     assert stack["max_content_bytes"] <= 1_048_576
 
@@ -217,7 +211,6 @@ def test_stack_v2_filters_before_fetching_swh_blobs(tmp_path, monkeypatch):
         "id": "stack_v2_python",
         "repo": "bigcode/the-stack-v2",
         "adapter": "stack_v2_code",
-        "license_allowlist": ["MIT", "Apache-2.0"],
         "allowed_languages": ["Python"],
         "_resolved_revision": "a" * 40,
     }
@@ -247,9 +240,22 @@ def test_stack_v2_filters_before_fetching_swh_blobs(tmp_path, monkeypatch):
     assert good["code_license_type"] == "permissive"
     assert calls == ["f" * 40]
 
+    # License metadata is provenance only: missing, unknown and copyleft
+    # declarations must not block acquisition.
+    accepted = []
+    for index, changes in enumerate((
+        {"license_type": "no_license", "detected_licenses": [], "gha_license_id": ""},
+        {"license_type": "copyleft", "detected_licenses": ["GPL-3.0-only"]},
+    ), start=1):
+        row = dict(base)
+        row.update(changes)
+        record = acquire._record_from_row(row, dict(source), f"license-independent-{index}", "train", assets)
+        assert record is not None and record["task"] == "text"
+        accepted.append(record)
+    assert calls == ["f" * 40] * 3
+
+    # Retain non-license quality and secret-protection gates.
     for changes in (
-        {"license_type": "no_license"},
-        {"detected_licenses": ["GPL-3.0-only"]},
         {"is_vendor": True},
         {"is_generated": True},
         {"language": "Brainfuck"},
@@ -257,7 +263,7 @@ def test_stack_v2_filters_before_fetching_swh_blobs(tmp_path, monkeypatch):
         row = dict(base)
         row.update(changes)
         assert acquire._record_from_row(row, dict(source), "rejected-row", "train", assets) is None
-    assert calls == ["f" * 40], "rejected files must not trigger Software Heritage content requests"
+    assert calls == ["f" * 40] * 3, "quality-filtered files must not trigger content requests"
 
 
 def test_source_registry_routes_text_code_and_multimodal_crawlers_to_their_own_notebooks():

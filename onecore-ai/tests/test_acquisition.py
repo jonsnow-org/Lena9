@@ -712,7 +712,7 @@ def test_acquisition_resume_promotes_pending_rows_and_skips_processed_source_row
         "test": {"text": 1, "tool": 0, "image": 0, "audio": 0, "video": 0},
     }
 
-def test_every_available_data_class_reaches_training_sampler() -> None:
+def test_weighted_training_sampler_uses_only_external_rows() -> None:
     import random
     from onecore.data import TRAINABLE_DATA_CLASSES, iter_training_records
     from onecore.train import _weighted_record
@@ -730,14 +730,22 @@ def test_every_available_data_class_reaches_training_sampler() -> None:
     ]
     selected = iter_training_records(rows, {"text", "tool_use"})
     assert {item["id"] for item in selected} == {"bootstrap-1", "synthetic-1", "external-1", "external-2"}
+    production_rows = iter_training_records(
+        rows, {"text", "tool_use"}, allowed_data_classes={"external"}
+    )
+    assert {item["id"] for item in production_rows} == {"external-1", "external-2"}
     text_rows = [item for item in selected if item["task"] == "text"]
     tool_rows = [item for item in selected if item["task"] == "tool_use"]
-    sampled = [_weighted_record({"text": text_rows, "tool_use": tool_rows}, "text", random.Random(i))
-               for i in range(100)]
-    assert {item["data_class"] for item in sampled} <= {"bootstrap", "synthetic", "external"}
+    sampled = [
+        _weighted_record({"text": text_rows, "tool_use": tool_rows}, "text", random.Random(i))
+        for i in range(100)
+    ]
+    assert {item["data_class"] for item in sampled} == {"external"}
+    assert all(item["id"] in {"external-1", "external-2"} for item in sampled)
+    assert {item["id"] for item in production_rows} == {"external-1", "external-2"}
 
 
-def test_task_coverage_gate_counts_all_usable_records(tmp_path: Path) -> None:
+def test_task_coverage_gate_counts_only_usable_external_records(tmp_path: Path) -> None:
     from onecore.acquire import assert_task_coverage
 
     data = tmp_path / "data"
@@ -772,6 +780,18 @@ def test_task_coverage_gate_counts_all_usable_records(tmp_path: Path) -> None:
             {**_external_metadata(f"{split}-video-source", f"{split}-video"),
              "id": f"{split}-video", "task": "video_caption", "split": split,
              "frames": frame_rels, "caption": "A fixture video with two frames."},
+            # Valid payloads in non-external classes must never satisfy external quotas.
+            {"id": f"{split}-bootstrap-text", "task": "text", "split": split,
+             "data_class": "bootstrap", "text": "Valid bootstrap text must not count externally."},
+            {"id": f"{split}-bootstrap-tool", "task": "tool_use", "split": split,
+             "data_class": "bootstrap", "prompt": "Run a bootstrap tool sample.",
+             "response": '{"name":"bootstrap","arguments":{}}'},
+            {"id": f"{split}-bootstrap-image", "task": "image_caption", "split": split,
+             "data_class": "bootstrap", "image": image_rel, "caption": "Bootstrap image."},
+            {"id": f"{split}-bootstrap-audio", "task": "audio_text", "split": split,
+             "data_class": "bootstrap", "audio_features": audio_rel, "transcript": "Bootstrap audio."},
+            {"id": f"{split}-bootstrap-video", "task": "video_caption", "split": split,
+             "data_class": "bootstrap", "frames": frame_rels, "caption": "Bootstrap video."},
             {**_external_metadata(f"{split}-metadata-image-source", f"{split}-metadata-image"),
              "id": f"{split}-metadata-image", "task": "image_caption", "split": split,
              "caption": "Metadata-only image record with no image payload."},
@@ -781,8 +801,6 @@ def test_task_coverage_gate_counts_all_usable_records(tmp_path: Path) -> None:
             {**_external_metadata(f"{split}-metadata-video-source", f"{split}-metadata-video"),
              "id": f"{split}-metadata-video", "task": "video_caption", "split": split,
              "caption": "Metadata-only video record with no frames."},
-            {"id": f"{split}-bootstrap", "task": "text", "split": split,
-             "data_class": "bootstrap"},
         ]
         (data / f"{split}.jsonl").write_text(
             "\n".join(json.dumps(item) for item in records) + "\n", encoding="utf-8"
@@ -793,10 +811,30 @@ def test_task_coverage_gate_counts_all_usable_records(tmp_path: Path) -> None:
     for split in ("train", "validation", "test"):
         assert coverage[split] == {group: 1 for group in task_ids}
 
+
+def test_task_coverage_gate_rejects_bootstrap_only_payloads(tmp_path: Path) -> None:
+    from onecore.acquire import assert_task_coverage
+
+    data = tmp_path / "data"
+    assets = data / "assets" / "acquired"
+    assets.mkdir(parents=True)
+    for split in ("train", "validation", "test"):
+        image_rel = f"acquired/{split}.png"
+        Image.new("RGB", (16, 16), (30, 70, 120)).save(assets / Path(image_rel).name, format="PNG")
+        record = {
+            "id": f"{split}-bootstrap-image", "task": "image_caption", "split": split,
+            "data_class": "bootstrap", "image": image_rel, "caption": "Valid bootstrap image.",
+        }
+        (data / f"{split}.jsonl").write_text(json.dumps(record) + "\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="External corpus gate blocked training"):
+        assert_task_coverage(tmp_path, {"image"}, minimum_train=1, minimum_holdout=1)
+
 def test_imported_record_needs_no_policy_metadata(tmp_path: Path) -> None:
     record = {
         "id": "imported-record", "task": "text", "text": "An imported sample.",
         "source_url": "https://example.org/data", "split": "train", "data_class": "external",
+        "source_id": "imported-source", "source_revision": "e" * 40,
+        "source_row_id_sha256": hashlib.sha256(b"imported-row").hexdigest(),
     }
     assert validate_manifest([record], tmp_path, expected_split="train")["valid"]
 
@@ -890,6 +928,37 @@ def test_asset_report_counts_all_usable_media_files(tmp_path: Path) -> None:
     assert report["video_frame_files"] == 2
     assert report["unique_asset_files"] == 4
     assert report["missing_asset_files"] == 0
+
+def test_external_asset_report_by_split_refreshes_caption_paired_images(tmp_path: Path) -> None:
+    from onecore.acquire import external_asset_report_by_split
+
+    data = tmp_path / "data"
+    assets = data / "assets" / "acquired"
+    assets.mkdir(parents=True)
+    for split in ("train", "validation", "test"):
+        relative = f"acquired/{split}-caption-image.png"
+        Image.new("RGB", (16, 16), (30, 70, 120)).save(
+            assets / Path(relative).name, format="PNG"
+        )
+        record = {
+            **_external_metadata(f"{split}-image-source", f"{split}-image-row"),
+            "id": f"{split}-image-caption",
+            "task": "image_caption",
+            "split": split,
+            "image": relative,
+            "caption": "A real image paired with a caption.",
+        }
+        (data / f"{split}.jsonl").write_text(
+            json.dumps(record) + "\n", encoding="utf-8"
+        )
+
+    report = external_asset_report_by_split(tmp_path)
+    for split in ("train", "validation", "test"):
+        assert report[split]["records_by_task"] == {"image_caption": 1}
+        assert report[split]["image_files"] == 1
+        assert report[split]["missing_asset_files"] == 0
+        assert report[split]["unusable_external_records"] == 0
+
 
 def test_task_coverage_gate_counts_all_usable_records(tmp_path: Path) -> None:
     from onecore.acquire import assert_task_coverage
@@ -1049,3 +1118,12 @@ def test_video_adapter_rejects_hugging_face_uri_from_other_repo_or_revision() ->
             },
             source,
         )
+
+
+def test_default_external_task_gate_is_corrected_v2():
+    import inspect
+    from onecore.acquire import assert_task_coverage
+
+    parameters = inspect.signature(assert_task_coverage).parameters
+    assert parameters["minimum_train"].default == 100
+    assert parameters["minimum_holdout"].default == 10

@@ -1,32 +1,49 @@
-seed: 20261115
 model:
   width: 1024
-  unique_blocks: 4
-  recurrent_cycles: 3
-  attention_heads: 8
+  n_blocks: 4
+  n_cycles: 3
+  n_heads: 8
+  hidden_size: 2730
   max_sequence_length: 512
   text_vocab_size: 4096
   vision_codebook_size: 512
   audio_codebook_size: 256
   motion_codebook_size: 256
   special_tokens: 24
+  vocab_size: 5144
   patch_size: 8
   image_size: 64
   audio_bins: 80
   audio_group_frames: 4
   max_video_frames: 4
+  thinker_latents: 16
   dropout: 0.05
+  expected_parameter_count: 57579201
 training:
   learning_rate: 0.0003
-  weight_decay: 0.01
-  gradient_accumulation: 4
+  weight_decay: 0.1
+  adam_betas: [0.9, 0.95]
+  gradient_accumulation: 4 # Text/smoke only; Joint uses one micro-batch per each of five families.
   max_grad_norm: 1.0
+  warmup_steps: 200
+  total_steps: 20000
   checkpoint_every: 25
   max_steps_per_job: 250
   cpu_threads: 4
   tldm_diffusion_weight: 0.15
+  seed: 20261115
+data_gate:
+  min_train_per_family: 100
+  min_holdout_per_family: 10
+  required_families: [text, tool, image, audio, video]
 evaluation:
   min_text_tokens: 1000
-  max_validation_loss_regression: 0.02
   require_all_modalities: true
   promote_requires_real_data: true
+  tldm_per_task_limit: 16
+  tldm_min_per_family: 10
+  tool_max_examples: 32
+  tool_min_per_step: 4
+  tool_regression_floor: 0.9
+  text_loss_regression_max: 1.02
+  quality_thresholds_status: not-approved

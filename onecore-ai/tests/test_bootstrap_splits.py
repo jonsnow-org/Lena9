@@ -106,8 +106,14 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
     assert bootstrap_doc["jobs"]["finalize_acquisition"]["outputs"]["complete"].startswith("${{")
     assert bootstrap_doc["jobs"]["dataset_gate"]["if"].startswith("${{")
     assert "always() && needs.finalize_acquisition.result == 'success' && needs.finalize_acquisition.outputs.complete == 'true'" in bootstrap
-    assert "always() && needs.dataset_gate.result == 'success'" in bootstrap
+    assert "needs.prepare.result == 'success'" in bootstrap
+    assert "dataset_gate.result == 'success'" in bootstrap
+    assert "dataset_gate.result == 'skipped' && needs.prepare.outputs.request_stage == 'train_existing'" in bootstrap
+    assert "needs.finalize_acquisition.outputs.request_stage != 'train_existing'" in bootstrap
     assert "always() && needs.train_all.result == 'success'" in bootstrap
+    assert 'ONECORE_EXECUTE_EVALUATION: "1"' in bootstrap
+    assert "Require complete validation and test metrics" in bootstrap
+    assert "sampled_data_class_counts" in bootstrap
     assert "base_corpus_artifact_name" in bootstrap
     assert 'print(f"request_stage={stage}")' in bootstrap
     assert "REQUEST_STAGE" in bootstrap
@@ -116,14 +122,14 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
     assert "request_stage: ${{ steps.select.outputs.request_stage }}" in bootstrap
     assert 'only_sources={"videos4camera_bench"}' in bootstrap
     assert "time_budget_seconds=1200" in bootstrap and "source_budget_seconds=1200" in bootstrap
-    assert "onecore-corpus-video-repair-progress" in bootstrap
-    assert "steps.corpus_diagnostic.outputs.coverage_ready != 'true'" in bootstrap
+    assert "onecore-corpus-video-repair-snapshot" in bootstrap
+    assert "needs.finalize_acquisition.outputs.request_stage == 'repair_video_existing'" in bootstrap
     assert "needs.prepare.outputs.request_stage == 'acquire'" in bootstrap
     assert 'run-id: ${{ needs.finalize_acquisition.outputs.artifact_run_id }}' in bootstrap
     assert 'github-token: ${{ github.token }}' in bootstrap
     assert "onecore-corpus-acq-progress" in bootstrap
     assert "resume_notice" in bootstrap_doc["jobs"]
-    assert "cancel-in-progress: true" in bootstrap
+    assert "cancel-in-progress: false" in bootstrap and "cancel-in-progress: false" in training
     assert "timeout-minutes: 330" in bootstrap
     assert "onecore-corpus-" in bootstrap
     assert "onecore-corpus-final" in bootstrap
@@ -151,16 +157,53 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
     assert "start_fresh_joint_training" in bootstrap
     assert "./.github/actions/onecore-acquire" in bootstrap
     assert "./.github/actions/onecore-train" in bootstrap
-    assert "steps: \"15\"" in bootstrap
+    assert "steps: ${{ needs.prepare.outputs.steps_per_job }}" in bootstrap
+    ci_guard = (repo_root / ".github" / "workflows" / "onecore-ci.yml").read_text(encoding="utf-8")
+    assert 'step["with"]["steps"] == "$" + "{{ needs.prepare.outputs.steps_per_job }}"' in ci_guard
+    assert bootstrap.count("steps: ${{ needs.prepare.outputs.steps_per_job }}") == 10
+    assert "not 1 <= per_job_steps <= 250" in bootstrap
+    assert "sessions_to_run * per_job_steps" in bootstrap
+    assert "expected_final_step != resume_optimizer_step + total_optimizer_steps" in bootstrap
+    assert "not 1 <= expected_final_step <= 20000" in bootstrap
+    assert 'int(report.get("optimizer_step", -1)) != expected_steps' in bootstrap
+    assert 'expected = {family: expected_steps for family in ("text", "tool", "image", "audio", "video")}' in bootstrap
+    assert 'native.get("updates", 0)) != expected_updates' in bootstrap
+    assert 'report.get("sampled_data_class_counts") != {"external": expected_updates}' in bootstrap
     assert "onecore-state-train-10" in bootstrap
-    assert "Notebook order: 03, 04, 03, 04, 03, 04, 03, 04, 03, 04" in bootstrap
+    assert "Notebook cycle: 03/04 alternating; resume continues from the supplied checkpoint" in bootstrap
+    assert "OneCore checkpoint — ${EXPECTED_FINAL_OPTIMIZER_STEP} optimizer steps" in bootstrap
+    assert "- Cumulative optimizer steps: ${EXPECTED_FINAL_OPTIMIZER_STEP}" in bootstrap
+    assert "- Training sessions: 10 × ${PER_JOB_STEPS} steps" in bootstrap
     jobs = bootstrap_doc["jobs"]
     assert "train_all" in jobs
     assert not any(f"train_{index:02d}" in jobs for index in range(1, 11))
     train_job = jobs["train_all"]
-    assert train_job["needs"] == "dataset_gate"
+    assert train_job["needs"] == ["dataset_gate", "prepare"]
+    assert "needs.prepare.result == 'success'" in train_job["if"]
+    assert "dataset_gate.result == 'skipped'" in train_job["if"]
+    assert "request_stage == 'train_existing'" in train_job["if"]
+    assert "cancel-in-progress: false" in bootstrap
+    assert "cancel-in-progress: false" in training
+    assert "resume_checkpoint_run_id" in bootstrap
+    assert "resume_checkpoint_artifact_name" in bootstrap
+    assert "checkpoint_run_id" in train_doc["inputs"]
+    assert "corpus_run_id" in train_doc["inputs"]
+    assert "github-token: ${{ github.token }}" in train_action
+    assert "repository: ${{ github.repository }}" in train_action
+    assert "run-id: ${{ inputs.checkpoint_run_id != '' && inputs.checkpoint_run_id || github.run_id }}" in train_action
+    assert "run-id: ${{ inputs.corpus_run_id != '' && inputs.corpus_run_id || github.run_id }}" in train_action
+    assert "ONECORE_PARENT_RUN_ID: ${{ inputs.stage == 'multimodal' && (inputs.checkpoint_run_id != '' && inputs.checkpoint_run_id || github.run_id) || '' }}" in train_action
+    assert "resume_checkpoint_session:" in bootstrap
     assert train_job["timeout-minutes"] == 360
     segments = [step for step in train_job["steps"] if str(step.get("id", "")).startswith("train")]
+    assert "resume_checkpoint_session == '0'" in segments[0]["if"]
+    assert "resume_checkpoint_session == '10'" in segments[0]["if"]
+    for index, step in enumerate(segments[1:], 2):
+        assert f"resume_checkpoint_session == '{index-1}'" in step["if"]
+        assert f"resume_checkpoint_session == '{index-1}'" in step["with"]["setup_environment"]
+        assert f"resume_checkpoint_session == '{index-1}'" in step["with"]["restore_corpus"]
+        assert "corpus_run_id" in step["with"]
+        assert "checkpoint_run_id" in step["with"]
     expected_notebooks = [
         "03_text_pretraining.ipynb", "04_multimodal_curriculum.ipynb",
         "03_text_pretraining.ipynb", "04_multimodal_curriculum.ipynb",
@@ -172,15 +215,26 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
     for index, step in enumerate(segments, 1):
         assert step["id"] == f"train{index:02d}"
         assert step["uses"] == "./.github/actions/onecore-train"
-        assert step["with"]["steps"] == "15"
+        assert step["with"]["steps"] == "${{ needs.prepare.outputs.steps_per_job }}"
         assert step["with"]["notebook"] == expected_notebooks[index - 1]
-        assert step["with"]["setup_environment"] == ("true" if index == 1 else "false")
-        assert step["with"]["restore_corpus"] == ("true" if index == 1 else "false")
-    assert sum(step["with"]["restore_corpus"] == "true" for step in segments) == 1
-    assert sum(step["with"]["setup_environment"] == "true" for step in segments) == 1
+        if index == 1:
+            assert step["with"]["setup_environment"] == "true"
+            assert step["with"]["restore_corpus"] == "true"
+            assert step["with"]["corpus_artifact_name"] == "${{ needs.prepare.outputs.base_corpus_artifact_name }}"
+            assert step["with"]["corpus_run_id"] == "${{ needs.prepare.outputs.base_corpus_run_id }}"
+            assert "resume_checkpoint_session == '10'" in step["with"]["checkpoint_artifact_name"]
+            assert "resume_checkpoint_session == '10'" in step["with"]["checkpoint_run_id"]
+            assert step["with"]["stage"] == "${{ needs.prepare.outputs.resume_checkpoint_session == '10' && 'multimodal' || 'joint' }}"
+        else:
+            assert f"resume_checkpoint_session == '{index-1}'" in step["with"]["setup_environment"]
+            assert f"resume_checkpoint_session == '{index-1}'" in step["with"]["restore_corpus"]
+            assert "corpus_run_id" in step["with"]
+            assert "checkpoint_run_id" in step["with"]
+            assert "expected_resume_optimizer_step" in step["with"]
+    assert "artifact_run_id == github.run_id" in bootstrap
     assert train_job["outputs"]["optimizer_step"] == "${{ steps.train10.outputs.optimizer_step }}"
     evaluate = jobs["evaluate"]
-    assert evaluate["needs"] == "train_all"
+    assert evaluate["needs"] == ["train_all", "prepare"]
     assert sum(step.get("uses", "").startswith("actions/download-artifact@") for step in evaluate["steps"]) == 2
     assert not any("onecore-corpus-final" in str(step.get("with", {})) for step in evaluate["steps"])
     assert train_doc["inputs"]["setup_environment"]["default"] == "true"
@@ -192,8 +246,58 @@ def test_onecore_bootstrap_uses_bounded_acquisition_and_alternating_checkpointed
     for step_name in ("Restore the validated corpus", "Restore the validated corpus snapshot (tar or legacy layout)"):
         step = next(item for item in train_steps if item.get("name") == step_name)
         assert step["if"] == "${{ inputs.restore_corpus == 'true' }}"
+    corpus_download = next(item for item in train_steps if item.get("name") == "Restore the validated corpus")
+    assert corpus_download["with"]["repository"] == "${{ github.repository }}"
+    assert "inputs.corpus_run_id" in corpus_download["with"]["run-id"]
     assert "optimizer_step" in train_action and "checkpoint_sha256" in train_action
+    assert "expected_resume_optimizer_step" in train_doc["inputs"]
+    assert "ONECORE_EXPECTED_RESUME_OPTIMIZER_STEP" in train_action
+    assert "steps_in_this_job" in train_action
+    assert "ONECORE_EXPECTED_STAGE" in train_action
+    assert "sampled_data_class_counts_in_this_job" in train_action
+    assert "sampled_family_counts_in_this_job" in train_action
     assert "optimizer, scheduler, RNG" in train_action
+    assert 'expected_family_counts = {' in train_action
     assert "text,tool,image,audio,video" in training
-    assert "cancel-in-progress: true" in bootstrap
+    assert "cancel-in-progress: false" in bootstrap and "cancel-in-progress: false" in training
     assert "gh workflow run onecore-training.yml" not in bootstrap
+
+def test_checkpoint_parent_is_deleted_only_after_uploaded_child_artifact_is_verified():
+    repository = Path(__file__).resolve().parents[2]
+    action = (repository / ".github" / "actions" / "onecore-train" / "action.yml").read_text(encoding="utf-8")
+
+    upload = action.index("name: Upload resumable model, optimizer, scheduler, RNG and tokenizer state")
+    verify = action.index("name: Verify uploaded child checkpoint artifact before deleting its parent")
+    delete = action.index("name: Remove superseded checkpoint after the new checkpoint is safely uploaded")
+
+    assert upload < verify < delete
+    verification = action[verify:delete]
+    for required in (
+        "EXPECTED_ARTIFACT_NAME",
+        "size_in_bytes",
+        "expired",
+        "workflow_run",
+        "digest",
+        "sha256:",
+    ):
+        assert required in verification
+    assert "gh api -X DELETE" in action[delete:]
+
+def test_completed_session_10_checkpoint_can_start_a_new_segment_without_reinitialization():
+    repository = Path(__file__).resolve().parents[2]
+    bootstrap = (repository / ".github" / "workflows" / "onecore-bootstrap.yml").read_text(encoding="utf-8")
+    action = (repository / ".github" / "actions" / "onecore-train" / "action.yml").read_text(encoding="utf-8")
+    workflow = yaml.safe_load(bootstrap)
+    train01 = next(step for step in workflow["jobs"]["train_all"]["steps"] if step.get("id") == "train01")
+    evaluate = workflow["jobs"]["evaluate"]
+
+    assert "resume_checkpoint_session == '10'" in train01["if"]
+    assert "resume_checkpoint_artifact_name" in train01["with"]["checkpoint_artifact_name"]
+    assert "resume_checkpoint_run_id" in train01["with"]["checkpoint_run_id"]
+    assert train01["with"]["stage"] == "${{ needs.prepare.outputs.resume_checkpoint_session == '10' && 'multimodal' || 'joint' }}"
+    assert train01["with"]["previous_checkpoint_artifact_name"] == ""
+    assert evaluate["needs"] == ["train_all", "prepare"]
+    assert "expected_final_optimizer_step" in bootstrap
+    assert "expected_resume_optimizer_step" in action
+    assert "optimizer step differs from the request's expected parent step" in action
+    assert 13 * 10 * 150 + 10 * 50 == 20_000

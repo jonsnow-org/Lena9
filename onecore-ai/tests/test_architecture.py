@@ -103,7 +103,7 @@ def test_phone_research_config_exact_trainable_parameter_budget():
     assert actual == expected
     assert model.parameter_report()["parameters"] == actual
     assert model.lm_head.weight is model.token_embedding.weight
-    assert 50_000_000 <= actual <= 70_000_000
+    assert actual == 57_579_201  # Corrected Specification v2 exact budget
 
 
 
@@ -201,3 +201,26 @@ def test_inference_session_exposes_native_tldm_decoding_mode():
         diffusion_steps=3, temperature=0.0, top_k=0,
     )
     assert answer == "native diffusion output"
+
+
+def test_tldm_default_latent_slots_come_from_model_config():
+    from dataclasses import replace
+
+    cfg = replace(tiny_config(), thinker_latents=5)
+    model = OneCore(cfg)
+    hidden = torch.randn(2, 12, cfg.width)
+    latents = model.compress_to_latents(hidden)
+    assert latents.shape == (2, 5, cfg.width)
+    assert model.parameter_report()["tldm_latent_slots_default"] == 5
+
+
+def test_smoke_sample_uses_text_tokens_for_full_vocabulary_loss_gate():
+    from onecore.model import BOS, EOS
+    from onecore.train import _smoke_sample
+
+    model = OneCore(tiny_config())
+    sequence, auxiliary_loss = _smoke_sample(model, 3)
+    assert sequence[0, 0].item() == model.cfg.special_id(BOS)
+    assert sequence[0, -1].item() == model.cfg.special_id(EOS)
+    assert torch.all(sequence[:, 1:-1] < model.cfg.text_vocab_size)
+    assert torch.isfinite(auxiliary_loss)

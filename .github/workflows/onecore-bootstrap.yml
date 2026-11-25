@@ -1,6 +1,7 @@
-name: OneCore — bounded acquisition and alternating CPU training
+name: OneCore V2 (ARCHIVED) — bounded acquisition and alternating CPU training
 
 on:
+  # Legacy V2 only. This trigger stays on the frozen Foundation ref and is not part of V3.
   push:
     branches: [research/onecore-foundation]
     paths: ["onecore-ai/training-request.json"]
@@ -11,7 +12,7 @@ permissions:
 
 concurrency:
   group: onecore-training-v2
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   HF_TOKEN: ${{ secrets.HF_TOKEN }}
@@ -25,6 +26,13 @@ jobs:
       base_corpus_run_id: ${{ steps.request.outputs.base_corpus_run_id }}
       base_corpus_artifact_name: ${{ steps.request.outputs.base_corpus_artifact_name }}
       request_stage: ${{ steps.request.outputs.request_stage }}
+      resume_checkpoint_run_id: ${{ steps.request.outputs.resume_checkpoint_run_id }}
+      resume_checkpoint_artifact_name: ${{ steps.request.outputs.resume_checkpoint_artifact_name }}
+      resume_checkpoint_session: ${{ steps.request.outputs.resume_checkpoint_session }}
+      resume_optimizer_step: ${{ steps.request.outputs.resume_optimizer_step }}
+      expected_final_optimizer_step: ${{ steps.request.outputs.expected_final_optimizer_step }}
+      steps_per_job: ${{ steps.request.outputs.steps_per_job }}
+      total_optimizer_steps: ${{ steps.request.outputs.total_optimizer_steps }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -48,19 +56,74 @@ jobs:
           from pathlib import Path
           request = json.loads(Path("onecore-ai/training-request.json").read_text(encoding="utf-8"))
           stage = str(request.get("stage", "")).strip()
-          if stage not in {"acquire", "train_existing", "repair_video_existing"} or request.get("start_fresh_joint_training") is not True:
-              raise ValueError("The request must acquire data or validate the existing corpus, and initialize OneCore from random weights")
-          if int(request.get("steps", 0)) != 150:
-              raise ValueError("This staged workflow is configured for exactly 150 optimizer steps")
+          if stage not in {"acquire", "train_existing", "repair_video_existing", "evaluate_existing"}:
+              raise ValueError("The request must select a supported corpus stage")
+          per_job_steps = int(request.get("steps", 0))
+          training_jobs = int(request.get("jobs", 0))
+          total_optimizer_steps = int(request.get("total_optimizer_steps", 0))
+          evaluation_only = stage == "evaluate_existing"
+          if not 1 <= per_job_steps <= 250 or training_jobs != 10:
+              raise ValueError("Each request must retain ten session slots and 1–250 configured steps per slot")
+          if evaluation_only and total_optimizer_steps != 0:
+              raise ValueError("evaluate_existing must request zero optimizer updates")
+          if not evaluation_only and total_optimizer_steps <= 0:
+              raise ValueError("A training request must contain at least one optimizer update")
           corpus = str(request.get("base_corpus_run_id", "")).strip()
           if not re.fullmatch(r"[0-9]+", corpus):
               raise ValueError("A preserved base corpus artifact run ID is required")
           artifact = str(request.get("base_corpus_artifact_name") or f"onecore-corpus-{corpus}").strip()
           if not re.fullmatch(r"[A-Za-z0-9_.-]+", artifact):
               raise ValueError("The base corpus artifact name contains unsupported characters")
+          resume_run = str(request.get("resume_checkpoint_run_id", "")).strip()
+          resume_artifact = str(request.get("resume_checkpoint_artifact_name", "")).strip()
+          if bool(resume_run) != bool(resume_artifact):
+              raise ValueError("A resumed checkpoint requires both resume_checkpoint_run_id and resume_checkpoint_artifact_name")
+          if resume_run and not re.fullmatch(r"[0-9]+", resume_run):
+              raise ValueError("resume_checkpoint_run_id must be a numeric GitHub Actions run ID")
+          if resume_artifact and not re.fullmatch(r"onecore-state-train-(0[1-9]|10)", resume_artifact):
+              raise ValueError("resume_checkpoint_artifact_name must identify a numbered OneCore training checkpoint")
+          resume_session = int(resume_artifact.rsplit("-", 1)[-1]) if resume_artifact else 0
+          resume_optimizer_step = int(request.get("resume_optimizer_step", 0))
+          expected_final_step = int(
+              request.get("expected_final_optimizer_step", resume_optimizer_step + total_optimizer_steps)
+          )
+          if resume_run:
+              if request.get("start_fresh_joint_training") is not False:
+                  raise ValueError("A continuation must explicitly set start_fresh_joint_training=false")
+              if resume_optimizer_step <= 0:
+                  raise ValueError("A continuation must declare the checkpoint optimizer step")
+          else:
+              if request.get("start_fresh_joint_training") is not True:
+                  raise ValueError("A fresh lineage must explicitly set start_fresh_joint_training=true")
+              if resume_optimizer_step != 0:
+                  raise ValueError("A fresh lineage cannot declare a resumed optimizer step")
+          if evaluation_only:
+              if not resume_run or not resume_artifact:
+                  raise ValueError("evaluate_existing requires an exact completed checkpoint run and artifact")
+              if expected_final_step != resume_optimizer_step:
+                  raise ValueError("evaluation-only expected_final_optimizer_step must equal resume_optimizer_step")
+          else:
+              sessions_to_run = 10 if resume_session in {0, 10} else 10 - resume_session
+              if total_optimizer_steps != sessions_to_run * per_job_steps:
+                  raise ValueError(
+                      f"Expected {sessions_to_run} remaining sessions × {per_job_steps} steps, "
+                      f"found {total_optimizer_steps} total segment updates"
+                  )
+              if expected_final_step != resume_optimizer_step + total_optimizer_steps:
+                  raise ValueError("expected_final_optimizer_step must equal resume_optimizer_step + total_optimizer_steps")
+          if not 1 <= expected_final_step <= 20000:
+              raise ValueError("The cumulative optimizer step must stay within the 20,000-step schedule")
           print(f"base_corpus_run_id={corpus}")
           print(f"base_corpus_artifact_name={artifact}")
           print(f"request_stage={stage}")
+          print(f"training_jobs={training_jobs}")
+          print(f"steps_per_job={per_job_steps}")
+          print(f"total_optimizer_steps={total_optimizer_steps}")
+          print(f"resume_checkpoint_run_id={resume_run}")
+          print(f"resume_checkpoint_artifact_name={resume_artifact}")
+          print(f"resume_checkpoint_session={resume_session}")
+          print(f"resume_optimizer_step={resume_optimizer_step}")
+          print(f"expected_final_optimizer_step={expected_final_step}")
           PY
       - name: Compile package and run all tests
         run: |
@@ -153,7 +216,7 @@ jobs:
           if os.environ.get("PREPARE_RESULT") != "success":
               raise SystemExit("The prepare job failed; no validated base corpus was selected.")
           print(f"request_stage={os.environ.get('REQUEST_STAGE', '')}")
-          if os.environ.get("REQUEST_STAGE") in {"train_existing", "repair_video_existing"}:
+          if os.environ.get("REQUEST_STAGE") in {"train_existing", "repair_video_existing", "evaluate_existing"}:
               print(f"artifact_name={os.environ['BASE_ARTIFACT_NAME']}")
               print(f"artifact_run_id={os.environ['BASE_RUN_ID']}")
               print("complete=true")
@@ -163,6 +226,8 @@ jobs:
                   summary.write(f"- Artifact: {os.environ['BASE_ARTIFACT_NAME']}\n")
                   if os.environ.get("REQUEST_STAGE") == "repair_video_existing":
                       summary.write("- General acquisition remains skipped; only the saved Videos4CameraBench video cursor is resumed in the dataset gate.\\n")
+                  elif os.environ.get("REQUEST_STAGE") == "evaluate_existing":
+                      summary.write("- Evaluation-only request: no crawler and no optimizer update will run.\\n")
                   else:
                       summary.write("- Proceed directly to the full payload and split-integrity gate; no crawler is started.\\n")
               raise SystemExit(0)
@@ -196,7 +261,7 @@ jobs:
   dataset_gate:
     name: Final multimodal coverage and split-integrity gate
     needs: finalize_acquisition
-    if: ${{ always() && needs.finalize_acquisition.result == 'success' && needs.finalize_acquisition.outputs.complete == 'true' }}
+    if: ${{ always() && needs.finalize_acquisition.result == 'success' && needs.finalize_acquisition.outputs.complete == 'true' && needs.finalize_acquisition.outputs.request_stage != 'train_existing' && needs.finalize_acquisition.outputs.request_stage != 'evaluate_existing' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 330
     steps:
@@ -305,20 +370,20 @@ jobs:
               summary.write("## Decoded-payload coverage diagnostic\n\n" + diagnostic + "\n")
           print(diagnostic)
           PY
-      - name: Preserve resumable video-only corpus if coverage still needs continuation
+      - name: Preserve the post-video corpus checkpoint before the expensive split gate
         id: repair_progress_pack
-        if: ${{ needs.finalize_acquisition.outputs.request_stage == 'repair_video_existing' && steps.corpus_diagnostic.outputs.coverage_ready != 'true' }}
+        if: ${{ needs.finalize_acquisition.outputs.request_stage == 'repair_video_existing' }}
         shell: bash
         env:
           PYTHONPATH: onecore-ai/src
         run: |
           python -m onecore.artifacts pack --root onecore-ai --output "$RUNNER_TEMP/onecore-corpus-video-repair.tar"
           test -s "$RUNNER_TEMP/onecore-corpus-video-repair.tar"
-      - name: Upload resumable video-only continuation snapshot
+      - name: Upload durable post-video corpus checkpoint
         if: ${{ steps.repair_progress_pack.outcome == 'success' }}
         uses: actions/upload-artifact@v6
         with:
-          name: onecore-corpus-video-repair-progress
+          name: onecore-corpus-video-repair-snapshot
           path: ${{ runner.temp }}/onecore-corpus-video-repair.tar
           if-no-files-found: error
           retention-days: 90
@@ -368,7 +433,19 @@ jobs:
           jupyter nbconvert --to notebook --execute onecore-ai/notebooks/02_data_gate.ipynb \
             --output 02_data_gate.final.executed.ipynb \
             --output-dir onecore-ai/run-state/executed-notebooks \
-            --ExecutePreprocessor.timeout=-1
+            --ExecutePreprocessor.timeout=-1 2>&1 | tee onecore-ai/run-state/final-data-gate.log
+      - name: Preserve full final data-gate diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: onecore-data-gate-diagnostic-${{ github.run_id }}
+          path: |
+            onecore-ai/run-state/final-data-gate.log
+            onecore-ai/run-state/executed-notebooks/02_data_gate.final.executed.ipynb
+            onecore-ai/data/acquisition-report.json
+          if-no-files-found: ignore
+          retention-days: 14
+          compression-level: 1
       - name: Package the validated corpus as one stack-safe archive
         shell: bash
         env:
@@ -385,6 +462,7 @@ jobs:
           retention-days: 90
           compression-level: 0
       - name: Remove intermediate corpus after validated replacement is uploaded
+        if: ${{ needs.finalize_acquisition.outputs.artifact_run_id == github.run_id && needs.finalize_acquisition.outputs.artifact_name != 'onecore-corpus-final' }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -418,9 +496,9 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   train_all:
-    name: Ten sequential CPU training sessions on one persistent runner
-    needs: dataset_gate
-    if: ${{ always() && needs.dataset_gate.result == 'success' }}
+    name: Ten sequential 150-step CPU training sessions on one persistent runner
+    needs: [dataset_gate, prepare]
+    if: ${{ always() && needs.prepare.result == 'success' && (needs.dataset_gate.result == 'success' || (needs.dataset_gate.result == 'skipped' && needs.prepare.outputs.request_stage == 'train_existing')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 360
     outputs:
@@ -431,143 +509,308 @@ jobs:
         with:
           ref: ${{ github.sha }}
       - id: train01
-        name: Training session 1 of 10 — joint — 03_text_pretraining.ipynb
+        name: Training session 1 of 10 — joint init or resumed multimodal — 03_text_pretraining.ipynb
+        if: ${{ needs.prepare.outputs.resume_checkpoint_session == '0' || needs.prepare.outputs.resume_checkpoint_session == '10' }}
         uses: ./.github/actions/onecore-train
         with:
           setup_environment: "true"
           restore_corpus: "true"
-          corpus_artifact_name: onecore-corpus-final
-          checkpoint_artifact_name: ""
+          corpus_artifact_name: ${{ needs.prepare.outputs.base_corpus_artifact_name }}
+          # Restore the immutable corpus from its original source run, never this run's empty artifact namespace.
+          corpus_run_id: ${{ needs.prepare.outputs.base_corpus_run_id }}
+          checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '10' && needs.prepare.outputs.resume_checkpoint_artifact_name || '' }}
+          checkpoint_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '10' && needs.prepare.outputs.resume_checkpoint_run_id || '' }}
+          expected_resume_optimizer_step: ${{ needs.prepare.outputs.resume_checkpoint_session == '10' && needs.prepare.outputs.resume_optimizer_step || '' }}
           previous_checkpoint_artifact_name: ""
-          stage: "joint"
+          stage: ${{ needs.prepare.outputs.resume_checkpoint_session == '10' && 'multimodal' || 'joint' }}
           notebook: "03_text_pretraining.ipynb"
-          steps: "15"
+          steps: ${{ needs.prepare.outputs.steps_per_job }}
           output_artifact_name: onecore-state-train-01
       - id: train02
         name: Training session 2 of 10 — multimodal — 04_multimodal_curriculum.ipynb
+        if: ${{ always() && !cancelled() && (steps.train01.outcome == 'success' || needs.prepare.outputs.resume_checkpoint_session == '1') }}
         uses: ./.github/actions/onecore-train
         with:
-          setup_environment: "false"
-          restore_corpus: "false"
+          setup_environment: ${{ needs.prepare.outputs.resume_checkpoint_session == '1' && 'true' || 'false' }}
+          restore_corpus: ${{ needs.prepare.outputs.resume_checkpoint_session == '1' && 'true' || 'false' }}
           corpus_artifact_name: onecore-corpus-final
-          checkpoint_artifact_name: "onecore-state-train-01"
-          previous_checkpoint_artifact_name: "onecore-state-train-01"
+          corpus_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '1' && needs.prepare.outputs.base_corpus_run_id || '' }}
+          checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '1' && needs.prepare.outputs.resume_checkpoint_artifact_name || 'onecore-state-train-01' }}
+          checkpoint_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '1' && needs.prepare.outputs.resume_checkpoint_run_id || '' }}
+          expected_resume_optimizer_step: ${{ needs.prepare.outputs.resume_checkpoint_session == '1' && needs.prepare.outputs.resume_optimizer_step || '' }}
+          previous_checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '1' && '' || 'onecore-state-train-01' }}
           stage: "multimodal"
           notebook: "04_multimodal_curriculum.ipynb"
-          steps: "15"
+          steps: ${{ needs.prepare.outputs.steps_per_job }}
           output_artifact_name: onecore-state-train-02
       - id: train03
         name: Training session 3 of 10 — multimodal — 03_text_pretraining.ipynb
+        if: ${{ always() && !cancelled() && (steps.train02.outcome == 'success' || needs.prepare.outputs.resume_checkpoint_session == '2') }}
         uses: ./.github/actions/onecore-train
         with:
-          setup_environment: "false"
-          restore_corpus: "false"
+          setup_environment: ${{ needs.prepare.outputs.resume_checkpoint_session == '2' && 'true' || 'false' }}
+          restore_corpus: ${{ needs.prepare.outputs.resume_checkpoint_session == '2' && 'true' || 'false' }}
           corpus_artifact_name: onecore-corpus-final
-          checkpoint_artifact_name: "onecore-state-train-02"
-          previous_checkpoint_artifact_name: "onecore-state-train-02"
+          corpus_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '2' && needs.prepare.outputs.base_corpus_run_id || '' }}
+          checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '2' && needs.prepare.outputs.resume_checkpoint_artifact_name || 'onecore-state-train-02' }}
+          checkpoint_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '2' && needs.prepare.outputs.resume_checkpoint_run_id || '' }}
+          expected_resume_optimizer_step: ${{ needs.prepare.outputs.resume_checkpoint_session == '2' && needs.prepare.outputs.resume_optimizer_step || '' }}
+          previous_checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '2' && '' || 'onecore-state-train-02' }}
           stage: "multimodal"
           notebook: "03_text_pretraining.ipynb"
-          steps: "15"
+          steps: ${{ needs.prepare.outputs.steps_per_job }}
           output_artifact_name: onecore-state-train-03
       - id: train04
         name: Training session 4 of 10 — multimodal — 04_multimodal_curriculum.ipynb
+        if: ${{ always() && !cancelled() && (steps.train03.outcome == 'success' || needs.prepare.outputs.resume_checkpoint_session == '3') }}
         uses: ./.github/actions/onecore-train
         with:
-          setup_environment: "false"
-          restore_corpus: "false"
+          setup_environment: ${{ needs.prepare.outputs.resume_checkpoint_session == '3' && 'true' || 'false' }}
+          restore_corpus: ${{ needs.prepare.outputs.resume_checkpoint_session == '3' && 'true' || 'false' }}
           corpus_artifact_name: onecore-corpus-final
-          checkpoint_artifact_name: "onecore-state-train-03"
-          previous_checkpoint_artifact_name: "onecore-state-train-03"
+          corpus_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '3' && needs.prepare.outputs.base_corpus_run_id || '' }}
+          checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '3' && needs.prepare.outputs.resume_checkpoint_artifact_name || 'onecore-state-train-03' }}
+          checkpoint_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '3' && needs.prepare.outputs.resume_checkpoint_run_id || '' }}
+          expected_resume_optimizer_step: ${{ needs.prepare.outputs.resume_checkpoint_session == '3' && needs.prepare.outputs.resume_optimizer_step || '' }}
+          previous_checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '3' && '' || 'onecore-state-train-03' }}
           stage: "multimodal"
           notebook: "04_multimodal_curriculum.ipynb"
-          steps: "15"
+          steps: ${{ needs.prepare.outputs.steps_per_job }}
           output_artifact_name: onecore-state-train-04
       - id: train05
         name: Training session 5 of 10 — multimodal — 03_text_pretraining.ipynb
+        if: ${{ always() && !cancelled() && (steps.train04.outcome == 'success' || needs.prepare.outputs.resume_checkpoint_session == '4') }}
         uses: ./.github/actions/onecore-train
         with:
-          setup_environment: "false"
-          restore_corpus: "false"
+          setup_environment: ${{ needs.prepare.outputs.resume_checkpoint_session == '4' && 'true' || 'false' }}
+          restore_corpus: ${{ needs.prepare.outputs.resume_checkpoint_session == '4' && 'true' || 'false' }}
           corpus_artifact_name: onecore-corpus-final
-          checkpoint_artifact_name: "onecore-state-train-04"
-          previous_checkpoint_artifact_name: "onecore-state-train-04"
+          corpus_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '4' && needs.prepare.outputs.base_corpus_run_id || '' }}
+          checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '4' && needs.prepare.outputs.resume_checkpoint_artifact_name || 'onecore-state-train-04' }}
+          checkpoint_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '4' && needs.prepare.outputs.resume_checkpoint_run_id || '' }}
+          expected_resume_optimizer_step: ${{ needs.prepare.outputs.resume_checkpoint_session == '4' && needs.prepare.outputs.resume_optimizer_step || '' }}
+          previous_checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '4' && '' || 'onecore-state-train-04' }}
           stage: "multimodal"
           notebook: "03_text_pretraining.ipynb"
-          steps: "15"
+          steps: ${{ needs.prepare.outputs.steps_per_job }}
           output_artifact_name: onecore-state-train-05
       - id: train06
         name: Training session 6 of 10 — multimodal — 04_multimodal_curriculum.ipynb
+        if: ${{ always() && !cancelled() && (steps.train05.outcome == 'success' || needs.prepare.outputs.resume_checkpoint_session == '5') }}
         uses: ./.github/actions/onecore-train
         with:
-          setup_environment: "false"
-          restore_corpus: "false"
+          setup_environment: ${{ needs.prepare.outputs.resume_checkpoint_session == '5' && 'true' || 'false' }}
+          restore_corpus: ${{ needs.prepare.outputs.resume_checkpoint_session == '5' && 'true' || 'false' }}
           corpus_artifact_name: onecore-corpus-final
-          checkpoint_artifact_name: "onecore-state-train-05"
-          previous_checkpoint_artifact_name: "onecore-state-train-05"
+          corpus_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '5' && needs.prepare.outputs.base_corpus_run_id || '' }}
+          checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '5' && needs.prepare.outputs.resume_checkpoint_artifact_name || 'onecore-state-train-05' }}
+          checkpoint_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '5' && needs.prepare.outputs.resume_checkpoint_run_id || '' }}
+          expected_resume_optimizer_step: ${{ needs.prepare.outputs.resume_checkpoint_session == '5' && needs.prepare.outputs.resume_optimizer_step || '' }}
+          previous_checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '5' && '' || 'onecore-state-train-05' }}
           stage: "multimodal"
           notebook: "04_multimodal_curriculum.ipynb"
-          steps: "15"
+          steps: ${{ needs.prepare.outputs.steps_per_job }}
           output_artifact_name: onecore-state-train-06
       - id: train07
         name: Training session 7 of 10 — multimodal — 03_text_pretraining.ipynb
+        if: ${{ always() && !cancelled() && (steps.train06.outcome == 'success' || needs.prepare.outputs.resume_checkpoint_session == '6') }}
         uses: ./.github/actions/onecore-train
         with:
-          setup_environment: "false"
-          restore_corpus: "false"
+          setup_environment: ${{ needs.prepare.outputs.resume_checkpoint_session == '6' && 'true' || 'false' }}
+          restore_corpus: ${{ needs.prepare.outputs.resume_checkpoint_session == '6' && 'true' || 'false' }}
           corpus_artifact_name: onecore-corpus-final
-          checkpoint_artifact_name: "onecore-state-train-06"
-          previous_checkpoint_artifact_name: "onecore-state-train-06"
+          corpus_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '6' && needs.prepare.outputs.base_corpus_run_id || '' }}
+          checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '6' && needs.prepare.outputs.resume_checkpoint_artifact_name || 'onecore-state-train-06' }}
+          checkpoint_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '6' && needs.prepare.outputs.resume_checkpoint_run_id || '' }}
+          expected_resume_optimizer_step: ${{ needs.prepare.outputs.resume_checkpoint_session == '6' && needs.prepare.outputs.resume_optimizer_step || '' }}
+          previous_checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '6' && '' || 'onecore-state-train-06' }}
           stage: "multimodal"
           notebook: "03_text_pretraining.ipynb"
-          steps: "15"
+          steps: ${{ needs.prepare.outputs.steps_per_job }}
           output_artifact_name: onecore-state-train-07
       - id: train08
         name: Training session 8 of 10 — multimodal — 04_multimodal_curriculum.ipynb
+        if: ${{ always() && !cancelled() && (steps.train07.outcome == 'success' || needs.prepare.outputs.resume_checkpoint_session == '7') }}
         uses: ./.github/actions/onecore-train
         with:
-          setup_environment: "false"
-          restore_corpus: "false"
+          setup_environment: ${{ needs.prepare.outputs.resume_checkpoint_session == '7' && 'true' || 'false' }}
+          restore_corpus: ${{ needs.prepare.outputs.resume_checkpoint_session == '7' && 'true' || 'false' }}
           corpus_artifact_name: onecore-corpus-final
-          checkpoint_artifact_name: "onecore-state-train-07"
-          previous_checkpoint_artifact_name: "onecore-state-train-07"
+          corpus_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '7' && needs.prepare.outputs.base_corpus_run_id || '' }}
+          checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '7' && needs.prepare.outputs.resume_checkpoint_artifact_name || 'onecore-state-train-07' }}
+          checkpoint_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '7' && needs.prepare.outputs.resume_checkpoint_run_id || '' }}
+          expected_resume_optimizer_step: ${{ needs.prepare.outputs.resume_checkpoint_session == '7' && needs.prepare.outputs.resume_optimizer_step || '' }}
+          previous_checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '7' && '' || 'onecore-state-train-07' }}
           stage: "multimodal"
           notebook: "04_multimodal_curriculum.ipynb"
-          steps: "15"
+          steps: ${{ needs.prepare.outputs.steps_per_job }}
           output_artifact_name: onecore-state-train-08
       - id: train09
         name: Training session 9 of 10 — multimodal — 03_text_pretraining.ipynb
+        if: ${{ always() && !cancelled() && (steps.train08.outcome == 'success' || needs.prepare.outputs.resume_checkpoint_session == '8') }}
         uses: ./.github/actions/onecore-train
         with:
-          setup_environment: "false"
-          restore_corpus: "false"
+          setup_environment: ${{ needs.prepare.outputs.resume_checkpoint_session == '8' && 'true' || 'false' }}
+          restore_corpus: ${{ needs.prepare.outputs.resume_checkpoint_session == '8' && 'true' || 'false' }}
           corpus_artifact_name: onecore-corpus-final
-          checkpoint_artifact_name: "onecore-state-train-08"
-          previous_checkpoint_artifact_name: "onecore-state-train-08"
+          corpus_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '8' && needs.prepare.outputs.base_corpus_run_id || '' }}
+          checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '8' && needs.prepare.outputs.resume_checkpoint_artifact_name || 'onecore-state-train-08' }}
+          checkpoint_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '8' && needs.prepare.outputs.resume_checkpoint_run_id || '' }}
+          expected_resume_optimizer_step: ${{ needs.prepare.outputs.resume_checkpoint_session == '8' && needs.prepare.outputs.resume_optimizer_step || '' }}
+          previous_checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '8' && '' || 'onecore-state-train-08' }}
           stage: "multimodal"
           notebook: "03_text_pretraining.ipynb"
-          steps: "15"
+          steps: ${{ needs.prepare.outputs.steps_per_job }}
           output_artifact_name: onecore-state-train-09
       - id: train10
         name: Training session 10 of 10 — multimodal — 04_multimodal_curriculum.ipynb
+        if: ${{ always() && !cancelled() && (steps.train09.outcome == 'success' || needs.prepare.outputs.resume_checkpoint_session == '9') }}
         uses: ./.github/actions/onecore-train
         with:
-          setup_environment: "false"
-          restore_corpus: "false"
+          setup_environment: ${{ needs.prepare.outputs.resume_checkpoint_session == '9' && 'true' || 'false' }}
+          restore_corpus: ${{ needs.prepare.outputs.resume_checkpoint_session == '9' && 'true' || 'false' }}
           corpus_artifact_name: onecore-corpus-final
-          checkpoint_artifact_name: "onecore-state-train-09"
-          previous_checkpoint_artifact_name: "onecore-state-train-09"
+          corpus_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '9' && needs.prepare.outputs.base_corpus_run_id || '' }}
+          checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '9' && needs.prepare.outputs.resume_checkpoint_artifact_name || 'onecore-state-train-09' }}
+          checkpoint_run_id: ${{ needs.prepare.outputs.resume_checkpoint_session == '9' && needs.prepare.outputs.resume_checkpoint_run_id || '' }}
+          expected_resume_optimizer_step: ${{ needs.prepare.outputs.resume_checkpoint_session == '9' && needs.prepare.outputs.resume_optimizer_step || '' }}
+          previous_checkpoint_artifact_name: ${{ needs.prepare.outputs.resume_checkpoint_session == '9' && '' || 'onecore-state-train-09' }}
           stage: "multimodal"
           notebook: "04_multimodal_curriculum.ipynb"
-          steps: "15"
+          steps: ${{ needs.prepare.outputs.steps_per_job }}
           output_artifact_name: onecore-state-train-10
+
+  evaluate:
+    name: Independent validation, test and checkpoint report
+    needs: [train_all, prepare]
+    if: ${{ always() && needs.train_all.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: onecore-ai/pyproject.toml
+      - name: Install CPU-only PyTorch and evaluation dependencies
+        run: |
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --upgrade pip
+          python -m pip install -e "onecore-ai[dev]"
+      - name: Restore the immutable validated corpus
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ needs.prepare.outputs.base_corpus_artifact_name }}
+          path: onecore-ai/run-state/corpus-artifact
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ needs.prepare.outputs.base_corpus_run_id }}
+      - name: Expand the validated corpus snapshot
+        shell: bash
+        env:
+          PYTHONPATH: onecore-ai/src
+        run: python -m onecore.artifacts restore --root onecore-ai --artifact-dir onecore-ai/run-state/corpus-artifact
+      - name: Restore the final session checkpoint
+        uses: actions/download-artifact@v7
+        with:
+          name: onecore-state-train-10
+          path: onecore-ai/run-state
+      - name: Confirm cumulative optimizer steps and five-family balance
+        shell: bash
+        env:
+          EXPECTED_FINAL_OPTIMIZER_STEP: ${{ needs.prepare.outputs.expected_final_optimizer_step }}
+        run: |
+          python - <<'PY'
+          import hashlib, json, math, os
+          from pathlib import Path
+          report = json.loads(Path("onecore-ai/run-state/train_result.json").read_text(encoding="utf-8"))
+          checkpoint = Path("onecore-ai/run-state/checkpoint.pt")
+          digest = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
+          expected_steps = int(os.environ["EXPECTED_FINAL_OPTIMIZER_STEP"])
+          if int(report.get("optimizer_step", -1)) != expected_steps:
+              raise ValueError(f"Expected {expected_steps} cumulative optimizer steps; found {report.get('optimizer_step')}")
+          if digest != report.get("checkpoint", {}).get("sha256"):
+              raise ValueError("Checkpoint SHA-256 differs from train_result.json")
+          expected = {family: expected_steps for family in ("text", "tool", "image", "audio", "video")}
+          observed = report.get("sampled_family_counts", {})
+          if report.get("sampling_policy") != "one external sample from each of text/tool/image/audio/video per optimizer step":
+              raise ValueError("Final report does not attest to five-family joint training")
+          if observed != expected:
+              raise ValueError(f"Unexpected cumulative family sample counts: {observed}")
+          native = report.get("native_tldm") or {}
+          if int(native.get("additional_trainable_parameters", -1)) != 0:
+              raise ValueError(f"Native T-LDM must add zero parameters: {native}")
+          if int(report.get("parameter_count", -1)) != 57_579_201:
+              raise ValueError(f"OneCore parameter count changed: {report.get('parameter_count')}")
+          if float(native.get("diffusion_loss_weight", -1)) != 0.15:
+              raise ValueError(f"Unexpected native diffusion loss weight: {native}")
+          expected_updates = 5 * expected_steps
+          if int(native.get("updates", 0)) != expected_updates:
+              raise ValueError(f"Expected {expected_updates} native diffusion updates: {native}")
+          if report.get("sampled_data_class_counts") != {"external": expected_updates}:
+              raise ValueError(
+                  f"Expected exactly {expected_updates} external samples and no bootstrap/synthetic records: "
+                  f"{report.get('sampled_data_class_counts')}"
+              )
+          if any(
+              key != "external" and int(value) > 0
+              for key, value in (report.get("optimizer_data_class_counts") or {}).items()
+          ):
+              raise ValueError(
+                  "optimizer input contains non-external data classes: "
+                  f"{report.get('optimizer_data_class_counts')}"
+              )
+          mean_diffusion_loss = float(native.get("mean_diffusion_loss", float("nan")))
+          if not math.isfinite(mean_diffusion_loss) or mean_diffusion_loss <= 0:
+              raise ValueError(f"Native diffusion objective did not produce a finite positive loss: {native}")
+          print(json.dumps({
+              "optimizer_step": report["optimizer_step"],
+              "checkpoint_sha256": digest,
+              "lineage_id": report.get("lineage_id"),
+              "sampled_family_counts": observed,
+              "parameter_count": report.get("parameter_count"),
+              "native_tldm": native,
+          }, ensure_ascii=False, indent=2))
+          PY
       - name: Execute independent validation and held-out test on the same restored corpus
         shell: bash
+        env:
+          PYTHONPATH: onecore-ai/src
+          ONECORE_EXECUTE_EVALUATION: "1"
         run: |
           mkdir -p onecore-ai/run-state/executed-notebooks
           jupyter nbconvert --to notebook --execute onecore-ai/notebooks/05_evaluation_and_promotion.ipynb \
             --output 05_evaluation_and_promotion.executed.ipynb \
             --output-dir onecore-ai/run-state/executed-notebooks \
             --ExecutePreprocessor.timeout=-1
+      - name: Require complete validation and test metrics
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("onecore-ai/run-state")
+          required = {
+              "evaluation.json": "combined",
+              "evaluation.validation.json": "validation",
+              "evaluation.test.json": "test",
+          }
+          for filename, split in required.items():
+              path = root / filename
+              if not path.is_file():
+                  raise FileNotFoundError(
+                      f"actual evaluation did not produce required {split} metrics: {path}"
+                  )
+              payload = json.loads(path.read_text(encoding="utf-8"))
+              if not isinstance(payload, dict) or not payload:
+                  raise ValueError(f"evaluation output is empty or invalid: {path}")
+              print(f"VERIFIED {split} evaluation: {filename} ({len(payload)} fields)")
+          PY
+
       - name: Upload scientific evaluation results
         uses: actions/upload-artifact@v6
         with:
@@ -581,70 +824,12 @@ jobs:
           if-no-files-found: error
           retention-days: 90
           compression-level: 1
-
-  evaluate:
-    name: Independent validation, test and checkpoint report
-    needs: train_all
-    if: ${{ always() && needs.train_all.result == 'success' }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 330
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ github.sha }}
-      - name: Restore the final session checkpoint
-        uses: actions/download-artifact@v7
-        with:
-          name: onecore-state-train-10
-          path: onecore-ai/run-state
-      - name: Restore scientific evaluation results
-        uses: actions/download-artifact@v7
-        with:
-          name: onecore-evaluation-${{ github.run_id }}
-          path: onecore-ai/run-state
-      - name: Confirm 150 optimizer steps and five-family balance
-        shell: bash
-        run: |
-          python - <<'PY'
-          import hashlib, json, math
-          from pathlib import Path
-          report = json.loads(Path("onecore-ai/run-state/train_result.json").read_text(encoding="utf-8"))
-          checkpoint = Path("onecore-ai/run-state/checkpoint.pt")
-          digest = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
-          if int(report.get("optimizer_step", -1)) != 150:
-              raise ValueError(f"Expected 150 optimizer steps; found {report.get('optimizer_step')}")
-          if digest != report.get("checkpoint", {}).get("sha256"):
-              raise ValueError("Checkpoint SHA-256 differs from train_result.json")
-          expected = {"text": 150, "tool": 150, "image": 150, "audio": 150, "video": 150}
-          observed = report.get("sampled_family_counts", {})
-          if report.get("sampling_policy") != "one external sample from each of text/tool/image/audio/video per optimizer step":
-              raise ValueError("Final report does not attest to five-family joint training")
-          if any(int(observed.get(key, 0)) != value for key, value in expected.items()):
-              raise ValueError(f"Unexpected family sample counts: {observed}")
-          native = report.get("native_tldm") or {}
-          if int(native.get("additional_trainable_parameters", -1)) != 0:
-              raise ValueError(f"Native T-LDM must add zero parameters: {native}")
-          if int(report.get("parameter_count", -1)) != 57_579_201:
-              raise ValueError(f"OneCore parameter count changed: {report.get('parameter_count')}")
-          if float(native.get("diffusion_loss_weight", -1)) != 0.15:
-              raise ValueError(f"Unexpected native diffusion loss weight: {native}")
-          if int(native.get("updates", 0)) != 750:
-              raise ValueError(f"Expected 750 native diffusion updates (5 families × 150 steps): {native}")
-          mean_diffusion_loss = float(native.get("mean_diffusion_loss", float("nan")))
-          if not math.isfinite(mean_diffusion_loss) or mean_diffusion_loss <= 0:
-              raise ValueError(f"Native diffusion objective did not produce a finite positive loss: {native}")
-          print(json.dumps({
-              "optimizer_step": report["optimizer_step"],
-              "checkpoint_sha256": digest,
-              "lineage_id": report.get("lineage_id"),
-              "sampled_family_counts": observed,
-              "parameter_count": report.get("parameter_count"),
-              "native_tldm": native,
-          }, ensure_ascii=False, indent=2))
-          PY
       - name: Create durable versioned checkpoint release
         env:
           GH_TOKEN: ${{ secrets.ONECORE_RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          EXPECTED_FINAL_OPTIMIZER_STEP: ${{ needs.prepare.outputs.expected_final_optimizer_step }}
+          SEGMENT_OPTIMIZER_STEPS: ${{ needs.prepare.outputs.total_optimizer_steps }}
+          PER_JOB_STEPS: ${{ needs.prepare.outputs.steps_per_job }}
         shell: bash
         run: |
           mkdir -p onecore-ai/run-state/release
@@ -660,18 +845,245 @@ jobs:
             gh release upload "$tag" onecore-ai/run-state/onecore-final-state.zip --clobber
           else
             gh release create "$tag" onecore-ai/run-state/onecore-final-state.zip \
-              --title "OneCore final checkpoint — 150 optimizer steps" \
-              --notes "OneCore initialized from random weights and trained in ten sequential 15-step sessions on one persistent CPU runner; the validated corpus was restored once. Every optimizer update samples text, tool, image, audio and video. The checkpoint contains model, optimizer, scheduler, RNG and tokenizer state. Commit: ${GITHUB_SHA}." \
+              --title "OneCore checkpoint — ${EXPECTED_FINAL_OPTIMIZER_STEP} optimizer steps" \
+              --notes "Cumulative OneCore checkpoint at optimizer step ${EXPECTED_FINAL_OPTIMIZER_STEP}. This run contributed ${SEGMENT_OPTIMIZER_STEPS} updates across ten sessions of ${PER_JOB_STEPS} steps each, restoring the same model, optimizer, scheduler, RNG and tokenizer lineage. Every update samples text, tool, image, audio and video. Commit: ${GITHUB_SHA}." \
               --target "${GITHUB_SHA}"
           fi
       - name: Publish final training and evaluation summary
         if: always()
         shell: bash
+        env:
+          EXPECTED_FINAL_OPTIMIZER_STEP: ${{ needs.prepare.outputs.expected_final_optimizer_step }}
+          SEGMENT_OPTIMIZER_STEPS: ${{ needs.prepare.outputs.total_optimizer_steps }}
+          PER_JOB_STEPS: ${{ needs.prepare.outputs.steps_per_job }}
         run: |
           echo "## OneCore persistent-runner CPU training" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Optimizer steps: 150" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Training sessions: 10 × 15 steps on one CPU runner" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Notebook order: 03, 04, 03, 04, 03, 04, 03, 04, 03, 04" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Cumulative optimizer steps: ${EXPECTED_FINAL_OPTIMIZER_STEP}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Updates in this run: ${SEGMENT_OPTIMIZER_STEPS}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Training sessions: 10 × ${PER_JOB_STEPS} steps on one CPU runner" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Notebook cycle: 03/04 alternating; resume continues from the supplied checkpoint" >> "$GITHUB_STEP_SUMMARY"
           echo "- Checkpoint release: onecore-run-${GITHUB_RUN_ID}" >> "$GITHUB_STEP_SUMMARY"
           [[ ! -f onecore-ai/run-state/train_result.json ]] || cat onecore-ai/run-state/train_result.json >> "$GITHUB_STEP_SUMMARY"
+          [[ ! -f onecore-ai/run-state/evaluation.json ]] || cat onecore-ai/run-state/evaluation.json >> "$GITHUB_STEP_SUMMARY"
+
+
+  evaluate_existing:
+    name: Re-evaluate an exact saved checkpoint without training
+    needs: [prepare, finalize_acquisition]
+    if: ${{ always() && needs.prepare.result == 'success' && needs.prepare.outputs.request_stage == 'evaluate_existing' && needs.finalize_acquisition.result == 'success' && needs.finalize_acquisition.outputs.complete == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: onecore-ai/pyproject.toml
+      - name: Install CPU-only PyTorch and evaluation dependencies
+        run: |
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --upgrade pip
+          python -m pip install -e "onecore-ai[dev]"
+      - name: Restore the exact validated corpus
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ needs.prepare.outputs.base_corpus_artifact_name }}
+          path: onecore-ai/run-state/corpus-artifact
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ needs.prepare.outputs.base_corpus_run_id }}
+      - name: Restore the exact completed checkpoint artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ needs.prepare.outputs.resume_checkpoint_artifact_name }}
+          path: onecore-ai/run-state
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ needs.prepare.outputs.resume_checkpoint_run_id }}
+      - name: Restore corpus and verify checkpoint, optimizer, tokenizer and lineage
+        shell: bash
+        env:
+          PYTHONPATH: onecore-ai/src
+          EXPECTED_OPTIMIZER_STEP: ${{ needs.prepare.outputs.resume_optimizer_step }}
+        run: |
+          python -m onecore.artifacts restore --root onecore-ai --artifact-dir onecore-ai/run-state/corpus-artifact
+          python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          import torch
+          root = Path("onecore-ai/run-state")
+          checkpoint = root / "checkpoint.pt"
+          report = json.loads((root / "train_result.json").read_text(encoding="utf-8"))
+          digest = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
+          if digest != report.get("checkpoint", {}).get("sha256"):
+              raise ValueError("checkpoint SHA-256 differs from train_result.json")
+          payload = torch.load(checkpoint, map_location="cpu", weights_only=False)
+          expected = int(os.environ["EXPECTED_OPTIMIZER_STEP"])
+          if int(payload.get("step", -1)) != expected or int(report.get("optimizer_step", -2)) != expected:
+              raise ValueError("checkpoint and training report do not match the requested optimizer step")
+          if not payload.get("optimizer", {}).get("state"):
+              raise ValueError("checkpoint is missing optimizer moments")
+          if not payload.get("scheduler"):
+              raise ValueError("checkpoint is missing scheduler state")
+          metadata = payload.get("metadata", {})
+          classes = metadata.get("tokenizer_corpus_data_class_counts", {})
+          if not classes or int(classes.get("external", 0)) <= 0 or any(
+              key != "external" and int(value) > 0 for key, value in classes.items()
+          ):
+              raise ValueError(f"checkpoint tokenizer provenance is not external-only: {classes}")
+          print(json.dumps({
+              "optimizer_step": expected,
+              "checkpoint_sha256": digest,
+              "tokenizer_sha256": metadata.get("tokenizer_sha256"),
+              "lineage_id": metadata.get("lineage_id"),
+              "parent_checkpoint_sha256": metadata.get("parent_checkpoint_sha256"),
+              "tokenizer_corpus_data_class_counts": classes,
+          }, ensure_ascii=False, indent=2))
+          PY
+      - name: Recheck the restored corpus against the exact Spec v2 external data gate
+        shell: bash
+        env:
+          PYTHONPATH: onecore-ai/src
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from onecore.acquire import assert_task_coverage, external_asset_report_by_split
+          from onecore.config import load_config
+
+          root = Path("onecore-ai")
+          _, _, config = load_config(root / "configs" / "phone-research.yaml")
+          gate = config.get("data_gate", {})
+          required = set(gate.get("required_families", []))
+          expected = {"text", "tool", "image", "audio", "video"}
+          if required != expected:
+              raise ValueError(f"Spec v2 requires exactly {sorted(expected)}; configured families are {sorted(required)}")
+          minimum_train = int(gate.get("min_train_per_family", -1))
+          minimum_holdout = int(gate.get("min_holdout_per_family", -1))
+          if (minimum_train, minimum_holdout) != (100, 10):
+              raise ValueError(
+                  f"Spec v2 requires 100 train and 10 per validation/test family; "
+                  f"configured values are {minimum_train}/{minimum_holdout}"
+              )
+
+          coverage = assert_task_coverage(
+              root, required, minimum_train=100, minimum_holdout=10
+          )
+          assets = external_asset_report_by_split(root)
+          report = {
+              "gate": "PASS",
+              "required_families": sorted(required),
+              "minimums": {"train": 100, "validation": 10, "test": 10},
+              "usable_external_task_coverage": coverage,
+              "decoded_external_media": {
+                  split: {
+                      "records_by_task": value.get("records_by_task", {}),
+                      "missing_asset_files": value.get("missing_asset_files"),
+                      "unusable_external_records": value.get("unusable_external_records"),
+                  }
+                  for split, value in assets.items()
+              },
+          }
+          print(json.dumps(report, ensure_ascii=False, indent=2))
+          PY
+      - name: Evaluate independent validation and held-out test with current code
+        shell: bash
+        env:
+          PYTHONPATH: onecore-ai/src
+          EXPECTED_OPTIMIZER_STEP: ${{ needs.prepare.outputs.resume_optimizer_step }}
+          SOURCE_TRAINING_RUN_ID: ${{ needs.prepare.outputs.resume_checkpoint_run_id }}
+          SOURCE_CHECKPOINT_ARTIFACT: ${{ needs.prepare.outputs.resume_checkpoint_artifact_name }}
+          EVALUATION_CODE_SHA: ${{ github.sha }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          from onecore.checkpoint import write_json_atomic
+          from onecore.evaluate import evaluate_checkpoint, promotion_gate
+          root = Path("onecore-ai")
+          config = root / "configs" / "phone-research.yaml"
+          checkpoint = root / "run-state" / "checkpoint.pt"
+          tokenizer = root / "run-state" / "tokenizer.json"
+          thresholds = root / "configs" / "promotion-thresholds.json"
+          validation = evaluate_checkpoint(
+              root, config, checkpoint, tokenizer, thresholds,
+              root / "run-state" / "evaluation.validation.json", split="validation", data_classes={"external"},
+          )
+          test = evaluate_checkpoint(
+              root, config, checkpoint, tokenizer, thresholds,
+              root / "run-state" / "evaluation.test.json", split="test", data_classes={"external"},
+          )
+          required = {"text_loss", "tool_use", "image_reconstruction", "audio_reconstruction", "video_sequence"}
+          for label, result in (("validation", validation), ("test", test)):
+              missing = required - set(result.get("modalities_tested", []))
+              if missing:
+                  raise ValueError(
+                      f"{label} evaluation omitted required modalities: {sorted(missing)}; "
+                      f"observed_per_task_counts={result.get('per_task_counts', {})}; "
+                      f"observed_modalities={result.get('modalities_tested', [])}"
+                  )
+              native = result.get("native_tldm_evaluation") or {}
+              family_counts = native.get("sample_counts_by_family") or {}
+              if any(int(family_counts.get(family, 0)) < 10 for family in ("text", "tool", "image", "audio", "video")):
+                  raise ValueError(f"{label} native T-LDM evaluation lacks ten examples per family: {family_counts}")
+          if validation.get("checkpoint_sha256") != test.get("checkpoint_sha256"):
+              raise ValueError("validation and test used different checkpoints")
+          if validation.get("tokenizer_sha256") != test.get("tokenizer_sha256"):
+              raise ValueError("validation and test used different tokenizers")
+          if validation.get("split_manifest_sha256") == test.get("split_manifest_sha256"):
+              raise ValueError("validation and test manifests are not independently fingerprinted")
+          if int(validation.get("checkpoint_step", -1)) != int(os.environ["EXPECTED_OPTIMIZER_STEP"]):
+              raise ValueError("evaluation checkpoint step differs from the requested lineage step")
+          metrics = dict(validation)
+          metrics["test_metrics"] = test
+          metrics["test_manifest_sha256"] = test.get("split_manifest_sha256")
+          metrics["test_split_independent"] = True
+          metrics["evaluation_bundle_id"] = f"{validation['evaluation_id']}+{test['evaluation_id']}"
+          metrics["evaluation_code_sha"] = os.environ["EVALUATION_CODE_SHA"]
+          metrics["source_training_run_id"] = os.environ["SOURCE_TRAINING_RUN_ID"]
+          metrics["source_checkpoint_artifact"] = os.environ["SOURCE_CHECKPOINT_ARTIFACT"]
+          passed, failures = promotion_gate(metrics, baseline=None)
+          metrics["promotion_gate_passed"] = passed
+          metrics["promotion_gate_failures"] = failures
+          metrics["promotion_status"] = "eligible" if passed else "blocked"
+          write_json_atomic(root / "run-state" / "evaluation.json", metrics)
+          print(json.dumps({
+              "optimizer_step": metrics["checkpoint_step"],
+              "checkpoint_sha256": metrics["checkpoint_sha256"],
+              "tokenizer_sha256": metrics["tokenizer_sha256"],
+              "validation_manifest_sha256": metrics["split_manifest_sha256"],
+              "test_manifest_sha256": metrics["test_manifest_sha256"],
+              "validation_modalities": validation["modalities_tested"],
+              "test_modalities": test["modalities_tested"],
+              "validation_tldm": validation["native_tldm_evaluation"],
+              "test_tldm": test["native_tldm_evaluation"],
+              "promotion_gate_passed": passed,
+              "promotion_gate_failures": failures,
+          }, ensure_ascii=False, indent=2))
+          PY
+      - name: Upload independent evaluation evidence
+        uses: actions/upload-artifact@v6
+        with:
+          name: onecore-evaluation-recheck-${{ github.run_id }}
+          path: |
+            onecore-ai/run-state/evaluation.json
+            onecore-ai/run-state/evaluation.validation.json
+            onecore-ai/run-state/evaluation.test.json
+            onecore-ai/run-state/train_result.json
+            onecore-ai/run-state/acquisition-report.json
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 1
+      - name: Publish evaluation-only summary
+        if: always()
+        shell: bash
+        env:
+          EXPECTED_OPTIMIZER_STEP: ${{ needs.prepare.outputs.resume_optimizer_step }}
+        run: |
+          echo "## OneCore independent evaluation-only run" >> "$GITHUB_STEP_SUMMARY"
+          echo "- No optimizer updates were requested or executed." >> "$GITHUB_STEP_SUMMARY"
+          echo "- Evaluated optimizer step: $EXPECTED_OPTIMIZER_STEP" >> "$GITHUB_STEP_SUMMARY"
           [[ ! -f onecore-ai/run-state/evaluation.json ]] || cat onecore-ai/run-state/evaluation.json >> "$GITHUB_STEP_SUMMARY"

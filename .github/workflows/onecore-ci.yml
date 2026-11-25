@@ -2,12 +2,13 @@ name: OneCore — CI and notebook integrity
 
 on:
   push:
-    branches: [research/onecore-foundation]
+    branches: [research/onecore-v3-implementation]
     paths:
       - "onecore-ai/**"
       - ".github/workflows/onecore-ci.yml"
       - ".github/workflows/onecore-training.yml"
       - ".github/workflows/onecore-bootstrap.yml"
+      - ".github/workflows/onecore-v3-training.yml"
       - ".github/actions/onecore-acquire/action.yml"
       - ".github/actions/onecore-train/action.yml"
   pull_request:
@@ -17,15 +18,30 @@ on:
       - ".github/workflows/onecore-ci.yml"
       - ".github/workflows/onecore-training.yml"
       - ".github/workflows/onecore-bootstrap.yml"
+      - ".github/workflows/onecore-v3-training.yml"
       - ".github/actions/onecore-acquire/action.yml"
       - ".github/actions/onecore-train/action.yml"
+  workflow_dispatch:
+    inputs:
+      restore_v3_corpus:
+        description: "Restore and publish the external-only V3 corpus from the existing pinned V2 data artifact"
+        required: false
+        default: false
+        type: boolean
+      benchmark_v3_resources:
+        description: "Measure CPU RSS and throughput from the existing validated V3 corpus/tokenizer artifacts; no training"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: onecore-ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Preserve a running corpus restore; follow-up CI runs queue on the same ref.
+  cancel-in-progress: false
 
 jobs:
   verify:
@@ -54,8 +70,128 @@ jobs:
       - name: Compile package
         run: python -m compileall -q onecore-ai/src
 
+      - name: Assert exact OneCore v3 parameter and dense-FLOP budgets
+        env:
+          PYTHONPATH: onecore-ai/src
+        run: |
+          python - <<'PY'
+          import json
+          from onecore.v3.report import build_report
+          report = build_report()
+          assert report["architecture_version"] == "onecore-v3-prototype-2"
+          assert report["trainable_parameters"] == 39_906_568, report
+          assert report["fp32_parameter_storage_bytes"] == 159_626_272, report
+          assert report["fp16_parameter_storage_bytes"] == 79_813_136, report
+          assert report["quality_certified"] is False
+          flops = report["flops"]
+          assert flops["config_sha256"] == report["config_sha256"]
+          assert flops["paths"]["text"]["dense_flops"] == 14_260_633_600, flops
+          assert flops["paths"]["image"]["dense_flops"] == 21_340_618_752, flops
+          assert flops["paths"]["audio"]["dense_flops"] == 173_752_320_000, flops
+          assert flops["paths"]["video"]["dense_flops"] == 68_232_426_496, flops
+          assert flops["joint_five_family_forward_dense_flops"] == 291_846_632_448, flops
+          print(json.dumps(report, ensure_ascii=False, indent=2))
+          PY
+
       - name: Run unit and regression tests
         run: pytest -q onecore-ai/tests
+
+      - name: Verify Corrected Specification v2 values and FLOPs
+        shell: bash
+        run: |
+          python - <<'PY'
+          import math
+          from onecore.config import load_config
+          from onecore.flops import joint_step_train_flops, text_step_train_flops
+          from pathlib import Path
+          import json, yaml
+          from onecore.model import OneCore
+          cfg, train, raw = load_config("onecore-ai/configs/phone-research.yaml")
+          assert train.total_steps == 20000 and train.warmup_steps == 200
+          assert train.learning_rate == 0.0003 and train.weight_decay == 0.1
+          assert train.seed == 20261115
+          assert raw["training"]["seed"] == 20261115 and "seed" not in raw
+          assert tuple(train.adam_betas) == (0.9, 0.95)
+          assert cfg.vocab_size == 5144 and cfg.hidden_size == 2730
+          assert cfg.thinker_latents == 16
+          assert raw["model"]["vocab_size"] == 5144 and raw["model"]["hidden_size"] == 2730
+          assert raw["model"]["n_blocks"] == 4 and raw["model"]["n_cycles"] == 3 and raw["model"]["n_heads"] == 8
+          assert raw["data_gate"] == {
+              "min_train_per_family": 100,
+              "min_holdout_per_family": 10,
+              "required_families": ["text", "tool", "image", "audio", "video"],
+          }
+          assert raw["model"]["expected_parameter_count"] == 57579201
+          model = OneCore(cfg)
+          assert model.count_parameters() == 57579201
+          assert joint_step_train_flops(128) == 1_296_720_199_680
+          assert joint_step_train_flops(512) == 5_258_827_530_240
+          assert text_step_train_flops(128) == 1_037_376_159_744
+          notebook = json.loads(Path("onecore-ai/notebooks/02_data_gate.ipynb").read_text(encoding="utf-8"))
+          notebook_source = "\\n".join(
+              "".join(cell.get("source", [])) for cell in notebook["cells"] if cell.get("cell_type") == "code"
+          )
+          assert 'data_gate_config = project_config.get("data_gate", {})' in notebook_source
+          assert 'data_gate_config.get("required_families"' in notebook_source
+          assert 'data_gate_config.get("min_train_per_family", 100)' in notebook_source
+          assert 'data_gate_config.get("min_holdout_per_family", 10)' in notebook_source
+          action = yaml.safe_load(Path(".github/actions/onecore-acquire/action.yml").read_text(encoding="utf-8"))
+          assert action["inputs"]["required_tasks"]["default"] == "text,tool,image,audio,video"
+          assert action["inputs"]["min_train_records"]["default"] == "100"
+          assert action["inputs"]["min_holdout_records"]["default"] == "10"
+          training_workflow = Path(".github/workflows/onecore-training.yml").read_text(encoding="utf-8")
+          assert 'ONECORE_REQUIRED_TASKS: "text,tool,image,audio,video"' in training_workflow
+          assert 'ONECORE_MIN_TRAIN_RECORDS: "100"' in training_workflow
+          assert 'ONECORE_MIN_HOLDOUT_RECORDS: "10"' in training_workflow
+          print({
+              "parameters": model.count_parameters(),
+              "vocab": cfg.vocab_size,
+              "hidden": cfg.hidden_size,
+              "joint_128_tflops": joint_step_train_flops(128) / 1e12,
+              "joint_512_tflops": joint_step_train_flops(512) / 1e12,
+              "text_128_tflops": text_step_train_flops(128) / 1e12,
+              "random_init_loss_reference": math.log(cfg.vocab_size),
+          })
+          PY
+          if grep -R -nE '57,587,393|57587393|57,575,425|57575425' \
+            --include='*.py' --include='*.md' --include='*.ipynb' --include='*.yaml' --include='*.yml' onecore-ai; then
+            echo "Obsolete parameter counts remain in the source tree."
+            exit 1
+          fi
+          if grep -R -nE '50_000_000.*70_000_000|50[–-]70M' \
+            --include='*.py' --include='*.md' --include='*.ipynb' --include='*.yaml' --include='*.yml' onecore-ai; then
+            echo "A broad 50–70M range assertion or claim remains; use the exact parameter count."
+            exit 1
+          fi
+          if grep -R -nE 'ONECORE_MIN_TRAIN_RECORDS.*25|ONECORE_MIN_HOLDOUT_RECORDS.*5|minimum_train: int = 25|minimum_holdout: int = 5' \
+            --include='*.py' --include='*.ipynb' --include='*.yaml' --include='*.yml' onecore-ai \
+            .github/workflows/onecore-training.yml .github/workflows/onecore-bootstrap.yml \
+            .github/actions/onecore-acquire/action.yml; then
+            echo "Legacy 25/5 data gate remains."
+            exit 1
+          fi
+
+      - name: Execute exact architecture notebook
+        env:
+          PYTHONPATH: onecore-ai/src
+        run: |
+          jupyter nbconvert --to notebook --execute onecore-ai/notebooks/01_architecture_budget.ipynb \
+            --output 01_architecture_budget.executed.ipynb \
+            --output-dir "$RUNNER_TEMP" --ExecutePreprocessor.timeout=-1
+
+      - name: Execute safe notebook preflights
+        env:
+          PYTHONPATH: onecore-ai/src
+          ONECORE_EXECUTE_TRAINING: "0"
+          ONECORE_EXECUTE_EVALUATION: "0"
+        run: |
+          for notebook in 00_project_contract 03_text_pretraining 04_multimodal_curriculum 05_evaluation_and_promotion; do
+            jupyter nbconvert --to notebook --execute "onecore-ai/notebooks/${notebook}.ipynb" \
+              --output "${notebook}.preflight.executed.ipynb" \
+              --output-dir "$RUNNER_TEMP" --ExecutePreprocessor.timeout=-1
+          done
+
+
 
       - name: Smoke-test FineWeb-2 streaming and exact cursor resume
         env:
@@ -140,13 +276,16 @@ jobs:
           bootstrap = (Path(".github/workflows") / "onecore-bootstrap.yml").read_text(encoding="utf-8")
           assert "gh workflow run onecore-training.yml" not in bootstrap, "training must not dispatch a workflow absent from the default branch"
           assert "Start fresh random-initialized OneCore joint multimodal training in the same CPU job" not in bootstrap
-          assert "cancel-in-progress: true" in bootstrap
+          assert "cancel-in-progress: false" in bootstrap and "cancel-in-progress: false" in (Path(".github/workflows") / "onecore-training.yml").read_text(encoding="utf-8")
           assert "timeout-minutes: 330" in bootstrap
           assert "./.github/actions/onecore-acquire" in bootstrap
           assert "./.github/actions/onecore-train" in bootstrap
           assert "onecore-corpus-final" in bootstrap
           assert "onecore-state-train-10" in bootstrap
-          assert "Notebook order: 03, 04, 03, 04, 03, 04, 03, 04, 03, 04" in bootstrap
+          assert "Notebook cycle: 03/04 alternating; resume continues from the supplied checkpoint" in bootstrap
+          assert "OneCore checkpoint — ${EXPECTED_FINAL_OPTIMIZER_STEP} optimizer steps" in bootstrap
+          assert "- Cumulative optimizer steps: ${EXPECTED_FINAL_OPTIMIZER_STEP}" in bootstrap
+          assert "- Training sessions: 10 × ${PER_JOB_STEPS} steps" in bootstrap
           import yaml
           workflow = yaml.safe_load(bootstrap)
           jobs = workflow["jobs"]
@@ -158,7 +297,9 @@ jobs:
           assert "train_existing" in bootstrap, "existing-corpus training must bypass acquisition"
           assert "needs.prepare.outputs.request_stage == 'acquire'" in bootstrap
           assert "always() && needs.finalize_acquisition.result == 'success' && needs.finalize_acquisition.outputs.complete == 'true'" in bootstrap
-          assert "always() && needs.dataset_gate.result == 'success'" in bootstrap
+          assert "needs.prepare.result == 'success'" in bootstrap
+          assert "dataset_gate.result == 'success'" in bootstrap and "dataset_gate.result == 'skipped' && needs.prepare.outputs.request_stage == 'train_existing'" in bootstrap
+          assert "needs.finalize_acquisition.outputs.request_stage != 'train_existing'" in bootstrap
           assert "always() && needs.train_all.result == 'success'" in bootstrap
           assert "REQUEST_STAGE" in bootstrap
           assert 'print(f"request_stage={stage}")' in bootstrap
@@ -172,7 +313,25 @@ jobs:
           assert "02_data_gate.ipynb" not in session_script, "the full integrity gate runs once after acquisition"
           assert "train_all" in jobs
           assert not any(f"train_{i:02d}" in jobs for i in range(1, 11)), "training segments must not each start a new runner"
-          assert jobs["train_all"]["needs"] == "dataset_gate"
+          assert jobs["train_all"]["needs"] == ["dataset_gate", "prepare"]
+          assert "resume_checkpoint_run_id" in bootstrap
+          assert "resume_checkpoint_artifact_name" in bootstrap
+          assert "resume_checkpoint_session == '10'" in bootstrap
+          assert "expected_final_optimizer_step" in bootstrap
+          assert "not 1 <= per_job_steps <= 250" in bootstrap
+          assert "not 1 <= expected_final_step <= 20000" in bootstrap
+          train_source = Path("onecore-ai/src/onecore/train.py").read_text(encoding="utf-8")
+          assert 'allowed_data_classes={"external"}' in train_source
+          assert "tokenizer_corpus_data_class_counts" in train_source
+          assert "checkpoint tokenizer corpus provenance is missing or non-external" in train_source
+          train_action_source = Path(".github/actions/onecore-train/action.yml").read_text(encoding="utf-8")
+          assert "tokenizer corpus must contain external records only" in train_action_source
+          assert "checkpoint tokenizer corpus provenance is missing or not external-only" in train_action_source
+          train_action_text = Path(".github/actions/onecore-train/action.yml").read_text(encoding="utf-8")
+          assert "checkpoint_run_id:" in train_action_text
+          assert "expected_resume_optimizer_step:" in train_action_text
+          assert "Verify uploaded child checkpoint artifact before deleting its parent" in train_action_text
+          assert "github-token:" in train_action_text
           assert jobs["train_all"]["timeout-minutes"] == 360
           train_steps = [step for step in jobs["train_all"]["steps"] if str(step.get("id", "")).startswith("train")]
           assert len(train_steps) == 10, f"expected ten sequential segments, found {len(train_steps)}"
@@ -186,16 +345,28 @@ jobs:
           for index, step in enumerate(train_steps, 1):
               assert step["id"] == f"train{index:02d}"
               assert step["uses"] == "./.github/actions/onecore-train"
-              assert step["with"]["steps"] == "15"
+              assert step["with"]["steps"] == "$" + "{{ needs.prepare.outputs.steps_per_job }}"
               assert step["with"]["notebook"] == expected_notebooks[index - 1]
-              assert step["with"]["setup_environment"] == ("true" if index == 1 else "false")
-              assert step["with"]["restore_corpus"] == ("true" if index == 1 else "false")
-          assert sum(1 for step in train_steps if step["with"]["restore_corpus"] == "true") == 1
-          assert sum(1 for step in train_steps if step["with"]["setup_environment"] == "true") == 1
+              if index == 1:
+                  assert step["with"]["setup_environment"] == "true"
+                  assert step["with"]["restore_corpus"] == "true"
+              else:
+                  assert f"resume_checkpoint_session == '{index-1}'" in step["with"]["setup_environment"]
+                  assert f"resume_checkpoint_session == '{index-1}'" in step["with"]["restore_corpus"]
+                  assert "corpus_run_id" in step["with"]
+                  assert "checkpoint_run_id" in step["with"]
+          assert "artifact_run_id == github.run_id" in bootstrap
+          train_action_text = Path(".github/actions/onecore-train/action.yml").read_text(encoding="utf-8")
+          assert "repository:" in train_action_text and "github.repository" in train_action_text
+          assert "run-id:" in train_action_text and "inputs.checkpoint_run_id" in train_action_text and "github.run_id" in train_action_text
+          assert "run-id:" in train_action_text and "inputs.corpus_run_id" in train_action_text and "github.run_id" in train_action_text
+          assert "ONECORE_PARENT_RUN_ID:" in train_action_text and "inputs.checkpoint_run_id" in train_action_text
+          assert "resume_checkpoint_session:" in bootstrap
+          assert "corpus_run_id:" in train_action_text
           assert "onecore-state-train-10" in bootstrap
           assert "native_tldm" in bootstrap
           assert "diffusion_loss_weight" in bootstrap
-          assert "Expected 750 native diffusion updates" in bootstrap
+          assert "expected_updates = 5 * expected_steps" in bootstrap
           phone_config = yaml.safe_load(Path("onecore-ai/configs/phone-research.yaml").read_text(encoding="utf-8"))
           assert phone_config["training"]["tldm_diffusion_weight"] == 0.15
           dataset_gate_steps = jobs["dataset_gate"]["steps"]
@@ -205,7 +376,7 @@ jobs:
           assert "GITHUB_STEP_SUMMARY" in diagnostic_run
           assert '>> "$GITHUB_OUTPUT"' not in diagnostic_run
           evaluate = jobs["evaluate"]
-          assert evaluate["needs"] == "train_all"
+          assert evaluate["needs"] == ["train_all", "prepare"]
           assert sum(1 for step in evaluate["steps"] if step.get("uses", "").startswith("actions/download-artifact@")) == 2
           assert not any("onecore-corpus-final" in str(step.get("with", {})) for step in evaluate["steps"]), "evaluation must reuse the already-restored training workspace results"
           import yaml
@@ -236,3 +407,259 @@ jobs:
           assert "setup_environment" in str(train_action_steps)
           print("OneCore uses one persistent training runner, one corpus restore, ten durable chained sessions, and an isolated five-family data gate.")
           PY
+
+
+  v3-corpus-restore:
+    name: Restore and validate V3 corpus from existing V2 artifact
+    needs: verify
+    # The multi-gigabyte corpus restore is manual-only and disabled unless explicitly selected.
+    if: github.ref == 'refs/heads/research/onecore-v3-implementation' && github.event_name == 'workflow_dispatch' && inputs.restore_v3_corpus == true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install FFmpeg shared libraries required by TorchCodec
+        run: sudo apt-get update && sudo apt-get install --yes ffmpeg
+
+      - name: Install CPU-only PyTorch
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install OneCore, corpus-restore, and test dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -e "onecore-ai[dev,corpus-restore]"
+
+      - name: Install CPU-only TorchCodec wheels
+        run: python -m pip install "torchcodec>=0.17,<0.18" --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Verify CPU-only TorchCodec audio and video support
+        env:
+          PYTHONPATH: onecore-ai/src
+        run: |
+          python - <<'PY'
+          import importlib.metadata
+          import torch
+          from datasets import config as datasets_config
+          from torchcodec.decoders import AudioDecoder, VideoDecoder
+
+          assert torch.version.cuda is None, torch.__version__
+          assert datasets_config.TORCHCODEC_AVAILABLE, "datasets cannot import TorchCodec"
+          assert AudioDecoder is not None and VideoDecoder is not None
+          print({
+              "torch": torch.__version__,
+              "torchcodec": importlib.metadata.version("torchcodec"),
+              "datasets_torchcodec_available": datasets_config.TORCHCODEC_AVAILABLE,
+              "cpu_only": True,
+              "audio_decoder": AudioDecoder.__name__,
+              "video_decoder": VideoDecoder.__name__,
+          })
+          PY
+
+      - name: Restore the exact V2 source registry snapshot
+        run: |
+          git fetch --no-tags --depth=1 origin 5489900c3662082ad39efbfac5b6a2c7d22a7c4c
+          git show 5489900c3662082ad39efbfac5b6a2c7d22a7c4c:onecore-ai/data/sources.yaml > "$RUNNER_TEMP/onecore-v2-sources.yaml"
+
+      - name: Locate latest durable V3 media progress snapshot
+        id: resume-progress
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from urllib.request import Request, urlopen
+          repo, token = os.environ["GITHUB_REPOSITORY"], os.environ["GH_TOKEN"]
+          branch, current = os.environ["GITHUB_REF_NAME"], os.environ["CURRENT_RUN_ID"]
+          headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
+          def get(url):
+              with urlopen(Request(url, headers=headers), timeout=30) as response:
+                  return json.loads(response.read().decode("utf-8"))
+          runs = get(f"https://api.github.com/repos/{repo}/actions/runs?branch={branch}&per_page=30")
+          selected = None
+          for run in runs.get("workflow_runs", []):
+              if str(run.get("id")) == current or run.get("path") != ".github/workflows/onecore-ci.yml":
+                  continue
+              if run.get("head_branch") != branch:
+                  continue
+              artifacts = get(run["artifacts_url"] + "?per_page=100").get("artifacts", [])
+              candidates = [
+                  item for item in artifacts
+                  if item.get("name", "").startswith("onecore-v3-restore-progress-")
+                  and not item.get("expired", False)
+              ]
+              if candidates:
+                  candidates.sort(key=lambda item: item.get("created_at", ""), reverse=True)
+                  selected = (run["id"], candidates[0]["name"])
+                  break
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              if selected:
+                  output.write(f"available=true\nrun_id={selected[0]}\nartifact_name={selected[1]}\n")
+                  print({"resume_run_id": selected[0], "artifact_name": selected[1]})
+              else:
+                  output.write("available=false\n")
+                  print("No prior V3 progress artifact; restoring from the durable V2 corpus.")
+          PY
+
+      - name: Restore prior V3 media progress and raw assets
+        if: steps.resume-progress.outputs.available == 'true'
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ steps.resume-progress.outputs.artifact_name }}
+          run-id: ${{ steps.resume-progress.outputs.run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/onecore-v3-restore-progress
+
+      - name: Merge prior V3 progress snapshot into the working corpus
+        if: steps.resume-progress.outputs.available == 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/onecore-v3-corpus/v3/data"
+          cp -a "$RUNNER_TEMP/onecore-v3-restore-progress/." "$RUNNER_TEMP/onecore-v3-corpus/v3/"
+
+      - name: Convert the existing corpus with HTTP range reads
+        env:
+          PYTHONPATH: onecore-ai/src
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HF_HUB_DISABLE_TELEMETRY: "1"
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python -m onecore.v3.cli \
+            --artifact-id 14715699177 \
+            --github-repo jonsnow-org/Lena9 \
+            --source-registry "$RUNNER_TEMP/onecore-v2-sources.yaml" \
+            --output-root "$RUNNER_TEMP/onecore-v3-corpus" \
+            --report-output "$RUNNER_TEMP/onecore-v3-conversion-report.json" \
+            --resume-progress "$RUNNER_TEMP/onecore-v3-corpus/v3/restore-progress.jsonl" \
+            --max-scan-rows-per-source-split 100000
+
+      - name: Publish conversion gate result
+        id: conversion-summary
+        if: always()
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          path = Path(os.environ["RUNNER_TEMP"]) / "onecore-v3-conversion-report.json"
+          passed = False
+          if path.is_file():
+              report = json.loads(path.read_text(encoding="utf-8"))
+              passed = bool(report.get("manifest_gate", {}).get("passed"))
+              acquisition = report.get("missing_media_acquisition") or {}
+              print({
+                  "blocked": report.get("blocked"),
+                  "restoration_incomplete": report.get("restoration_incomplete", report.get("blocked")),
+                  "acquisition_incomplete": report.get("acquisition_incomplete", acquisition.get("blocked", False)),
+                  "converted_records": report.get("converted_records"),
+                  "gate_passed": passed,
+                  "coverage": report.get("manifest_gate", {}).get("coverage"),
+                  "missing_media": acquisition.get("remaining_deficits"),
+                  "media_restore_errors": report.get("errors", []),
+                  "media_restore_skipped": report.get("skipped", {}),
+                  "acquisition_errors": acquisition.get("errors", []),
+                  "acquisition_skipped_sources": acquisition.get("skipped_sources", {}),
+                  "sources_scanned": acquisition.get("sources_scanned", []),
+              })
+          else:
+              print("Conversion report was not produced.")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(f"gate_passed={str(passed).lower()}\n")
+          PY
+
+      - name: Fail when the external-only V3 corpus gate is blocked
+        if: steps.conversion-summary.outputs.gate_passed != 'true'
+        run: |
+          echo "::error::V3 external-only corpus gate did not pass; no V3 corpus artifact will be published."
+          exit 1
+
+      - name: Upload durable partial V3 media progress for the next bounded run
+        if: always() && steps.conversion-summary.outputs.gate_passed != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: onecore-v3-restore-progress-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/onecore-v3-corpus/v3/restore-progress.jsonl
+            ${{ runner.temp }}/onecore-v3-corpus/v3/data/assets
+            ${{ runner.temp }}/onecore-v3-corpus/v3/data/resume-cache/crawlers
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload V3 conversion report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: onecore-v3-conversion-report-${{ github.run_id }}
+          path: ${{ runner.temp }}/onecore-v3-conversion-report.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload V3 corpus only after external-only gate passes
+        if: steps.conversion-summary.outputs.gate_passed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: onecore-v3-corpus-${{ github.run_id }}
+          path: ${{ runner.temp }}/onecore-v3-corpus/v3
+          if-no-files-found: error
+          retention-days: 30
+
+  v3-resource-benchmark:
+    name: Measure V3 CPU memory and throughput from existing artifacts
+    needs: verify
+    # Never overlap a corpus restore. This job is manual-only and performs no optimizer updates.
+    if: github.ref == 'refs/heads/research/onecore-v3-implementation' && github.event_name == 'workflow_dispatch' && inputs.benchmark_v3_resources == true && inputs.restore_v3_corpus != true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install CPU-only PyTorch
+        run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install OneCore and range-artifact dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -e "onecore-ai[dev,corpus-restore]"
+
+      - name: Benchmark validated real-corpus samples without downloading the full archive
+        env:
+          PYTHONPATH: onecore-ai/src
+          GITHUB_TOKEN: ${{ github.token }}
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python -m onecore.v3.resource_benchmark \
+            --github-repo jonsnow-org/Lena9 \
+            --corpus-artifact-id 14892594659 \
+            --expected-corpus-run-id 45325008221 \
+            --report-artifact-id 14893020087 \
+            --expected-report-run-id 45325008221 \
+            --tokenizer-artifact-id 14894835517 \
+            --expected-tokenizer-run-id 45336933362 \
+            --threads 4 --iterations 5 \
+            --max-image-megapixels 2 \
+            --max-audio-seconds 5 \
+            --max-video-megapixels 1 \
+            --max-video-frames 16 \
+            --output "$RUNNER_TEMP/onecore-v3-resource-benchmark.json"
+
+      - name: Upload measured resource evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: onecore-v3-resource-benchmark-${{ github.run_id }}
+          path: ${{ runner.temp }}/onecore-v3-resource-benchmark.json
+          if-no-files-found: ignore
+          retention-days: 30

@@ -11,10 +11,22 @@ inputs:
     required: false
     default: "true"
   corpus_artifact_name:
-    description: Final validated corpus artifact in this workflow run
+    description: Final validated corpus artifact
     required: true
+  corpus_run_id:
+    description: Source workflow run ID when restoring a corpus created by an earlier workflow run
+    required: false
+    default: ""
   checkpoint_artifact_name:
     description: Previous resumable checkpoint artifact; empty for fresh initialization
+    required: false
+    default: ""
+  checkpoint_run_id:
+    description: Source workflow run ID when restoring a checkpoint created by an earlier workflow run
+    required: false
+    default: ""
+  expected_resume_optimizer_step:
+    description: Expected optimizer step in the supplied parent checkpoint; empty when no external resume is being performed
     required: false
     default: ""
   previous_checkpoint_artifact_name:
@@ -67,6 +79,9 @@ runs:
       with:
         name: ${{ inputs.corpus_artifact_name }}
         path: onecore-ai/run-state/corpus-artifact
+        github-token: ${{ github.token }}
+        repository: ${{ github.repository }}
+        run-id: ${{ inputs.corpus_run_id != '' && inputs.corpus_run_id || github.run_id }}
 
     - name: Restore the validated corpus snapshot (tar or legacy layout)
       if: ${{ inputs.restore_corpus == 'true' }}
@@ -81,15 +96,21 @@ runs:
       with:
         name: ${{ inputs.checkpoint_artifact_name }}
         path: onecore-ai/run-state
+        github-token: ${{ github.token }}
+        # Always pass a valid owner/repo. For same-run artifacts use this
+        # workflow run; for resumed lineages use the explicitly supplied run ID.
+        repository: ${{ github.repository }}
+        run-id: ${{ inputs.checkpoint_run_id != '' && inputs.checkpoint_run_id || github.run_id }}
 
     - name: Verify resumed checkpoint lineage before execution
       if: ${{ inputs.checkpoint_artifact_name != '' }}
       shell: bash
       env:
         PYTHONPATH: onecore-ai/src
+        EXPECTED_RESUME_OPTIMIZER_STEP: ${{ inputs.expected_resume_optimizer_step }}
       run: |
         python - <<'PY'
-        import hashlib, json
+        import hashlib, json, os
         from pathlib import Path
         import torch
         root = Path("onecore-ai/run-state")
@@ -103,7 +124,20 @@ runs:
             raise ValueError("optimizer step differs between checkpoint and report")
         if int(payload.get("step", 0)) > 0 and not payload.get("optimizer", {}).get("state"):
             raise ValueError("checkpoint has no optimizer moments")
+        expected_resume_step = os.environ.get("EXPECTED_RESUME_OPTIMIZER_STEP", "").strip()
+        if expected_resume_step and int(payload.get("step", -1)) != int(expected_resume_step):
+            raise ValueError("restored checkpoint optimizer step differs from the request's expected parent step")
         metadata = payload.get("metadata", {})
+        tokenizer_classes = metadata.get("tokenizer_corpus_data_class_counts", {})
+        if payload.get("step", 0) > 0 and (
+            not tokenizer_classes
+            or int(tokenizer_classes.get("external", 0)) <= 0
+            or any(key != "external" and int(value) > 0 for key, value in tokenizer_classes.items())
+        ):
+            raise ValueError(
+                "checkpoint tokenizer corpus provenance is missing or not external-only; "
+                "refusing to continue this lineage"
+            )
         print(json.dumps({
             "optimizer_step": payload["step"],
             "checkpoint_sha256": digest,
@@ -111,6 +145,7 @@ runs:
             "lineage_id": metadata.get("lineage_id"),
             "parent_checkpoint_sha256": metadata.get("parent_checkpoint_sha256"),
             "codebooks_initialized": metadata.get("codebooks_initialized"),
+            "tokenizer_corpus_data_class_counts": tokenizer_classes,
         }, ensure_ascii=False, indent=2))
         PY
 
@@ -120,8 +155,9 @@ runs:
         PYTHONPATH: onecore-ai/src
         ONECORE_STAGE: ${{ inputs.stage }}
         ONECORE_STEPS: ${{ inputs.steps }}
+        ONECORE_EXECUTE_TRAINING: "1"
         ONECORE_RESUME: ${{ inputs.stage == 'multimodal' && 'true' || 'false' }}
-        ONECORE_PARENT_RUN_ID: ${{ inputs.stage == 'multimodal' && github.run_id || '' }}
+        ONECORE_PARENT_RUN_ID: ${{ inputs.stage == 'multimodal' && (inputs.checkpoint_run_id != '' && inputs.checkpoint_run_id || github.run_id) || '' }}
       run: |
         mkdir -p onecore-ai/run-state/executed-notebooks
         echo "Notebook: ${{ inputs.notebook }} | stage: ${{ inputs.stage }} | optimizer steps: ${{ inputs.steps }}"
@@ -133,9 +169,13 @@ runs:
     - name: Verify the resulting optimizer step and checkpoint digest
       id: report
       shell: bash
+      env:
+        ONECORE_EXPECTED_STAGE: ${{ inputs.stage }}
+        ONECORE_EXPECTED_STEPS: ${{ inputs.steps }}
+        ONECORE_EXPECTED_RESUME_OPTIMIZER_STEP: ${{ inputs.expected_resume_optimizer_step }}
       run: |
         python - <<'PY' >> "$GITHUB_OUTPUT"
-        import hashlib, json
+        import hashlib, json, os
         from pathlib import Path
         root = Path("onecore-ai/run-state")
         report = json.loads((root / "train_result.json").read_text(encoding="utf-8"))
@@ -144,8 +184,60 @@ runs:
             raise ValueError("new checkpoint digest does not match train_result.json")
         print(f"optimizer_step={int(report['optimizer_step'])}")
         print(f"checkpoint_sha256={checkpoint_sha}")
-        print(f"steps_in_this_job={int(report['steps_in_this_job'])}")
+        steps_in_job = int(report.get("steps_in_this_job", -1))
+        expected_steps = int(os.environ["ONECORE_EXPECTED_STEPS"])
+        if steps_in_job != expected_steps:
+            raise ValueError(f"expected {expected_steps} optimizer updates in this session, found {steps_in_job}")
+        parent_step = report.get("parent_optimizer_step")
+        expected_resume_step = os.environ.get("ONECORE_EXPECTED_RESUME_OPTIMIZER_STEP", "").strip()
+        if expected_resume_step and (parent_step is None or int(parent_step) != int(expected_resume_step)):
+            raise ValueError("training report parent optimizer step differs from the requested resume step")
+        if parent_step is None:
+            if int(report["optimizer_step"]) != steps_in_job:
+                raise ValueError("fresh training did not start at optimizer step zero")
+        elif int(report["optimizer_step"]) != int(parent_step) + steps_in_job:
+            raise ValueError("optimizer step did not advance by the requested session length")
+        print(f"steps_in_this_job={steps_in_job}")
         print(f"lineage_id={report.get('lineage_id', '')}")
+        if os.environ.get("ONECORE_EXPECTED_STAGE") in {"joint", "multimodal"}:
+            tokenizer_classes = report.get("tokenizer_corpus_data_class_counts", {})
+            if (
+                not tokenizer_classes
+                or int(tokenizer_classes.get("external", 0)) <= 0
+                or any(key != "external" and int(value) > 0 for key, value in tokenizer_classes.items())
+            ):
+                raise ValueError(
+                    "tokenizer corpus must contain external records only: "
+                    f"{tokenizer_classes}"
+                )
+            expected_samples = 5 * int(os.environ["ONECORE_EXPECTED_STEPS"])
+            sampled_classes = report.get("sampled_data_class_counts_in_this_job", {})
+            if sampled_classes != {"external": expected_samples}:
+                raise ValueError(
+                    "joint/multimodal job must sample exactly five external records per optimizer step; "
+                    f"expected={expected_samples}, actual={sampled_classes}"
+                )
+            expected_family_counts = {
+                "text": int(os.environ["ONECORE_EXPECTED_STEPS"]),
+                "tool": int(os.environ["ONECORE_EXPECTED_STEPS"]),
+                "image": int(os.environ["ONECORE_EXPECTED_STEPS"]),
+                "audio": int(os.environ["ONECORE_EXPECTED_STEPS"]),
+                "video": int(os.environ["ONECORE_EXPECTED_STEPS"]),
+            }
+            observed_family_counts = report.get("sampled_family_counts_in_this_job", {})
+            if observed_family_counts != expected_family_counts:
+                raise ValueError(
+                    "joint/multimodal job must sample each family exactly once per optimizer step; "
+                    f"expected={expected_family_counts}, actual={observed_family_counts}"
+                )
+            optimizer_classes = report.get("optimizer_data_class_counts", {})
+            if any(
+                key != "external" and int(value) > 0
+                for key, value in optimizer_classes.items()
+            ):
+                raise ValueError(
+                    f"non-external records reached optimizer input: {optimizer_classes}"
+                )
         PY
 
     - name: Preserve the validated corpus acquisition report with this checkpoint
@@ -164,6 +256,125 @@ runs:
         if-no-files-found: error
         retention-days: 90
         compression-level: 1
+
+    - name: Verify uploaded child checkpoint artifact before deleting its parent
+      shell: bash
+      env:
+        EXPECTED_ARTIFACT_NAME: ${{ inputs.output_artifact_name }}
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        artifact_json="$(gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts" \
+          --paginate --jq '.artifacts[] | select(.name == env.EXPECTED_ARTIFACT_NAME)' | head -n 1)"
+        if [[ -z "${artifact_json}" ]]; then
+          echo "::error::Uploaded child checkpoint artifact was not found; preserving parent checkpoint."
+          exit 1
+        fi
+        ARTIFACT_JSON="${artifact_json}" python - <<'PY'
+        import json
+        import os
+        import re
+
+        artifact = json.loads(os.environ["ARTIFACT_JSON"])
+        expected_name = os.environ["EXPECTED_ARTIFACT_NAME"]
+        if artifact.get("name") != expected_name:
+            raise ValueError(f"uploaded checkpoint name mismatch: {artifact.get('name')!r}")
+        if artifact.get("expired") is not False:
+            raise ValueError("uploaded checkpoint artifact is expired or has unknown expiry state")
+        if int(artifact.get("size_in_bytes", 0)) <= 0:
+            raise ValueError("uploaded checkpoint artifact is empty")
+        workflow_run = artifact.get("workflow_run") or {}
+        if int(workflow_run.get("id", -1)) != int(os.environ["GITHUB_RUN_ID"]):
+            raise ValueError("uploaded checkpoint belongs to a different workflow run")
+        digest = artifact.get("digest")
+        if not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+            raise ValueError("GitHub did not return a valid SHA-256 digest for the uploaded checkpoint artifact")
+        print(json.dumps({
+            "verified_artifact_id": artifact["id"],
+            "verified_artifact_name": expected_name,
+            "verified_artifact_size_bytes": artifact["size_in_bytes"],
+            "verified_artifact_digest": digest,
+            "workflow_run_id": workflow_run["id"],
+        }, ensure_ascii=False, indent=2))
+        PY
+
+    - name: Prepare compact checkpoint evidence for inspection
+      shell: bash
+      env:
+        OUTPUT_ARTIFACT_NAME: ${{ inputs.output_artifact_name }}
+        WORKFLOW_RUN_ID: ${{ github.run_id }}
+      run: |
+        python - <<'PY'
+        import json, os
+        from pathlib import Path
+
+        root = Path("onecore-ai/run-state")
+        checkpoint = root / "checkpoint.pt"
+        report = json.loads((root / "train_result.json").read_text(encoding="utf-8"))
+        checkpoint_report = report.get("checkpoint") or {}
+        checkpoint_bytes = checkpoint.stat().st_size
+        if checkpoint_bytes <= 0 or checkpoint_bytes != int(checkpoint_report.get("bytes", -1)):
+            raise ValueError("checkpoint byte size differs from train_result.json")
+        if not checkpoint_report.get("sha256"):
+            raise ValueError("checkpoint SHA-256 is missing from train_result.json")
+        if int(report.get("optimizer_step", -1)) <= 0:
+            raise ValueError("checkpoint evidence requires a positive optimizer step")
+        if int(report.get("parameter_count", -1)) != 57579201:
+            raise ValueError("checkpoint evidence parameter count differs from the OneCore specification")
+        tokenizer_classes = report.get("tokenizer_corpus_data_class_counts") or {}
+        if (
+            not tokenizer_classes
+            or int(tokenizer_classes.get("external", 0)) <= 0
+            or any(key != "external" and int(value) > 0 for key, value in tokenizer_classes.items())
+        ):
+            raise ValueError(f"checkpoint tokenizer provenance is not external-only: {tokenizer_classes}")
+        steps = int(report.get("steps_in_this_job", 0))
+        expected_families = {name: steps for name in ("text", "tool", "image", "audio", "video")}
+        if report.get("sampled_family_counts_in_this_job") != expected_families:
+            raise ValueError("checkpoint evidence does not show one sample from each family per optimizer step")
+        if report.get("sampled_data_class_counts_in_this_job") != {"external": 5 * steps}:
+            raise ValueError("checkpoint evidence shows non-external or incomplete joint samples")
+        evidence = {
+            "schema": "onecore-checkpoint-evidence-v1",
+            "workflow_run_id": int(os.environ["WORKFLOW_RUN_ID"]),
+            "checkpoint_artifact_name": os.environ["OUTPUT_ARTIFACT_NAME"],
+            "checkpoint_sha256": checkpoint_report["sha256"],
+            "checkpoint_bytes": checkpoint_bytes,
+            "optimizer_step": int(report["optimizer_step"]),
+            "steps_in_this_job": steps,
+            "parent_optimizer_step": report.get("parent_optimizer_step"),
+            "parent_checkpoint_sha256": report.get("parent_checkpoint_sha256"),
+            "lineage_id": report.get("lineage_id"),
+            "parameter_count": int(report["parameter_count"]),
+            "tokenizer_sha256": report.get("tokenizer_sha256"),
+            "tokenizer_corpus_data_class_counts": tokenizer_classes,
+            "manifest_sha256": report.get("manifest_sha256"),
+            "asset_manifest_sha256": report.get("asset_manifest_sha256"),
+            "training_data_fingerprint": report.get("training_data_fingerprint"),
+            "sampled_family_counts": report.get("sampled_family_counts"),
+            "sampled_family_counts_in_this_job": report.get("sampled_family_counts_in_this_job"),
+            "sampled_data_class_counts": report.get("sampled_data_class_counts"),
+            "sampled_data_class_counts_in_this_job": report.get("sampled_data_class_counts_in_this_job"),
+            "optimizer_data_class_counts": report.get("optimizer_data_class_counts"),
+            "native_tldm": report.get("native_tldm"),
+        }
+        (root / "checkpoint-evidence.json").write_text(
+            json.dumps(evidence, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        print(json.dumps(evidence, ensure_ascii=False, indent=2))
+        PY
+
+    - name: Upload compact checkpoint evidence before parent cleanup
+      uses: actions/upload-artifact@v6
+      with:
+        name: ${{ inputs.output_artifact_name }}-evidence
+        path: |
+          onecore-ai/run-state/checkpoint-evidence.json
+          onecore-ai/run-state/train_result.json
+          onecore-ai/run-state/acquisition-report.json
+        if-no-files-found: error
+        retention-days: 90
+        compression-level: 9
 
     - name: Remove superseded checkpoint after the new checkpoint is safely uploaded
       if: ${{ inputs.previous_checkpoint_artifact_name != '' }}

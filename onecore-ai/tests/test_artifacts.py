@@ -114,3 +114,17 @@ def test_all_training_workflows_use_the_stack_safe_corpus_transport() -> None:
     assert "onecore.artifacts pack" in staged_workflow
     assert "${{ runner.temp }}/onecore-corpus.tar" in staged_workflow
     assert "artifact_run_id: ${{ steps.select.outputs.artifact_run_id }}" in bootstrap_workflow
+
+
+
+def test_training_checkpoint_evidence_is_uploaded_before_parent_cleanup() -> None:
+    repository = Path(__file__).resolve().parents[2]
+    train_action = (repository / ".github/actions/onecore-train/action.yml").read_text(encoding="utf-8")
+    assert "onecore-checkpoint-evidence-v1" in train_action
+    assert "name: ${{ inputs.output_artifact_name }}-evidence" in train_action
+    assert "checkpoint-evidence.json" in train_action
+    assert "train_result.json" in train_action
+    assert "acquisition-report.json" in train_action
+    assert train_action.index("Upload compact checkpoint evidence before parent cleanup") < train_action.index(
+        "Remove superseded checkpoint after the new checkpoint is safely uploaded"
+    )

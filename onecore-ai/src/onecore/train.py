@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import random
 from pathlib import Path
@@ -15,13 +16,14 @@ from tokenizers import Tokenizer
 
 from .checkpoint import load_checkpoint, save_checkpoint, sha256_file, write_json_atomic
 from .config import ModelConfig, load_config
-from .data import classify_record_data, iter_training_records, read_manifest, validate_training_data
+from .data import classify_record_data, iter_training_records, read_manifest, validate_training_data, validate_external_provenance_disjointness
 from .model import (
     AUDIO_END, AUDIO_START, BOS, EOS, IMAGE_END, IMAGE_START, TEXT_START,
     TOOL_END, TOOL_START, VIDEO_END, VIDEO_FRAME, VIDEO_START, MOTION_START, MASK,
     OneCore, patchify,
 )
 from .tokenizer import load_tokenizer, train_tokenizer
+from .flops import micro_batch_train_flops
 
 
 def _sid(cfg: ModelConfig, offset: int) -> int:
@@ -59,7 +61,7 @@ def _load_mel(path: Path, bins: int) -> torch.Tensor:
 def _manifest_corpus(records: list[dict[str, Any]], output: Path) -> list[Path]:
     # The tokenizer is part of the real training pipeline: apply the same
     # external-only provenance filter used by the optimizer before reading text.
-    eligible_records = iter_training_records(records)
+    eligible_records = iter_training_records(records, allowed_data_classes={"external"})
     fields = ("text", "caption", "transcript", "prompt", "response")
     lines: list[str] = []
     for item in eligible_records:
@@ -194,14 +196,10 @@ def _smoke_sample(model: OneCore, step: int) -> tuple[torch.Tensor, torch.Tensor
     image = torch.rand(1, 3, cfg.image_size, cfg.image_size)
     codes, latents, vq = model.encode_image(image)
     reconstruction = model.decode_image_latents(latents)
-    sequence = torch.cat([
-        torch.tensor([[cfg.special_id(BOS), cfg.special_id(IMAGE_START)]]),
-        codes.flatten().unsqueeze(0),
-        torch.tensor([[cfg.special_id(IMAGE_END), cfg.special_id(EOS)]]),
-    ], dim=1)
-    # Include a tiny text objective in the same smoke cycle.
-    text = torch.tensor([text_ids], dtype=torch.long)
-    return sequence, vq + torch.nn.functional.mse_loss(reconstruction, image) + model(text[:, :-1]).square().mean() * 0.0
+    # Use a real text-token sequence for the first-language-loss sanity gate,
+    # while the auxiliary image reconstruction objective exercises the codecs.
+    sequence = torch.tensor([text_ids], dtype=torch.long)
+    return sequence, vq + torch.nn.functional.mse_loss(reconstruction, image)
 
 
 def _initialize_multimodal_codebooks(
@@ -250,6 +248,36 @@ def _initialize_multimodal_codebooks(
     }
 
 
+def _validate_resume_configuration(
+    saved_config: dict[str, Any],
+    model_config: ModelConfig,
+    raw_config: dict[str, Any],
+) -> None:
+    saved_model_config = dict(saved_config.get("model", {}))
+    expected_model_config = model_config.to_dict()
+    # This v2 field verifies tensor shapes but does not itself alter the architecture.
+    saved_model_config.pop("expected_parameter_count", None)
+    expected_model_config.pop("expected_parameter_count", None)
+    # The pre-v2 checkpoint used the same fixed 16-slot default in code, but
+    # did not serialize it as a config field. Normalize only that exact legacy default.
+    saved_model_config.setdefault("thinker_latents", 16)
+    saved_model_config.setdefault("hidden_size", expected_model_config["hidden_size"])
+    if saved_model_config != expected_model_config:
+        raise ValueError("checkpoint model architecture does not match this run config")
+    saved_training = dict(saved_config.get("training", {}))
+    current_training = dict(raw_config.get("training", {}))
+    # The seed is restored from checkpoint metadata and RNG state on resume;
+    # older checkpoints stored it outside the training block. It is not an
+    # optimizer/schedule compatibility field.
+    saved_training.pop("seed", None)
+    current_training.pop("seed", None)
+    if saved_training != current_training:
+        raise ValueError(
+            "checkpoint optimizer/schedule config does not match this run config; "
+            "start a fresh lineage rather than resuming incompatible AdamW state"
+        )
+
+
 def _build_scheduler(optimizer: torch.optim.Optimizer, warmup_steps: int,
                     total_steps: int) -> torch.optim.lr_scheduler.LambdaLR:
     def factor(step: int) -> float:
@@ -273,13 +301,20 @@ def _weighted_record(records_by_task: dict[str, list[dict[str, Any]]],
             "audio_text": 0.18, "audio_reconstruction": 0.07,
             "video_caption": 0.18, "video_reconstruction": 0.09,
         }
-    available = {key: value for key, value in target_weights.items() if records_by_task.get(key)}
+    available = {
+        key: [
+            record for record in records_by_task.get(key, [])
+            if classify_record_data(record) == "external"
+        ]
+        for key in target_weights
+    }
+    available = {key: rows for key, rows in available.items() if rows}
     if not available:
         raise ValueError(f"no imported external records are available for the {stage} training stage")
     tasks = list(available)
-    weights = [available[key] for key in tasks]
+    weights = [target_weights[key] for key in tasks]
     selected_task = rng.choices(tasks, weights=weights, k=1)[0]
-    return rng.choice(records_by_task[selected_task])
+    return rng.choice(available[selected_task])
 
 
 JOINT_FAMILY_TASKS: dict[str, tuple[str, ...]] = {
@@ -296,9 +331,18 @@ def _joint_micro_batches(
     rng: random.Random,
 ) -> list[tuple[str, dict[str, Any]]]:
     """Pick one external record from each family for the same optimizer update."""
+    candidates_by_family = {
+        family: [
+            item
+            for task in tasks
+            for item in records_by_task.get(task, [])
+            if classify_record_data(item) == "external"
+        ]
+        for family, tasks in JOINT_FAMILY_TASKS.items()
+    }
     missing = [
-        family for family, tasks in JOINT_FAMILY_TASKS.items()
-        if not any(records_by_task.get(task) for task in tasks)
+        family for family, candidates in candidates_by_family.items()
+        if not candidates
     ]
     if missing:
         raise ValueError(
@@ -309,12 +353,7 @@ def _joint_micro_batches(
     rng.shuffle(family_order)
     selected: list[tuple[str, dict[str, Any]]] = []
     for family in family_order:
-        candidates = [
-            item
-            for task in JOINT_FAMILY_TASKS[family]
-            for item in records_by_task.get(task, [])
-        ]
-        selected.append((family, rng.choice(candidates)))
+        selected.append((family, rng.choice(candidates_by_family[family])))
     if {family for family, _ in selected} != set(JOINT_FAMILY_TASKS):
         raise RuntimeError("joint micro-batch does not contain all five task families")
     return selected
@@ -373,11 +412,12 @@ def run_training(
     output_dir: str | Path,
     resume: bool = False,
     seed_override: int | None = None,
+    validate_spec_v2: bool = True,
 ) -> dict[str, Any]:
     root = Path(project_root).resolve()
     out = Path(output_dir).resolve()
     out.mkdir(parents=True, exist_ok=True)
-    cfg, train_cfg, raw_cfg = load_config(config_path)
+    cfg, train_cfg, raw_cfg = load_config(config_path, validate_spec_v2=validate_spec_v2)
     if not 1 <= steps <= train_cfg.max_steps_per_job:
         raise ValueError(f"steps must be between 1 and {train_cfg.max_steps_per_job} per GitHub job")
     if stage not in {"smoke", "text", "joint", "multimodal"}:
@@ -387,15 +427,22 @@ def run_training(
     if stage == "multimodal" and not resume:
         raise ValueError("multimodal continuation must resume the same joint OneCore checkpoint")
 
-    seed = int(seed_override if seed_override is not None else raw_cfg.get("seed", 20261115))
+    seed = int(seed_override if seed_override is not None else train_cfg.seed)
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.set_num_threads(train_cfg.cpu_threads)
 
     model = OneCore(cfg).cpu()
+    actual_parameter_count = model.count_parameters()
+    if actual_parameter_count != cfg.expected_parameter_count:
+        raise ValueError(
+            f"instantiated model has {actual_parameter_count} trainable parameters; "
+            f"config requires exactly {cfg.expected_parameter_count}"
+        )
     optimizer = torch.optim.AdamW(
-        model.parameters(), lr=train_cfg.learning_rate, weight_decay=train_cfg.weight_decay
+        model.parameters(), lr=train_cfg.learning_rate, weight_decay=train_cfg.weight_decay,
+        betas=tuple(train_cfg.adam_betas)
     )
     scheduler = _build_scheduler(optimizer, train_cfg.warmup_steps, train_cfg.total_steps)
     checkpoint_path = out / "checkpoint.pt"
@@ -408,9 +455,7 @@ def run_training(
         step, saved = load_checkpoint(
             checkpoint_path, model, optimizer, scheduler=scheduler, map_location="cpu"
         )
-        saved_config = saved.get("config", {}).get("model")
-        if saved_config != cfg.to_dict():
-            raise ValueError("checkpoint model config does not match this run config")
+        _validate_resume_configuration(saved.get("config", {}), cfg, raw_cfg)
         saved_metadata = saved.get("metadata", {})
         parent_optimizer_step = step
         seed = int(saved_metadata.get("seed", seed))
@@ -422,6 +467,11 @@ def run_training(
     sampled_task_counts: dict[str, int] = {
         str(key): int(value) for key, value in (saved_metadata.get("sampled_task_counts") or {}).items()
     }
+    sampled_data_class_counts: dict[str, int] = {
+        str(key): int(value)
+        for key, value in (saved_metadata.get("sampled_data_class_counts") or {}).items()
+    }
+    job_sampled_data_class_counts: dict[str, int] = {}
     job_sampled_family_counts = {family: 0 for family in JOINT_FAMILY_TASKS}
     job_sampled_task_counts: dict[str, int] = {}
     lineage_id = saved_metadata.get("lineage_id")
@@ -437,6 +487,10 @@ def run_training(
     data_kind = "synthetic_smoke"
     manifest_sha = None
     tokenizer_sha = None
+    tokenizer_corpus_data_class_counts: dict[str, int] = {
+        str(key): int(value)
+        for key, value in (saved_metadata.get("tokenizer_corpus_data_class_counts") or {}).items()
+    }
     codebook_initialized = bool(saved_metadata.get("codebooks_initialized", False))
     codebook_report = saved_metadata.get("codebook_report", {})
     asset_manifest_sha: str | None = None
@@ -446,16 +500,20 @@ def run_training(
     source_data_counts: dict[str, int] = {}
     optimizer_data_class_counts: dict[str, int] = {}
     excluded_data_class_counts: dict[str, int] = {}
+    external_provenance_audit: dict[str, Any] | None = None
 
     if stage != "smoke":
         data_report = validate_training_data(root)
-        records = read_manifest(root / "data" / "train.jsonl")
+        external_provenance_audit = validate_external_provenance_disjointness(root)
+        all_train_records = read_manifest(root / "data" / "train.jsonl")
         manifest_sha = sha256_file(root / "data" / "train.jsonl")
         allowed_tasks = {"text", "tool_use"} if stage == "text" else {
             "text", "tool_use", "image_caption", "image_reconstruction",
             "audio_text", "audio_reconstruction", "video_caption", "video_reconstruction"
         }
-        records = list(iter_training_records(records, allowed_tasks))
+        records = list(iter_training_records(
+            all_train_records, allowed_tasks, allowed_data_classes={"external"}
+        ))
         for record in records:
             records_by_task.setdefault(record["task"], []).append(record)
         required = {"text"}
@@ -473,7 +531,7 @@ def run_training(
         missing = required - set(records_by_task)
         if missing:
             raise ValueError(f"training data is missing required task categories: {sorted(missing)}")
-        all_manifest_records = read_manifest(root / "data" / "train.jsonl")
+        all_manifest_records = all_train_records
         asset_manifest_sha = _asset_manifest_sha256(root, all_manifest_records)
         fingerprint_payload = {
             "train_manifest_sha256": manifest_sha,
@@ -491,9 +549,13 @@ def run_training(
         for record in records:
             data_class = classify_record_data(record)
             optimizer_data_class_counts[data_class] = optimizer_data_class_counts.get(data_class, 0) + 1
-        excluded_data_class_counts = {}
+        excluded_data_class_counts = {
+            data_class: count
+            for data_class, count in data_class_counts.items()
+            if data_class != "external" and count > 0
+        }
         optimizer_classes = set(optimizer_data_class_counts)
-        data_kind = "all_available_data"
+        data_kind = "external_only"
         real_data = "external" in optimizer_classes
         if resume:
             saved_manifest_sha = saved_metadata.get("manifest_sha256")
@@ -535,18 +597,32 @@ def run_training(
         else:
             asset_lineage_status = "fingerprinted-on-fresh-run"
         if not tokenizer_path.exists():
-            # A smoke checkpoint has no tokenizer and is safe to continue from:
-            # no text IDs were trained in that phase. Any checkpoint that already
-            # records a tokenizer SHA must restore the exact tokenizer artifact.
+            # Fit the real tokenizer only on the external train records used by
+            # the optimizer. Bootstrap/synthetic/owner-curated rows stay excluded.
             if stage not in {"text", "joint"} or (resume and saved_metadata.get("tokenizer_sha256")):
                 raise FileNotFoundError("from-scratch tokenizer is missing for this checkpoint lineage")
+            tokenizer_records = iter_training_records(
+                all_train_records, allowed_data_classes={"external"}
+            )
+            if not tokenizer_records:
+                raise ValueError("cannot fit the OneCore tokenizer without external training records")
+            tokenizer_corpus_data_class_counts = {"external": len(tokenizer_records)}
             corpus_files = _manifest_corpus(
-                read_manifest(root / "data" / "train.jsonl"), out / "tokenizer-corpus.txt"
+                tokenizer_records, out / "tokenizer-corpus.txt"
             )
             train_tokenizer(corpus_files, tokenizer_path, vocab_size=cfg.text_vocab_size)
         tokenizer = load_tokenizer(tokenizer_path)
         tokenizer_sha = sha256_file(tokenizer_path)
         saved_tokenizer_sha = saved_metadata.get("tokenizer_sha256")
+        if resume and saved_tokenizer_sha:
+            if not tokenizer_corpus_data_class_counts or any(
+                key != "external" and int(value) > 0
+                for key, value in tokenizer_corpus_data_class_counts.items()
+            ):
+                raise ValueError(
+                    "checkpoint tokenizer corpus provenance is missing or non-external; "
+                    "start a fresh lineage with an external-only tokenizer"
+                )
         if resume and saved_tokenizer_sha and saved_tokenizer_sha != tokenizer_sha:
             raise ValueError("tokenizer fingerprint differs from the checkpoint; refusing to mix token IDs")
         if stage == "multimodal" and saved_tokenizer_sha != tokenizer_sha:
@@ -561,6 +637,9 @@ def run_training(
 
     model.train()
     losses: list[float] = []
+    first_language_loss: float | None = None
+    job_training_flops = 0
+    optimizer_step_flops: list[int] = []
     tldm_diffusion_losses: list[float] = []
     tldm_updates = int(saved_metadata.get("tldm_updates", 0))
     tldm_diffusion_loss_sum = float(saved_metadata.get("tldm_diffusion_loss_sum", 0.0))
@@ -575,6 +654,7 @@ def run_training(
     for local_step in range(steps):
         optimizer.zero_grad(set_to_none=True)
         micro_losses: list[float] = []
+        current_step_flops = 0
         if stage in {"joint", "multimodal"}:
             micro_batch = _joint_micro_batches(records_by_task, rng)
         elif stage == "smoke":
@@ -591,16 +671,26 @@ def run_training(
             else:
                 assert record is not None
                 sequence, aux_loss, task = _record_sequence(record, model, tokenizer, root)
+                data_class = classify_record_data(record)
+                sampled_data_class_counts[data_class] = sampled_data_class_counts.get(data_class, 0) + 1
+                job_sampled_data_class_counts[data_class] = job_sampled_data_class_counts.get(data_class, 0) + 1
+                if stage in {"joint", "multimodal"} and data_class != "external":
+                    raise RuntimeError(
+                        f"joint OneCore training sampled non-external data class: {data_class}"
+                    )
                 if family is not None:
                     sampled_family_counts[family] = sampled_family_counts.get(family, 0) + 1
                     job_sampled_family_counts[family] = job_sampled_family_counts.get(family, 0) + 1
                     sampled_task_counts[task] = sampled_task_counts.get(task, 0) + 1
                     job_sampled_task_counts[task] = job_sampled_task_counts.get(task, 0) + 1
+            current_step_flops += micro_batch_train_flops(int(sequence.shape[1]))
             logits = model(sequence[:, :-1], causal=True)
             targets = sequence[:, 1:]
             language_loss = torch.nn.functional.cross_entropy(
                 logits.reshape(-1, logits.shape[-1]), targets.reshape(-1)
             )
+            if first_language_loss is None:
+                first_language_loss = float(language_loss.detach())
             tldm_loss = _tldm_block_denoising_loss(model, sequence, rng)
             diffusion_loss_value = float(tldm_loss.detach())
             tldm_diffusion_losses.append(diffusion_loss_value)
@@ -617,11 +707,14 @@ def run_training(
         scheduler.step()
         step += 1
         losses.append(sum(micro_losses) / len(micro_losses))
+        optimizer_step_flops.append(current_step_flops)
+        job_training_flops += current_step_flops
 
         if step % train_cfg.checkpoint_every == 0:
             metadata = {
                 "stage": stage, "real_data": real_data, "data_kind": data_kind,
                 "seed": seed, "tokenizer_sha256": tokenizer_sha,
+                "tokenizer_corpus_data_class_counts": tokenizer_corpus_data_class_counts,
                 "manifest_sha256": manifest_sha,
                 "asset_manifest_sha256": asset_manifest_sha,
                 "training_data_fingerprint": training_data_fingerprint,
@@ -636,6 +729,8 @@ def run_training(
                 "codebook_report": codebook_report,
                 "sampled_family_counts": sampled_family_counts,
                 "sampled_task_counts": sampled_task_counts,
+                "sampled_data_class_counts": sampled_data_class_counts,
+                "sampled_data_class_counts_in_this_job": job_sampled_data_class_counts,
                 "tldm_diffusion_weight": train_cfg.tldm_diffusion_weight,
                 "tldm_updates": tldm_updates,
                 "tldm_diffusion_loss_sum": tldm_diffusion_loss_sum,
@@ -651,6 +746,7 @@ def run_training(
     metadata = {
         "stage": stage, "real_data": real_data, "data_kind": data_kind,
         "seed": seed, "tokenizer_sha256": tokenizer_sha,
+        "tokenizer_corpus_data_class_counts": tokenizer_corpus_data_class_counts,
         "manifest_sha256": manifest_sha,
         "asset_manifest_sha256": asset_manifest_sha,
         "training_data_fingerprint": training_data_fingerprint,
@@ -659,6 +755,7 @@ def run_training(
         "source_data_counts": source_data_counts,
         "optimizer_data_class_counts": optimizer_data_class_counts,
         "excluded_data_class_counts": excluded_data_class_counts,
+        "external_provenance_audit": external_provenance_audit,
         "lineage_id": lineage_id,
         "parent_checkpoint_sha256": parent_checkpoint_sha256,
         "parent_optimizer_step": parent_optimizer_step,
@@ -667,6 +764,8 @@ def run_training(
         "codebook_report": codebook_report,
         "sampled_family_counts": sampled_family_counts,
         "sampled_task_counts": sampled_task_counts,
+                "sampled_data_class_counts": sampled_data_class_counts,
+                "sampled_data_class_counts_in_this_job": job_sampled_data_class_counts,
         "tldm_diffusion_weight": train_cfg.tldm_diffusion_weight,
         "tldm_updates": tldm_updates,
         "tldm_diffusion_loss_sum": tldm_diffusion_loss_sum,
@@ -677,6 +776,15 @@ def run_training(
         "last_loss": losses[-1] if losses else None,
         "scheduler_step": scheduler.last_epoch,
     }
+    if stage == "smoke":
+        if first_language_loss is None or not math.isfinite(first_language_loss):
+            raise FloatingPointError("smoke step did not produce a finite first language loss")
+        reference_loss = math.log(cfg.vocab_size)
+        if abs(first_language_loss - reference_loss) > 1.0:
+            raise FloatingPointError(
+                f"random-init language loss {first_language_loss:.4f} is not near "
+                f"ln({cfg.vocab_size})={reference_loss:.4f}; check tokenizer/vocabulary offsets/loss masking"
+            )
     if stage == "joint":
         expected_family_counts = {family: steps for family in JOINT_FAMILY_TASKS}
         if job_sampled_family_counts != expected_family_counts:
@@ -701,9 +809,15 @@ def run_training(
         "parameter_count": model.count_parameters(),
         "parameter_report": model.parameter_report(),
         "mean_loss": sum(losses) / max(1, len(losses)),
+        "first_language_loss": first_language_loss,
+        "first_language_loss_reference_nats": 8.5456,
+        "training_flops_total": job_training_flops,
+        "training_flops_per_optimizer_step": optimizer_step_flops,
+        "training_flops_mean_per_optimizer_step": job_training_flops / max(1, len(optimizer_step_flops)),
         "last_loss": losses[-1] if losses else None,
         "learning_rate": scheduler.get_last_lr()[0],
         "tokenizer_sha256": tokenizer_sha,
+        "tokenizer_corpus_data_class_counts": tokenizer_corpus_data_class_counts,
         "manifest_sha256": manifest_sha,
         "asset_manifest_sha256": asset_manifest_sha,
         "training_data_fingerprint": training_data_fingerprint,
@@ -712,6 +826,7 @@ def run_training(
         "source_data_counts": source_data_counts,
         "optimizer_data_class_counts": optimizer_data_class_counts,
         "excluded_data_class_counts": excluded_data_class_counts,
+        "external_provenance_audit": external_provenance_audit,
         "lineage_id": lineage_id,
         "parent_checkpoint_sha256": parent_checkpoint_sha256,
         "parent_optimizer_step": parent_optimizer_step,
@@ -726,6 +841,8 @@ def run_training(
         "sampled_family_counts": sampled_family_counts,
         "sampled_family_counts_in_this_job": job_sampled_family_counts,
         "sampled_task_counts": sampled_task_counts,
+        "sampled_data_class_counts": sampled_data_class_counts,
+        "sampled_data_class_counts_in_this_job": job_sampled_data_class_counts,
         "sampled_task_counts_in_this_job": job_sampled_task_counts,
         "native_tldm": {
             "architecture": "shared OneCore embeddings + latent pooling + recurrent shared-block thinker + tied-LM-head discrete diffusion writer",

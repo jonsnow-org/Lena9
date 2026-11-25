@@ -292,16 +292,6 @@ sources:
       - Julia
       - Lua
       - Markdown
-    license_allowlist:
-      - 0BSD
-      - Apache-2.0
-      - BSD-2-Clause
-      - BSD-3-Clause
-      - CC0-1.0
-      - ISC
-      - MIT
-      - Unlicense
-      - Zlib
     enabled: true
 
   - id: fineweb2_full_en

@@ -1,0 +1,279 @@
+name: OneCore V3 — real five-family CPU training
+
+# Staged only. Training remains disabled until the real CPU benchmark and
+# full artifact-backed V3 checkpoint save/restore audit both pass.
+on:
+  workflow_dispatch:
+    inputs:
+      resource_benchmark_run_id:
+        description: "Successful manual OneCore CI run containing the measured V3 CPU resource artifact"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: onecore-v3-training-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify V3 trainer before any optimizer update
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout active V3 branch
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref }}
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: onecore-ai/pyproject.toml
+      - name: Install CPU-only PyTorch and V3 dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -e "onecore-ai[dev,corpus-restore]"
+      - name: Compile and run the complete test suite
+        env:
+          PYTHONPATH: onecore-ai/src
+        run: |
+          python -m compileall -q onecore-ai/src
+          pytest -q onecore-ai/tests
+          python -m onecore.v3.report
+
+  train:
+    name: Train OneCore V3 from the pinned external corpus
+    needs: verify
+    if: github.ref == 'refs/heads/research/onecore-v3-implementation' && inputs.resource_benchmark_run_id != '' && false  # Keep blocked until resource and checkpoint audits are approved.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    steps:
+      - name: Checkout active V3 branch
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref }}
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: onecore-ai/pyproject.toml
+      - name: Install CPU-only PyTorch and range-restore dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -e "onecore-ai[corpus-restore]"
+      - name: Validate the immutable training request
+        id: request
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          request = json.loads(Path("onecore-ai/v3-training-request.json").read_text(encoding="utf-8"))
+          expected = {
+              "corpus_run_id": 45325008221,
+              "corpus_artifact_id": 14892594659,
+              "corpus_artifact_name": "onecore-v3-corpus-45325008221",
+              "tokenizer_run_id": 45336933362,
+              "tokenizer_artifact_name": "onecore-v3-tokenizer-45325008221",
+              "tokenizer_sha256": "569f1b61e017dcf5c8ba9fef22a8002cc48d5ea3c26504bdae83f53834d00e76",
+              "conversion_report_artifact_name": "onecore-v3-conversion-report-45325008221",
+          }
+          for key, value in expected.items():
+              if request.get(key) != value:
+                  raise SystemExit(f"training request changed pinned {key}: {request.get(key)!r}")
+          steps = request.get("steps")
+          total = request.get("total_steps")
+          warmup = request.get("warmup_steps")
+          if not isinstance(steps, int) or isinstance(steps, bool) or not 1 <= steps <= 250:
+              raise SystemExit("steps must be an integer from 1 to 250 per bounded CPU session")
+          if total != 20000 or warmup != 200:
+              raise SystemExit("the first V3 schedule is pinned to total_steps=20000 and warmup_steps=200")
+          if request.get("learning_rate") != 0.0003 or request.get("weight_decay") != 0.1:
+              raise SystemExit("unexpected V3 optimizer hyperparameters")
+          if request.get("max_grad_norm") != 1.0 or request.get("checkpoint_every") != 1:
+              raise SystemExit("the first real V3 run must checkpoint every update with grad clip 1.0")
+          if request.get("resume_artifact_run_id") is not None:
+              raise SystemExit("initial V3 training must start from random initialization, not a foreign checkpoint")
+          outputs = {
+              "steps": steps, "total_steps": total, "warmup_steps": warmup,
+              "learning_rate": request["learning_rate"], "weight_decay": request["weight_decay"],
+              "max_grad_norm": request["max_grad_norm"], "checkpoint_every": request["checkpoint_every"],
+              "seed": request.get("seed", 20261124), "threads": request.get("threads", 4),
+          }
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as stream:
+              for key, value in outputs.items():
+                  stream.write(f"{key}={value}\n")
+          print({"training_request": outputs, "corpus_artifact_id": expected["corpus_artifact_id"]})
+          PY
+      - name: Verify selected manual CPU benchmark run and artifact
+        id: resource-evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RESOURCE_BENCHMARK_RUN_ID: ${{ inputs.resource_benchmark_run_id }}
+        run: |
+          PYTHONPATH=onecore-ai/src python -m onecore.v3.resource_evidence \
+            --repo "$GITHUB_REPOSITORY" \
+            --run-id "$RESOURCE_BENCHMARK_RUN_ID" \
+            --output "$RUNNER_TEMP/onecore-v3-resource-artifact.json"
+      - name: Download measured V3 CPU resource evidence
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ steps.resource-evidence.outputs.artifact_name }}
+          run-id: ${{ inputs.resource_benchmark_run_id }}
+          repository: ${{ github.repository }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/onecore-v3-resource-evidence
+      - name: Verify downloaded CPU resource report
+        id: resource-report
+        run: |
+          python - <<'PY'
+          import hashlib, json, os, shutil
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"])
+          reports = list((root / "onecore-v3-resource-evidence").rglob("onecore-v3-resource-benchmark.json"))
+          metadata_path = root / "onecore-v3-resource-artifact.json"
+          if len(reports) != 1 or not metadata_path.is_file():
+              raise SystemExit(f"expected one benchmark report and verified artifact metadata, found {reports}")
+          metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+          report_path = reports[0]
+          report = json.loads(report_path.read_text(encoding="utf-8"))
+          if report.get("status") != "measured" or report.get("optimizer_updates") != 0:
+              raise SystemExit("resource report is not a measured zero-optimizer-update CPU benchmark")
+          expected_name = f"onecore-v3-resource-benchmark-{metadata.get('run_id')}"
+          if metadata.get("artifact_name") != expected_name or not str(metadata.get("artifact_digest", "")).startswith("sha256:"):
+              raise SystemExit("resource artifact metadata is not bound to the selected benchmark run")
+          if metadata.get("artifact_expired") is not False:
+              raise SystemExit("resource benchmark artifact is expired or its expiry state is unknown")
+          evidence_sha = hashlib.sha256(report_path.read_bytes()).hexdigest()
+          state_dir = Path("onecore-ai/run-state/v3")
+          state_dir.mkdir(parents=True, exist_ok=True)
+          shutil.copy2(metadata_path, state_dir / "resource-evidence-artifact.json")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"path={report_path.resolve()}\n")
+          print({
+              "resource_report_sha256": evidence_sha,
+              "artifact_id": metadata.get("artifact_id"),
+              "artifact_digest": metadata.get("artifact_digest"),
+              "benchmark_run_id": metadata.get("run_id"),
+              "benchmark_head_sha": metadata.get("head_sha"),
+          })
+          PY
+      - name: Download the independently trained V3 tokenizer
+        uses: actions/download-artifact@v7
+        with:
+          name: onecore-v3-tokenizer-45325008221
+          run-id: 45336933362
+          repository: ${{ github.repository }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/onecore-v3-tokenizer
+      - name: Download the V3 external-only conversion gate report
+        uses: actions/download-artifact@v7
+        with:
+          name: onecore-v3-conversion-report-45325008221
+          run-id: 45325008221
+          repository: ${{ github.repository }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/onecore-v3-conversion-report
+      - name: Verify tokenizer bytes and conversion report
+        id: inputs
+        run: |
+          python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"])
+          tokenizer_path = root / "onecore-v3-tokenizer" / "onecore-v3-tokenizer-run605-vocab32000.json"
+          token_files = [tokenizer_path] if tokenizer_path.is_file() else []
+          sidecar = Path(str(tokenizer_path) + ".evidence.json")
+          reports = list((root / "onecore-v3-conversion-report").glob("*.json"))
+          if len(token_files) != 1 or not sidecar.is_file() or len(reports) != 1:
+              raise SystemExit(f"expected pinned tokenizer, its evidence sidecar and one conversion report, got {token_files}, {sidecar}, {reports}")
+          token_sha = hashlib.sha256(token_files[0].read_bytes()).hexdigest()
+          request = json.loads(Path("onecore-ai/v3-training-request.json").read_text(encoding="utf-8"))
+          if token_sha != request["tokenizer_sha256"]:
+              raise SystemExit(f"V3 tokenizer SHA mismatch: {token_sha}")
+          report = json.loads(reports[0].read_text(encoding="utf-8"))
+          gate = report.get("manifest_gate")
+          expected_coverage = {
+              "train": {"text": 591525, "tool": 14000, "image": 900, "audio": 1100, "video": 100},
+              "validation": {"text": 22552, "tool": 400, "image": 10, "audio": 165, "video": 10},
+              "test": {"text": 22758, "tool": 400, "image": 10, "audio": 148, "video": 10},
+          }
+          if not isinstance(gate, dict) or gate.get("passed") is not True or gate.get("coverage") != expected_coverage:
+              raise SystemExit("pinned V3 conversion report does not match the complete external-only five-family coverage")
+          if report.get("blocked") is not False or report.get("errors") != []:
+              raise SystemExit("pinned V3 conversion report is blocked or contains restoration errors")
+          if report.get("synthetic_records_added", 0) != 0 or report.get("acquisition_incomplete") is not False:
+              raise SystemExit("pinned V3 conversion report contains synthetic rows or incomplete acquisition")
+          skipped = report.get("skipped") or {}
+          if skipped.get("not_external_data_class") != 1302 or skipped.get("pinned_source_row_not_found") != 37:
+              raise SystemExit("pinned V3 skipped-row provenance audit changed")
+          asset_hashes = gate.get("asset_hashes")
+          if not isinstance(asset_hashes, dict) or len(asset_hashes) != 20607:
+              raise SystemExit("conversion report asset hash map does not match the validated 20,607 media assets")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as stream:
+              stream.write(f"tokenizer={token_files[0]}\n")
+              stream.write(f"conversion_report={reports[0]}\n")
+          print({
+              "tokenizer_sha256": token_sha,
+              "manifest_gate_passed": True,
+              "validated_asset_hashes": len(asset_hashes),
+              "full_24GB_corpus_downloaded": False,
+              "all_five_families_and_three_splits_verified": True,
+          })
+          PY
+      - name: Run the first real five-family optimizer update
+        env:
+          PYTHONPATH: onecore-ai/src
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "${{ runner.temp }}/onecore-v3-assets" "${{ runner.temp }}/onecore-v3-manifests" onecore-ai/run-state/v3
+          /usr/bin/time -v python -m onecore.v3.runner \
+            --corpus-artifact-id 14892594659 \
+            --github-repo "${{ github.repository }}" \
+            --github-token "$GITHUB_TOKEN" \
+            --conversion-report "${{ steps.inputs.outputs.conversion_report }}" \
+            --manifest-output-dir "${{ runner.temp }}/onecore-v3-manifests" \
+            --assets-root "${{ runner.temp }}/onecore-v3-assets" \
+            --tokenizer "${{ steps.inputs.outputs.tokenizer }}" \
+            --output-dir onecore-ai/run-state/v3 \
+            --steps "${{ steps.request.outputs.steps }}" \
+            --total-steps "${{ steps.request.outputs.total_steps }}" \
+            --warmup-steps "${{ steps.request.outputs.warmup_steps }}" \
+            --learning-rate "${{ steps.request.outputs.learning_rate }}" \
+            --weight-decay "${{ steps.request.outputs.weight_decay }}" \
+            --max-grad-norm "${{ steps.request.outputs.max_grad_norm }}" \
+            --checkpoint-every "${{ steps.request.outputs.checkpoint_every }}" \
+            --run-id "$GITHUB_RUN_ID" \
+            --resource-evidence "${{ steps.resource-report.outputs.path }}" \
+            --seed "${{ steps.request.outputs.seed }}" \
+            --threads "${{ steps.request.outputs.threads }}"
+      - name: Upload the real V3 checkpoint and training evidence
+        if: always() && hashFiles('onecore-ai/run-state/v3/checkpoint.pt') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: onecore-v3-state-${{ github.run_id }}
+          path: |
+            onecore-ai/run-state/v3/checkpoint.pt
+            onecore-ai/run-state/v3/tokenizer.json
+            onecore-ai/run-state/v3/tokenizer.evidence.json
+            onecore-ai/run-state/v3/train_result.json
+            onecore-ai/run-state/v3/resource-evidence-artifact.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Publish training result summary
+        if: always()
+        run: |
+          if [ -f onecore-ai/run-state/v3/train_result.json ]; then
+            cat onecore-ai/run-state/v3/train_result.json >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No checkpoint was produced; this run did not complete an optimizer update." >> "$GITHUB_STEP_SUMMARY"
+          fi

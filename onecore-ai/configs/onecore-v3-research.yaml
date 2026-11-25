@@ -1,0 +1,45 @@
+# OneCore v3 research prototype. All dimensions are versioned and fingerprinted.
+# This config is not a claim of production quality or a frozen production budget.
+architecture_version: onecore-v3-prototype-2
+model:
+  text_vocab_size: 32000
+  width: 512
+  layers: 4
+  cycles: 3
+  attention_heads: 8
+  patch_size: 16
+  audio_latent_channels: 128
+  audio_hidden_channels: 256
+  audio_codebook_size: 1024
+  audio_quantizer_stages: 8
+  audio_channels: 2
+  audio_sample_rate: 24000
+  temporal_layers: 2
+  max_image_context_tokens: 256
+  max_video_context_tokens: 256
+  max_flow_context_tokens: 256
+  temporal_window_frames: 32
+  temporal_memory_frames: 4
+  video_generation_chunk_frames: 8
+  dropout: 0.0
+# Four unique Transformer blocks are reused over three recurrent cycles.
+# The modality flow heads are independent for image, audio, and video.
+# The current shared attention is quadratic in token count. Do not set a
+# production sequence limit until peak-memory and throughput benchmarks exist.
+sequence_policy:
+  image: variable_height_width_divisible_by_patch_size
+  audio: mono_stereo_variable_length_resampled_to_24000hz_polyphase
+  video: variable_frame_count_timestamped
+  attention_complexity: quadratic
+training:
+  status: joint_objective_and_single_step_prototype_available
+  multi_session_workflow: not_implemented
+  checkpoint_resume: not_implemented
+  discriminator_optimizer_schedule: not_implemented
+  optimizer: null
+  total_steps: null
+  loss_profiles:
+    image: perceptual_plus_diffusion_or_flow_plus_reconstruction
+    audio: multiresolution_stft_plus_waveform_perceptual_plus_adversarial
+    video: latent_flow_or_diffusion_plus_temporal_consistency_plus_sync
+    alignment: paired_cross_modal_contrastive_or_matching
