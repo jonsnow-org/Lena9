@@ -27,11 +27,18 @@ def image_pyramid_reconstruction_loss(predicted: torch.Tensor,
             truth = F.interpolate(target, size=size, mode="area")
         loss = loss + F.l1_loss(pred, truth)
         if gradient_weight:
-            pred_dx, truth_dx = pred[..., 1:] - pred[..., :-1], truth[..., 1:] - truth[..., :-1]
-            pred_dy, truth_dy = pred[..., 1:, :] - pred[..., :-1, :], truth[..., 1:, :] - truth[..., :-1, :]
-            loss = loss + gradient_weight * (
-                F.l1_loss(pred_dx, truth_dx) + F.l1_loss(pred_dy, truth_dy)
-            )
+            gradient_loss = predicted.new_zeros(())
+            # Very small pyramid levels can be 1x1. Skip an axis with no
+            # adjacent pixels instead of applying L1 to an empty tensor (NaN).
+            if pred.shape[-1] > 1:
+                pred_dx = pred[..., 1:] - pred[..., :-1]
+                truth_dx = truth[..., 1:] - truth[..., :-1]
+                gradient_loss = gradient_loss + F.l1_loss(pred_dx, truth_dx)
+            if pred.shape[-2] > 1:
+                pred_dy = pred[..., 1:, :] - pred[..., :-1, :]
+                truth_dy = truth[..., 1:, :] - truth[..., :-1, :]
+                gradient_loss = gradient_loss + F.l1_loss(pred_dy, truth_dy)
+            loss = loss + gradient_weight * gradient_loss
     return loss / len(scales)
 
 
