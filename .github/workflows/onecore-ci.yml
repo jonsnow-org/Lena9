@@ -33,6 +33,11 @@ on:
         required: false
         default: false
         type: boolean
+      audit_v3_checkpoint:
+        description: "Audit a step-zero checkpoint round-trip against the pinned real V3 manifests and tokenizer; no optimizer updates or media download"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -609,6 +614,68 @@ jobs:
           path: ${{ runner.temp }}/onecore-v3-corpus/v3
           if-no-files-found: error
           retention-days: 30
+
+
+  v3-checkpoint-artifact-audit:
+    name: Audit real-artifact V3 checkpoint save and restore
+    needs: verify
+    if: github.ref == 'refs/heads/research/onecore-v3-implementation' && inputs.audit_v3_checkpoint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      PYTHONPATH: onecore-ai/src
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout canonical V3 branch
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref }}
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: onecore-ai/pyproject.toml
+      - name: Install CPU-only PyTorch and bounded artifact access
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -e "onecore-ai[corpus-restore]"
+      - name: Download the pinned V3 tokenizer and evidence sidecar
+        uses: actions/download-artifact@v7
+        with:
+          name: onecore-v3-tokenizer-45325008221
+          run-id: 45336933362
+          repository: ${{ github.repository }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/onecore-v3-tokenizer
+      - name: Download the pinned V3 external-only conversion report
+        uses: actions/download-artifact@v7
+        with:
+          name: onecore-v3-conversion-report-45325008221
+          run-id: 45325008221
+          repository: ${{ github.repository }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/onecore-v3-conversion-report
+      - name: Audit real V3 manifests, tokenizer, source cursors and full checkpoint state
+        run: |
+          python -m onecore.v3.checkpoint_audit \
+            --repo "${{ github.repository }}" \
+            --corpus-artifact-id 14892594659 \
+            --tokenizer "${{ runner.temp }}/onecore-v3-tokenizer/onecore-v3-tokenizer-run605-vocab32000.json" \
+            --tokenizer-sha256 569f1b61e017dcf5c8ba9fef22a8002cc48d5ea3c26504bdae83f53834d00e76 \
+            --conversion-report "${{ runner.temp }}/onecore-v3-conversion-report/onecore-v3-conversion-report.json" \
+            --conversion-report-sha256 5976ad7f5e3149a31bd1da67308bf228cf0afb31ba970e00481dda04b1f73941 \
+            --output "${{ runner.temp }}/onecore-v3-checkpoint-audit.json" \
+            --work-directory "${{ runner.temp }}/onecore-v3-checkpoint-audit-work"
+          cat "${{ runner.temp }}/onecore-v3-checkpoint-audit.json" >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload V3 checkpoint audit evidence
+        if: always() && hashFiles('${{ runner.temp }}/onecore-v3-checkpoint-audit.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: onecore-v3-checkpoint-audit-${{ github.run_id }}
+          path: ${{ runner.temp }}/onecore-v3-checkpoint-audit.json
+          retention-days: 90
 
   v3-resource-benchmark:
     name: Measure V3 CPU memory and throughput from existing artifacts
