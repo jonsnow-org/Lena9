@@ -61,14 +61,15 @@ class OneCoreV3Inference:
         config: V3Config,
         *,
         checkpoint_sha256: str,
+        tokenizer_sha256: str,
         global_step: int,
         device: torch.device,
     ) -> None:
         self.model = model
         self.tokenizer = tokenizer
         self.config = config
-        self.checkpoint_sha256 = checkpoint_sha256
-        self.tokenizer_sha256 = hashlib.sha256(tokenizer.to_str().encode("utf-8")).hexdigest()
+        self.checkpoint_sha256 = _require_sha256(checkpoint_sha256, "checkpoint_sha256")
+        self.tokenizer_sha256 = _require_sha256(tokenizer_sha256, "tokenizer_sha256")
         self.global_step = global_step
         self.device = device
         self.special_ids = {
@@ -192,6 +193,7 @@ class OneCoreV3Inference:
             tokenizer,
             config,
             checkpoint_sha256=actual_sha,
+            tokenizer_sha256=tokenizer_sha,
             global_step=raw_step,
             device=target_device,
         )

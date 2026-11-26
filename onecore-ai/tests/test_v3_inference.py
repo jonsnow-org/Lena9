@@ -110,6 +110,7 @@ def test_v3_inference_loads_hash_pinned_checkpoint_and_generates_text(tmp_path):
     assert runtime.config.fingerprint == config.fingerprint
     assert runtime.global_step == 7
     assert runtime.checkpoint_sha256 == saved["sha256"]
+    assert runtime.tokenizer_sha256 == saved["tokenizer_sha256"]
     assert runtime._prompt_ids("Explain the model")[-1] != runtime.special_ids["[EOS]"]
     assert runtime._prompt_ids("Explain the model", append_eos=True)[-1] == runtime.special_ids["[EOS]"]
     assert not runtime.model.training
