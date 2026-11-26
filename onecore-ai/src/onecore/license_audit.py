@@ -6,6 +6,7 @@ A human reviewer must record source-specific authoritative license evidence.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import tempfile
