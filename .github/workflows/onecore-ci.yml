@@ -670,11 +670,12 @@ jobs:
             --work-directory "${{ runner.temp }}/onecore-v3-checkpoint-audit-work"
           cat "${{ runner.temp }}/onecore-v3-checkpoint-audit.json" >> "$GITHUB_STEP_SUMMARY"
       - name: Upload V3 checkpoint audit evidence
-        if: always() && hashFiles('${{ runner.temp }}/onecore-v3-checkpoint-audit.json') != ''
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: onecore-v3-checkpoint-audit-${{ github.run_id }}
           path: ${{ runner.temp }}/onecore-v3-checkpoint-audit.json
+          if-no-files-found: ignore
           retention-days: 90
 
   v3-resource-benchmark:

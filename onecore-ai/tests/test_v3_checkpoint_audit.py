@@ -1,8 +1,6 @@
 import hashlib
 
-import numpy as np
 import pytest
-import torch
 from tokenizers import Tokenizer, models, pre_tokenizers
 
 from onecore.v3.checkpoint_audit import audit_checkpoint_round_trip
@@ -108,7 +106,7 @@ def test_v3_checkpoint_audit_rejects_manifest_state_mismatch(tmp_path):
 
 def test_v3_checkpoint_audit_requires_real_tokenizer_bytes(tmp_path):
     config = _config()
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError):
         audit_checkpoint_round_trip(
             config=config,
             tokenizer_json=b"not a tokenizer",
