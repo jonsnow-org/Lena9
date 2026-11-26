@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
-  "status": "released",
-  "holder": null,
-  "session_id": null,
-  "client": null,
-  "started_at_utc": null,
-  "lease_expires_at_utc": null,
-  "base_head_sha": null,
-  "planned_scope": null,
-  "last_released_at_utc": "2026-11-26T13:50:11.705Z",
-  "last_session_summary": "Cross-session audit completed; mandatory multi-client protocol and CI enforcement committed and verified.",
-  "last_verified_branch_head": "ab0781d51280fa5f8488bedd048116312e171683",
-  "last_result": "Run #740 succeeded for protocol documentation; Run #742 succeeded with all 17 Verify steps including the mandatory protocol test. CPU benchmark, restore, checkpoint audit, evaluation and optimizer training were not run."
+  "status": "active",
+  "holder": "ChatGPT GPT-6",
+  "session_id": "onecore-scope-cleanup-20261126-01",
+  "client": "ChatGPT",
+  "started_at_utc": "2026-11-26T16:14:00Z",
+  "lease_expires_at_utc": "2026-11-26T17:14:00Z",
+  "base_head_sha": "4071062809c0e02b742c61591bb276c469d554be",
+  "planned_scope": "Remove unrequested standalone audit subsystem, disable non-required Stack V2 source rather than bypassing ingestion safeguards, add scope-restraint note, and update handover. V3 branch only.",
+  "last_released_at_utc": null,
+  "last_session_summary": null,
+  "last_verified_branch_head": "4071062809c0e02b742c61591bb276c469d554be",
+  "last_result": "Writer lease acquired for bounded V3 cleanup; no implementation changes committed yet."
 }
