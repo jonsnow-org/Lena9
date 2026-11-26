@@ -13,10 +13,20 @@ def test_canonical_onecore_ci_runs_on_v3_only_and_restore_is_explicit():
     assert "workflow_dispatch:" in workflow
     assert "restore_v3_corpus:" in workflow
     assert "default: false" in workflow
-    restore = workflow.split("  v3-corpus-restore:", 1)[1]
+    restore = workflow.split("  v3-corpus-restore:", 1)[1].split(
+        "  v3-checkpoint-artifact-audit:", 1
+    )[0]
     assert "github.event_name == 'workflow_dispatch'" in restore
     assert "inputs.restore_v3_corpus == true" in restore
     assert "github.event.head_commit.message" not in restore
+
+    audit = workflow.split("  v3-checkpoint-artifact-audit:", 1)[1].split(
+        "  v3-resource-benchmark:", 1
+    )[0]
+    assert "inputs.audit_v3_checkpoint" in audit
+    assert "github.event_name == 'push'" in audit
+    assert "github.event.head_commit.message" in audit
+    assert "[run-v3-checkpoint-audit]" in audit
 
 
 def test_v2_training_is_archived_and_cannot_run_from_canonical_v3():
