@@ -125,7 +125,11 @@ def _validate_review(
             reasons.append("commercial_deployment_use is not approved")
 
     malformed = any(
-        "missing" in reason or "must be" in reason or "must be HTTPS" in reason
+        "missing" in reason
+        or "must be" in reason
+        or "must be HTTPS" in reason
+        or reason.startswith("evidence_file")
+        or reason.startswith("evidence_sha256 does not match")
         for reason in reasons
     )
     classification = (
