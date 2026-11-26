@@ -78,7 +78,7 @@ Artifacts are retained for 90 days. Durable GitHub Release upload currently rece
 
 The earlier 10-step engineering run and 100-step synthetic-curriculum experiment are historical pipeline diagnostics only. The clean real-training path is required to use a fresh random initialization and an external-only tokenizer corpus plus external-only optimizer samples. Any checkpoint whose tokenizer-corpus provenance is missing or includes bootstrap/synthetic/owner-curated records is not eligible for continuation in the clean lineage. Evaluation measures held-out codebook usage, entropy, perplexity, dead codes, and max-code concentration; promotion remains blocked until independent modality coverage and approved quality thresholds are in place.
 
-See `docs/corrected-spec-v2.md` for the exact engineering contract; `docs/training-operations.md`, `data/README.md`, and `notebooks/README.md` contain operational details.
+See `docs/corrected-spec-v2.md` for the historical V2 contract. `docs/training-operations.md` and `notebooks/README.md` are frozen V2 operational references; do not use them to operate V3. The active V3 architecture and limits are documented in `v3/README.md`, and the current engineering state is tracked in `docs/EXECUTIVE_HANDOVER.md`.
 
 
 ## Active OneCore V3 engineering status

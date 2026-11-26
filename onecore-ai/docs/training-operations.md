@@ -1,8 +1,11 @@
-# OneCore GitHub-only training operations
+# OneCore GitHub-only training operations — V2 legacy reference (frozen)
+
+> **Historical V2 instructions only — do not use this file to operate active OneCore.** The procedures below describe the frozen `research/onecore-foundation` V2 branch, the legacy `onecore-ai/training-request.json`, and the V2 `onecore-bootstrap.yml` / `onecore-training.yml` workflows. They are not the active V3 procedure. The only active architecture is V3 on `research/onecore-v3-implementation`; its verified request is `onecore-ai/v3-training-request.json`, its CPU measurement workflow is `.github/workflows/onecore-ci.yml`, and its staged optimizer workflow remains disabled by an explicit guard. For current V3 state, read `../v3/README.md` and `EXECUTIVE_HANDOVER.md`. Never use V2 weights, checkpoints, optimizer state, tokenizer, or request files for V3.
+
 
 ## Single source of truth and isolation
 
-The only working branch is `research/onecore-foundation` in `jonsnow-org/Lena9`. All training, data generation, checkpointing, evaluation, and model-registry work runs on GitHub Actions CPU runners. Do not touch `main`, the Lena9 application, Ttbik, or any Sham model. The bootstrap and manually dispatched training workflows share the `onecore-training-v2` concurrency group with `cancel-in-progress: false`. A new request waits for the active run to release the lock; it must not cancel or overlap a training lineage.
+When this V2 procedure was written, its working branch was `research/onecore-foundation` in `jonsnow-org/Lena9`; that branch is now frozen and is not the active OneCore development branch. All training, data generation, checkpointing, evaluation, and model-registry work runs on GitHub Actions CPU runners. Do not touch `main`, the Lena9 application, Ttbik, or any Sham model. The bootstrap and manually dispatched training workflows share the `onecore-training-v2` concurrency group with `cancel-in-progress: false`. A new request waits for the active run to release the lock; it must not cancel or overlap a training lineage.
 
 ## Request-file bootstrap and checkpointed training
 

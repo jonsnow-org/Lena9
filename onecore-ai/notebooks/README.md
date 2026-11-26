@@ -1,4 +1,7 @@
-# Notebook order and GitHub-only training
+# OneCore notebook order and GitHub-only training — V2 legacy reference
+
+> **Historical V2 notebook guide only — not the active V3 training playbook.** These root-level notebooks and the instructions below retain the V2 57,579,201-parameter / 5,144-token contract and V2 checkpoint workflow for compatibility and audit. The active model is V3 (39,906,568 parameters, independent 32,000-token tokenizer) on `research/onecore-v3-implementation`. V3 CI may still execute safe notebook preflights and V2 compatibility assertions; that does not authorize V2 acquisition or training. Do not set `ONECORE_EXECUTE_TRAINING=1`, use `onecore-ai/training-request.json`, or resume a V2 checkpoint for V3. See `../v3/README.md` and `../docs/EXECUTIVE_HANDOVER.md` for the active V3 architecture and status.
+
 
 The six notebooks can be opened locally, but all actual model training and checkpoint lineage are orchestrated on GitHub Actions. Notebooks 03 and 04 default to a safe preflight and do not start training accidentally. Set `ONECORE_ACQUIRE_ONLY=1` to run their bounded acquisition path, or `ONECORE_EXECUTE_TRAINING=1` to opt into a training segment. Notebook 05 similarly requires `ONECORE_EXECUTE_EVALUATION=1` before it evaluates a checkpoint. The staged workflow sets these flags explicitly.
 
