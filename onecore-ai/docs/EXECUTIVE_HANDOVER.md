@@ -74,9 +74,10 @@ Check each gate against current V3 source, workflow logs and immutable artifacts
 ## 6. Per-session progress ledger — update this section every run
 
 ### Current verified state
-- Date/time (Europe/Istanbul): 2026-11-26 09:42
+- Date/time (Europe/Istanbul): 2026-11-26 09:47
 - Active branch: research/onecore-v3-implementation only. Frozen V2 branch research/onecore-foundation remains at 6d5dd21982f8f4a835e07b0f004b1621be57ba96.
-- Latest branch commit SHA: 9d4ef7a74b70660732c4a199738401f938c2f31c — fix(onecore-v3): retain CPU benchmark progress and reduce RSS polling overhead.
+- Latest implementation commit SHA: 9d4ef7a74b70660732c4a199738401f938c2f31c — fix(onecore-v3): retain CPU benchmark progress and reduce RSS polling overhead.
+- Handover ledger commit: 298419117267d85355dece40cb49f50c1bab8e50; this was a documentation-only update after the implementation commit. The final documentation correction in this session is also documentation-only; no code changed after Run #701.
 - Latest relevant workflow runs:
   - [Run #701 — Verify](https://github.com/jonsnow-org/Lena9/actions/runs/45769739545), commit 9d4ef7a74b70660732c4a199738401f938c2f31c: completed successfully. Compile, exact V3 parameter/FLOP checks, unit/regression tests, corrected V2-spec checks, architecture notebook, safe notebook preflights, FineWeb-2 cursor-resume smoke test, notebook validation, and workflow isolation/lock checks all completed successfully. CPU benchmark and corpus restore jobs were skipped because this was a push event. No artifacts were produced by this Verify run.
   - [Run #700 — manual CPU benchmark attempt](https://github.com/jonsnow-org/Lena9/actions/runs/45724385251), old commit 359976e333906b228eef39584fecc5d10c9a092d: failed after approximately 94 minutes. The benchmark job's final step summary remains inconsistent (in_progress while the parent run is failed); no artifacts were produced, and the job-log endpoint returns BlobNotFound. Root cause is unverified.
