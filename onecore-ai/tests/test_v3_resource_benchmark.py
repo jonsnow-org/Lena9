@@ -649,13 +649,14 @@ def test_select_train_samples_preserves_same_row_media_conditions(tmp_path):
 
 
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="RSS sampling uses Linux /proc")
-def test_monitored_subprocess_samples_parent_and_worker_rss():
+def test_monitored_subprocess_samples_parent_and_worker_rss_and_emits_heartbeats():
     from onecore.v3.resource_benchmark import (
         _load_current_rss_bytes,
         _run_monitored_subprocess,
     )
 
     baseline_parent_rss = _load_current_rss_bytes()
+    heartbeats = []
     code = (
         "import time; "
         "payload = bytearray(32 * 1024 * 1024); "
@@ -663,11 +664,75 @@ def test_monitored_subprocess_samples_parent_and_worker_rss():
         "time.sleep(0.3)"
     )
     completed, observed_tree_peak = _run_monitored_subprocess(
-        [sys.executable, "-c", code], timeout=10,
+        [sys.executable, "-c", code],
+        timeout=10,
+        poll_interval=0.01,
+        heartbeat_interval=0.05,
+        heartbeat_callback=lambda elapsed, peak: heartbeats.append((elapsed, peak)),
     )
 
     assert completed.returncode == 0
     assert observed_tree_peak >= baseline_parent_rss + 16 * 1024 * 1024
+    assert heartbeats and heartbeats[-1][0] >= heartbeats[0][0]
+
+
+def test_atomic_progress_snapshot_replaces_the_previous_state_without_partial_files(tmp_path):
+    from onecore.v3.resource_benchmark import _write_json_atomic
+
+    output = tmp_path / "resource-report.json"
+    _write_json_atomic(output, {"status": "in_progress", "current_stage": "loader"})
+    assert json.loads(output.read_text(encoding="utf-8"))["current_stage"] == "loader"
+
+    _write_json_atomic(output, {"status": "failed", "current_stage": "loader", "error": "worker timeout"})
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["status"] == "failed"
+    assert payload["error"] == "worker timeout"
+    assert not output.with_name(output.name + ".partial").exists()
+
+
+def test_parent_failure_preserves_current_run_progress_snapshot(monkeypatch, tmp_path):
+    from pathlib import Path
+    from onecore.v3 import resource_benchmark as benchmark
+
+    output = tmp_path / "resource-report.json"
+    monkeypatch.setenv("GITHUB_RUN_ID", "12345")
+
+    def fail_after_progress(args):
+        benchmark._write_json_atomic(Path(args.output), {
+            "format_version": 1,
+            "status": "in_progress",
+            "github_run_id": "12345",
+            "current_stage": "benchmark_production_v3_joint_data_loader",
+            "completed_stages": ["validate_pinned_artifacts"],
+            "optimizer_updates": 0,
+        })
+        raise RuntimeError("simulated worker failure")
+
+    monkeypatch.setattr(benchmark, "_run_parent", fail_after_progress)
+    assert benchmark.main(["--github-token", "test-token", "--output", str(output)]) == 1
+
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["status"] == "failed"
+    assert payload["current_stage"] == "benchmark_production_v3_joint_data_loader"
+    assert payload["completed_stages"] == ["validate_pinned_artifacts"]
+    assert payload["error"] == "RuntimeError: simulated worker failure"
+    assert payload["optimizer_updates"] == 0
+
+
+def test_parent_failure_does_not_overwrite_a_previous_run_report(monkeypatch, tmp_path):
+    from onecore.v3 import resource_benchmark as benchmark
+
+    output = tmp_path / "resource-report.json"
+    original = {"status": "measured", "github_run_id": "previous-run"}
+    benchmark._write_json_atomic(output, original)
+    monkeypatch.setenv("GITHUB_RUN_ID", "current-run")
+    monkeypatch.setattr(
+        benchmark, "_run_parent",
+        lambda _args: (_ for _ in ()).throw(FileExistsError("refusing to overwrite")),
+    )
+
+    assert benchmark.main(["--github-token", "test-token", "--output", str(output)]) == 1
+    assert json.loads(output.read_text(encoding="utf-8")) == original
 
 
 def test_parent_benchmark_defaults_to_five_measured_iterations_and_rejects_short_runs(monkeypatch):
