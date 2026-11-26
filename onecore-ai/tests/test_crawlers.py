@@ -212,6 +212,7 @@ def test_stack_v2_filters_before_fetching_swh_blobs(tmp_path, monkeypatch):
         "repo": "bigcode/the-stack-v2",
         "adapter": "stack_v2_code",
         "allowed_languages": ["Python"],
+        "allowed_license_ids": ["MIT"],
         "_resolved_revision": "a" * 40,
     }
     base = {
@@ -240,19 +241,16 @@ def test_stack_v2_filters_before_fetching_swh_blobs(tmp_path, monkeypatch):
     assert good["code_license_type"] == "permissive"
     assert calls == ["f" * 40]
 
-    # License metadata is provenance only: missing, unknown and copyleft
-    # declarations must not block acquisition.
-    accepted = []
+    # Missing and unlisted licenses are rejected before requesting the SWH blob.
     for index, changes in enumerate((
         {"license_type": "no_license", "detected_licenses": [], "gha_license_id": ""},
-        {"license_type": "copyleft", "detected_licenses": ["GPL-3.0-only"]},
+        {"license_type": "copyleft", "detected_licenses": ["GPL-3.0-only"], "gha_license_id": "GPL-3.0-only"},
     ), start=1):
         row = dict(base)
         row.update(changes)
-        record = acquire._record_from_row(row, dict(source), f"license-independent-{index}", "train", assets)
-        assert record is not None and record["task"] == "text"
-        accepted.append(record)
-    assert calls == ["f" * 40] * 3
+        record = acquire._record_from_row(row, dict(source), f"license-rejected-{index}", "train", assets)
+        assert record is None
+    assert calls == ["f" * 40]
 
     # Retain non-license quality and secret-protection gates.
     for changes in (
