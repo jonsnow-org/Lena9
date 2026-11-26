@@ -198,3 +198,15 @@ Check each gate against current V3 source, workflow logs and immutable artifacts
 - Removed the duplicate Stack source key so its effective registry value is `enabled: false`. Added a regression test confirming the disabled adapter never requests a code payload, and updated notebook routing assertions accordingly.
 - No model weights, optimizer/checkpoint state, tokenizer, pinned corpus artifacts, training request, training guard, V2 archive, or `main` were changed. Remaining historical handover entries are retained as an accurate audit trail; do not treat them as instructions to recreate the removed side system.
 - Current verified code head before this handoff commit: `2f6ff7ca11959267f328c6b848f83e765358ee14`. Next engineering priority remains the missing real CPU resource measurement on this canonical V3 branch, followed by the required checkpoint-continuity gate; do not start optimizer training while those gates remain open.
+
+### Supervisor execution — 2026-11-26 (Run #749, RSS sampling metadata)
+
+- Live V3 branch at this handoff: `research/onecore-v3-implementation`, source commit `e3be5e613595a1816df9ab5886f37668332f4aa7`.
+- Corrected `onecore-ai/src/onecore/v3/resource_benchmark.py`: `memory_accounting.sampling_interval_seconds` now references `RSS_SAMPLE_INTERVAL_SECONDS` (0.25 seconds), matching the actual 250 ms process-tree RSS sampler. The previous report literal was incorrectly 0.02 seconds.
+- Updated `onecore-ai/tests/test_v3_resource_benchmark.py` to assert that the reported interval equals the implementation constant and 0.25 seconds.
+- Verify Run #749 (`45881500757`) on the exact code commit completed successfully: **390 passed, 45 warnings**. All 14 Verify steps passed, including compile, architecture/FLOP assertions, unit/regression tests, specification checks, notebooks, FineWeb-2 cursor-resume and workflow isolation.
+- Writer-lease acquisition Run #748 (`45881409861`) also completed successfully. The lease is released in the accompanying handoff commit.
+- Optional CPU resource benchmark, corpus restore, step-zero checkpoint audit and held-out evaluation jobs were skipped on this push event. This commit is a metadata/test correction only; it is not measured CPU RSS/throughput evidence and it performs no optimizer updates.
+- No model weights, optimizer state, checkpoint lineage, pinned corpus/tokenizer artifacts, V3 training request or training guard were changed.
+- No active OneCore Actions runs remained at handoff. No merge to `main`, new branch, workflow or scheduled task was created.
+- Next runtime gate remains the existing manual V3 CPU resource benchmark, with `benchmark_v3_resources=true` and `restore_v3_corpus=false`; the available GitHub connection still has no workflow-dispatch operation. Do not substitute a push Verify pass for the benchmark, and do not start optimizer training while the measured CPU and continuation gates remain open.

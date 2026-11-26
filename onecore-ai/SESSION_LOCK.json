@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
-  "status": "active",
-  "holder": "ChatGPT GPT-6",
-  "session_id": "onecore-rss-interval-fix-20261126-01",
-  "client": "ChatGPT",
-  "started_at_utc": "2026-11-26T19:15:00Z",
-  "lease_expires_at_utc": "2026-11-26T20:15:00Z",
-  "base_head_sha": "b246e01e77916a1efe149475c028204b2ecc774a",
-  "planned_scope": "Correct resource benchmark RSS sampling interval metadata to match the 250ms sampler; add a regression assertion; verify CI; release lease.",
-  "last_released_at_utc": null,
-  "last_session_summary": null,
-  "last_verified_branch_head": "b246e01e77916a1efe149475c028204b2ecc774a",
-  "last_result": "Writer lease acquired; focused metadata-only fix planned."
+  "status": "released",
+  "holder": null,
+  "session_id": null,
+  "client": null,
+  "started_at_utc": null,
+  "lease_expires_at_utc": null,
+  "base_head_sha": null,
+  "planned_scope": null,
+  "last_released_at_utc": "2026-11-26T19:20:00Z",
+  "last_session_summary": "Corrected the V3 CPU benchmark RSS sampling interval metadata to match the actual 250 ms sampler, added an exact regression assertion, verified Run #749 (390 passed, 45 warnings, all Verify steps successful), and recorded the handoff.",
+  "last_verified_branch_head": "e3be5e613595a1816df9ab5886f37668332f4aa7",
+  "last_result": "Run #749 on e3be5e613595a1816df9ab5886f37668332f4aa7 succeeded; all Verify steps passed. Optional CPU benchmark, corpus restore, step-zero audit and held-out evaluation were skipped on push. No optimizer updates or training. No active OneCore Actions runs at release."
 }
