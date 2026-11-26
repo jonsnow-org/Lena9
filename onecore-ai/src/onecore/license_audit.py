@@ -49,7 +49,11 @@ def _is_https(value: Any) -> bool:
     return parsed.scheme == "https" and bool(parsed.netloc)
 
 
-def _validate_review(review: Any) -> tuple[str, list[str], dict[str, Any] | None]:
+def _validate_review(
+    review: Any,
+    *,
+    evidence_root: Path,
+) -> tuple[str, list[str], dict[str, Any] | None]:
     if not isinstance(review, dict):
         return "invalid", ["review entry must be a mapping"], None
 
@@ -64,9 +68,35 @@ def _validate_review(review: Any) -> tuple[str, list[str], dict[str, Any] | None
     evidence_url = review.get("evidence_url")
     if not _is_https(evidence_url):
         reasons.append("evidence_url must be HTTPS")
+    evidence_file_value = review.get("evidence_file")
+    evidence_file_path: Path | None = None
+    if not isinstance(evidence_file_value, str) or not evidence_file_value.strip():
+        reasons.append("evidence_file must point to a retained local copy of the reviewed terms")
+    else:
+        relative_evidence = Path(evidence_file_value)
+        if relative_evidence.is_absolute() or ".." in relative_evidence.parts:
+            reasons.append("evidence_file must be a confined relative path")
+        else:
+            candidate = (evidence_root / relative_evidence).resolve()
+            try:
+                candidate.relative_to(evidence_root.resolve())
+            except ValueError:
+                reasons.append("evidence_file resolves outside the license evidence directory")
+            else:
+                if not candidate.is_file():
+                    reasons.append("evidence_file does not exist")
+                else:
+                    evidence_file_path = candidate
     evidence_sha = str(review.get("evidence_sha256", "")).strip().lower()
     if not _HEX.fullmatch(evidence_sha):
         reasons.append("evidence_sha256 must be a 64-character lowercase SHA-256")
+    elif evidence_file_path is not None:
+        digest = hashlib.sha256()
+        with evidence_file_path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+        if digest.hexdigest() != evidence_sha:
+            reasons.append("evidence_sha256 does not match the retained evidence_file bytes")
     reviewer = str(review.get("reviewed_by", "")).strip()
     if not reviewer:
         reasons.append("reviewed_by is missing")
@@ -107,6 +137,7 @@ def _validate_review(review: Any) -> tuple[str, list[str], dict[str, Any] | None
         "review_status": status or "unreviewed",
         "license_expression": license_expression or None,
         "evidence_url": evidence_url if _is_https(evidence_url) else None,
+        "evidence_file": str(evidence_file_value).strip() if evidence_file_path else None,
         "evidence_sha256": evidence_sha if _HEX.fullmatch(evidence_sha) else None,
         "reviewed_by": reviewer or None,
         "reviewed_at": reviewed_at or None,
@@ -197,7 +228,10 @@ def audit_source_licenses(
             reasons = ["no source-specific license review exists"]
             review_value = None
         else:
-            status, reasons, review_value = _validate_review(reviews[source_id])
+            status, reasons, review_value = _validate_review(
+                reviews[source_id],
+                evidence_root=Path(reviews_path).resolve().parent,
+            )
         results.append({
             "source_id": source_id,
             "repo": source.get("repo"),

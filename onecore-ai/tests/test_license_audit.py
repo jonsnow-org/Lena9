@@ -19,18 +19,28 @@ sources:
     enabled: true
 """
     (root / "sources.yaml").write_text(source_yaml, encoding="utf-8")
+    evidence_dir = root / "evidence"
+    evidence_dir.mkdir(exist_ok=True)
+    (evidence_dir / "dataset-a-license.txt").write_bytes(_EVIDENCE_BYTES)
     (root / "license-review.yaml").write_text(
         "version: 1\nsources:\n" + reviews, encoding="utf-8"
     )
     return root / "sources.yaml", root / "license-review.yaml"
 
 
+_EVIDENCE_BYTES = b"captured authoritative dataset license terms\\n"
+
+
 def _approved_review():
-    return """  dataset_a:
+    import hashlib
+
+    digest = hashlib.sha256(_EVIDENCE_BYTES).hexdigest()
+    return f"""  dataset_a:
     review_status: approved
     license_expression: CC-BY-4.0
     evidence_url: https://example.org/dataset-a/license
-    evidence_sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    evidence_file: evidence/dataset-a-license.txt
+    evidence_sha256: {digest}
     reviewed_by: legal-reviewer
     reviewed_at: "2026-11-26"
     model_training_use: true
@@ -175,3 +185,28 @@ def test_current_repository_registry_is_not_commercially_cleared_by_default():
     assert report["total_sources"] > 0
     assert report["commercially_approved_sources"] == 0
     assert report["blocked_or_unreviewed_sources"] == report["total_sources"]
+
+
+
+def test_approved_review_requires_retained_evidence_file_and_matching_hash(tmp_path):
+    review = _approved_review().replace(
+        "evidence_file: evidence/dataset-a-license.txt",
+        "evidence_file: evidence/missing-license.txt",
+    )
+    sources, reviews = _write_inputs(tmp_path, reviews=review)
+    report = audit_source_licenses(sources_path=sources, reviews_path=reviews)
+    item = next(row for row in report["sources"] if row["source_id"] == "dataset_a")
+    assert item["status"] == "invalid"
+    assert "evidence_file does not exist" in item["reasons"]
+
+    review = _approved_review().replace(
+        _EVIDENCE_BYTES.decode().strip(), "different retained evidence"
+    )
+    sources, reviews = _write_inputs(tmp_path, reviews=review)
+    (tmp_path / "evidence" / "dataset-a-license.txt").write_text(
+        "different retained evidence", encoding="utf-8"
+    )
+    report = audit_source_licenses(sources_path=sources, reviews_path=reviews)
+    item = next(row for row in report["sources"] if row["source_id"] == "dataset_a")
+    assert item["status"] == "invalid"
+    assert "evidence_sha256 does not match the retained evidence_file bytes" in item["reasons"]
