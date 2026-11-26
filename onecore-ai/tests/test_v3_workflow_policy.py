@@ -140,3 +140,31 @@ def test_v3_training_consumes_only_a_verified_manual_resource_benchmark_artifact
     assert '--resource-evidence "${{ steps.resource-report.outputs.path }}"' in workflow
     assert "resource-evidence-artifact.json" in workflow
     assert "if: github.ref == 'refs/heads/research/onecore-v3-implementation' && inputs.resource_benchmark_run_id != '' && false" in workflow
+
+
+
+def test_every_onecore_agent_must_read_cross_session_protocol_and_current_handover():
+    import json
+
+    project = ROOT / "onecore-ai"
+    agent_rules = (project / "AGENTS.md").read_text(encoding="utf-8")
+    readme = (project / "README.md").read_text(encoding="utf-8")
+    protocol = (project / "SESSION_PROTOCOL.md").read_text(encoding="utf-8")
+    handover = (project / "docs" / "EXECUTIVE_HANDOVER.md").read_text(encoding="utf-8")
+    session_lock = json.loads((project / "SESSION_LOCK.json").read_text(encoding="utf-8"))
+
+    assert "SESSION_PROTOCOL.md" in agent_rules
+    assert "SESSION_LOCK.json" in agent_rules
+    assert "docs/EXECUTIVE_HANDOVER.md" in agent_rules
+    assert "SESSION_PROTOCOL.md" in readme
+    assert "latest 20 relevant" in protocol
+    assert "compare-and-swap" in protocol
+    assert "remain read-only" in protocol
+    assert "Mandatory multi-client coordination protocol" in handover
+    assert session_lock["schema_version"] == 1
+    assert session_lock["status"] in {"active", "released"}
+    if session_lock["status"] == "released":
+        assert session_lock["holder"] is None
+    else:
+        assert session_lock["holder"]
+        assert session_lock["lease_expires_at_utc"]
