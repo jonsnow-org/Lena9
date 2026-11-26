@@ -250,6 +250,8 @@ sources:
     enabled: true
   - id: stack_v2_code
     repo: bigcode/the-stack-v2
+    # No Stack V2 code is ingested until exact license IDs are added after review.
+    allowed_license_ids: []
     hf_splits: [train]
     adapter: stack_v2_code
     split_strategy: hash

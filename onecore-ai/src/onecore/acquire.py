@@ -613,6 +613,33 @@ def _source_group_value(row: dict[str, Any], source: dict[str, Any]) -> Any:
     return stem or filename
 
 
+def _stack_license_is_allowed(row: dict[str, Any], source: dict[str, Any]) -> bool:
+    """Require an exact source-reviewed license ID before fetching Stack V2 code."""
+    allowlist_values = source.get("allowed_license_ids") or []
+    allowed = {
+        str(value).strip().casefold()
+        for value in allowlist_values
+        if isinstance(value, str) and str(value).strip()
+    }
+    if not allowed:
+        return False
+    detected = row.get("detected_licenses") or []
+    if isinstance(detected, str):
+        detected = [detected]
+    observed = []
+    gha_license_id = str(row.get("gha_license_id") or "").strip()
+    if gha_license_id:
+        observed.append(gha_license_id)
+    observed.extend(
+        str(value).strip()
+        for value in detected
+        if isinstance(value, str) and str(value).strip()
+    )
+    normalized = {value.casefold() for value in observed}
+    # Missing or conflicting license evidence is never treated as permission.
+    return bool(normalized) and normalized.issubset(allowed)
+
+
 def _record_from_row(
     row: dict[str, Any], source: dict[str, Any], row_id: str, split: str,
     assets_root: Path,
@@ -657,9 +684,10 @@ def _record_from_row(
             if answer:
                 text = f"Question: {question}\nAnswer: {answer}" if question else answer
     if adapter == "stack_v2_code":
-        # Fetch code regardless of license metadata. Keep quality/safety filters:
-        # vendor/generated files, unsupported languages, exposed secrets and
-        # unsafe payloads remain excluded before records enter the corpus.
+        # Stack V2 code is not fetched unless exact license metadata matches a
+        # source-reviewed allowlist. Unknown, missing, and mixed licenses fail closed.
+        if not _stack_license_is_allowed(row, source):
+            return None
         if bool(row.get("is_vendor")) or bool(row.get("is_generated")):
             return None
         allowed_languages = {str(value).strip().casefold() for value in (source.get("allowed_languages") or [])}

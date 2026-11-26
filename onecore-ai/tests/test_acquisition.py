@@ -16,6 +16,7 @@ from onecore.acquire import (
     _assign_split,
     _grouped_split,
     _record_from_row,
+    _stack_license_is_allowed,
     _row_identity,
     _stable_split,
     _training_manifest_base,
@@ -1127,3 +1128,22 @@ def test_default_external_task_gate_is_corrected_v2():
     parameters = inspect.signature(assert_task_coverage).parameters
     assert parameters["minimum_train"].default == 100
     assert parameters["minimum_holdout"].default == 10
+
+
+
+def test_stack_v2_code_requires_exact_explicit_license_allowlist() -> None:
+    row = {
+        "license_type": "permissive",
+        "gha_license_id": "MIT",
+        "detected_licenses": ["MIT"],
+    }
+    assert _stack_license_is_allowed(row, {"allowed_license_ids": []}) is False
+    assert _stack_license_is_allowed(row, {"allowed_license_ids": ["MIT"]}) is True
+    assert _stack_license_is_allowed(
+        {**row, "detected_licenses": ["MIT", "GPL-3.0-only"]},
+        {"allowed_license_ids": ["MIT"]},
+    ) is False
+    assert _stack_license_is_allowed(
+        {"license_type": "permissive"},
+        {"allowed_license_ids": ["MIT"]},
+    ) is False
