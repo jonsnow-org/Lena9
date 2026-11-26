@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -109,11 +110,14 @@ def test_manifest_scope_audits_only_external_source_ids_and_flags_unregistered(t
     assert unknown["status"] == "unregistered_source"
 
 
-def test_approved_review_with_missing_evidence_is_invalid(tmp_path):
-    bad = _approved_review().replace(
-        "evidence_sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+def test_approved_review_with_malformed_evidence_hash_is_invalid(tmp_path):
+    valid_review = _approved_review()
+    valid_digest = hashlib.sha256(_EVIDENCE_BYTES).hexdigest()
+    bad = valid_review.replace(
+        f"evidence_sha256: {valid_digest}",
         "evidence_sha256: missing",
     )
+    assert bad != valid_review
     sources, reviews = _write_inputs(tmp_path, reviews=bad)
     report = audit_source_licenses(sources_path=sources, reviews_path=reviews)
     item = next(item for item in report["sources"] if item["source_id"] == "dataset_a")
