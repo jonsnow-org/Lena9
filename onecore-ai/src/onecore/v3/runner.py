@@ -133,11 +133,18 @@ def _validate_resource_evidence(
                 )
 
     benchmarks = report.get("benchmarks")
-    if not isinstance(benchmarks, list) or not benchmarks or any(
+    if not isinstance(benchmarks, list) or any(
         not isinstance(item, dict) or item.get("status") != "success"
         for item in benchmarks
     ):
         raise ValueError("V3 CPU resource benchmark contains a failed or missing per-family case")
+    benchmark_families = [item.get("family") for item in benchmarks]
+    if (
+        len(benchmark_families) != len(families)
+        or len(set(benchmark_families)) != len(families)
+        or set(benchmark_families) != set(families)
+    ):
+        raise ValueError("V3 CPU resource benchmark must contain exactly one successful case for each of the five families")
 
     joint = report.get("joint_training_memory")
     if not isinstance(joint, dict) or joint.get("status") != "success":
@@ -186,20 +193,60 @@ def _validate_resource_evidence(
         ):
             raise ValueError(f"V3 CPU resource benchmark is missing positive measured {label}")
 
+    # Confirm the production-loader sample itself met the quota, not only the
+    # immutable source corpus gate.
+    selection = loader.get("sample_selection")
+    selection_coverage = selection.get("coverage") if isinstance(selection, dict) else None
+    if not isinstance(selection_coverage, dict):
+        raise ValueError("V3 production loader benchmark is missing its sample-selection coverage")
+    for split, minimum in minimums.items():
+        split_counts = selection_coverage.get(split)
+        if not isinstance(split_counts, dict):
+            raise ValueError(f"V3 production loader benchmark is missing selected {split} quotas")
+        for family in families:
+            counts = split_counts.get(family)
+            if not isinstance(counts, dict):
+                raise ValueError(f"V3 production loader benchmark is missing selected {split}/{family} counts")
+            selected_rows = counts.get("selected_rows")
+            eligible_rows = counts.get("eligible_external_rows_within_caps")
+            if (
+                isinstance(selected_rows, bool)
+                or not isinstance(selected_rows, int)
+                or selected_rows != minimum
+                or isinstance(eligible_rows, bool)
+                or not isinstance(eligible_rows, int)
+                or eligible_rows < minimum
+            ):
+                raise ValueError(f"V3 production loader benchmark selected sample is below quota: {split}/{family}")
+
+    # Aggregate joint throughput cannot replace per-family modality evidence.
+    family_throughput = loader.get("family_throughput")
+    if not isinstance(family_throughput, dict) or set(family_throughput) != set(families):
+        raise ValueError("V3 production loader benchmark must report throughput for all five families")
+    for family in families:
+        rates = family_throughput.get(family)
+        if not isinstance(rates, dict):
+            raise ValueError(f"V3 production loader benchmark is missing {family} throughput")
+        require_positive(rates.get("records_per_second"), f"{family} records per second")
+        require_positive(rates.get("units_per_second"), f"{family} units per second")
+
     require_positive(joint.get("peak_rss_bytes"), "joint peak RSS")
     require_positive(joint.get("optimizer_state_bytes"), "AdamW state allocation")
     require_positive(loader.get("peak_rss_bytes"), "production loader peak RSS")
     require_positive(loader.get("joint_steps_per_second"), "production loader throughput")
-    require_positive(loader.get("measured_joint_steps"), "production loader measured steps")
+    measured_steps = loader.get("measured_joint_steps")
+    if isinstance(measured_steps, bool) or not isinstance(measured_steps, int) or measured_steps < 1:
+        raise ValueError("V3 production loader benchmark must report a positive integer number of measured steps")
 
     memory = report.get("memory_accounting")
     if not isinstance(memory, dict):
         raise ValueError("V3 CPU resource benchmark is missing process-tree memory accounting")
-    require_positive(memory.get("observed_process_tree_peak_rss_bytes"), "process-tree peak RSS")
-    require_positive(
-        memory.get("conservative_process_tree_rss_upper_bound_bytes"),
-        "conservative process-tree RSS upper bound",
-    )
+    observed_peak = memory.get("observed_process_tree_peak_rss_bytes")
+    conservative_bound = memory.get("conservative_process_tree_rss_upper_bound_bytes")
+    require_positive(observed_peak, "process-tree peak RSS")
+    require_positive(conservative_bound, "conservative process-tree RSS upper bound")
+    if conservative_bound < observed_peak:
+        raise ValueError("V3 conservative process-tree RSS upper bound is below the observed peak")
     return sha256_file(report_path)
 
 

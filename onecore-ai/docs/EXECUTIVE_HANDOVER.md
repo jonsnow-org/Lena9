@@ -99,6 +99,9 @@ Check each gate against current V3 source, workflow logs and immutable artifacts
 - Read the entire executive handover, active root README, V3 README, V3 request file, active workflows, resource benchmark source/tests, and legacy operations references.
 - Inspected the live branch HEAD, current main HEAD, the latest 20 V3 branch run records, current open PRs/issues, and active-run status. No duplicate run or existing manual benchmark was started.
 - Corrected the legacy V2 documentation labels and active README pointers in the current branch only. No runtime code, training request, corpus, tokenizer, checkpoint, workflow trigger, V2 branch, or `main` was changed.
+- The existing Run #681 resource artifact (15033704533) was inspected: it is a failed partial report because the stale video sample cap selected 16 of 100 required train rows. The adaptive native-resolution video cap correction already exists in later branch history. Run #700 produced no artifact; neither attempt was repeated.
+- Source review confirmed V3 already has `runner.py`, `training.py`, `dataset.py`, `checkpoint.py`, their tests, and a staged training workflow; this work did not recreate those components.
+- Hardened the V3 runner resource-evidence gate: exactly one successful isolated case per family; exact 100/10/10 production-loader sample quotas; positive per-family record and unit throughput; a positive integer loader step count; and a conservative process-tree RSS bound that cannot be below observed peak. Added regression tests for missing/duplicate families, incomplete video quota, missing/zero modality throughput, and inconsistent RSS accounting.
 - No new benchmark, corpus restore, tokenizer fit, checkpoint restore, or optimizer training was run.
 
 ### Remaining / blocked

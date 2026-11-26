@@ -49,6 +49,17 @@ def _resource_report():
             "measured_joint_steps": 20,
             "joint_steps_per_second": 0.1,
             "peak_rss_bytes": 4096,
+            "sample_selection": {
+                "coverage": {
+                    "train": {family: {"eligible_external_rows_within_caps": 100, "rejected_by_resource_caps": 0, "selected_rows": 100} for family in families},
+                    "validation": {family: {"eligible_external_rows_within_caps": 10, "rejected_by_resource_caps": 0, "selected_rows": 10} for family in families},
+                    "test": {family: {"eligible_external_rows_within_caps": 10, "rejected_by_resource_caps": 0, "selected_rows": 10} for family in families},
+                }
+            },
+            "family_throughput": {
+                family: {"records_per_second": 1.0, "units_per_second": 2.0}
+                for family in families
+            },
         },
         "memory_accounting": {
             "observed_process_tree_peak_rss_bytes": 16384,
@@ -149,4 +160,50 @@ def test_v3_resource_evidence_rejects_incomplete_or_nonpositive_measurements(tmp
     path = tmp_path / "coverage.json"
     path.write_text(json.dumps(report), encoding="utf-8")
     with pytest.raises(ValueError, match="coverage is below quota"):
+        _validate(path)
+
+
+
+def test_v3_resource_evidence_requires_exactly_one_successful_case_per_family(tmp_path):
+    for cases in (
+        [{"status": "success", "family": family} for family in ("text", "tool", "image", "audio")],
+        [{"status": "success", "family": family} for family in ("text", "tool", "image", "audio", "text")],
+    ):
+        report = _resource_report()
+        report["benchmarks"] = cases
+        path = tmp_path / f"cases-{len(cases)}-{cases[-1]['family']}.json"
+        path.write_text(json.dumps(report), encoding="utf-8")
+        with pytest.raises(ValueError, match="exactly one successful case for each of the five families"):
+            _validate(path)
+
+
+def test_v3_resource_evidence_requires_complete_loader_sample_quotas_and_family_rates(tmp_path):
+    report = _resource_report()
+    report["data_loader_benchmark"]["sample_selection"]["coverage"]["train"]["video"]["selected_rows"] = 16
+    path = tmp_path / "video-quota.json"
+    path.write_text(json.dumps(report), encoding="utf-8")
+    with pytest.raises(ValueError, match="selected sample is below quota: train/video"):
+        _validate(path)
+
+    report = _resource_report()
+    del report["data_loader_benchmark"]["family_throughput"]["audio"]
+    path = tmp_path / "missing-family-rate.json"
+    path.write_text(json.dumps(report), encoding="utf-8")
+    with pytest.raises(ValueError, match="throughput for all five families"):
+        _validate(path)
+
+    report = _resource_report()
+    report["data_loader_benchmark"]["family_throughput"]["video"]["units_per_second"] = 0
+    path = tmp_path / "video-rate.json"
+    path.write_text(json.dumps(report), encoding="utf-8")
+    with pytest.raises(ValueError, match="positive measured video units per second"):
+        _validate(path)
+
+
+def test_v3_resource_evidence_rejects_inconsistent_process_tree_memory_bound(tmp_path):
+    report = _resource_report()
+    report["memory_accounting"]["conservative_process_tree_rss_upper_bound_bytes"] = 100
+    path = tmp_path / "rss-bound.json"
+    path.write_text(json.dumps(report), encoding="utf-8")
+    with pytest.raises(ValueError, match="upper bound is below the observed peak"):
         _validate(path)
