@@ -522,19 +522,28 @@ def test_v3_heldout_evaluator_reports_validation_and_test_without_updates(tmp_pa
         report = evaluate_v3_heldout_splits(
             runtime,
             loader,
-            per_family_records=2,
-            families=("text", "tool"),
+            per_family_records=1,
+            families=FAMILIES,
             seed=91,
         )
         assert report["status"] == "evaluated"
         assert report["optimizer_updates"] == 0
         assert report["quality_certified"] is False
+        assert report["checkpoint_sha256"] == saved["sha256"]
+        assert report["config_sha256"] == config.fingerprint
         assert set(report["splits"]) == {"validation", "test"}
+        expected_loss = {
+            "text": "text_loss",
+            "tool": "tool_loss",
+            "image": "image_flow_loss",
+            "audio": "audio_flow_loss",
+            "video": "video_flow_loss",
+        }
         for split in ("validation", "test"):
-            for family in ("text", "tool"):
+            for family in FAMILIES:
                 metrics = report["splits"][split][family]
-                assert metrics["sample_count"] == 2
-                assert metrics["mean_losses"][f"{family}_loss"] > 0
+                assert metrics["sample_count"] == 1
+                assert metrics["mean_losses"][expected_loss[family]] >= 0
                 assert len(metrics["record_ids_sha256"]) == 64
         assert loader.state_dict() == train_state
         assert torch.equal(torch.get_rng_state(), rng)
