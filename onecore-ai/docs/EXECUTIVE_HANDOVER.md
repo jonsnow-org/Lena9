@@ -74,15 +74,17 @@ Check each gate against current V3 source, workflow logs and immutable artifacts
 ## 6. Per-session progress ledger — update this section every run
 
 ### Current verified state — 2026-11-26
-- Canonical active branch: `research/onecore-v3-implementation`. Before this session's documentation correction, live HEAD was `fb95402f6e65e7c8d2391099d73b6b722dd7ce2e`; the changes in this session are committed together on this branch. Always fetch the new HEAD rather than assuming this note's commit is current.
+- Canonical active branch: `research/onecore-v3-implementation`. Documentation correction commit `f80db3e52411bc755cb7b0fede96fdda152cc6a3` is based on `fb95402f6e65e7c8d2391099d73b6b722dd7ce2e` and passed Run #704. This handover records that verified result. Always fetch the new HEAD rather than assuming this note's commit is current.
 - Frozen V2 branch remains a historical archive only. `main` was observed at `10c4f01663bd65e30335bfe7b4ed3cdfe6584815`; do not modify or merge into it.
-- No active OneCore workflow run was present at the latest live status query. There is no open V3 PR. Open PR #7 and issue #6 are unrelated to V3.
+- No active OneCore workflow run was present after Run #704 completed. There is no open V3 PR. Open PR #7 and issue #6 are unrelated to V3.
 - Latest 20 branch runs were inspected. The current three push Verify runs are:
   - [Run #701](https://github.com/jonsnow-org/Lena9/actions/runs/45769739545), commit `9d4ef7a74b70660732c4a199738401f938c2f31c`: Verify succeeded; the CPU benchmark and corpus-restore jobs were skipped for a push event.
   - [Run #702](https://github.com/jonsnow-org/Lena9/actions/runs/45770552742), commit `298419117267d85355dece40cb49f50c1bab8e50`: Verify succeeded; benchmark and restore jobs were skipped.
   - [Run #703](https://github.com/jonsnow-org/Lena9/actions/runs/45770650495), commit `fb95402f6e65e7c8d2391099d73b6b722dd7ce2e`: Verify succeeded; benchmark and restore jobs were skipped.
+  - [Run #704](https://github.com/jonsnow-org/Lena9/actions/runs/45805512269), commit `f80db3e52411bc755cb7b0fede96fdda152cc6a3`: Verify succeeded, including all unit/regression tests, V3 architecture/FLOP assertions, notebooks, FineWeb-2 cursor-resume and workflow isolation. Manual CPU benchmark and corpus-restore jobs were skipped; no resource artifact was produced.
 - [Run #700](https://github.com/jonsnow-org/Lena9/actions/runs/45724385251) was the last failed CPU-benchmark attempt on old commit `359976e333906b228eef39584fecc5d10c9a092d`; it produced no benchmark artifact and the job log endpoint returned BlobNotFound. Its precise root cause remains unproven. The progress-snapshot / heartbeat / lower-RSS-polling fix is already committed as `9d4ef7a`; do not rerun #700 unchanged.
 - [Run #699](https://github.com/jonsnow-org/Lena9/actions/runs/45723470918) was a workflow_dispatch on `main` and ended cancelled. It did not produce benchmark evidence. Do not retry it or use `main` as the V3 working branch.
+- [Run #695](https://github.com/jonsnow-org/Lena9/actions/runs/45695103812) on `main` failed while reading the 24.43 GB corpus via an expired signed Artifact URL (HTTP 403). The refresh-on-403 fix is already on V3 in commit `4af3d63459314f8d9a100db4e513651f01571713`; V3 Verify runs #696 and #697 passed after this fix. Do not retry the old main run.
 - [Run #681](https://github.com/jonsnow-org/Lena9/actions/runs/45641782921) was an older V3 manual benchmark failure on a stale SHA due video sample caps; the native-resolution frame-budget correction is already in later branch history. Never repeat #681.
 - V3 architecture remains prototype-2: 39,906,568 trainable parameters, 123 state tensors, config SHA-256 `6c879331c75da434c58680050f94035dc15626e7af4847db1b36e055c47d7708`, and reference five-family dense forward count 291,846,632,448 FLOPs. FLOPs and parameter-storage estimates are not measured runtime resources.
 - Pinned external corpus artifact `14892594659` and conversion report `14893020087` from Run #605 already passed the external-only five-family gate: 654,088 accepted external records; zero synthetic additions; required quotas present. The audit still records 37 unmatched legacy source rows, so do not claim the entire old archive was restored. Do not redownload or restore this corpus again without new evidence that the immutable artifact is unavailable or corrupt.
@@ -91,7 +93,7 @@ Check each gate against current V3 source, workflow logs and immutable artifacts
 - Full checkpoint continuity gate: **NOT RUN on the real corpus/tokenizer**. Tiny-fixture checkpoint tests pass, but there is no approved V3 checkpoint lineage/artifact.
 - V3 optimizer training is prohibited until resource and full checkpoint gates pass. `.github/workflows/onecore-v3-training.yml` remains workflow_dispatch-only and its train job retains the explicit `&& false` guard. No optimizer update was verified or approved.
 - GitHub connection capabilities were rechecked: it provides repository file/commit operations and read access to Actions, plus rerun operations for failed jobs, but no workflow-dispatch action. `.github/workflows/onecore-ci.yml` already exposes the correct manual inputs: `benchmark_v3_resources=true`, `restore_v3_corpus=false`. Do not bypass the manual gate or claim a measurement.
-- This session corrected misleading V2 operational documentation: `docs/training-operations.md` and `notebooks/README.md` are now explicitly marked frozen V2 references; the root README points to the active V3 docs; V3 README distinguishes historical Run #620 from current Verify runs and points to this handover for live state.
+- This session corrected misleading V2 operational documentation in commit `f80db3e52411bc755cb7b0fede96fdda152cc6a3`: `docs/training-operations.md` and `notebooks/README.md` are explicitly marked frozen V2 references; the root README points to the active V3 docs; V3 README distinguishes historical Run #620 from current Verify runs and points to this handover for live state. Run #704 passed all Verify steps on this commit.
 
 ### Completed in this session
 - Read the entire executive handover, active root README, V3 README, V3 request file, active workflows, resource benchmark source/tests, and legacy operations references.
@@ -116,7 +118,7 @@ Check each gate against current V3 source, workflow logs and immutable artifacts
 - Tokenizer Run #2 / artifact `14894835517`: verified 32k external train-only tokenizer exists; no repeat fit.
 - Run #700 / `45724385251`: failed benchmark without artifact; fix already committed; no unchanged retry.
 - Run #681 / `45641782921`: stale video-cap benchmark failure; later fix exists; no repeat.
-- Runs #701, #702, #703: completed push Verify only; benchmark and restore jobs were skipped, not passed. Do not mistake them for resource measurements or rerun without a code change.
+- Runs #701, #702, #703, #704: completed push Verify only; benchmark and restore jobs were skipped, not passed. Do not mistake them for resource measurements or rerun without a code change.
 - Run #699 / `45723470918`: cancelled on `main`; no V3 benchmark evidence and no retry.
 - Historical V3 training Run #1 / `45483538417`: failed with no artifact and ambiguous optimizer step; never resume or accept its lineage.
 - No V3 optimizer training, full corpus restore, tokenizer refit, checkpoint mutation, branch creation, or merge to `main` until explicit gates are satisfied.
