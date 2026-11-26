@@ -1798,7 +1798,7 @@ def _process_tree_memory_accounting(
         "conservative_process_tree_rss_upper_bound_bytes": (
             parent_peak_rss_bytes + max_worker_peak_rss
         ),
-        "sampling_interval_seconds": 0.02,
+        "sampling_interval_seconds": RSS_SAMPLE_INTERVAL_SECONDS,
         "method": (
             "Linux per-process ru_maxrss plus sampled /proc parent+worker RSS, "
             "including per-family, five-family loader and joint workers; the conservative "

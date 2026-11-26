@@ -142,7 +142,9 @@ def test_benchmark_rejects_unsafe_asset_paths(value):
 
 
 def test_process_tree_memory_accounting_includes_loader_worker_peak():
-    from onecore.v3.resource_benchmark import _process_tree_memory_accounting
+    from onecore.v3 import resource_benchmark as benchmark
+
+    _process_tree_memory_accounting = benchmark._process_tree_memory_accounting
 
     per_family = {"peak_rss_bytes": 180, "process_tree_peak_rss_bytes_observed": 240}
     loader = {"peak_rss_bytes": 320, "process_tree_peak_rss_bytes_observed": 370}
@@ -154,6 +156,7 @@ def test_process_tree_memory_accounting_includes_loader_worker_peak():
     assert result["max_worker_process_peak_rss_bytes"] == 320
     assert result["observed_process_tree_peak_rss_bytes"] == 370
     assert result["conservative_process_tree_rss_upper_bound_bytes"] == 470
+    assert result["sampling_interval_seconds"] == benchmark.RSS_SAMPLE_INTERVAL_SECONDS == 0.25
     assert "loader" in result["method"]
 
 
