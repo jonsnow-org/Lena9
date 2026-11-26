@@ -2,6 +2,9 @@
 
 These instructions apply to all work below `onecore-ai/`. They take precedence over conflicting repository-root instructions for this subtree. The live status ledger is `docs/EXECUTIVE_HANDOVER.md`; architecture limits and research gates are in `v3/README.md`.
 
+> **MANDATORY CROSS-SESSION ENTRY CHECK:** Before reading task history from chat or changing any file, read `SESSION_PROTOCOL.md`, this file, and the complete `docs/EXECUTIVE_HANDOVER.md`. Then inspect the live GitHub branch/commits, all recent OneCore workflow runs (including other clients' runs), open PRs and active jobs. Acquire the shared `SESSION_LOCK.json` using the compare-and-swap procedure in `SESSION_PROTOCOL.md`. If another valid lock exists, or a safe lock cannot be acquired, remain read-only. Never overwrite or repeat another session's work. Record your own verified changes and release the lock before handoff.
+
+
 ## 1. Repository and branch boundaries
 
 - Repository: `jonsnow-org/Lena9`.

@@ -1,6 +1,8 @@
 # OneCore AI — from-scratch compact general intelligence
 
 **One unified, multimodal research model initialized randomly from scratch.** No pretrained model weights, adapters, teacher-model outputs, or model downloads are used.
+> **For every AI coding client:** before doing any OneCore work, read `AGENTS.md`, `SESSION_PROTOCOL.md`, and the complete `docs/EXECUTIVE_HANDOVER.md`. Inspect the live branch and other clients' commits/runs; never rely only on chat history.
+
 
 OneCore is isolated under `onecore-ai/` in `jonsnow-org/Lena9` and actively developed only on `research/onecore-v3-implementation`. The `research/onecore-foundation` branch is a frozen V2 legacy/reference archive. V3 corpus restoration and tokenizer fitting are bounded data-preparation operations; no optimizer training starts before tokenizer, checkpoint and measured CPU-resource gates pass.
 

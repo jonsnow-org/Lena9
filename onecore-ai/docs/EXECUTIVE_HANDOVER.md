@@ -164,3 +164,14 @@ Check each gate against current V3 source, workflow logs and immutable artifacts
 - The earlier workflow-dispatch run #736 failed in the Verify job; its CPU resource benchmark, corpus restore, step-zero audit and held-out evaluation jobs were skipped. Its artifact list was empty. It produced **no** measured RSS/throughput evidence. The CPU resource gate remains outstanding.
 - No optimizer updates were performed. The V3 training workflow guard remains intentionally fail-closed; retain it until the resource benchmark and all required approvals are satisfied.
 - Next runtime action remains a manual dispatch on the current branch HEAD with `benchmark_v3_resources=true` and `restore_v3_corpus=false`. The available GitHub connection in this session still has no workflow-dispatch action; do not substitute a push run or a Verify pass for the benchmark.
+
+
+## 7. Mandatory multi-client coordination protocol — 2026-11-26
+
+- Added `SESSION_PROTOCOL.md` and `SESSION_LOCK.json`. Every AI/client/scheduled supervisor working below `onecore-ai/` must read the protocol, `AGENTS.md` and this complete handover before any write, dispatch, rerun or merge.
+- The shared lock requires compare-and-swap against the live branch HEAD; a valid active lease means other clients remain read-only. Release the lease after verification and update this handover before exit.
+- Reviewed commits from `51efb59531d3e55a47a2b9b054b489e69fdd11e8` to the preceding HEAD `6474bcbec1270ec15cae97f19cb0bd91b8f2923b`: 11 commits, all paths confined to `onecore-ai/`. The concurrent work added a fail-closed source-license audit and Stack V2 exact license-ID filtering. No changes to model weights, V3 tokenizer, pinned corpus artifact, V3 training request or optimizer state were found in that comparison.
+- Intermediate Verify failures #728–#737 were followed by successful Run #738 (398 passed, 45 warnings) and Run #739 (all 17 Verify steps passed). Run #736 was a manual workflow dispatch but failed unit tests; CPU benchmark, restore, checkpoint audit and held-out evaluation were skipped. No resource artifact or optimizer update resulted.
+- The license review registry currently contains no approved source entries. The audit currently provides evidence/reporting and does not automatically gate the V3 optimizer workflow. Commercial readiness must remain false until source-specific reviews for the actual training sources are completed and audited.
+- Review found no active Actions runs, no open OneCore PR and no unresolved failure on the latest #739 Verify job. PR #7 is unrelated.
+- Exact reviewed continuation head before this protocol change: `6474bcbec1270ec15cae97f19cb0bd91b8f2923b`. Always reconcile against the live HEAD at the next session.
