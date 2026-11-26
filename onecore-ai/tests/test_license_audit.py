@@ -150,3 +150,28 @@ sources:
     assert report["total_sources"] == 1
     assert report["sources"][0]["source_id"] == "implicit_enabled"
     assert report["sources"][0]["status"] == "unreviewed"
+
+
+
+def test_approved_review_requires_explicit_attribution_and_share_alike_flags(tmp_path):
+    bad = _approved_review().replace(
+        "    attribution_required: true\n", ""
+    ).replace("    share_alike_or_copyleft: false\n", "")
+    sources, reviews = _write_inputs(tmp_path, reviews=bad)
+    report = audit_source_licenses(sources_path=sources, reviews_path=reviews)
+    item = next(row for row in report["sources"] if row["source_id"] == "dataset_a")
+    assert item["commercially_approved"] is False
+    assert "attribution_required must be an explicit boolean" in item["reasons"]
+    assert "share_alike_or_copyleft must be an explicit boolean" in item["reasons"]
+
+
+def test_current_repository_registry_is_not_commercially_cleared_by_default():
+    project = Path(__file__).resolve().parents[1]
+    report = audit_source_licenses(
+        sources_path=project / "data" / "sources.yaml",
+        reviews_path=project / "data" / "license-review.yaml",
+    )
+    assert report["commercial_ready"] is False
+    assert report["total_sources"] > 0
+    assert report["commercially_approved_sources"] == 0
+    assert report["blocked_or_unreviewed_sources"] == report["total_sources"]

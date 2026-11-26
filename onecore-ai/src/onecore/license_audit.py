@@ -20,10 +20,12 @@ import yaml
 from .data import classify_record_data, iter_manifest
 
 _HEX = re.compile(r"^[0-9a-f]{64}$")
-_PERMISSION_FLAGS = (
+_REQUIRED_REVIEW_FLAGS = (
     "model_training_use",
     "commercial_deployment_use",
     "weight_redistribution_use",
+    "attribution_required",
+    "share_alike_or_copyleft",
 )
 
 
@@ -75,7 +77,7 @@ def _validate_review(review: Any) -> tuple[str, list[str], dict[str, Any] | None
         reasons.append("reviewed_at must be an ISO date")
 
     flags: dict[str, bool] = {}
-    for field in _PERMISSION_FLAGS:
+    for field in _REQUIRED_REVIEW_FLAGS:
         value = review.get(field)
         if not isinstance(value, bool):
             reasons.append(f"{field} must be an explicit boolean")
@@ -109,10 +111,6 @@ def _validate_review(review: Any) -> tuple[str, list[str], dict[str, Any] | None
         "reviewed_by": reviewer or None,
         "reviewed_at": reviewed_at or None,
         **flags,
-        "attribution_required": review.get("attribution_required")
-        if isinstance(review.get("attribution_required"), bool) else None,
-        "share_alike_or_copyleft": review.get("share_alike_or_copyleft")
-        if isinstance(review.get("share_alike_or_copyleft"), bool) else None,
         "review_notes": str(review.get("review_notes", "")).strip() or None,
     }
     return classification, reasons, normalized

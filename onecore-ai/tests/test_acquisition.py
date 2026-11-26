@@ -64,6 +64,7 @@ def test_source_registry_covers_all_shared_modalities() -> None:
     assert stack["enabled"] is True
     assert stack["required_for_training"] is False
     assert stack["minimum_accepted_records"] == 10000
+    assert stack["allowed_license_ids"] == []
 
 
 def test_split_assignment_is_stable_and_preserves_published_holdouts() -> None:
