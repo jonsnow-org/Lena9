@@ -468,7 +468,7 @@ def test_v3_heldout_evaluator_reports_validation_and_test_without_updates(tmp_pa
         audio_hidden_channels=16,
         audio_codebook_size=16,
         audio_quantizer_stages=2,
-        audio_channels=1,
+        audio_channels=2,
         temporal_layers=1,
         max_image_context_tokens=8,
         max_video_context_tokens=8,
