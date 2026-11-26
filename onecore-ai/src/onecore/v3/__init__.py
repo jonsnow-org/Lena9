@@ -22,12 +22,13 @@ from .tokenizer import (
     train_v3_tokenizer,
     verify_v3_tokenizer,
 )
+from .inference import OneCoreV3Inference
 from .video import TemporalVideoCodec, VideoEncoding
 from .vision import ImageEncoding, VariableResolutionImageCodec
 
 __all__ = [
     "AudioEncoding", "NeuralAudioCodec", "ResidualVectorQuantizer",
-    "OneCoreV3", "SharedSemanticCore", "V3Config",
+    "OneCoreV3", "SharedSemanticCore", "V3Config", "OneCoreV3Inference",
     "V3_CHECKPOINT_FORMAT_VERSION", "V3_DATA_STATE_FORMAT_VERSION",
     "save_v3_checkpoint", "load_v3_checkpoint",
     "fingerprint_validated_v3_manifests",

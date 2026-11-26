@@ -35,6 +35,7 @@ onecore-v3-convert = "onecore.v3.cli:main"
 onecore-v3-tokenizer = "onecore.v3.tokenizer:main"
 onecore-v3-train = "onecore.v3.runner:main"
 onecore-v3-resource-benchmark = "onecore.v3.resource_benchmark:main"
+onecore-v3-infer = "onecore.v3.inference:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
