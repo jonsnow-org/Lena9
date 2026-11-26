@@ -261,7 +261,7 @@ def test_stack_v2_filters_before_fetching_swh_blobs(tmp_path, monkeypatch):
         row = dict(base)
         row.update(changes)
         assert acquire._record_from_row(row, dict(source), "rejected-row", "train", assets) is None
-    assert calls == ["f" * 40] * 3, "quality-filtered files must not trigger content requests"
+    assert calls == ["f" * 40], "unlicensed or quality-filtered files must not trigger content requests"
 
 
 def test_source_registry_routes_text_code_and_multimodal_crawlers_to_their_own_notebooks():
