@@ -617,9 +617,9 @@ jobs:
 
 
   v3-checkpoint-artifact-audit:
-    name: Audit real-artifact V3 checkpoint save and restore
+    name: Audit step-zero V3 checkpoint save and restore against real artifacts
     needs: verify
-    if: github.ref == 'refs/heads/research/onecore-v3-implementation' && inputs.audit_v3_checkpoint
+    if: github.ref == 'refs/heads/research/onecore-v3-implementation' && (inputs.audit_v3_checkpoint || (github.event_name == 'push' && contains(github.event.head_commit.message, '[run-v3-checkpoint-audit]')))
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
@@ -657,7 +657,7 @@ jobs:
           repository: ${{ github.repository }}
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/onecore-v3-conversion-report
-      - name: Audit real V3 manifests, tokenizer, source cursors and full checkpoint state
+      - name: Audit real V3 manifests, tokenizer, initial source cursors and step-zero checkpoint state
         run: |
           python -m onecore.v3.checkpoint_audit \
             --repo "${{ github.repository }}" \
