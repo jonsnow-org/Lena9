@@ -20,7 +20,6 @@ from tokenizers import Tokenizer
 
 from .config import V3Config
 from .core import OneCoreV3
-from .tokenizer import SPECIAL_TOKENS
 
 _REQUIRED_SPECIAL_TOKENS = ("[UNK]", "[BOS]", "[EOS]", "[PAD]")
 _HEX = frozenset("0123456789abcdef")
@@ -196,16 +195,19 @@ class OneCoreV3Inference:
             device=target_device,
         )
 
-    def _prompt_ids(self, prompt: str) -> list[int]:
+    def _prompt_ids(self, prompt: str, *, append_eos: bool = False) -> list[int]:
         if not isinstance(prompt, str):
             raise TypeError("prompt must be a string")
         encoded = self.tokenizer.encode(prompt, add_special_tokens=False).ids
-        return [int(self.special_ids["[BOS]"]), *encoded, int(self.special_ids["[EOS]"])]
+        values = [int(self.special_ids["[BOS]"]), *encoded]
+        if append_eos:
+            values.append(int(self.special_ids["[EOS]"]))
+        return values
 
     def _condition_tensor(self, prompt: str | None) -> torch.Tensor | None:
         if prompt is None:
             return None
-        ids = self._prompt_ids(prompt)
+        ids = self._prompt_ids(prompt, append_eos=True)
         return torch.tensor([ids], dtype=torch.long, device=self.device)
 
     @torch.inference_mode()
@@ -230,7 +232,7 @@ class OneCoreV3Inference:
         if isinstance(max_context_tokens, bool) or not isinstance(max_context_tokens, int) or max_context_tokens < 2:
             raise ValueError("max_context_tokens must be an integer >= 2")
 
-        sequence = self._prompt_ids(prompt)
+        sequence = self._prompt_ids(prompt, append_eos=False)
         if len(sequence) > max_context_tokens:
             sequence = [sequence[0], *sequence[-(max_context_tokens - 1):]]
         generated: list[int] = []
