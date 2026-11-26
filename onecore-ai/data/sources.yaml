@@ -291,7 +291,6 @@ sources:
       - Julia
       - Lua
       - Markdown
-    enabled: true
 
   - id: fineweb2_full_en
     repo: HuggingFaceFW/fineweb-2

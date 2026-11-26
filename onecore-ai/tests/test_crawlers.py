@@ -198,70 +198,30 @@ def test_required_source_minimums_and_crawler_credentials_are_wired_into_each_se
     assert acquire_source.index("added_counts = _append_manifests(root, rows_by_split)") < acquire_source.index("saved_cursor = cursor.save(dataset, rows_read)")
 
 
-def test_stack_v2_filters_before_fetching_swh_blobs(tmp_path, monkeypatch):
+def test_disabled_stack_v2_source_never_fetches_code_payloads(tmp_path, monkeypatch):
     from onecore import acquire
 
     calls = []
     monkeypatch.setattr(
         acquire,
         "fetch_stack_content",
-        lambda row, max_bytes=524_288: calls.append(row["blob_id"]) or "def safe_code():\n    return 1\n",
+        lambda *args, **kwargs: calls.append(args) or "unexpected content",
     )
     source = {
-        "id": "stack_v2_python",
+        "id": "stack_v2_code",
         "repo": "bigcode/the-stack-v2",
         "adapter": "stack_v2_code",
-        "allowed_languages": ["Python"],
-        "allowed_license_ids": ["MIT"],
         "_resolved_revision": "a" * 40,
     }
-    base = {
-        "blob_id": "f" * 40,
-        "src_encoding": "utf-8",
-        "language": "Python",
-        "path": "src/example.py",
-        "detected_licenses": ["MIT"],
-        "gha_license_id": "MIT",
-        "license_type": "permissive",
-        "is_vendor": False,
-        "is_generated": False,
-        "repo_name": "alice/example-project",
-        "directory_id": "d" * 40,
-        "revision_id": "r" * 40,
-        "snapshot_id": "s" * 40,
-        "content_id": "c" * 40,
-    }
-    assets = tmp_path / "assets"
-    good = acquire._record_from_row(dict(base), dict(source), "good-row", "train", assets)
-    assert good is not None and good["task"] == "text"
-    assert good["code_blob_id"] == "f" * 40
-    assert good["code_repository"] == "alice/example-project"
-    assert good["code_repository_url"] == "https://github.com/alice/example-project"
-    assert good["code_revision_id"] == "r" * 40
-    assert good["code_license_type"] == "permissive"
-    assert calls == ["f" * 40]
-
-    # Missing and unlisted licenses are rejected before requesting the SWH blob.
-    for index, changes in enumerate((
-        {"license_type": "no_license", "detected_licenses": [], "gha_license_id": ""},
-        {"license_type": "copyleft", "detected_licenses": ["GPL-3.0-only"], "gha_license_id": "GPL-3.0-only"},
-    ), start=1):
-        row = dict(base)
-        row.update(changes)
-        record = acquire._record_from_row(row, dict(source), f"license-rejected-{index}", "train", assets)
-        assert record is None
-    assert calls == ["f" * 40]
-
-    # Retain non-license quality and secret-protection gates.
-    for changes in (
-        {"is_vendor": True},
-        {"is_generated": True},
-        {"language": "Brainfuck"},
-    ):
-        row = dict(base)
-        row.update(changes)
-        assert acquire._record_from_row(row, dict(source), "rejected-row", "train", assets) is None
-    assert calls == ["f" * 40], "unlicensed or quality-filtered files must not trigger content requests"
+    record = acquire._record_from_row(
+        {"blob_id": "f" * 40, "path": "src/example.py"},
+        source,
+        "disabled-stack-row",
+        "train",
+        tmp_path,
+    )
+    assert record is None
+    assert calls == []
 
 
 def test_source_registry_routes_text_code_and_multimodal_crawlers_to_their_own_notebooks():
@@ -272,7 +232,7 @@ def test_source_registry_routes_text_code_and_multimodal_crawlers_to_their_own_n
     text_sources = source_ids_for_notebook(root, "03_text_pretraining")
     media_sources = source_ids_for_notebook(root, "04_multimodal_curriculum")
     assert "fineweb2_full_ar" in text_sources
-    assert "stack_v2_code" in text_sources
+    assert "stack_v2_code" not in text_sources
     assert "fleurs_ar" in media_sources
     assert "openimages_finedet_v1" in media_sources
     assert set(text_sources).isdisjoint(media_sources)
