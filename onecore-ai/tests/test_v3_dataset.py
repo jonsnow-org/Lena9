@@ -479,9 +479,6 @@ def test_v3_heldout_evaluator_reports_validation_and_test_without_updates(tmp_pa
         dropout=0.0,
     )
     loader, _assets_root = _build_loader(tmp_path, config=config)
-    model = config.build_model().cpu().eval()
-    for parameter in model.parameters():
-        parameter.requires_grad_(False)
     with loader:
         from onecore.v3.checkpoint import save_v3_checkpoint
         from onecore.v3.inference import OneCoreV3Inference

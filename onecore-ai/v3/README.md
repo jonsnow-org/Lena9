@@ -140,3 +140,14 @@ The profile is guarded by Verify Run #620 on implementation commit `01dedd7ccf05
 ### Remaining V3 gates
 
 The next engineering work is a real-corpus CPU benchmark with measured peak RSS, per-family throughput and media/sequence shape distributions, followed by a full checkpoint save/restore bound to the actual tokenizer, manifest, data cursors and RNG lineage. The checkpoint tests currently use tiny fixtures; the real-corpus continuity gate has not yet been demonstrated. No optimizer training, V3 trainer, or production inference API has started.
+
+
+### V3 held-out evaluation implementation — 2026-11-26
+
+- Added `V3JointDataLoader.iter_evaluation_micro_batches`: deterministic external-only reservoir sampling from `validation` and `test` manifests; the train split is rejected explicitly. It reuses the same asset hash validation and modality materializers while preserving the training cursor snapshot.
+- Added `evaluate_v3_heldout_splits`: reports per-family objective component means, per-split sample counts and record-ID digests, tied to checkpoint/config/manifest/tokenizer hashes. It runs under inference mode and checks RNG, model gradients, and train cursors remain unchanged. The report explicitly sets `optimizer_updates=0` and `quality_certified=false`.
+- Evaluation is now bound to a non-zero-step `OneCoreV3Inference` loaded from a SHA-256-pinned checkpoint; it rejects step-zero checkpoints and mismatched loader config fingerprints. It no longer accepts a separate arbitrary model and unrelated checkpoint digest.
+- Run #715 passed the initial held-out dataset/evaluator fixtures after aligning the tiny fixture's audio config to its stereo-capable samples. A stricter runtime/checkpoint-binding change is under the current Verify run.
+- These are held-out objective diagnostics, not generated-output quality certification. Human/automatic task-specific evaluation and promotion evidence remain future work after training.
+
+- The independent V3 checkpoint/resume format, tiny-model full-lineage tests, and hash-pinned inference runtime/CLI are implemented. Runs #706–#713 passed Verify; #707/#708 specifically exercised text generation, image/audio/video output shapes, trusted checkpoint digest validation, untrained-checkpoint refusal, and BOS/EOS handling. The real-artifact step-zero checkpoint audit passed in Run #713 and produced artifact 15114513841; it is initial-state serialization evidence only, not proof of non-zero optimizer continuation. Corpus Run #605 and Tokenizer Run #2 are the existing pinned artifacts and must not be regenerated. Runs #700 and #681 remain historical failed CPU benchmark attempts; no successful real-corpus CPU RSS/throughput evidence exists yet. The V3 optimizer job remains explicitly guarded; no optimizer training has started. See `../docs/EXECUTIVE_HANDOVER.md` for live branch, run, artifact and blocker state.
