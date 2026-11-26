@@ -482,14 +482,49 @@ def test_v3_heldout_evaluator_reports_validation_and_test_without_updates(tmp_pa
     model = config.build_model().cpu().eval()
     for parameter in model.parameters():
         parameter.requires_grad_(False)
-    before = {name: tensor.detach().clone() for name, tensor in model.state_dict().items()}
     with loader:
+        from onecore.v3.checkpoint import save_v3_checkpoint
+        from onecore.v3.inference import OneCoreV3Inference
+
+        model = config.build_model().cpu()
+        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.8)
+        objective_loss = sum(
+            parameter.float().square().mean() for parameter in model.parameters()
+        )
+        objective_loss.backward()
+        optimizer.step()
+        scheduler.step()
+        loader.next_joint_micro_batches()
+        checkpoint_path = tmp_path / "trained-fixture.pt"
+        saved = save_v3_checkpoint(
+            checkpoint_path,
+            model,
+            optimizer,
+            scheduler,
+            1,
+            config,
+            tokenizer_json=(tmp_path / "v3-tokenizer.json").read_bytes(),
+            manifest_sha256=loader.manifest_sha256,
+            data_state=loader.state_dict(),
+            lineage={
+                "run_id": "heldout-evaluation-fixture",
+                "session": 1,
+                "parent_checkpoint_sha256": None,
+            },
+        )
+        runtime = OneCoreV3Inference.from_checkpoint(
+            checkpoint_path,
+            expected_checkpoint_sha256=saved["sha256"],
+            device="cpu",
+        )
+        model = runtime.model
+        before = {name: tensor.detach().clone() for name, tensor in model.state_dict().items()}
         train_state = loader.state_dict()
         rng = torch.get_rng_state().clone()
         report = evaluate_v3_heldout_splits(
-            model,
+            runtime,
             loader,
-            checkpoint_sha256="a" * 64,
             per_family_records=2,
             families=("text", "tool"),
             seed=91,

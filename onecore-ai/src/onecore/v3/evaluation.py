@@ -11,7 +11,7 @@ from typing import Any
 import numpy as np
 import torch
 
-from .core import OneCoreV3
+from .inference import OneCoreV3Inference
 from .dataset import FAMILIES, V3JointDataLoader
 from .training import OneCoreV3Objective
 
@@ -27,20 +27,26 @@ def _require_sha256(value: str, field: str) -> str:
 
 
 def evaluate_v3_heldout_splits(
-    model: OneCoreV3,
+    runtime: OneCoreV3Inference,
     loader: V3JointDataLoader,
     *,
-    checkpoint_sha256: str,
     per_family_records: int = 10,
     families: tuple[str, ...] = FAMILIES,
     seed: int = 20261126,
 ) -> dict[str, Any]:
-    """Measure deterministic objective components on independent validation/test samples."""
-    if not isinstance(model, OneCoreV3):
-        raise TypeError("model must be an instantiated OneCoreV3")
+    """Measure deterministic held-out losses using the exact verified inference checkpoint."""
+    if not isinstance(runtime, OneCoreV3Inference):
+        raise TypeError("runtime must be a hash-verified OneCoreV3Inference checkpoint runtime")
     if not isinstance(loader, V3JointDataLoader):
         raise TypeError("loader must be a validated V3JointDataLoader")
-    checkpoint_sha256 = _require_sha256(checkpoint_sha256, "checkpoint_sha256")
+    if runtime.global_step < 1:
+        raise ValueError("held-out evaluation refuses an untrained step-zero checkpoint")
+    if runtime.device.type != "cpu":
+        raise ValueError("V3 held-out evaluation currently supports CPU inference runtimes only")
+    if runtime.config.fingerprint != loader.config.fingerprint:
+        raise ValueError("V3 inference checkpoint config does not match the held-out data loader")
+    checkpoint_sha256 = _require_sha256(runtime.checkpoint_sha256, "runtime.checkpoint_sha256")
+    model = runtime.model
     if model.training:
         raise ValueError("V3 held-out evaluation requires model.eval()")
     if any(parameter.grad is not None for parameter in model.parameters()):
