@@ -144,7 +144,7 @@ def audit_source_licenses(
             raise ValueError(f"duplicate source id: {source_id}")
         sources[source_id] = item
 
-    reviews = review_registry.get("sources", {})
+    reviews = review_registry.get("sources") or {}
     if not isinstance(reviews, dict):
         raise ValueError("license review 'sources' must be a mapping")
 
@@ -154,7 +154,7 @@ def audit_source_licenses(
     if manifest_paths is None:
         selected = {
             source_id for source_id, source in sources.items()
-            if source.get("enabled") is True
+            if source.get("enabled", True) is True
         }
         scope = "all_enabled_registry_sources"
     else:
@@ -235,6 +235,14 @@ def audit_source_licenses(
         "total_sources": len(results),
         "commercially_approved_sources": approved,
         "blocked_or_unreviewed_sources": blocked,
+        "weight_distribution_ready": (
+            bool(results)
+            and blocked == 0
+            and all(
+                item.get("review", {}).get("weight_redistribution_use") is True
+                for item in results
+            )
+        ),
         "unregistered_source_ids": sorted(unregistered),
         "row_counts_by_source": dict(sorted(row_counts.items())),
         "split_counts_by_source": split_counts,

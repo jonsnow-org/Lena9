@@ -135,3 +135,18 @@ sources:
     report = audit_source_licenses(sources_path=sources, reviews_path=reviews)
     assert report["commercial_ready"] is False
     assert any(item["status"] == "orphan_review_entry" for item in report["sources"])
+
+
+
+def test_enabled_sources_default_to_enabled_when_registry_omits_flag(tmp_path):
+    source_yaml = """version: 1
+sources:
+  - id: implicit_enabled
+    repo: org/implicit
+    adapter: text
+"""
+    sources, reviews = _write_inputs(tmp_path, reviews="", sources=source_yaml)
+    report = audit_source_licenses(sources_path=sources, reviews_path=reviews)
+    assert report["total_sources"] == 1
+    assert report["sources"][0]["source_id"] == "implicit_enabled"
+    assert report["sources"][0]["status"] == "unreviewed"
