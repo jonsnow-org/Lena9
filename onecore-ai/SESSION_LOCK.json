@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
-  "status": "active",
-  "holder": "ChatGPT",
-  "session_id": "cross-session-audit-2026-11-26-1345Z",
-  "client": "ChatGPT current coding session",
-  "started_at_utc": "2026-11-26T13:45:00Z",
-  "lease_expires_at_utc": "2026-11-26T14:45:00Z",
-  "base_head_sha": "dac55e2d02a2836758316ea2b48bc7ddfc1e4991",
-  "planned_scope": "Add CI policy assertions for mandatory cross-session protocol; verify; update handover and release lock.",
-  "last_released_at_utc": "2026-11-26T13:45:00Z",
-  "last_session_summary": "Cross-session audit; recorded concurrent license-audit work and added mandatory multi-client coordination protocol.",
-  "last_verified_branch_head": "6474bcbec1270ec15cae97f19cb0bd91b8f2923b",
-  "last_result": "No active OneCore Actions runs; Run #738 passed 398 tests, Run #739 all Verify steps passed; no CPU benchmark or optimizer update in #736-#739."
+  "status": "released",
+  "holder": null,
+  "session_id": null,
+  "client": null,
+  "started_at_utc": null,
+  "lease_expires_at_utc": null,
+  "base_head_sha": null,
+  "planned_scope": null,
+  "last_released_at_utc": "2026-11-26T13:50:11.705Z",
+  "last_session_summary": "Cross-session audit completed; mandatory multi-client protocol and CI enforcement committed and verified.",
+  "last_verified_branch_head": "ab0781d51280fa5f8488bedd048116312e171683",
+  "last_result": "Run #740 succeeded for protocol documentation; Run #742 succeeded with all 17 Verify steps including the mandatory protocol test. CPU benchmark, restore, checkpoint audit, evaluation and optimizer training were not run."
 }
