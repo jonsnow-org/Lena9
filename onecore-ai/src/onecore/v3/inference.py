@@ -68,6 +68,7 @@ class OneCoreV3Inference:
         self.tokenizer = tokenizer
         self.config = config
         self.checkpoint_sha256 = checkpoint_sha256
+        self.tokenizer_sha256 = hashlib.sha256(tokenizer.to_str().encode("utf-8")).hexdigest()
         self.global_step = global_step
         self.device = device
         self.special_ids = {

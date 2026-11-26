@@ -28,6 +28,15 @@ def test_canonical_onecore_ci_runs_on_v3_only_and_restore_is_explicit():
     assert "github.event.head_commit.message" in audit
     assert "[run-v3-checkpoint-audit]" in audit
 
+    evaluation = workflow.split("  v3-heldout-evaluation:", 1)[1].split(
+        "  v3-resource-benchmark:", 1
+    )[0]
+    assert "inputs.evaluate_v3_checkpoint_run_id" in evaluation
+    assert "github.event_name == 'push'" in evaluation
+    assert "[run-v3-evaluation:" in evaluation
+    assert "onecore.v3.evaluation_cli" in evaluation
+    assert "onecore-v3-state-" in evaluation
+
 
 def test_v2_training_is_archived_and_cannot_run_from_canonical_v3():
     training = (WORKFLOWS / "onecore-training.yml").read_text(encoding="utf-8")

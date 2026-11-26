@@ -37,6 +37,7 @@ onecore-v3-train = "onecore.v3.runner:main"
 onecore-v3-resource-benchmark = "onecore.v3.resource_benchmark:main"
 onecore-v3-infer = "onecore.v3.inference:main"
 onecore-v3-checkpoint-audit = "onecore.v3.checkpoint_audit:main"
+onecore-v3-evaluate = "onecore.v3.evaluation_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
