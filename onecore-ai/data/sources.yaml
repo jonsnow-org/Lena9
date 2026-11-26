@@ -250,8 +250,6 @@ sources:
     enabled: true
   - id: stack_v2_code
     repo: bigcode/the-stack-v2
-    # No Stack V2 code is ingested until exact license IDs are added after review.
-    allowed_license_ids: []
     hf_splits: [train]
     adapter: stack_v2_code
     split_strategy: hash
@@ -259,8 +257,7 @@ sources:
     crawler: hf_state_dict_plus_swh_content
     notebook_id: 03_text_pretraining
     requires_access: true
-    # Keep the gated code corpus enabled, but do not block the first joint run
-    # while HF/SWH approvals are pending. Only verified file payloads count.
+    enabled: false
     required_for_training: false
     minimum_accepted_records: 10000
     limits: {train: 10000, validation: 500, test: 500}

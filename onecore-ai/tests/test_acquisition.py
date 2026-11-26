@@ -16,7 +16,6 @@ from onecore.acquire import (
     _assign_split,
     _grouped_split,
     _record_from_row,
-    _stack_license_is_allowed,
     _row_identity,
     _stable_split,
     _training_manifest_base,
@@ -61,10 +60,15 @@ def test_source_registry_covers_all_shared_modalities() -> None:
     assert {"oscar_ar", "proof_pile_2", "stack_v2_edu", "sard_arabic_documents",
             "finevideo", "internvid_10m_flt", "webvid_10m_video", "msrvtt_video"} <= enabled
     stack = next(item for item in sources if item["id"] == "stack_v2_code")
-    assert stack["enabled"] is True
+    assert stack["enabled"] is False
     assert stack["required_for_training"] is False
     assert stack["minimum_accepted_records"] == 10000
-    assert stack["allowed_license_ids"] == []
+    assert "allowed_license_ids" not in stack
+
+
+def test_stack_v2_code_adapter_is_excluded_from_active_v3_intake(tmp_path: Path) -> None:
+    source = {"id": "stack_v2_code", "repo": "bigcode/the-stack-v2", "adapter": "stack_v2_code"}
+    assert _record_from_row({}, source, "row-1", "train", tmp_path) is None
 
 
 def test_split_assignment_is_stable_and_preserves_published_holdouts() -> None:

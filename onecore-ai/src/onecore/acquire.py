@@ -613,33 +613,6 @@ def _source_group_value(row: dict[str, Any], source: dict[str, Any]) -> Any:
     return stem or filename
 
 
-def _stack_license_is_allowed(row: dict[str, Any], source: dict[str, Any]) -> bool:
-    """Require an exact source-reviewed license ID before fetching Stack V2 code."""
-    allowlist_values = source.get("allowed_license_ids") or []
-    allowed = {
-        str(value).strip().casefold()
-        for value in allowlist_values
-        if isinstance(value, str) and str(value).strip()
-    }
-    if not allowed:
-        return False
-    detected = row.get("detected_licenses") or []
-    if isinstance(detected, str):
-        detected = [detected]
-    observed = []
-    gha_license_id = str(row.get("gha_license_id") or "").strip()
-    if gha_license_id:
-        observed.append(gha_license_id)
-    observed.extend(
-        str(value).strip()
-        for value in detected
-        if isinstance(value, str) and str(value).strip()
-    )
-    normalized = {value.casefold() for value in observed}
-    # Missing or conflicting license evidence is never treated as permission.
-    return bool(normalized) and normalized.issubset(allowed)
-
-
 def _record_from_row(
     row: dict[str, Any], source: dict[str, Any], row_id: str, split: str,
     assets_root: Path,
@@ -684,42 +657,8 @@ def _record_from_row(
             if answer:
                 text = f"Question: {question}\nAnswer: {answer}" if question else answer
     if adapter == "stack_v2_code":
-        # Stack V2 code is not fetched unless exact license metadata matches a
-        # source-reviewed allowlist. Unknown, missing, and mixed licenses fail closed.
-        if not _stack_license_is_allowed(row, source):
-            return None
-        if bool(row.get("is_vendor")) or bool(row.get("is_generated")):
-            return None
-        allowed_languages = {str(value).strip().casefold() for value in (source.get("allowed_languages") or [])}
-        language = str(row.get("language") or "").strip()
-        if allowed_languages and language.casefold() not in allowed_languages:
-            return None
-        code_path = str(row.get("path") or "").strip()
-        code = fetch_stack_content(
-            row, max_bytes=int(source.get("max_content_bytes", 524_288))
-        )
-        if not code or contains_exposed_secret(code, code_path):
-            return None
-        code = redact_personal_contacts(code)
-        text = f"# Language: {language or 'unknown'} | File: {code_path or 'unknown'}\n{code}"
-        detected = row.get("detected_licenses") or []
-        if isinstance(detected, str):
-            detected = [detected]
-        repo_name = str(row.get("repo_name") or "").strip()
-        repo_url = f"https://github.com/{repo_name}" if re.fullmatch(r"[^/\s]+/[^/\s]+", repo_name) else ""
-        record.update({
-            "task": "text", "text": text[:int(source.get("max_record_chars", 8192))],
-            "code_language": language, "code_path": code_path,
-            "code_blob_id": str(row.get("blob_id") or ""),
-            "code_content_id": str(row.get("content_id") or ""),
-            "code_repository": repo_name, "code_repository_url": repo_url,
-            "code_directory_id": str(row.get("directory_id") or ""),
-            "code_revision_id": str(row.get("revision_id") or ""),
-            "code_snapshot_id": str(row.get("snapshot_id") or ""),
-            "code_license_type": str(row.get("license_type") or ""),
-            "code_gha_license_id": str(row.get("gha_license_id") or ""),
-            "code_detected_licenses": sorted({str(value) for value in detected}),
-        })
+        # This optional source is excluded from the active V3 intake plan.
+        return None
     elif adapter == "text":
         if len(text) < 24:
             return None

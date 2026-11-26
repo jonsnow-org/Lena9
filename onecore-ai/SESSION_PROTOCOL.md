@@ -56,6 +56,13 @@ The lease prevents two compliant clients from writing concurrently. It is a repo
 - Do not change `main`, the frozen V2 branch, unrelated application directories, Ttbik or Sham unless the owner explicitly directs that exact action.
 - Never start optimizer updates while any required training gate is missing or while an incompatible workflow is active. Do not remove a fail-closed guard merely to obtain a green run.
 
+## D.1 Owner scope restraint
+
+- Do not create new side systems, audit modules, review registries, approval matrices, alternate workflow tracks, or other scope-expanding work unless the owner explicitly approves that work.
+- Do not add dataset sources or change existing source eligibility, quotas, or intake behavior merely as a precaution. Follow the approved V3 plan and the current handover.
+- Preserve existing source-data integrity, privacy, safety, and training controls. Never bypass an existing control to make a job green.
+- Keep work on the single canonical V3 branch and prioritize the unfinished engineering gates already recorded by the owner.
+
 ## E. Current review facts that all clients must preserve
 
 Cross-session review dated **2026-11-26** found the following live facts:

@@ -15,6 +15,13 @@ These instructions apply to all work below `onecore-ai/`. They take precedence o
 - Do not follow older instructions that direct OneCore work to `kilo/ivory-engine-kc6`. Verify the live branch HEAD before every write; never assume a previous session's SHA is still current.
 - Keep changes narrowly scoped. Prefer a small, testable commit over broad refactors. Do not overwrite user or concurrent-agent changes.
 
+## Scope restraint — owner instruction
+
+- Do not introduce standalone audit modules, review registries, policy-review data stores, extra workflow tracks, optional source gates, or other scope-expanding mechanisms unless the owner explicitly approves them.
+- Do not add dataset sources or change source eligibility, quotas, or acquisition behavior merely as a precaution. First inspect the active V3 plan and handover, then continue the existing approved work.
+- Preserve existing source-data integrity, privacy, safety, and training controls. Never bypass an existing control to make an acquisition or CI run pass.
+- Prioritize the current V3 roadmap and its unfinished engineering gates; do not replace required work with optional governance or documentation projects.
+
 ## 2. Canonical architecture and lineage
 
 - The active product architecture is `onecore-v3-prototype-2`: one shared semantic Transformer core with modality-specific image, audio and video encoders/decoders and flow heads, plus text and tool-token paths.

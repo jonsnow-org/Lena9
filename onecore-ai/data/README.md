@@ -55,17 +55,3 @@ Bootstrap, synthetic, and owner-curated records may remain in the repository for
 ## Immutable external provenance
 
 Every externally imported manifest row must retain a non-empty `source_id`, a pinned immutable `source_revision` (40–64 hexadecimal characters), and a 64-character `source_row_id_sha256`. Manifest validation rejects missing or malformed provenance, and split-integrity validation rejects the same source row appearing in more than one of train, validation, or test. These checks do not introduce a license filter and do not rewrite attribution or source-rights metadata.
-
-## Dataset licensing and commercial-use review
-
-Technical provenance and SHA-256 integrity do not establish permission to train or commercially deploy a model. Every source used by a release needs a source-specific human-reviewed entry in \`data/license-review.yaml\` that pins authoritative terms by HTTPS URL, retains the reviewed terms under `data/evidence/` with a matching SHA-256, and records model-training permission, commercial-deployment permission, weight-redistribution permission, attribution obligations and share-alike/copyleft obligations.
-
-Unknown or missing reviews are treated as **not commercially cleared**. The audit never infers permission from a dataset repository name.
-
-Run the audit over all enabled sources in the source registry:
-
-\`\`\`bash
-onecore-license-audit --require-commercial-clearance
-\`\`\`
-
-To restrict the audit to sources present in manifests, pass \`--manifest train.jsonl --manifest validation.jsonl --manifest test.jsonl\`. The audit verifies that the retained evidence file exists and its SHA-256 matches the review record. It remains an evidence-completeness gate, not legal advice or an automated license-text interpreter. The review file intentionally starts empty; no source is pre-cleared.
