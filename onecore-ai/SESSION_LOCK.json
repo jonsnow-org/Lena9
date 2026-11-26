@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
-  "status": "released",
-  "holder": null,
-  "session_id": null,
-  "client": null,
-  "started_at_utc": null,
-  "lease_expires_at_utc": null,
-  "base_head_sha": null,
-  "planned_scope": null,
-  "last_released_at_utc": "2026-11-26T16:41:00Z",
-  "last_session_summary": "Removed unrequested OneCore side audit subsystem, disabled the optional Stack V2 source, added cross-session scope restraint, verified cleanup in Run #746, and released writer lease.",
-  "last_verified_branch_head": "2f6ff7ca11959267f328c6b848f83e765358ee14",
-  "last_result": "Run #746 succeeded: 390 passed, 45 warnings; all 14 Verify steps passed. Optional CPU benchmark, corpus restore, step-zero checkpoint audit and held-out evaluation were skipped. No optimizer updates or training."
+  "status": "active",
+  "holder": "ChatGPT GPT-6",
+  "session_id": "onecore-rss-interval-fix-20261126-01",
+  "client": "ChatGPT",
+  "started_at_utc": "2026-11-26T19:15:00Z",
+  "lease_expires_at_utc": "2026-11-26T20:15:00Z",
+  "base_head_sha": "b246e01e77916a1efe149475c028204b2ecc774a",
+  "planned_scope": "Correct resource benchmark RSS sampling interval metadata to match the 250ms sampler; add a regression assertion; verify CI; release lease.",
+  "last_released_at_utc": null,
+  "last_session_summary": null,
+  "last_verified_branch_head": "b246e01e77916a1efe149475c028204b2ecc774a",
+  "last_result": "Writer lease acquired; focused metadata-only fix planned."
 }
