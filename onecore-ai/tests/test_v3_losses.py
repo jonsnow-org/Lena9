@@ -70,3 +70,17 @@ def test_v3_multiresolution_audio_loss_supports_stereo_and_rejects_more_channels
         audio_multiresolution_stft_loss(
             torch.randn(1, 3, 512), torch.randn(1, 3, 512),
         )
+
+
+def test_v3_image_pyramid_loss_handles_one_pixel_pyramid_levels():
+    real = torch.rand(1, 3, 2, 2)
+    fake = torch.rand(1, 3, 2, 2, requires_grad=True)
+
+    loss = image_pyramid_reconstruction_loss(
+        fake, real, scales=(1.0, 0.5, 0.25),
+    )
+    loss.backward()
+
+    assert torch.isfinite(loss)
+    assert fake.grad is not None
+    assert torch.isfinite(fake.grad).all()
