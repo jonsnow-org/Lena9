@@ -21,7 +21,7 @@ from onecore.data import external_record_is_trainable, has_immutable_external_pr
 
 from .checkpoint import V3_DATA_STATE_FORMAT_VERSION, fingerprint_validated_v3_manifests
 from .config import V3Config
-from .manifest import TASK_GROUPS
+from .manifest import TASK_GROUPS, read_v3_manifest
 from .tokenizer import verify_v3_tokenizer
 
 FAMILIES = tuple(TASK_GROUPS)
@@ -437,7 +437,13 @@ class V3JointDataLoader:
         return row
 
     def _materialize(
-        self, family: str, row: dict[str, Any], source_count: int, source_size: int,
+        self,
+        family: str,
+        row: dict[str, Any],
+        source_count: int,
+        source_size: int,
+        *,
+        split: str = "train",
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         record_id = str(row["id"])
         row_hash = str(row["source_row_id_sha256"]).lower()
@@ -447,7 +453,7 @@ class V3JointDataLoader:
             "source_id": str(row["source_id"]),
             "source_revision": str(row["source_revision"]),
             "source_row_id_sha256": row_hash,
-            "split": "train",
+            "split": split,
             "data_class": "external",
         }
 
@@ -575,6 +581,103 @@ class V3JointDataLoader:
         if condition_ids is not None:
             batch["condition_ids"] = condition_ids
         return {"video": batch}, metadata
+
+    def iter_evaluation_micro_batches(
+        self,
+        split: str,
+        *,
+        per_family: int = 10,
+        families: tuple[str, ...] | None = None,
+        seed: int = 20261126,
+    ):
+        """Yield external-only held-out samples without advancing train cursors."""
+        if split not in {"validation", "test"}:
+            raise ValueError("V3 held-out evaluation may read validation or test only")
+        if self.benchmark_manifest_view:
+            raise RuntimeError("benchmark manifest views cannot be used for held-out evaluation")
+        if (
+            isinstance(per_family, bool)
+            or not isinstance(per_family, int)
+            or not 1 <= per_family <= 1000
+        ):
+            raise ValueError("per_family must be an integer from 1 to 1000")
+        if isinstance(seed, bool) or not isinstance(seed, int):
+            raise ValueError("evaluation seed must be an integer")
+        requested = tuple(FAMILIES if families is None else families)
+        if (
+            not requested
+            or len(set(requested)) != len(requested)
+            or any(family not in FAMILIES for family in requested)
+        ):
+            raise ValueError("evaluation families must be a non-empty unique subset of the five V3 families")
+
+        reservoirs: dict[str, list[dict[str, Any]]] = {
+            family: [] for family in requested
+        }
+        seen = {family: 0 for family in requested}
+        rngs = {
+            family: random.Random(int.from_bytes(
+                hashlib.sha256(f"{seed}:{split}:{family}".encode("utf-8")).digest()[:8],
+                "big",
+            ))
+            for family in requested
+        }
+        manifest = self.manifest_paths[split]
+        before = self._stat_signature(manifest)
+        for row in read_v3_manifest(manifest):
+            if str(row.get("split", "")) != split:
+                raise ValueError(f"V3 {split} evaluation manifest contains a row assigned to another split")
+            if not external_record_is_trainable(row):
+                continue
+            if not has_immutable_external_provenance(row):
+                raise ValueError(f"held-out V3 row lacks immutable external provenance: {row.get('id')}")
+            record_id = str(row.get("id", "")).strip()
+            if not record_id:
+                raise ValueError("held-out V3 evaluation row is missing its record ID")
+            family = TASK_TO_FAMILY.get(str(row.get("task", "")))
+            if family is None:
+                raise ValueError(f"held-out V3 evaluation row has an unsupported task: {row.get('task')!r}")
+            if family not in reservoirs:
+                continue
+            self._validate_payload(row, family)
+            seen[family] += 1
+            reservoir = reservoirs[family]
+            if len(reservoir) < per_family:
+                reservoir.append(row)
+            else:
+                replacement = rngs[family].randrange(seen[family])
+                if replacement < per_family:
+                    reservoir[replacement] = row
+        if self._stat_signature(manifest) != before:
+            raise RuntimeError(f"V3 {split} evaluation manifest changed while it was read")
+
+        for family in requested:
+            if len(reservoirs[family]) < per_family:
+                raise ValueError(
+                    f"not enough external held-out {split}/{family} rows: "
+                    f"selected {len(reservoirs[family])}, required {per_family}"
+                )
+            reservoirs[family].sort(key=lambda row: str(row["id"]))
+
+        initial_train_state = self.state_dict()
+        try:
+            for family in requested:
+                for row in reservoirs[family]:
+                    batch, metadata = self._materialize(
+                        family, row, source_count=0, source_size=1, split=split,
+                    )
+                    yield V3JointMicroBatch(
+                        family,
+                        batch,
+                        str(row["id"]),
+                        str(row["source_id"]),
+                        str(row["source_revision"]),
+                        str(row["source_row_id_sha256"]).lower(),
+                        metadata,
+                    )
+        finally:
+            if self.state_dict() != initial_train_state:
+                raise RuntimeError("held-out evaluation mutated the V3 training cursors")
 
     def _prepare_family(self, family: str) -> tuple[V3JointMicroBatch, str, str]:
         keys = self._family_sources[family]

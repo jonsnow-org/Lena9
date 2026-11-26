@@ -156,9 +156,9 @@ def _write_exact_v3_test_tokenizer(train_manifest, path, config):
     )
 
 
-def _build_loader(root):
+def _build_loader(root, config=None):
     manifests, assets_root = _write_project(root / "project")
-    config = V3Config()
+    config = config or V3Config()
     tokenizer_path = root / "v3-tokenizer.json"
     _write_exact_v3_test_tokenizer(manifests["train"], tokenizer_path, config)
     loader = V3JointDataLoader(
@@ -425,6 +425,90 @@ def test_v3_loader_benchmark_sampling_is_deterministic_and_external_only(tmp_pat
         "selected_megapixel_frames": 64e-06,
     }
 
+
+
+
+def test_v3_joint_loader_iterates_heldout_splits_without_advancing_train_cursors(tmp_path):
+    loader, _assets_root = _build_loader(tmp_path)
+    with loader:
+        original = loader.state_dict()
+        validation = list(loader.iter_evaluation_micro_batches(
+            "validation", per_family=2, seed=43,
+        ))
+        validation_again = list(loader.iter_evaluation_micro_batches(
+            "validation", per_family=2, seed=43,
+        ))
+        test = list(loader.iter_evaluation_micro_batches(
+            "test", per_family=2, seed=43,
+        ))
+        assert len(validation) == len(test) == 2 * len(FAMILIES)
+        assert [item.record_id for item in validation] == [
+            item.record_id for item in validation_again
+        ]
+        assert all(item.metadata["split"] == "validation" for item in validation)
+        assert all(item.metadata["split"] == "test" for item in test)
+        assert all(item.metadata["data_class"] == "external" for item in validation + test)
+        assert loader.state_dict() == original
+        with pytest.raises(ValueError, match="validation or test only"):
+            list(loader.iter_evaluation_micro_batches("train", per_family=1))
+
+
+def test_v3_heldout_evaluator_reports_validation_and_test_without_updates(tmp_path):
+    import torch
+    from onecore.v3.evaluation import evaluate_v3_heldout_splits
+
+    config = V3Config(
+        text_vocab_size=32000,
+        width=32,
+        layers=1,
+        cycles=2,
+        attention_heads=4,
+        patch_size=2,
+        audio_latent_channels=8,
+        audio_hidden_channels=16,
+        audio_codebook_size=16,
+        audio_quantizer_stages=2,
+        audio_channels=1,
+        temporal_layers=1,
+        max_image_context_tokens=8,
+        max_video_context_tokens=8,
+        max_flow_context_tokens=8,
+        temporal_window_frames=4,
+        temporal_memory_frames=1,
+        video_generation_chunk_frames=2,
+        dropout=0.0,
+    )
+    loader, _assets_root = _build_loader(tmp_path, config=config)
+    model = config.build_model().cpu().eval()
+    for parameter in model.parameters():
+        parameter.requires_grad_(False)
+    before = {name: tensor.detach().clone() for name, tensor in model.state_dict().items()}
+    with loader:
+        train_state = loader.state_dict()
+        rng = torch.get_rng_state().clone()
+        report = evaluate_v3_heldout_splits(
+            model,
+            loader,
+            checkpoint_sha256="a" * 64,
+            per_family_records=2,
+            families=("text", "tool"),
+            seed=91,
+        )
+        assert report["status"] == "evaluated"
+        assert report["optimizer_updates"] == 0
+        assert report["quality_certified"] is False
+        assert set(report["splits"]) == {"validation", "test"}
+        for split in ("validation", "test"):
+            for family in ("text", "tool"):
+                metrics = report["splits"][split][family]
+                assert metrics["sample_count"] == 2
+                assert metrics["mean_losses"][f"{family}_loss"] > 0
+                assert len(metrics["record_ids_sha256"]) == 64
+        assert loader.state_dict() == train_state
+        assert torch.equal(torch.get_rng_state(), rng)
+    for name, tensor in model.state_dict().items():
+        assert torch.equal(tensor, before[name]), name
+    assert all(parameter.grad is None for parameter in model.parameters())
 
 def test_v3_joint_loader_rejects_caption_task_without_paired_text(tmp_path):
     manifests, assets_root = _write_project(tmp_path / "project")
