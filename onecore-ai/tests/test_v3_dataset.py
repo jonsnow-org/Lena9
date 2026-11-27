@@ -176,10 +176,10 @@ def test_v3_joint_loader_emits_five_families_and_resumes_exact_source_cursors(tm
         assert all(set(item.batch) == {item.family} for item in first)
         assert first[0].batch["text"]["input_ids"].shape[1] <= 16
         assert first[1].batch["tool"]["input_ids"].shape[1] <= 16
-        assert first[2].batch["image"]["images"].shape == (1, 3, 2, 2)
+        assert first[2].batch["image"]["images"].shape == (1, 3, 64, 64)
         assert first[3].batch["audio"]["waveform"].shape[-1] == 24
         assert first[3].batch["audio"]["sample_rate"] == 24_000
-        assert first[4].batch["video"]["frames"].shape == (1, 2, 3, 2, 2)
+        assert first[4].batch["video"]["frames"].shape == (1, 2, 3, 64, 64)
         expected_conditions = (
             (first[2], "caption", "External image caption 0 from train."),
             (first[3], "transcript", "External audio transcript 0 from train."),
@@ -398,7 +398,7 @@ def test_v3_loader_benchmark_sampling_is_deterministic_and_external_only(tmp_pat
         "max_image_megapixels": 2.0,
         "max_audio_seconds": 5.0,
         "max_video_megapixel_frames": 16.0,
-        "max_video_frames": 16,
+        "max_video_frames": 4,
     }
     first, stats = _select_loader_benchmark_rows(manifests, **kwargs)
     second, _ = _select_loader_benchmark_rows(manifests, **kwargs)
@@ -414,15 +414,15 @@ def test_v3_loader_benchmark_sampling_is_deterministic_and_external_only(tmp_pat
         row for row in first["train"]["video"] if row["id"] == video_row["id"]
     )
     assert clipped_video["source_row_id_sha256"] == original_video_row_sha
-    assert len(clipped_video["assets"]["video"]["frames"]) == 16
-    assert len(clipped_video["assets"]["video"]["timestamps"]) == 16
-    assert clipped_video["assets"]["video"]["frame_count"] == 16
+    assert len(clipped_video["assets"]["video"]["frames"]) == 4
+    assert len(clipped_video["assets"]["video"]["timestamps"]) == 4
+    assert clipped_video["assets"]["video"]["frame_count"] == 4
     assert clipped_video["benchmark_view"] == {
         "transform": "prefix_frame_window_under_megapixel_frame_budget",
         "source_frame_count": 20,
-        "selected_frame_count": 16,
+        "selected_frame_count": 4,
         "source_megapixels_per_frame": 4e-06,
-        "selected_megapixel_frames": 64e-06,
+        "selected_megapixel_frames": 16e-06,
     }
 
 
@@ -457,27 +457,12 @@ def test_v3_heldout_evaluator_reports_validation_and_test_without_updates(tmp_pa
     import torch
     from onecore.v3.evaluation import evaluate_v3_heldout_splits
 
-    config = V3Config(
-        text_vocab_size=32000,
-        width=32,
-        layers=1,
-        cycles=2,
-        attention_heads=4,
-        patch_size=2,
-        audio_latent_channels=8,
-        audio_hidden_channels=16,
-        audio_codebook_size=16,
-        audio_quantizer_stages=2,
-        audio_channels=2,
-        temporal_layers=1,
-        max_image_context_tokens=8,
-        max_video_context_tokens=8,
-        max_flow_context_tokens=8,
-        temporal_window_frames=4,
-        temporal_memory_frames=1,
-        video_generation_chunk_frames=2,
-        dropout=0.0,
-    )
+    config = V3Config(architecture_version="onecore-v3-test-fixture", width=32, unique_blocks=1,
+        recurrent_cycles=2, attention_heads=4, max_sequence_length=128, text_vocab_size=64,
+        vision_codebook_size=16, audio_codebook_size=8, motion_codebook_size=8, special_tokens=24,
+        patch_size=8, image_size=32, audio_bins=8, audio_group_frames=2, audio_sample_rate=24000,
+        audio_channels=2, max_video_frames=4, tldm_latent_slots=4, dropout=0.0)
+
     loader, _assets_root = _build_loader(tmp_path, config=config)
     with loader:
         from onecore.v3.checkpoint import save_v3_checkpoint
@@ -532,13 +517,7 @@ def test_v3_heldout_evaluator_reports_validation_and_test_without_updates(tmp_pa
         assert report["checkpoint_sha256"] == saved["sha256"]
         assert report["config_sha256"] == config.fingerprint
         assert set(report["splits"]) == {"validation", "test"}
-        expected_loss = {
-            "text": "text_loss",
-            "tool": "tool_loss",
-            "image": "image_flow_loss",
-            "audio": "audio_flow_loss",
-            "video": "video_flow_loss",
-        }
+        expected_loss = {family: "language_loss" for family in FAMILIES}
         for split in ("validation", "test"):
             for family in FAMILIES:
                 metrics = report["splits"][split][family]
