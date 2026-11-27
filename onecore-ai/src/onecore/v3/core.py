@@ -91,14 +91,18 @@ class OneCoreV3(nn.Module):
                  temporal_layers: int = 2, dropout: float = 0.0,
                  max_image_context_tokens: int = 256, max_video_context_tokens: int = 256,
                  max_flow_context_tokens: int = 256, temporal_window_frames: int = 32,
-                 temporal_memory_frames: int = 4, video_generation_chunk_frames: int = 8) -> None:
+                 temporal_memory_frames: int = 4, video_generation_chunk_frames: int = 8,
+                 tldm_latent_slots: int = 16) -> None:
         super().__init__()
         if text_vocab_size < 2:
             raise ValueError("text_vocab_size must be at least two")
         if min(max_image_context_tokens, max_video_context_tokens, max_flow_context_tokens,
                video_generation_chunk_frames) < 1 or temporal_window_frames < 1 or temporal_memory_frames < 0:
             raise ValueError("context budgets and temporal windows must be positive; memory non-negative")
+        if tldm_latent_slots < 1:
+            raise ValueError("T-LDM latent slots must be positive")
         self.width = width
+        self.tldm_latent_slots = int(tldm_latent_slots)
         self.max_image_context_tokens = max_image_context_tokens
         self.max_video_context_tokens = max_video_context_tokens
         self.max_flow_context_tokens = max_flow_context_tokens
@@ -252,6 +256,66 @@ class OneCoreV3(nn.Module):
             raise ValueError("condition token_ids must be an integer tensor [B,T]")
         return self.text_embedding(token_ids) + self.modality_embedding.weight[0]
 
+    def forward_tldm(self, token_ids: torch.Tensor, masked_positions: torch.Tensor) -> torch.Tensor:
+        """Masked-token prediction using the same shared core and tied text head.
+
+        Masked token embeddings are zeroed before compression and writing. The latent
+        thinker/writer are recurrent passes through existing modules, not a second model.
+        """
+        if token_ids.ndim != 2 or token_ids.dtype not in (torch.int32, torch.int64):
+            raise ValueError("T-LDM token_ids must be an integer tensor [B,T]")
+        if token_ids.shape[1] < 1:
+            raise ValueError("T-LDM sequence must not be empty")
+        if masked_positions.shape != token_ids.shape or masked_positions.dtype != torch.bool:
+            raise ValueError("T-LDM masked_positions must be a boolean tensor matching token_ids")
+        if token_ids.min().item() < 0 or token_ids.max().item() >= self.text_embedding.num_embeddings:
+            raise ValueError("T-LDM token id is outside the text vocabulary")
+        token_states = self.text_embedding(token_ids) + self.modality_embedding.weight[0]
+        visible_states = token_states.masked_fill(masked_positions.unsqueeze(-1), 0.0)
+        slots = min(self.tldm_latent_slots, token_ids.shape[1])
+        compressed = F.adaptive_avg_pool1d(visible_states.transpose(1, 2), slots).transpose(1, 2)
+        latent_context = self.shared_core(compressed, causal=False)
+        writer_input = torch.cat((latent_context, visible_states), dim=1)
+        writer_hidden = self.shared_core(writer_input, causal=False)[:, slots:]
+        return self.text_head(writer_hidden)
+
+    @torch.no_grad()
+    def generate_tldm(
+        self, context_ids: torch.Tensor, block_size: int, *,
+        diffusion_steps: int = 8, temperature: float = 1.0,
+    ) -> torch.Tensor:
+        """Fill a token block by revealing highest-confidence masked positions."""
+        if context_ids.ndim != 2 or context_ids.dtype not in (torch.int32, torch.int64):
+            raise ValueError("T-LDM context_ids must be an integer tensor [B,T]")
+        if block_size < 1 or diffusion_steps < 1:
+            raise ValueError("T-LDM block_size and diffusion_steps must be positive")
+        if not torch.isfinite(torch.tensor(float(temperature))) or temperature <= 0:
+            raise ValueError("T-LDM temperature must be finite and positive")
+        if context_ids.numel() and (
+            context_ids.min().item() < 0 or context_ids.max().item() >= self.text_embedding.num_embeddings
+        ):
+            raise ValueError("T-LDM context token is outside the text vocabulary")
+        batch, context_length = context_ids.shape
+        sequence = torch.cat((context_ids, torch.zeros(
+            (batch, block_size), device=context_ids.device, dtype=context_ids.dtype
+        )), dim=1)
+        masked = torch.zeros_like(sequence, dtype=torch.bool)
+        masked[:, context_length:] = True
+        for step in range(diffusion_steps):
+            logits = self.forward_tldm(sequence, masked)[:, context_length:] / float(temperature)
+            probabilities = torch.softmax(logits, dim=-1)
+            confidence, predictions = probabilities.max(dim=-1)
+            remaining_steps = diffusion_steps - step
+            for row in range(batch):
+                remaining = torch.nonzero(masked[row, context_length:], as_tuple=False).flatten()
+                if remaining.numel() == 0:
+                    continue
+                count = max(1, (remaining.numel() + remaining_steps - 1) // remaining_steps)
+                top = torch.topk(confidence[row, remaining], k=min(count, remaining.numel())).indices
+                positions = remaining[top]
+                sequence[row, context_length + positions] = predictions[row, positions]
+                masked[row, context_length + positions] = False
+        return sequence[:, context_length:]
     def predict_flow_velocity(self, noisy_latents: torch.Tensor, times: torch.Tensor,
                               modality: int,
                               condition_tokens: torch.Tensor | None = None) -> torch.Tensor:

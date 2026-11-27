@@ -30,6 +30,7 @@ class V3Config:
     temporal_window_frames: int = 32
     temporal_memory_frames: int = 4
     video_generation_chunk_frames: int = 8
+    tldm_latent_slots: int = 16
     dropout: float = 0.0
 
     def __post_init__(self) -> None:
@@ -44,7 +45,7 @@ class V3Config:
             self.audio_codebook_size, self.audio_quantizer_stages, self.audio_channels, self.audio_sample_rate, self.layers,
             self.temporal_layers, self.cycles, self.max_image_context_tokens,
             self.max_video_context_tokens, self.max_flow_context_tokens,
-            self.temporal_window_frames, self.video_generation_chunk_frames,
+            self.temporal_window_frames, self.video_generation_chunk_frames, self.tldm_latent_slots,
         ) < 1 or self.temporal_memory_frames < 0:
             raise ValueError("codec and layer dimensions must be positive")
         if self.audio_sample_rate < 1:
