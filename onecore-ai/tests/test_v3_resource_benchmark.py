@@ -954,3 +954,19 @@ def test_refreshing_artifact_session_redacts_signed_url_after_second_403():
     assert old_url not in str(error.value)
     assert new_url not in str(error.value)
     assert first.closed is True and second.closed is True
+
+
+
+def test_github_run_identity_captures_the_exact_actions_run_and_commit(monkeypatch):
+    from onecore.v3.resource_benchmark import _github_run_identity
+
+    monkeypatch.setenv("GITHUB_RUN_ID", "123456")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "jonsnow-org/Lena9")
+    monkeypatch.setenv("GITHUB_REF", "refs/heads/research/onecore-v3-implementation")
+    monkeypatch.setenv("GITHUB_SHA", "a" * 40)
+    assert _github_run_identity() == {
+        "github_run_id": "123456",
+        "github_repository": "jonsnow-org/Lena9",
+        "github_ref": "refs/heads/research/onecore-v3-implementation",
+        "github_sha": "a" * 40,
+    }

@@ -135,6 +135,64 @@ def verify_resource_benchmark_artifact(repo: str, run_id: str | int, token: str)
     }
 
 
+def verify_resource_benchmark_report_binding(
+    report: dict[str, Any], metadata: dict[str, Any],
+) -> None:
+    """Bind report bytes to the exact successful manual Actions run and artifact."""
+    if not isinstance(report, dict):
+        raise ValueError("V3 resource benchmark report must be a JSON object")
+    if not isinstance(metadata, dict):
+        raise ValueError("verified resource artifact metadata must be a JSON object")
+
+    expected_metadata = {
+        "repository": "jonsnow-org/Lena9",
+        "workflow_id": EXPECTED_WORKFLOW_ID,
+        "workflow_path": EXPECTED_WORKFLOW_PATH,
+        "event": "workflow_dispatch",
+        "head_branch": EXPECTED_BRANCH,
+        "run_status": "completed",
+        "run_conclusion": "success",
+        "artifact_expired": False,
+    }
+    for field, expected in expected_metadata.items():
+        if metadata.get(field) != expected:
+            raise ValueError(f"verified resource artifact metadata has an invalid {field}")
+
+    run_id = metadata.get("run_id")
+    if isinstance(run_id, bool) or not isinstance(run_id, int) or run_id <= 0:
+        raise ValueError("verified resource artifact metadata has an invalid run id")
+    head_sha = metadata.get("head_sha")
+    if not isinstance(head_sha, str) or not re.fullmatch(r"[0-9a-f]{40}", head_sha):
+        raise ValueError("verified resource artifact metadata has an invalid commit SHA")
+
+    artifact_id = metadata.get("artifact_id")
+    artifact_size = metadata.get("artifact_size_bytes")
+    if isinstance(artifact_id, bool) or not isinstance(artifact_id, int) or artifact_id <= 0:
+        raise ValueError("verified resource artifact metadata has an invalid artifact id")
+    if isinstance(artifact_size, bool) or not isinstance(artifact_size, int) or artifact_size <= 0:
+        raise ValueError("verified resource artifact metadata has an invalid artifact size")
+    if metadata.get("artifact_name") != f"{ARTIFACT_PREFIX}{run_id}":
+        raise ValueError("verified resource artifact metadata has an invalid artifact name")
+    if not isinstance(metadata.get("artifact_digest"), str) or not re.fullmatch(
+        r"sha256:[0-9a-f]{64}", metadata["artifact_digest"],
+    ):
+        raise ValueError("verified resource artifact metadata has an invalid artifact SHA-256")
+
+    report_run_id = report.get("github_run_id")
+    if (
+        isinstance(report_run_id, bool)
+        or not isinstance(report_run_id, (str, int))
+        or str(report_run_id) != str(run_id)
+    ):
+        raise ValueError("resource benchmark report run id does not match verified artifact metadata")
+    if report.get("github_repository") != metadata["repository"]:
+        raise ValueError("resource benchmark report repository does not match verified artifact metadata")
+    if report.get("github_ref") != f"refs/heads/{EXPECTED_BRANCH}":
+        raise ValueError("resource benchmark report ref does not match the canonical V3 branch")
+    if report.get("github_sha") != head_sha:
+        raise ValueError("resource benchmark report commit SHA does not match verified artifact metadata")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Verify a manual OneCore V3 CPU benchmark artifact")
     parser.add_argument("--repo", required=True)

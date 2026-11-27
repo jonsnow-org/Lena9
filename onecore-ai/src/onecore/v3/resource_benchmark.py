@@ -55,6 +55,16 @@ def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _github_run_identity() -> dict[str, str | None]:
+    """Bind benchmark reports to the exact GitHub Actions run and commit."""
+    return {
+        "github_run_id": os.environ.get("GITHUB_RUN_ID"),
+        "github_repository": os.environ.get("GITHUB_REPOSITORY"),
+        "github_ref": os.environ.get("GITHUB_REF"),
+        "github_sha": os.environ.get("GITHUB_SHA"),
+    }
+
+
 def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
     """Atomically publish a bounded JSON progress or final evidence snapshot."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -2159,7 +2169,7 @@ def _run_parent(args: argparse.Namespace) -> int:
             "status": "blocked" if failed else "measured",
             "benchmark_kind": "cpu_v3_joint_loader_plus_per_family_diagnostics_and_joint_objective_without_optimizer_step",
             "created_at_utc": datetime.now(timezone.utc).isoformat(),
-            "github_run_id": os.environ.get("GITHUB_RUN_ID"),
+            **_github_run_identity(),
             "artifacts": artifact_info,
             "conversion_report_sha256": _sha256(gate_payload),
             "manifest_gate": {

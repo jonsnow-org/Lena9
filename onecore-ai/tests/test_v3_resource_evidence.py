@@ -136,3 +136,59 @@ def test_resource_evidence_rejects_invalid_repository_run_id_and_token():
         resource_evidence.verify_resource_benchmark_artifact("jonsnow-org/Lena9", "12x", "read-token")
     with pytest.raises(ValueError, match="token"):
         resource_evidence.verify_resource_benchmark_artifact("jonsnow-org/Lena9", "123456", "")
+
+
+
+def _report_identity():
+    return {
+        "github_run_id": "123456",
+        "github_repository": "jonsnow-org/Lena9",
+        "github_ref": "refs/heads/research/onecore-v3-implementation",
+        "github_sha": "a" * 40,
+    }
+
+
+def _verified_metadata():
+    return {
+        "format_version": 1,
+        "repository": "jonsnow-org/Lena9",
+        "run_id": 123456,
+        "workflow_id": resource_evidence.EXPECTED_WORKFLOW_ID,
+        "workflow_path": resource_evidence.EXPECTED_WORKFLOW_PATH,
+        "event": "workflow_dispatch",
+        "run_status": "completed",
+        "run_conclusion": "success",
+        "head_branch": resource_evidence.EXPECTED_BRANCH,
+        "head_sha": "a" * 40,
+        "verify_job_id": 1,
+        "benchmark_job_id": 2,
+        "artifact_id": 987,
+        "artifact_name": "onecore-v3-resource-benchmark-123456",
+        "artifact_size_bytes": 4096,
+        "artifact_digest": "sha256:" + "b" * 64,
+        "artifact_expired": False,
+    }
+
+
+def test_resource_evidence_binds_report_to_exact_verified_run_and_artifact():
+    resource_evidence.verify_resource_benchmark_report_binding(
+        _report_identity(), _verified_metadata()
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("github_run_id", "999999", "run id"),
+        ("github_repository", "other/repository", "repository"),
+        ("github_ref", "refs/heads/main", "ref"),
+        ("github_sha", "f" * 40, "commit SHA"),
+    ],
+)
+def test_resource_evidence_rejects_report_identity_mismatch(field, value, message):
+    report = _report_identity()
+    report[field] = value
+    with pytest.raises(ValueError, match=message):
+        resource_evidence.verify_resource_benchmark_report_binding(
+            report, _verified_metadata()
+        )

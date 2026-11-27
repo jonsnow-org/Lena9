@@ -24,6 +24,7 @@ from .config import V3Config
 from .core import OneCoreV3
 from .dataset import V3JointDataLoader
 from .training import OneCoreV3Objective, train_v3_joint_step
+from .resource_evidence import verify_resource_benchmark_report_binding
 
 
 def _atomic_json(path: Path, value: dict[str, Any]) -> None:
@@ -58,6 +59,7 @@ def _set_seed(seed: int) -> None:
 def _validate_resource_evidence(
     path: str | Path | None,
     *,
+    artifact_metadata_path: str | Path | None,
     config_fingerprint: str,
     manifest_sha256: str,
     train_manifest_sha256: str,
@@ -78,6 +80,16 @@ def _validate_resource_evidence(
         raise ValueError(f"V3 CPU resource benchmark report is unreadable: {exc}") from exc
     if not isinstance(report, dict):
         raise ValueError("V3 CPU resource benchmark report must be a JSON object")
+    if artifact_metadata_path is None:
+        raise ValueError("V3 CPU resource benchmark verified artifact metadata sidecar is required")
+    metadata_path = Path(artifact_metadata_path).resolve()
+    if not metadata_path.is_file():
+        raise FileNotFoundError(f"V3 CPU resource benchmark artifact metadata not found: {metadata_path}")
+    try:
+        artifact_metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"V3 CPU resource benchmark artifact metadata is unreadable: {exc}") from exc
+    verify_resource_benchmark_report_binding(report, artifact_metadata)
     if (
         isinstance(report.get("format_version"), bool)
         or report.get("format_version") != 1
@@ -114,6 +126,50 @@ def _validate_resource_evidence(
         or model_report.get("trainable_parameters") != 39_906_568
     ):
         raise ValueError("V3 CPU resource benchmark model report does not match the exact V3 architecture")
+
+    shape_distributions = report.get("shape_distributions")
+    if not isinstance(shape_distributions, dict):
+        raise ValueError("V3 CPU resource benchmark is missing media shape distributions")
+
+    def require_dimension_distribution(name: str) -> int:
+        distribution = shape_distributions.get(name)
+        if not isinstance(distribution, dict):
+            raise ValueError(f"V3 CPU resource benchmark is missing {name} dimension distribution")
+        count = distribution.get("count")
+        if isinstance(count, bool) or not isinstance(count, int) or count < 1:
+            raise ValueError(f"V3 CPU resource benchmark {name} dimension distribution has no positive sample count")
+        quantiles = [distribution.get(key) for key in ("min", "median", "p95", "max")]
+        numeric_quantiles: list[float] = []
+        for label, value in zip(("min", "median", "p95", "max"), quantiles):
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(float(value))
+                or float(value) <= 0
+            ):
+                raise ValueError(
+                    f"V3 CPU resource benchmark {name} dimension distribution has invalid positive {label}"
+                )
+            numeric = float(value)
+            if not numeric.is_integer():
+                raise ValueError(
+                    f"V3 CPU resource benchmark {name} dimension distribution must contain integer pixel values"
+                )
+            numeric_quantiles.append(numeric)
+        if numeric_quantiles != sorted(numeric_quantiles):
+            raise ValueError(
+                f"V3 CPU resource benchmark {name} dimension distribution quantiles are not ordered"
+            )
+        return count
+
+    dimension_counts = {
+        name: require_dimension_distribution(name)
+        for name in ("image_width", "image_height", "video_width", "video_height")
+    }
+    if dimension_counts["image_width"] != dimension_counts["image_height"]:
+        raise ValueError("V3 CPU resource benchmark image width/height dimension counts do not match")
+    if dimension_counts["video_width"] != dimension_counts["video_height"]:
+        raise ValueError("V3 CPU resource benchmark video width/height dimension counts do not match")
 
     gate = report.get("manifest_gate")
     if not isinstance(gate, dict) or gate.get("passed") is not True:
@@ -326,6 +382,7 @@ def run_v3_training(
     ) as loader:
         resource_evidence_sha256 = _validate_resource_evidence(
             resource_evidence_path,
+            artifact_metadata_path=output / "resource-evidence-artifact.json",
             config_fingerprint=config.fingerprint,
             manifest_sha256=loader.manifest_sha256,
             train_manifest_sha256=loader.train_manifest_sha256,

@@ -15,9 +15,19 @@ def _resource_report():
         "manifest_bundle_sha256": "b" * 64,
         "train_manifest_sha256": "c" * 64,
         "tokenizer": {"tokenizer_sha256": "d" * 64},
+        "github_run_id": "123456",
+        "github_repository": "jonsnow-org/Lena9",
+        "github_ref": "refs/heads/research/onecore-v3-implementation",
+        "github_sha": "a" * 40,
         "cpu": {"cuda_available": False, "threads": 4},
         "optimizer_updates": 0,
         "model_report": {"config_sha256": "a" * 64, "trainable_parameters": 39_906_568},
+        "shape_distributions": {
+            "image_width": {"count": 100, "min": 128.0, "median": 512.0, "p95": 1024.0, "max": 2048.0},
+            "image_height": {"count": 100, "min": 128.0, "median": 512.0, "p95": 1024.0, "max": 2048.0},
+            "video_width": {"count": 100, "min": 320.0, "median": 1280.0, "p95": 1920.0, "max": 1920.0},
+            "video_height": {"count": 100, "min": 240.0, "median": 720.0, "p95": 1080.0, "max": 1080.0},
+        },
         "manifest_gate": {
             "passed": True,
             "coverage": {
@@ -68,9 +78,35 @@ def _resource_report():
     }
 
 
-def _validate(path):
+def _resource_metadata():
+    return {
+        "format_version": 1,
+        "repository": "jonsnow-org/Lena9",
+        "run_id": 123456,
+        "workflow_id": 419034892,
+        "workflow_path": ".github/workflows/onecore-ci.yml",
+        "event": "workflow_dispatch",
+        "run_status": "completed",
+        "run_conclusion": "success",
+        "head_branch": "research/onecore-v3-implementation",
+        "head_sha": "a" * 40,
+        "verify_job_id": 1,
+        "benchmark_job_id": 2,
+        "artifact_id": 987,
+        "artifact_name": "onecore-v3-resource-benchmark-123456",
+        "artifact_size_bytes": 4096,
+        "artifact_digest": "sha256:" + "b" * 64,
+        "artifact_expired": False,
+    }
+
+
+def _validate(path, metadata_path=None):
+    if metadata_path is None:
+        metadata_path = path.with_name(path.stem + ".artifact.json")
+        metadata_path.write_text(json.dumps(_resource_metadata()), encoding="utf-8")
     return _validate_resource_evidence(
         path,
+        artifact_metadata_path=metadata_path,
         config_fingerprint="a" * 64,
         manifest_sha256="b" * 64,
         train_manifest_sha256="c" * 64,
@@ -207,3 +243,57 @@ def test_v3_resource_evidence_rejects_inconsistent_process_tree_memory_bound(tmp
     path.write_text(json.dumps(report), encoding="utf-8")
     with pytest.raises(ValueError, match="upper bound is below the observed peak"):
         _validate(path)
+
+
+
+def test_v3_resource_evidence_requires_complete_valid_image_and_video_dimensions(tmp_path):
+    for key in ("image_width", "image_height", "video_width", "video_height"):
+        report = _resource_report()
+        del report["shape_distributions"][key]
+        path = tmp_path / f"missing-{key}.json"
+        path.write_text(json.dumps(report), encoding="utf-8")
+        with pytest.raises(ValueError, match=f"missing {key} dimension distribution"):
+            _validate(path)
+
+    report = _resource_report()
+    report["shape_distributions"]["video_width"]["min"] = 0
+    path = tmp_path / "nonpositive-video-width.json"
+    path.write_text(json.dumps(report), encoding="utf-8")
+    with pytest.raises(ValueError, match="invalid positive min"):
+        _validate(path)
+
+    report = _resource_report()
+    report["shape_distributions"]["video_height"]["p95"] = 700.0
+    path = tmp_path / "unordered-video-height.json"
+    path.write_text(json.dumps(report), encoding="utf-8")
+    with pytest.raises(ValueError, match="quantiles are not ordered"):
+        _validate(path)
+
+    report = _resource_report()
+    report["shape_distributions"]["video_width"]["median"] = 1280.5
+    path = tmp_path / "fractional-video-width.json"
+    path.write_text(json.dumps(report), encoding="utf-8")
+    with pytest.raises(ValueError, match="integer pixel values"):
+        _validate(path)
+
+    report = _resource_report()
+    report["shape_distributions"]["video_width"]["count"] = 99
+    path = tmp_path / "mismatched-video-dimensions.json"
+    path.write_text(json.dumps(report), encoding="utf-8")
+    with pytest.raises(ValueError, match="video width/height dimension counts do not match"):
+        _validate(path)
+
+
+def test_v3_resource_evidence_requires_verified_artifact_metadata_sidecar(tmp_path):
+    path = tmp_path / "resource.json"
+    path.write_text(json.dumps(_resource_report()), encoding="utf-8")
+    with pytest.raises(ValueError, match="metadata sidecar is required"):
+        _validate_resource_evidence(
+            path,
+            artifact_metadata_path=None,
+            config_fingerprint="a" * 64,
+            manifest_sha256="b" * 64,
+            train_manifest_sha256="c" * 64,
+            tokenizer_sha256="d" * 64,
+            threads=4,
+        )
