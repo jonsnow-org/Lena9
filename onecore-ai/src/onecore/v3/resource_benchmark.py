@@ -439,6 +439,7 @@ def _select_train_samples(
         "audio_duration_seconds": [], "audio_source_sample_rate": [],
         "audio_training_sample_rate": [], "audio_training_channels": [],
         "video_frame_count": [], "video_duration_seconds": [],
+        "video_width": [], "video_height": [],
         "video_megapixels_per_frame": [], "video_fps": [],
     }
 
@@ -567,6 +568,8 @@ def _select_train_samples(
             if isinstance(duration, (int, float)) and duration > 0:
                 stats["video_duration_seconds"].append(float(duration))
             if megapixels > 0:
+                stats["video_width"].append(width)
+                stats["video_height"].append(height)
                 stats["video_megapixels_per_frame"].append(megapixels)
             if isinstance(fps, (int, float)) and fps > 0:
                 stats["video_fps"].append(float(fps))

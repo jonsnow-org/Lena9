@@ -629,15 +629,28 @@ def test_select_train_samples_preserves_same_row_media_conditions(tmp_path):
                 "duration_seconds": 0.08, "fps": 25.0,
             },
         }),
+        base("video-2", "video_caption", caption="A car crosses a bridge.", assets={
+            "video": {
+                "frames": [f"other-frames/{index}.png" for index in range(8)],
+                "frame_count": 8, "width": 1280, "height": 720,
+                "duration_seconds": 1.0, "fps": 24.0,
+            },
+        }),
     ]
     manifest = tmp_path / "train.jsonl"
     manifest.write_text("".join(json.dumps(row) + chr(10) for row in rows), encoding="utf-8")
 
-    selected, _stats = _select_train_samples(
+    selected, stats = _select_train_samples(
         manifest, max_image_megapixels=1.0, max_audio_seconds=5.0,
         max_video_megapixel_frames=16.0, max_video_frames=16,
     )
 
+    assert stats["video_width"] == {
+        "count": 2, "min": 1280.0, "median": 1600.0, "p95": 1920.0, "max": 1920.0,
+    }
+    assert stats["video_height"] == {
+        "count": 2, "min": 720.0, "median": 900.0, "p95": 1080.0, "max": 1080.0,
+    }
     assert selected["image"]["condition_field"] == "caption"
     assert selected["image"]["condition_text"] == "A red boat on a lake."
     assert selected["audio"]["condition_field"] == "transcript"
