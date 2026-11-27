@@ -24,6 +24,7 @@ from .losses import (
 class V3ObjectiveWeights:
     text: float = 1.0
     tool: float = 1.0
+    tldm_diffusion: float = 0.15
     image_flow: float = 1.0
     image_reconstruction: float = 1.0
     image_adversarial: float = 0.1
@@ -36,6 +37,33 @@ class V3ObjectiveWeights:
     video_temporal: float = 1.0
     alignment: float = 0.1
 
+
+def _sample_tldm_span_mask(input_ids: torch.Tensor, valid_positions: torch.Tensor, *, fraction: float = 0.25) -> torch.Tensor:
+    """Select a contiguous valid token span per row without exposing target IDs."""
+    if input_ids.ndim != 2 or valid_positions.shape != input_ids.shape:
+        raise ValueError("T-LDM inputs and valid-position mask must match [B,T]")
+    if not 0.0 < fraction <= 1.0:
+        raise ValueError("T-LDM mask fraction must be in (0, 1]")
+    masked = torch.zeros_like(input_ids, dtype=torch.bool)
+    length = input_ids.shape[1]
+    for row in range(input_ids.shape[0]):
+        valid = valid_positions[row].to(dtype=torch.bool)
+        valid_count = int(valid.sum().item())
+        if valid_count == 0:
+            continue
+        span = max(1, min(valid_count, int(round(valid_count * fraction))))
+        starts = [
+            start for start in range(max(1, length - span + 1))
+            if bool(valid[start:start + span].all())
+        ]
+        if starts:
+            start = starts[int(torch.randint(len(starts), (1,), device=input_ids.device).item())]
+            masked[row, start:start + span] = True
+        else:
+            positions = torch.nonzero(valid, as_tuple=False).flatten()
+            order = torch.randperm(positions.numel(), device=input_ids.device)[:span]
+            masked[row, positions[order]] = True
+    return masked
 
 @contextmanager
 def _frozen_parameters(module: nn.Module):
@@ -97,6 +125,16 @@ class OneCoreV3Objective(nn.Module):
             )
             losses[f"{family}_loss"] = loss
             total = total + weight * loss
+            if self.weights.tldm_diffusion > 0:
+                valid_targets = labels.ne(-100)
+                masked_positions = _sample_tldm_span_mask(input_ids, valid_targets)
+                if bool(masked_positions.any()):
+                    diffusion_logits = self.model.forward_tldm(input_ids, masked_positions)
+                    diffusion_loss = F.cross_entropy(
+                        diffusion_logits[masked_positions], labels[masked_positions],
+                    )
+                    losses[f"{family}_tldm_loss"] = diffusion_loss
+                    total = total + self.weights.tldm_diffusion * diffusion_loss
 
         sample = batch.get("image")
         if sample is not None:

@@ -23,7 +23,7 @@ from .checkpoint import load_v3_checkpoint, save_v3_checkpoint, sha256_file
 from .config import V3Config
 from .core import OneCoreV3
 from .dataset import V3JointDataLoader
-from .training import OneCoreV3Objective, train_v3_joint_step
+from .training import OneCoreV3Objective, V3ObjectiveWeights, train_v3_joint_step
 from .resource_evidence import verify_resource_benchmark_report_binding
 
 
@@ -323,6 +323,7 @@ def run_v3_training(
     resource_evidence_path: str | Path,
     seed: int = 20261124,
     threads: int = 4,
+    tldm_diffusion_weight: float = 0.15,
     resume_checkpoint: str | Path | None = None,
     expected_parent_checkpoint_sha256: str | None = None,
     trusted_asset_hashes: dict[str, str] | None = None,
@@ -345,6 +346,8 @@ def run_v3_training(
         raise ValueError("checkpoint_every must be a positive integer")
     if isinstance(threads, bool) or not isinstance(threads, int) or threads < 1:
         raise ValueError("threads must be a positive integer")
+    if not math.isfinite(tldm_diffusion_weight) or tldm_diffusion_weight < 0:
+        raise ValueError("tldm_diffusion_weight must be finite and non-negative")
     if not isinstance(run_id, str) or not run_id.strip():
         raise ValueError("run_id must be non-empty")
     if resume_checkpoint is None and expected_parent_checkpoint_sha256 is not None:
@@ -434,7 +437,9 @@ def run_v3_training(
         if global_step >= total_steps:
             raise ValueError("checkpoint has already reached the configured training schedule")
 
-        objective = OneCoreV3Objective(model)
+        objective = OneCoreV3Objective(
+            model, weights=V3ObjectiveWeights(tldm_diffusion=tldm_diffusion_weight),
+        )
         parameter_count = sum(
             parameter.numel() for parameter in model.parameters() if parameter.requires_grad
         )
@@ -491,6 +496,7 @@ def run_v3_training(
                     "warmup_steps": warmup_steps,
                     "learning_rate_base": learning_rate,
                     "weight_decay": weight_decay,
+                    "tldm_diffusion_weight": tldm_diffusion_weight,
                     "max_grad_norm": max_grad_norm,
                     "optimizer": "AdamW",
                     "optimizer_betas": [0.9, 0.95],
@@ -548,6 +554,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--resource-evidence", required=True)
     parser.add_argument("--seed", type=int, default=20261124)
     parser.add_argument("--threads", type=int, default=4)
+    parser.add_argument("--tldm-diffusion-weight", type=float, required=True)
     parser.add_argument("--resume-checkpoint")
     parser.add_argument("--expected-parent-checkpoint-sha256")
     args = parser.parse_args(argv)
@@ -606,6 +613,7 @@ def main(argv: list[str] | None = None) -> int:
             resource_evidence_path=args.resource_evidence,
             seed=args.seed,
             threads=args.threads,
+            tldm_diffusion_weight=args.tldm_diffusion_weight,
             resume_checkpoint=args.resume_checkpoint,
             expected_parent_checkpoint_sha256=args.expected_parent_checkpoint_sha256,
             trusted_asset_hashes=trusted_asset_hashes,

@@ -97,7 +97,9 @@ jobs:
           if total != 20000 or warmup != 200:
               raise SystemExit("the first V3 schedule is pinned to total_steps=20000 and warmup_steps=200")
           if request.get("learning_rate") != 0.0003 or request.get("weight_decay") != 0.1:
-              raise SystemExit("unexpected V3 optimizer hyperparameters")
+              raise SystemExit("unexpected OneCore optimizer hyperparameters")
+          if request.get("tldm_diffusion_weight") != 0.15:
+              raise SystemExit("native OneCore T-LDM weight must be explicitly pinned to 0.15")
           if request.get("max_grad_norm") != 1.0 or request.get("checkpoint_every") != 1:
               raise SystemExit("the first real V3 run must checkpoint every update with grad clip 1.0")
           if request.get("resume_artifact_run_id") is not None:
@@ -106,6 +108,7 @@ jobs:
               "steps": steps, "total_steps": total, "warmup_steps": warmup,
               "learning_rate": request["learning_rate"], "weight_decay": request["weight_decay"],
               "max_grad_norm": request["max_grad_norm"], "checkpoint_every": request["checkpoint_every"],
+              "tldm_diffusion_weight": request["tldm_diffusion_weight"],
               "seed": request.get("seed", 20261124), "threads": request.get("threads", 4),
           }
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as stream:
@@ -255,7 +258,8 @@ jobs:
             --run-id "$GITHUB_RUN_ID" \
             --resource-evidence "${{ steps.resource-report.outputs.path }}" \
             --seed "${{ steps.request.outputs.seed }}" \
-            --threads "${{ steps.request.outputs.threads }}"
+            --threads "${{ steps.request.outputs.threads }}" \
+            --tldm-diffusion-weight "${{ steps.request.outputs.tldm_diffusion_weight }}"
       - name: Upload the real V3 checkpoint and training evidence
         if: always() && hashFiles('onecore-ai/run-state/v3/checkpoint.pt') != ''
         uses: actions/upload-artifact@v4

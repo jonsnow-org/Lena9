@@ -15,5 +15,6 @@
   "checkpoint_every": 1,
   "seed": 20261124,
   "threads": 4,
-  "resume_artifact_run_id": null
+  "resume_artifact_run_id": null,
+  "tldm_diffusion_weight": 0.15
 }
