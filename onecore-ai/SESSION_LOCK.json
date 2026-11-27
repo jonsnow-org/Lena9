@@ -2,14 +2,14 @@
   "schema_version": 1,
   "status": "active",
   "holder": "ChatGPT GPT-6",
-  "session_id": "onecore-single-canonical-spec-alignment-20261127-02",
+  "session_id": "onecore-corrected-spec-single-model-20261127-03",
   "client": "ChatGPT",
-  "started_at_utc": "2026-11-27T15:55:00Z",
-  "lease_expires_at_utc": "2026-11-27T16:50:00Z",
-  "base_head_sha": "dbd74d8be22b51bd388ea98b260df0fa5f0cde13",
-  "planned_scope": "Align the only adopted OneCore model to the corrected engineering specification while keeping all later V3 operational/data/checkpoint/tooling improvements in the same single path. Replace model/config/tokenizer/FLOPs contracts, keep one joint trainer and fail-closed gates, remove remaining version-labelled model branch/path names where supported. Do not train, mutate weights, change main or refit data except a required single new 4,096-text-plus-codebook tokenizer artifact from the already-pinned train manifest.",
+  "started_at_utc": "2026-11-27T19:02:23Z",
+  "lease_expires_at_utc": "2026-11-27T20:02:23Z",
+  "base_head_sha": "c9119610510742624b2e00be5bacee039b40bd17",
+  "planned_scope": "Replace the one canonical OneCore implementation contract with the corrected engineering specification (57,579,201 parameters, width 1024, vocab 5144, four shared blocks over three cycles), preserve native T-LDM in the same model, align model/config/tokenizer/FLOPs/data gates and exact tests/docs, fix CI handover assertion, preserve one trainer/checkpoint lineage, keep all training fail-closed. No model training, no main mutation, no parallel V2/V3 model path or new branch.",
   "last_released_at_utc": "2026-11-27T07:51:21Z",
-  "last_session_summary": "Completed single-model consolidation: native T-LDM integrated into the shared model; legacy model/trainer/notebook files removed from the active branch; source cursor unified; corpus provenance preserved as a data-only snapshot; CI #771 and source package #8 succeeded.",
-  "last_verified_branch_head": "dbd74d8be22b51bd388ea98b260df0fa5f0cde13",
-  "last_result": "Previous single-model consolidation and source package completed. #771 passed (211 passed/47 warnings), #772/#773 failed only due stale handover assertion; no runtime benchmark or optimizer updates. Previous lease expired at 2026-11-27T09:15:00Z."
+  "last_session_summary": "Prior cleanup removed old parallel model/trainer/notebook workflow and integrated native T-LDM. Last source package passed; CI run #774 failed only on a brittle handover heading assertion. Corrected spec v2 now being applied as canonical single model.",
+  "last_verified_branch_head": "c9119610510742624b2e00be5bacee039b40bd17",
+  "last_result": "Previous CI #771 passed (211 passed/47 warnings), source package #11 passed. CI #774: compile and current parameter/FLOPs assertions for legacy config passed; unit suite 1 failed, 210 passed, 47 warnings due missing required handover heading. No CPU benchmark, checkpoint audit, optimizer update or evaluation."
 }
