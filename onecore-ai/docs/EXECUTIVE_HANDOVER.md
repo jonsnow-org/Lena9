@@ -4,11 +4,11 @@
 
 **OneCore is one model, with one active implementation and one training path.** The sole model source is `onecore-ai/src/onecore/v3/` on branch `research/onecore-v3-implementation`. No parallel model package, old trainer, notebook-based training line or alternate checkpoint lineage remains in this branch.
 
-The adopted model contract:
+The adopted corrected model contract (`onecore-v3-corrected-spec-2`):
 
-- **39,906,568 trainable parameters**.
-- Shared width 512; byte-level BPE vocabulary 32,000.
-- Four unique Transformer blocks reused for three recurrent cycles; eight attention heads.
+- **57,579,201 trainable parameters**.
+- Shared width 1,024; unified vocabulary 5,144 (text BPE 4,096, vision 512, audio 256, motion 256, special 24).
+- Four unique Transformer blocks reused for three recurrent cycles; eight attention heads; SwiGLU hidden width 2,730; RMSNorm; maximum context 512.
 - One shared semantic Transformer and tied text embedding/output projection.
 - Image/audio/video codecs and modality flow heads inside the same model/checkpoint.
 - Native T-LDM uses 16 latent slots through the same shared core and tied text head. It adds zero trainable parameters. Initial text/tool masked-diffusion loss weight is 0.15.
@@ -57,6 +57,6 @@ The sole optimizer-training workflow `.github/workflows/onecore-v3-training.yml`
 - The active branch is 74 commits ahead and 4 behind `main`; open one reviewed PR and merge only after its own PR checks pass.
 - The old `research/onecore-foundation` ref still points to its former contents at `6d5dd21982f8f4a835e07b0f004b1621be57ba96`. After the canonical PR merges, repoint this legacy ref to the new `main` SHA with compare-and-swap so it no longer names a different model implementation. The available GitHub connector has no branch-delete operation; the branch name may remain as an inert pointer, but it must not retain a second code line.
 
-## Multi-client protocol
+## Mandatory multi-client coordination protocol
 
 Every client must read `SESSION_PROTOCOL.md`, `AGENTS.md` and this complete handover before writing. Check live HEAD and the latest 20 relevant runs, use the shared writer lock with compare-and-swap, and record exact commits, tests, jobs, artifacts, failures and skipped gates. The lock for this consolidation has been released. Do not recreate a parallel model, trainer, notebook workflow, branch or checkpoint lineage.

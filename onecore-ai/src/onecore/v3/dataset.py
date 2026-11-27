@@ -97,8 +97,8 @@ class V3JointDataLoader:
     """Validated external-only five-family loader with strict resumable cursors.
 
     Default windows are 512 text tokens, 5 seconds of canonical-rate audio and
-    16 contiguous video frames. Raw assets remain unchanged; each epoch selects
-    a deterministic new window. Images are loaded at native resolution.
+    at most four contiguous video frames. Raw assets remain unchanged; each epoch selects
+    a deterministic new window. Images and video frames are normalized to the specified 64x64 resolution.
 
     A benchmark manifest view may index a quota-complete slice of a larger train
     manifest while verifying the tokenizer against its original full-manifest
@@ -114,7 +114,7 @@ class V3JointDataLoader:
         config: V3Config | None = None,
         max_text_tokens: int | None = 512,
         audio_window_seconds: float | None = 5.0,
-        video_window_frames: int | None = 16,
+        video_window_frames: int | None = 4,
         benchmark_manifest_view: bool = False,
         tokenizer_train_manifest_sha256: str | None = None,
         trusted_asset_hashes: Mapping[str, str] | None = None,
@@ -174,6 +174,8 @@ class V3JointDataLoader:
         self.audio_window_seconds = (
             None if audio_window_seconds is None else float(audio_window_seconds)
         )
+        if video_window_frames is not None and video_window_frames > self.config.max_video_frames:
+            raise ValueError(f"video_window_frames cannot exceed the configured {self.config.max_video_frames}-frame limit")
         self.video_window_frames = video_window_frames
 
         self.fingerprint = fingerprint_validated_v3_manifests(
@@ -491,13 +493,16 @@ class V3JointDataLoader:
             image_path = self._resolve_asset(relative, record_id)
             try:
                 with Image.open(image_path) as image:
-                    pixels = np.asarray(image.convert("RGB"), dtype=np.float32).copy() / 255.0
+                    image = image.convert("RGB")
+                    original_size = image.size
+                    image = image.resize((self.config.image_size, self.config.image_size), Image.Resampling.BICUBIC)
+                    pixels = np.asarray(image, dtype=np.float32).copy() / 255.0
             finally:
                 self._release_asset(relative, image_path)
             tensor = torch.from_numpy(pixels).permute(2, 0, 1).unsqueeze(0).contiguous()
             metadata.update({
                 "width": int(tensor.shape[-1]), "height": int(tensor.shape[-2]),
-                "resized": False, "asset_paths": [relative],
+                "resized": original_size != (self.config.image_size, self.config.image_size), "asset_paths": [relative],
             })
             batch = {"images": tensor}
             if condition_ids is not None:
@@ -555,7 +560,8 @@ class V3JointDataLoader:
             frame_path = self._resolve_asset(relative, record_id)
             try:
                 with Image.open(frame_path) as image:
-                    pixels = np.asarray(image.convert("RGB"), dtype=np.float32).copy() / 255.0
+                    image = image.convert("RGB").resize((self.config.image_size, self.config.image_size), Image.Resampling.BICUBIC)
+                    pixels = np.asarray(image, dtype=np.float32).copy() / 255.0
                 dimensions.add((int(pixels.shape[0]), int(pixels.shape[1])))
                 frames.append(pixels)
             finally:
