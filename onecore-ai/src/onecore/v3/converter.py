@@ -26,7 +26,7 @@ import yaml
 from datasets import Image as HFImage, load_dataset
 from huggingface_hub import hf_hub_download
 
-from .source_utils import first_text_field, nested_field, resolve_pinned_video_asset, sourcesource_row_identity
+from .source_utils import first_text_field, nested_field, resolve_pinned_video_asset, source_row_identity
 from onecore.crawlers import StatefulStreamCursor
 from onecore.data import external_record_is_trainable, has_immutable_external_provenance, iter_manifest
 from .manifest import validate_v3_manifest

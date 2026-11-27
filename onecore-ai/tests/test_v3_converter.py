@@ -8,7 +8,7 @@ import yaml
 from PIL import Image
 from datasets import Image as HFImage
 
-from onecore.v3.source_utils import sourcesource_row_identity
+from onecore.v3.source_utils import source_row_identity
 from onecore.v3 import converter as converter_module
 from onecore.v3.converter import (
     _default_source_loader, acquire_missing_media_rows, convert_existing_corpus,
