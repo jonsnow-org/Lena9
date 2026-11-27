@@ -8,27 +8,11 @@ from onecore.v3.config import V3Config
 
 
 def _config():
-    return V3Config(
-        text_vocab_size=64,
-        width=32,
-        layers=1,
-        cycles=2,
-        attention_heads=4,
-        patch_size=4,
-        audio_latent_channels=8,
-        audio_hidden_channels=16,
-        audio_codebook_size=16,
-        audio_quantizer_stages=2,
-        audio_channels=1,
-        temporal_layers=1,
-        max_image_context_tokens=8,
-        max_video_context_tokens=8,
-        max_flow_context_tokens=8,
-        temporal_window_frames=4,
-        temporal_memory_frames=1,
-        video_generation_chunk_frames=2,
-        dropout=0.0,
-    )
+    return V3Config(architecture_version="onecore-v3-test-fixture", width=32, unique_blocks=1,
+        recurrent_cycles=2, attention_heads=4, max_sequence_length=128, text_vocab_size=64,
+        vision_codebook_size=16, audio_codebook_size=8, motion_codebook_size=8, special_tokens=24,
+        patch_size=8, image_size=32, audio_bins=8, audio_group_frames=2, audio_sample_rate=24000,
+        audio_channels=1, max_video_frames=4, tldm_latent_slots=4, dropout=0.0)
 
 
 def _tokenizer_json(vocab_size=64):
