@@ -19,7 +19,7 @@ from PIL import Image
 from tokenizers import Tokenizer
 
 from .config import V3Config
-from .core import OneCoreV3
+from .core import (AUDIO_END, AUDIO_START, BOS, EOS, IMAGE_END, IMAGE_START, MASK, MOTION_START, TEXT_START, TOOL_END, TOOL_START, VIDEO_END, VIDEO_FRAME, VIDEO_START, OneCoreV3)
 
 _REQUIRED_SPECIAL_TOKENS = ("[UNK]", "[BOS]", "[EOS]", "[PAD]")
 _HEX = frozenset("0123456789abcdef")
@@ -202,9 +202,9 @@ class OneCoreV3Inference:
         if not isinstance(prompt, str):
             raise TypeError("prompt must be a string")
         encoded = self.tokenizer.encode(prompt, add_special_tokens=False).ids
-        values = [int(self.special_ids["[BOS]"]), *encoded]
+        values = [self.config.special_id(BOS), *encoded]
         if append_eos:
-            values.append(int(self.special_ids["[EOS]"]))
+            values.append(self.config.special_id(EOS))
         return values
 
     def _condition_tensor(self, prompt: str | None) -> torch.Tensor | None:
@@ -232,8 +232,9 @@ class OneCoreV3Inference:
             raise ValueError("temperature must be finite and in [0, 5]")
         if isinstance(top_k, bool) or not isinstance(top_k, int) or top_k < 1:
             raise ValueError("top_k must be a positive integer")
-        if isinstance(max_context_tokens, bool) or not isinstance(max_context_tokens, int) or max_context_tokens < 2:
-            raise ValueError("max_context_tokens must be an integer >= 2")
+        if (isinstance(max_context_tokens, bool) or not isinstance(max_context_tokens, int)
+                or max_context_tokens < 2 or max_context_tokens > self.config.max_sequence_length):
+            raise ValueError(f"max_context_tokens must be an integer from 2 to {self.config.max_sequence_length}")
 
         sequence = self._prompt_ids(prompt, append_eos=False)
         if len(sequence) > max_context_tokens:
@@ -243,18 +244,20 @@ class OneCoreV3Inference:
         if seed is not None:
             generator = torch.Generator(device=self.device)
             generator.manual_seed(int(seed))
-        eos_id = int(self.special_ids["[EOS]"])
-        blocked_ids = {
-            int(self.special_ids["[UNK]"]),
-            int(self.special_ids["[BOS]"]),
-            int(self.special_ids["[PAD]"]),
+        eos_id = self.config.special_id(EOS)
+        tokenizer_blocked = {
+            int(self.special_ids["[UNK]"]), int(self.special_ids["[BOS]"]),
+            int(self.special_ids["[EOS]"]), int(self.special_ids["[PAD]"]),
         }
+        allowed = torch.zeros(self.config.vocab_size, dtype=torch.bool, device=self.device)
+        allowed[:self.config.text_vocab_size] = True
+        allowed[eos_id] = True
 
         for _ in range(max_new_tokens):
             input_ids = torch.tensor([sequence], dtype=torch.long, device=self.device)
-            logits = self.model.forward_text(input_ids)[0, -1].float()
-            logits = logits.clone()
-            for token_id in blocked_ids:
+            logits = self.model.forward_text(input_ids)[0, -1].float().clone()
+            logits.masked_fill_(~allowed, -torch.inf)
+            for token_id in tokenizer_blocked:
                 logits[token_id] = -torch.inf
             if temperature == 0:
                 next_id = int(torch.argmax(logits).item())
@@ -271,85 +274,102 @@ class OneCoreV3Inference:
             sequence.append(next_id)
             if len(sequence) > max_context_tokens:
                 sequence = [sequence[0], *sequence[-(max_context_tokens - 1):]]
-        return self.tokenizer.decode(generated, skip_special_tokens=True)
+        decoded = [token for token in generated if token < self.config.text_vocab_size and token not in tokenizer_blocked]
+        return self.tokenizer.decode(decoded, skip_special_tokens=True)
 
     @torch.inference_mode()
-    def generate_image(
-        self,
-        prompt: str | None,
-        *,
-        height: int = 256,
-        width: int = 256,
-        steps: int = 32,
-    ) -> torch.Tensor:
-        if min(height, width, steps) < 1:
-            raise ValueError("image dimensions and flow steps must be positive")
-        return self.model.generate_image(
-            height,
-            width,
-            condition_ids=self._condition_tensor(prompt),
-            steps=steps,
-        )
+    def generate_image(self, prompt: str | None = None, *, height: int = 64, width: int = 64,
+                       temperature: float = 0.8, top_k: int = 40) -> torch.Tensor:
+        if prompt and prompt.strip():
+            raise ValueError("this corrected model image path is unconditional; text-to-image conditioning is not implemented")
+        if (height, width) != (self.config.image_size, self.config.image_size):
+            raise ValueError(f"OneCore images are fixed at {self.config.image_size}x{self.config.image_size}")
+        _codes, image = self.model.generate_image(temperature=temperature, top_k=top_k)
+        return image
+
+    @staticmethod
+    def _griffin_lim24(log_mel: torch.Tensor, samples: int, sample_rate: int = 24_000) -> torch.Tensor:
+        """Invert the model's 80-bin log-power mel representation with 24 Griffin-Lim iterations."""
+        if log_mel.ndim != 3 or log_mel.shape[-1] != 80 or samples < 1:
+            raise ValueError("audio synthesis requires [batch, mel_frames, 80] and positive samples")
+        n_fft, hop, mel_bins = 400, 160, 80
+        device, dtype = log_mel.device, log_mel.dtype
+        frequencies = torch.linspace(0, sample_rate / 2, n_fft // 2 + 1, device=device, dtype=dtype)
+        mel_max = 2595.0 * torch.log10(torch.tensor(1.0 + (sample_rate / 2) / 700.0, device=device, dtype=dtype))
+        mel_points = torch.linspace(0.0, float(mel_max), mel_bins + 2, device=device, dtype=dtype)
+        hz_points = 700.0 * (torch.pow(10.0, mel_points / 2595.0) - 1.0)
+        filters = []
+        for index in range(mel_bins):
+            left, center, right = hz_points[index:index + 3]
+            rising = (frequencies - left) / (center - left).clamp_min(1e-6)
+            falling = (right - frequencies) / (right - center).clamp_min(1e-6)
+            filters.append(torch.minimum(rising, falling).clamp(0.0, 1.0))
+        bank = torch.stack(filters, dim=0)
+        mel_power = torch.exp(log_mel.transpose(1, 2).clamp(-20.0, 20.0))
+        linear_power = torch.einsum("fm,bmt->bft", torch.linalg.pinv(bank), mel_power).clamp_min(1e-8)
+        magnitude = linear_power.sqrt()
+        target_frames = samples // hop + 1
+        magnitude = magnitude[..., :target_frames]
+        if magnitude.shape[-1] < target_frames:
+            magnitude = torch.nn.functional.pad(magnitude, (0, target_frames - magnitude.shape[-1]))
+        generator = torch.Generator(device=device).manual_seed(20261124)
+        phase = (torch.rand(magnitude.shape, generator=generator, device=device, dtype=dtype) * 2.0 - 1.0) * math.pi
+        window = torch.hann_window(n_fft, device=device, dtype=dtype)
+        spectrum = torch.polar(magnitude, phase)
+        for _ in range(24):
+            waveform = torch.istft(spectrum, n_fft=n_fft, hop_length=hop, win_length=n_fft,
+                                   window=window, center=True, length=samples)
+            rebuilt = torch.stft(waveform, n_fft=n_fft, hop_length=hop, win_length=n_fft,
+                                 window=window, center=True, return_complex=True)
+            rebuilt = rebuilt[..., :target_frames]
+            if rebuilt.shape[-1] < target_frames:
+                rebuilt = torch.nn.functional.pad(rebuilt, (0, target_frames - rebuilt.shape[-1]))
+            phase = rebuilt / rebuilt.abs().clamp_min(1e-8)
+            spectrum = magnitude * phase
+        waveform = torch.istft(spectrum, n_fft=n_fft, hop_length=hop, win_length=n_fft,
+                               window=window, center=True, length=samples)
+        return waveform.unsqueeze(1)
 
     @torch.inference_mode()
-    def generate_audio(
-        self,
-        prompt: str | None,
-        *,
-        samples: int,
-        steps: int = 32,
-    ) -> torch.Tensor:
-        if min(samples, steps) < 1:
-            raise ValueError("audio samples and flow steps must be positive")
-        return self.model.generate_audio(
-            samples,
-            condition_ids=self._condition_tensor(prompt),
-            steps=steps,
-        )
+    def generate_audio(self, prompt: str | None = None, *, samples: int,
+                       temperature: float = 0.8, top_k: int = 40) -> torch.Tensor:
+        if prompt and prompt.strip():
+            raise ValueError("this corrected model audio path is unconditional; text-to-audio conditioning is not implemented")
+        if samples < 1:
+            raise ValueError("audio sample count must be positive")
+        mel_frames = samples // 160 + 1
+        code_count = (mel_frames + self.config.audio_group_frames - 1) // self.config.audio_group_frames
+        _codes, log_mel = self.model.generate_audio(code_count, temperature=temperature, top_k=top_k)
+        return self._griffin_lim24(log_mel, samples, self.config.audio_sample_rate)
 
     @torch.inference_mode()
-    def generate_video_chunks(
-        self,
-        prompt: str | None,
-        *,
-        frames: int,
-        height: int,
-        width: int,
-        steps: int = 32,
-        chunk_frames: int | None = None,
-    ):
-        if min(frames, height, width, steps) < 1:
-            raise ValueError("video frame count, dimensions and flow steps must be positive")
-        yield from self.model.generate_video_chunks(
-            frames,
-            height,
-            width,
-            condition_ids=self._condition_tensor(prompt),
-            steps=steps,
-            chunk_frames=chunk_frames,
-        )
+    def generate_video_chunks(self, prompt: str | None = None, *, frames: int = 4,
+                              height: int = 64, width: int = 64,
+                              temperature: float = 0.8, top_k: int = 40,
+                              chunk_frames: int | None = None):
+        if prompt and prompt.strip():
+            raise ValueError("this corrected model video path is unconditional; text-to-video conditioning is not implemented")
+        if not 1 <= frames <= self.config.max_video_frames:
+            raise ValueError(f"video frame count must be from 1 to {self.config.max_video_frames}")
+        if (height, width) != (self.config.image_size, self.config.image_size):
+            raise ValueError(f"OneCore video frames are fixed at {self.config.image_size}x{self.config.image_size}")
+        frames_out, _stream = self.model.generate_video(frame_count=frames, temperature=temperature, top_k=top_k)
+        full = frames_out.unsqueeze(0)
+        chunk = chunk_frames or frames
+        if chunk < 1:
+            raise ValueError("chunk_frames must be positive")
+        for start in range(0, frames, chunk):
+            yield full[:, start:start + chunk]
 
     @torch.inference_mode()
-    def generate_video(
-        self,
-        prompt: str | None,
-        *,
-        frames: int,
-        height: int,
-        width: int,
-        steps: int = 32,
-        chunk_frames: int | None = None,
-    ) -> torch.Tensor:
-        chunks = list(self.generate_video_chunks(
-            prompt,
-            frames=frames,
-            height=height,
-            width=width,
-            steps=steps,
-            chunk_frames=chunk_frames,
-        ))
-        return torch.cat(chunks, dim=1)
-
+    def generate_video(self, prompt: str | None = None, *, frames: int = 4,
+                       height: int = 64, width: int = 64,
+                       temperature: float = 0.8, top_k: int = 40,
+                       chunk_frames: int | None = None) -> torch.Tensor:
+        return torch.cat(list(self.generate_video_chunks(
+            prompt, frames=frames, height=height, width=width,
+            temperature=temperature, top_k=top_k, chunk_frames=chunk_frames,
+        )), dim=1)
 
 def _save_image(path: Path, tensor: torch.Tensor) -> None:
     image = tensor[0].detach().float().cpu().clamp(0, 1)
@@ -388,14 +408,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--prompt", default="")
     parser.add_argument("--output")
     parser.add_argument("--seed", type=int)
-    parser.add_argument("--steps", type=int, default=32)
+    parser.add_argument("--temperature", type=float, default=0.8)
+    parser.add_argument("--top-k", type=int, default=40)
     parser.add_argument("--max-new-tokens", type=int, default=128)
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--top-k", type=int, default=50)
-    parser.add_argument("--height", type=int, default=256)
-    parser.add_argument("--width", type=int, default=256)
+    parser.add_argument("--height", type=int, default=64)
+    parser.add_argument("--width", type=int, default=64)
     parser.add_argument("--duration-seconds", type=float, default=1.0)
-    parser.add_argument("--frames", type=int, default=16)
+    parser.add_argument("--frames", type=int, default=4)
     parser.add_argument("--fps", type=float, default=8.0)
     args = parser.parse_args(argv)
 
@@ -420,14 +441,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     output = Path(args.output)
     if args.task == "image":
         _save_image(output, runtime.generate_image(
-            args.prompt or None, height=args.height, width=args.width, steps=args.steps
+            args.prompt or None, height=args.height, width=args.width, temperature=args.temperature, top_k=args.top_k
         ))
     elif args.task == "audio":
         if not math.isfinite(args.duration_seconds) or args.duration_seconds <= 0:
             parser.error("--duration-seconds must be finite and positive")
         samples = round(args.duration_seconds * runtime.config.audio_sample_rate)
         _save_audio(output, runtime.generate_audio(
-            args.prompt or None, samples=samples, steps=args.steps
+            args.prompt or None, samples=samples, temperature=args.temperature, top_k=args.top_k
         ), runtime.config.audio_sample_rate)
     else:
         if not math.isfinite(args.fps) or args.fps <= 0:
@@ -437,7 +458,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             frames=args.frames,
             height=args.height,
             width=args.width,
-            steps=args.steps,
+            temperature=args.temperature, top_k=args.top_k,
         ), args.fps)
     print(json.dumps({
         "task": args.task,
