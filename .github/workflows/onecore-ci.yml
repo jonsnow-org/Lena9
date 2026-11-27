@@ -228,8 +228,7 @@ jobs:
 
       - name: Use the canonical OneCore source registry
         run: |
-          git fetch --no-tags --depth=1 origin 5489900c3662082ad39efbfac5b6a2c7d22a7c4c
-          cp onecore-ai/data/sources.yaml "$RUNNER_TEMP/onecore-sources.yaml"
+          cp onecore-ai/data/corpus-source-snapshot-45325008221.yaml "$RUNNER_TEMP/onecore-sources.yaml"
 
       - name: Locate latest durable V3 media progress snapshot
         id: resume-progress

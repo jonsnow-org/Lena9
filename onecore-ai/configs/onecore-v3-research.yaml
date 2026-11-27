@@ -1,5 +1,5 @@
-# OneCore v3 research prototype. All dimensions are versioned and fingerprinted.
-# This config is not a claim of production quality or a frozen production budget.
+# Canonical OneCore model configuration. This fingerprint binds the tensor-shape contract.
+# The model remains untrained; resource and quality claims require real measurements.
 architecture_version: onecore-v3-prototype-2
 model:
   text_vocab_size: 32000
@@ -21,6 +21,7 @@ model:
   temporal_window_frames: 32
   temporal_memory_frames: 4
   video_generation_chunk_frames: 8
+  tldm_latent_slots: 16
   dropout: 0.0
 # Four unique Transformer blocks are reused over three recurrent cycles.
 # The modality flow heads are independent for image, audio, and video.
@@ -32,12 +33,16 @@ sequence_policy:
   video: variable_frame_count_timestamped
   attention_complexity: quadratic
 training:
-  status: joint_objective_and_single_step_prototype_available
-  multi_session_workflow: not_implemented
-  checkpoint_resume: not_implemented
+  status: single_joint_objective_with_native_tldm_implemented
+  multi_session_workflow: implemented_but_guarded_until_runtime_gates_pass
+  checkpoint_resume: implemented_and_lineage_bound_but_not_real_training_verified
   discriminator_optimizer_schedule: not_implemented
-  optimizer: null
-  total_steps: null
+  optimizer: AdamW
+  total_steps: 20000
+  warmup_steps: 200
+  steps_per_authorized_segment: 5
+  checkpoint_every: 1
+  tldm_diffusion_weight: 0.15
   loss_profiles:
     image: perceptual_plus_diffusion_or_flow_plus_reconstruction
     audio: multiresolution_stft_plus_waveform_perceptual_plus_adversarial

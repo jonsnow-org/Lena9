@@ -91,3 +91,14 @@ def test_source_cursor_is_pipeline_scoped_not_notebook_scoped():
     assert "def notebook_for_source" not in cursor
     assert "def notebook_cursor_summary" not in cursor
     assert "def source_ids_for_notebook" not in cursor
+
+def test_corpus_restore_uses_the_pinned_source_snapshot_not_a_historical_model_revision():
+    workflow = (WORKFLOWS / "onecore-ci.yml").read_text(encoding="utf-8")
+    snapshot = PROJECT / "data/corpus-source-snapshot-45325008221.yaml"
+    assert snapshot.is_file()
+    assert "git fetch --no-tags" not in workflow
+    assert "5489900c3662082ad39efbfac5b6a2c7d22a7c4c" not in workflow
+    assert 'cp onecore-ai/data/corpus-source-snapshot-45325008221.yaml "$RUNNER_TEMP/onecore-sources.yaml"' in workflow
+    pinned = yaml.safe_load(snapshot.read_text(encoding="utf-8"))
+    active = yaml.safe_load((PROJECT / "data/sources.yaml").read_text(encoding="utf-8"))
+    assert len(pinned.get("sources") or []) >= len(active.get("sources") or [])

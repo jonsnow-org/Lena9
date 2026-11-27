@@ -1,50 +1,31 @@
-# OneCore experiments log (measured, tiny scale, CPU)
+# OneCore engineering experiment log
 
-All numbers below were produced by `onecore.experiments`, `onecore.quantization` and
-`onecore.android_perf` in this repository on a 2-core host CPU. They describe
-**miniature models on a synthetic prefix-sum task** and **an untrained 57.6M model**.
-They are engineering evidence only. They do not show general intelligence, and they do
-not show OneCore matching or beating any larger model.
+This log records the adopted single-model implementation only. It is not an alternate architecture or training lineage.
 
-## Full model facts (phone-research.yaml)
+## Canonical model baseline
 
-- Trainable parameters: 57,579,201 (the exact-budget regression test passes).
-- Forward pass, 64-token prefill, 2 threads, host CPU: about 225 ms (about 3.5 ms/token).
-  This is a desktop/CI measurement, not an Android one, and no KV cache exists yet.
-- Simulated weight quantization, measured on **randomly initialised** weights:
-  int8 gives 3.98x smaller (55 MB), mean KL 5e-5. int4 gives 7.93x smaller (28 MB), mean KL 0.019.
-  Top-1 agreement on an untrained model is not a quality metric. Repeat on a trained checkpoint.
+- Implementation: `onecore-ai/src/onecore/v3/`.
+- Exact trainable parameter count: **39,906,568**.
+- Text vocabulary: 32,000 byte-level BPE, fitted on 591,525 external train-text rows only.
+- Shared core: width 512, four unique Transformer blocks, three recurrent cycles, eight attention heads.
+- Native T-LDM: 16 latent slots, same shared core and tied text head, zero additional trainable parameters, text/tool objective weight 0.15.
 
-## Recurrent vs non-recurrent (prefix-sum mod 10, held-out, answer positions only)
+## Native T-LDM integration
 
-Width 96, AdamW with warmup and linear decay, disjoint train/eval RNG streams (leakage test = 0).
+- `c19cda838029c67e81c0dae90d39e7c822b96c3e`: native latent thinker/writer and iterative generation added to the shared core.
+- `5880190ca6f8c0042c0418c3d7fa87e78f98c567`: masked diffusion loss added to text/tool objectives, request weight 0.15 and workflow wiring.
+- `7e93fb450b7fd646221fb3bd24b2b83b9903247b`: T-LDM FLOPs included in reports; regression tests cover masking, tied weights, parameter invariance, objective and generation.
+- Run #765 (`45957914217`) passed all 17 Verify steps: **398 passed, 45 warnings**. No CPU benchmark, checkpoint audit, evaluation or optimizer update ran.
 
-| Setting | Arm | Params | Block applications | Held-out token acc | Exact acc |
-|---|---|---|---|---|---|
-| len 8, 500 steps, lr 2e-3, seed 0 | recurrent 2x3 | 370,977 | 6 | 0.474 | 0.002 |
-| | equal-compute 6x1 | 813,921 | 6 | 1.000 | 1.000 |
-| | equal-params 2x1 | 370,785 | 2 | 1.000 | 1.000 |
-| len 8, 500 steps, lr 2e-3, seed 1 | recurrent 2x3 | 370,977 | 6 | 0.226 | 0.000 |
-| | equal-compute 6x1 | 813,921 | 6 | 1.000 | 1.000 |
-| | equal-params 2x1 | 370,785 | 2 | 1.000 | 1.000 |
-| len 16, 1500 steps, lr 2e-3, seed 0 | recurrent 2x3 | 370,977 | 6 | 0.153 | 0.000 |
-| | equal-compute 6x1 | 813,921 | 6 | 1.000 | 1.000 |
-| | equal-params 2x1 | 370,785 | 2 | 1.000 | 1.000 |
+## Single-path consolidation
 
-Recurrent 2x3, len 8, seed 0: lr 5e-4 and 1e-3 at 500 steps gave 0.22 and 0.39 token accuracy.
-lr 2e-3 for 1500 steps reached 1.000. So it can learn the task, but it optimises much more slowly.
+- `432ac41054536673aa05717ca10da66926794f40` removed 65 parallel legacy model/trainer/workflow/notebook files from the active branch.
+- `3822d49814b48a1175eb4ddd6a6b880f963241ed` moved stable row identity, nested-field and pinned-video helpers into `src/onecore/v3/source_utils.py` and generalized corpus conversion API names.
+- `d2a0734404aa73187005dd1c4400e0027ed8a725` corrected a duplicated `sourcesource_row_identity` import name in the converter and test.
+- Run #769 (`45960222457`) passed compile, exact architecture and FLOPs checks, then reported 208 passed / 1 failed. The remaining failure was a stale expected image-cursor path; commit `1c1b4e59adf929ec27131cad91625b1ac318bb12` changes it to `v3-corpus-restore-image-identity` and removes notebook-specific cursor routing.
 
-A depth-scaled residual init (std 0.02/sqrt(2*depth)) was tried on the recurrent arm
-(2 seeds, 500 steps, lr 1e-3). It scored 0.21 and 0.10 token accuracy against 0.39 and 0.27
-for the default init. It was worse, so it was reverted and is not in the repository.
+## Training status
 
-### Conclusion (what is and is not supported)
+No optimizer update has been verified for the current T-LDM-enabled configuration. No trained checkpoint or independent held-out model-quality evaluation exists. The prior step-zero checkpoint audit predates the current T-LDM-enabled configuration fingerprint and cannot authorize training.
 
-- Supported: on this task and scale, the weight-shared recurrent core is **harder to optimise**
-  than a plain stack with the same parameter count, and it costs more compute per step.
-- Not supported: the README hypothesis that recurrence spends parameters more efficiently.
-  Caveats: one synthetic task, tiny models, 1-2 seeds, no per-arm hyperparameter tuning.
-- Worth running before changing the 57.6M design: a per-arm LR sweep, a second task that
-  rewards iterative computation, and 3+ seeds with confidence intervals.
-
-Reproduce: `PYTHONPATH=src python -m onecore.experiments 500 8`
+Next gates: run a successful real-corpus CPU benchmark tied to current config/manifest/tokenizer hashes, repeat the real-artifact step-zero checkpoint audit for this exact fingerprint, and obtain explicit owner authorization before the first five-update segment.

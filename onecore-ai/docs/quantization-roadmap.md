@@ -1,13 +1,14 @@
-# Low-bit research roadmap
+# OneCore low-bit research roadmap
 
-The current baseline deliberately trains and stores full-precision weights. Parameter-count reduction and low-bit storage must be measured rather than assumed.
+The single OneCore model currently uses full-precision parameters. Low-bit storage and quantization-aware training remain future experiments; no quantized checkpoint or alternate runtime is currently part of the model.
 
-Planned experiments after a reproducible baseline exists:
+Before quantization work:
 
-1. Ternary/1.58-bit quantization-aware training from random initialization, using a straight-through estimator.
-2. Compare per-layer and per-channel scale calibration using only OneCore training activations.
-3. Report validation loss and every modality metric before/after quantization.
-4. Pack ternary symbols into a compact binary representation with a versioned format and round-trip tests.
-5. Benchmark actual Android CPU latency and memory, not just theoretical bits-per-weight.
+1. Complete a reproducible full-precision CPU/resource baseline for the current model configuration.
+2. Train and independently evaluate one real-data checkpoint across text, tool, image, audio and video.
+3. Establish per-family quality and latency baselines.
+4. Compare ternary/1.58-bit quantization-aware training and per-layer/per-channel calibration using approved training activations.
+5. Pack ternary symbols with a documented binary format and round-trip tests.
+6. Measure actual target-device CPU latency, peak memory and output quality.
 
-No quantized checkpoint is considered valid until unpacking, deterministic inference, and all quality gates pass. Theoretical storage estimates in `model.parameter_report()` are estimates only; they are not evidence that a quantized runtime exists.
+Use `onecore.v3.report.build_report()` for the canonical parameter and storage report. Storage estimates are theoretical, not proof of a quantized runtime, measured RAM or quality improvement. No quality gate may be inferred from training loss alone.
