@@ -288,11 +288,11 @@ class OneCoreV3Inference:
         return image
 
     @staticmethod
-    def _griffin_lim24(log_mel: torch.Tensor, samples: int, sample_rate: int = 24_000) -> torch.Tensor:
+    def _griffin_lim24(log_mel: torch.Tensor, samples: int, sample_rate: int = 24_000, mel_bins: int = 80) -> torch.Tensor:
         """Invert the model's 80-bin log-power mel representation with 24 Griffin-Lim iterations."""
-        if log_mel.ndim != 3 or log_mel.shape[-1] != 80 or samples < 1:
-            raise ValueError("audio synthesis requires [batch, mel_frames, 80] and positive samples")
-        n_fft, hop, mel_bins = 400, 160, 80
+        if log_mel.ndim != 3 or log_mel.shape[-1] != mel_bins or samples < 1:
+            raise ValueError(f"audio synthesis requires [batch, mel_frames, {mel_bins}] and positive samples")
+        n_fft, hop = 400, 160
         device, dtype = log_mel.device, log_mel.dtype
         frequencies = torch.linspace(0, sample_rate / 2, n_fft // 2 + 1, device=device, dtype=dtype)
         mel_max = 2595.0 * torch.log10(torch.tensor(1.0 + (sample_rate / 2) / 700.0, device=device, dtype=dtype))
@@ -340,7 +340,7 @@ class OneCoreV3Inference:
         mel_frames = samples // 160 + 1
         code_count = (mel_frames + self.config.audio_group_frames - 1) // self.config.audio_group_frames
         _codes, log_mel = self.model.generate_audio(code_count, temperature=temperature, top_k=top_k)
-        return self._griffin_lim24(log_mel, samples, self.config.audio_sample_rate)
+        return self._griffin_lim24(log_mel, samples, self.config.audio_sample_rate, self.config.audio_bins)
 
     @torch.inference_mode()
     def generate_video_chunks(self, prompt: str | None = None, *, frames: int = 4,
