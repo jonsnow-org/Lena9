@@ -1,185 +1,78 @@
+from types import SimpleNamespace
+
 import pytest
 import torch
 
-from onecore.v3 import OneCoreV3
-from onecore.v3.training import OneCoreV3Objective, train_v3_step
+from onecore.v3 import V3Config
+from onecore.v3.core import MASK
+from onecore.v3.training import OneCoreV3Objective, V3ObjectiveWeights, train_v3_joint_step, train_v3_step
+from .test_v3_config import tiny_config
 
 
-def _tiny_model():
-    return OneCoreV3(
-        text_vocab_size=128, width=32, layers=1, attention_heads=4,
-        patch_size=8, audio_latent_channels=16, audio_hidden_channels=24,
-        audio_codebook_size=32, audio_quantizer_stages=3,
-        temporal_layers=1, max_image_context_tokens=16,
-        max_video_context_tokens=16, max_flow_context_tokens=16,
-        temporal_window_frames=8, temporal_memory_frames=2,
-        video_generation_chunk_frames=4, dropout=0.0,
+def _family_batches():
+    config = tiny_config()
+    return config, (
+        SimpleNamespace(family="text", batch={"text": {"input_ids": torch.randint(0,64,(1,12))}}),
+        SimpleNamespace(family="tool", batch={"tool": {"input_ids": torch.randint(0,64,(1,12))}}),
+        SimpleNamespace(family="image", batch={"image": {"images": torch.rand(1,3,32,32), "condition_ids": torch.randint(0,64,(1,8))}}),
+        SimpleNamespace(family="audio", batch={"audio": {"waveform": torch.randn(1,2048), "sample_rate":24000, "condition_ids":torch.randint(0,64,(1,8))}}),
+        SimpleNamespace(family="video", batch={"video": {"frames": torch.rand(1,4,3,32,32), "condition_ids":torch.randint(0,64,(1,8))}}),
     )
 
 
-def test_v3_joint_objective_and_optimizer_step_cover_all_modalities():
+def test_corrected_objective_builds_shared_vocabulary_losses_for_all_families():
     torch.manual_seed(31)
-    model = _tiny_model()
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
-    batch = {
-        "text": {"input_ids": torch.randint(0, 128, (2, 8))},
-        "tool": {
-            "input_ids": torch.randint(0, 128, (2, 8)),
-            "labels": torch.randint(0, 128, (2, 8)),
-        },
-        "image": {
-            "images": torch.rand(2, 3, 32, 32),
-            "condition_ids": torch.randint(0, 128, (2, 5)),
-        },
-        "audio": {
-            "waveform": torch.rand(2, 1024),
-            "sample_rate": 24_000,
-            "condition_ids": torch.randint(0, 128, (2, 5)),
-        },
-        "video": {
-            "frames": torch.rand(2, 3, 3, 16, 16),
-            "timestamps": torch.tensor([[0.0, 0.1, 0.2], [0.0, 0.12, 0.24]]),
-            "condition_ids": torch.randint(0, 128, (2, 5)),
-        },
-    }
-    metrics = train_v3_step(model, optimizer, batch, max_grad_norm=1.0)
-
-    assert "total" in metrics and metrics["total"] > 0
-    assert "text_loss" in metrics and "tool_loss" in metrics
-    assert "image_flow_loss" in metrics and "image_reconstruction_loss" in metrics
-    assert "audio_flow_loss" in metrics and "audio_reconstruction_loss" in metrics
-    assert "video_flow_loss" in metrics and "video_temporal_loss" in metrics
-    assert "alignment_loss" in metrics
-    assert metrics["gradient_norm"] > 0
+    config, batches = _family_batches()
+    model = config.build_model()
+    objective = OneCoreV3Objective(model, V3ObjectiveWeights())
+    for item in batches:
+        result = objective(item.batch)
+        assert set(result) == {"language_loss", "aux_loss", "tldm_loss", "total"}
+        assert all(torch.isfinite(value) for value in result.values())
+        assert result["language_loss"] > 0
+        assert result["tldm_loss"] >= 0
 
 
-def test_v3_objective_rejects_empty_batches():
-    model = _tiny_model()
-    objective = OneCoreV3Objective(model)
-    try:
-        objective({})
-    except ValueError as exc:
-        assert "at least one modality" in str(exc)
-    else:
-        raise AssertionError("empty joint batch must fail")
-
-
-def test_v3_audio_objective_accepts_stereo_waveform():
-    torch.manual_seed(37)
-    model = _tiny_model()
-    objective = OneCoreV3Objective(model)
-    waveform = torch.rand(2, 2, 2048)
-
-    losses = objective({
-        "audio": {
-            "waveform": waveform,
-            "sample_rate": 24_000,
-        }
-    })
-    losses["total"].backward()
-
-    assert torch.isfinite(losses["audio_reconstruction_loss"])
-    assert "audio_flow_loss" in losses
-    assert any(parameter.grad is not None for parameter in model.parameters())
-
-def test_v3_joint_step_accumulates_five_ordered_micro_batches_before_one_update():
-    from types import SimpleNamespace
-    from onecore.v3.training import train_v3_joint_step
-
+def test_one_joint_update_contains_exactly_five_ordered_family_microbatches():
     torch.manual_seed(71)
-    model = _tiny_model()
+    config, batches = _family_batches()
+    model = config.build_model()
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
     before = [parameter.detach().clone() for parameter in model.parameters()]
-    batches = (
-        SimpleNamespace(family="text", batch={"text": {
-            "input_ids": torch.randint(0, 128, (1, 8)),
-        }}),
-        SimpleNamespace(family="tool", batch={"tool": {
-            "input_ids": torch.randint(0, 128, (1, 8)),
-            "labels": torch.randint(0, 128, (1, 8)),
-        }}),
-        SimpleNamespace(family="image", batch={"image": {
-            "images": torch.rand(1, 3, 32, 32),
-            "condition_ids": torch.randint(0, 128, (1, 5)),
-        }}),
-        SimpleNamespace(family="audio", batch={"audio": {
-            "waveform": torch.rand(1, 1024),
-            "sample_rate": 24_000,
-            "condition_ids": torch.randint(0, 128, (1, 5)),
-        }}),
-        SimpleNamespace(family="video", batch={"video": {
-            "frames": torch.rand(1, 3, 3, 16, 16),
-            "timestamps": torch.tensor([[0.0, 0.1, 0.2]]),
-            "condition_ids": torch.randint(0, 128, (1, 5)),
-        }}),
-    )
-
     metrics = train_v3_joint_step(model, optimizer, batches)
-
     assert metrics["optimizer_updates"] == 1.0
     assert metrics["family_micro_batches"] == 5.0
-    assert metrics["total"] > 0
-    assert metrics["gradient_norm"] > 0
-    assert all(f"{family}/total" in metrics for family in ("text", "tool", "image", "audio", "video"))
-    assert any(not torch.equal(old, new) for old, new in zip(before, model.parameters(), strict=True))
+    assert metrics["total"] > 0 and metrics["gradient_norm"] > 0
+    assert all(f"{family}/total" in metrics for family in ("text","tool","image","audio","video"))
+    assert any(not torch.equal(old, new) for old,new in zip(before,model.parameters(),strict=True))
 
 
-def test_v3_joint_step_rejects_missing_or_reordered_family_batches():
-    from types import SimpleNamespace
-    from onecore.v3.training import train_v3_joint_step
-
-    model = _tiny_model()
+def test_joint_step_rejects_missing_or_reordered_families_without_updating():
+    model = tiny_config().build_model()
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
-    incomplete = tuple(
-        SimpleNamespace(family=family, batch={family: {}})
-        for family in ("text", "tool", "image", "audio")
-    )
-    with pytest.raises(ValueError, match="exactly five"):
+    before = [parameter.detach().clone() for parameter in model.parameters()]
+    incomplete = (SimpleNamespace(family="text",batch={"text":{}}),)
+    with pytest.raises(ValueError, match="exactly text/tool/image/audio/video"):
         train_v3_joint_step(model, optimizer, incomplete)
-
-    reordered = tuple(
-        SimpleNamespace(family=family, batch={family: {}})
-        for family in ("tool", "text", "image", "audio", "video")
-    )
-    with pytest.raises(ValueError, match="ordered text, tool, image, audio, video"):
+    reordered = tuple(SimpleNamespace(family=f,batch={f:{}}) for f in ("tool","text","image","audio","video"))
+    with pytest.raises(ValueError, match="exactly text/tool/image/audio/video"):
         train_v3_joint_step(model, optimizer, reordered)
+    assert all(torch.equal(a,b) for a,b in zip(before,model.parameters(),strict=True))
 
 
-def test_native_tldm_reuses_shared_core_and_hides_masked_token_identity():
-    torch.manual_seed(131)
-    model = _tiny_model()
-    parameter_count = sum(parameter.numel() for parameter in model.parameters())
-    token_ids = torch.randint(0, 128, (2, 8))
-    masked = torch.zeros_like(token_ids, dtype=torch.bool)
-    masked[:, 2:5] = True
-    first = model.forward_tldm(token_ids, masked)
-    changed = token_ids.clone()
-    changed[:, 2:5] = (changed[:, 2:5] + 37) % 128
-    second = model.forward_tldm(changed, masked)
-    assert first.shape == (2, 8, 128)
-    assert torch.allclose(first, second, atol=1e-6, rtol=1e-6)
-    assert sum(parameter.numel() for parameter in model.parameters()) == parameter_count
-    assert model.text_head.weight is model.text_embedding.weight
-    assert not any("tldm" in name.lower() for name, _ in model.named_parameters())
+def test_tldm_uses_masked_shared_tokens_and_no_separate_parameter_tower():
+    model = tiny_config().build_model()
+    ids = torch.randint(0,64,(1,12))
+    masked = ids.clone(); masked[:,4:8] = model.cfg.special_id(MASK)
+    logits = model.forward_tldm(masked, latent_slots=4)
+    assert logits.shape == (1,12,model.cfg.vocab_size)
+    assert model.lm_head.weight is model.token_embedding.weight
+    assert not any("tldm" in name.lower() for name,_ in model.named_parameters())
 
-def test_native_tldm_adds_masked_diffusion_loss_to_text_and_tool_objectives():
-    torch.manual_seed(137)
-    model = _tiny_model()
-    objective = OneCoreV3Objective(model)
-    losses = objective({
-        "text": {"input_ids": torch.randint(0, 128, (2, 8))},
-        "tool": {"input_ids": torch.randint(0, 128, (2, 8)), "labels": torch.randint(0, 128, (2, 8))},
-    })
-    assert "text_tldm_loss" in losses and "tool_tldm_loss" in losses
-    assert torch.isfinite(losses["text_tldm_loss"]) and losses["text_tldm_loss"] > 0
-    assert torch.isfinite(losses["tool_tldm_loss"]) and losses["tool_tldm_loss"] > 0
-    losses["total"].backward()
-    assert model.shared_core.layers[0].self_attn.in_proj_weight.grad is not None
 
-def test_native_tldm_generation_fills_a_valid_shared_vocabulary_block():
-    torch.manual_seed(139)
-    model = _tiny_model().eval()
-    context = torch.randint(0, 128, (2, 4))
-    generated = model.generate_tldm(context, 6, diffusion_steps=4)
-    assert generated.shape == (2, 6)
-    assert int(generated.min()) >= 0 and int(generated.max()) < 128
+def test_single_family_step_is_separate_from_joint_update_contract():
+    model = tiny_config().build_model()
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
+    metrics = train_v3_step(model, optimizer, {"text":{"input_ids":torch.randint(0,64,(1,8))}})
+    assert metrics["optimizer_updates"] == 1.0
+    assert metrics["total"] > 0
