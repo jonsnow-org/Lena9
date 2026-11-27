@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
-  "status": "released",
-  "holder": null,
-  "session_id": null,
-  "client": null,
-  "started_at_utc": null,
-  "lease_expires_at_utc": null,
-  "base_head_sha": null,
-  "planned_scope": null,
+  "status": "active",
+  "holder": "ChatGPT GPT-6",
+  "session_id": "onecore-single-model-consolidation-20261127-01",
+  "client": "ChatGPT",
+  "started_at_utc": "2026-11-27T07:10:00Z",
+  "lease_expires_at_utc": "2026-11-27T08:10:00Z",
+  "base_head_sha": "1e192b3c5b86dbaa83d1ea18e97d0d3b15ade833",
+  "planned_scope": "Consolidate OneCore into one canonical model path using the latest shared-core implementation; remove executable legacy model/training/notebook paths, preserve required shared ingestion and provenance utilities, align CI/docs/tests. No training updates, checkpoint mutation or corpus/tokenizer refit.",
   "last_released_at_utc": "2026-11-27T06:57:28Z",
-  "last_session_summary": "Bound the V3 CPU resource JSON report to the exact verified manual Actions run, repository, branch and commit; required complete positive integer image/video dimension distributions in the training evidence gate; added regression coverage. Verify Run #760 passed 398 tests with 45 warnings and all 17 steps. No benchmark or optimizer update occurred; writer lease released.",
-  "last_verified_branch_head": "ffacf81eddf5dfc524c3008e0eff05c6fa43bd24",
-  "last_result": "Run #760 (45954992347) on ffacf81eddf5dfc524c3008e0eff05c6fa43bd24 completed successfully: 398 passed, 45 warnings, all 17 Verify steps passed. CPU benchmark, corpus restore, step-zero audit and held-out evaluation were skipped; no artifacts, resource measurements or optimizer updates."
+  "last_session_summary": "Previous session completed V3 CPU evidence binding and released lock; #761 passed.",
+  "last_verified_branch_head": "1e192b3c5b86dbaa83d1ea18e97d0d3b15ade833",
+  "last_result": "Run #761 (45955346735) passed all 17 Verify steps. CPU benchmark, restore, checkpoint audit and held-out evaluation were skipped; no resource measurements or optimizer updates."
 }
