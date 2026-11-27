@@ -10,6 +10,6 @@
   "planned_scope": "Replace the one canonical OneCore implementation contract with the corrected engineering specification (57,579,201 parameters, width 1024, vocab 5144, four shared blocks over three cycles), preserve native T-LDM in the same model, align model/config/tokenizer/FLOPs/data gates and exact tests/docs, fix CI handover assertion, preserve one trainer/checkpoint lineage, keep all training fail-closed. No model training, no main mutation, no parallel V2/V3 model path or new branch.",
   "last_released_at_utc": "2026-11-27T07:51:21Z",
   "last_session_summary": "Prior cleanup removed old parallel model/trainer/notebook workflow and integrated native T-LDM. Last source package passed; CI run #774 failed only on a brittle handover heading assertion. Corrected spec v2 now being applied as canonical single model.",
-  "last_verified_branch_head": "db387cecf1c0f42aa980f645653930545424d915",
-  "last_result": "Structural CI passed exact parameters and FLOPs for canonical architecture; test collection failed only because an obsolete standalone-codec test file imported removed exports. Replaced legacy architecture tests with canonical shared-model, T-LDM, modality and exact FLOPs tests. No production training."
+  "last_verified_branch_head": "4e1050b1357025f91a7b6f57690f26de1cb34caa",
+  "last_result": "Structural CI and source package passed; tests now migrated from standalone conv/flow codec API to the single shared Transformer/VQ/tokenizer model, exact corrected FLOPs, native T-LDM, and five-family single-update contract. Next CI run pending."
 }
