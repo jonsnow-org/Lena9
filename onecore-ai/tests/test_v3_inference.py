@@ -10,27 +10,11 @@ from onecore.v3.inference import OneCoreV3Inference
 
 
 def _config():
-    return V3Config(
-        text_vocab_size=64,
-        width=32,
-        layers=1,
-        cycles=2,
-        attention_heads=4,
-        patch_size=4,
-        audio_latent_channels=8,
-        audio_hidden_channels=16,
-        audio_codebook_size=16,
-        audio_quantizer_stages=2,
-        audio_channels=1,
-        temporal_layers=1,
-        max_image_context_tokens=8,
-        max_video_context_tokens=8,
-        max_flow_context_tokens=8,
-        temporal_window_frames=4,
-        temporal_memory_frames=1,
-        video_generation_chunk_frames=2,
-        dropout=0.0,
-    )
+    return V3Config(architecture_version="onecore-v3-test-fixture", width=32, unique_blocks=1,
+        recurrent_cycles=2, attention_heads=4, max_sequence_length=128, text_vocab_size=64,
+        vision_codebook_size=16, audio_codebook_size=8, motion_codebook_size=8, special_tokens=24,
+        patch_size=8, image_size=32, audio_bins=8, audio_group_frames=2, audio_sample_rate=24000,
+        audio_channels=1, max_video_frames=4, tldm_latent_slots=4, dropout=0.0)
 
 
 def _tokenizer_json(vocab_size=64):
@@ -111,8 +95,8 @@ def test_v3_inference_loads_hash_pinned_checkpoint_and_generates_text(tmp_path):
     assert runtime.global_step == 7
     assert runtime.checkpoint_sha256 == saved["sha256"]
     assert runtime.tokenizer_sha256 == saved["tokenizer_sha256"]
-    assert runtime._prompt_ids("Explain the model")[-1] != runtime.special_ids["[EOS]"]
-    assert runtime._prompt_ids("Explain the model", append_eos=True)[-1] == runtime.special_ids["[EOS]"]
+    assert runtime._prompt_ids("Explain the model")[0] == config.special_id(0)
+    assert runtime._prompt_ids("Explain the model", append_eos=True)[-1] == config.special_id(1)
     assert not runtime.model.training
     assert all(not parameter.requires_grad for parameter in runtime.model.parameters())
 
@@ -125,25 +109,20 @@ def test_v3_inference_loads_hash_pinned_checkpoint_and_generates_text(tmp_path):
     assert isinstance(result, str)
 
 
-def test_v3_inference_generates_all_three_media_shapes(tmp_path):
+def test_v3_inference_generates_fixed_image_audio_and_bounded_video(tmp_path):
     checkpoint = tmp_path / "checkpoint.pt"
     _, saved = _checkpoint(checkpoint)
     runtime = OneCoreV3Inference.from_checkpoint(
         checkpoint, expected_checkpoint_sha256=saved["sha256"]
     )
-
-    image = runtime.generate_image("a small landscape", height=13, width=19, steps=1)
-    audio = runtime.generate_audio("a short tone", samples=129, steps=1)
-    video = runtime.generate_video(
-        "a moving object", frames=5, height=13, width=19, steps=1, chunk_frames=2
-    )
-
-    assert image.shape == (1, 3, 13, 19)
+    image = runtime.generate_image()
+    audio = runtime.generate_audio(samples=129)
+    video = runtime.generate_video(frames=1)
+    assert image.shape == (1, 3, 32, 32)
     assert audio.shape == (1, 1, 129)
-    assert video.shape == (1, 5, 3, 13, 19)
-    assert torch.isfinite(image).all()
-    assert torch.isfinite(audio).all()
-    assert torch.isfinite(video).all()
+    assert video.shape == (1, 1, 3, 32, 32)
+    assert torch.isfinite(image).all() and torch.isfinite(audio).all() and torch.isfinite(video).all()
+
 
 
 def test_v3_inference_rejects_wrong_checkpoint_digest_before_deserialization(tmp_path):
