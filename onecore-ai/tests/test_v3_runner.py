@@ -101,7 +101,7 @@ def _resource_metadata():
 
 
 def _validate(path, metadata_path=None):
-    if metadata_path is None:
+    if metadata_path is None and path is not None:
         metadata_path = path.with_name(path.stem + ".artifact.json")
         metadata_path.write_text(json.dumps(_resource_metadata()), encoding="utf-8")
     return _validate_resource_evidence(
