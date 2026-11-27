@@ -1,43 +1,50 @@
-# Native OneCore T-LDM design
+# Native T-LDM inside the single OneCore model
 
 ## Decision
 
-Implement the T-LDM principle inside the OneCore foundation model, not as a Sham 2 service, external head, donor adapter, or second model. The conceptual sequence is preserved — compression, latent reasoning, iterative block writing — but its operations are native OneCore operations.
+T-LDM is part of the canonical OneCore model, not a second model, external head or detached service. It reuses the existing shared Transformer, text embedding and tied text output projection. It adds no trainable parameters and no external model dependency.
 
-The previous Sham 2 recipe uses a frozen donor body with a separately trained Compressor + Latent Thinker + Diffusion Writer head. OneCore cannot inherit that dependency: OneCore starts from random initialization and owns its entire parameter path.
+## Forward path
 
-## Native data path
+`token IDs → shared text embedding + text modality embedding → zero masked token states → compression to 16 latent slots → shared-core latent thinker → concatenate latent context with visible token states → shared-core diffusion writer → tied text output head`
 
-`token IDs -> OneCore shared embeddings -> latent compression -> shared recurrent latent thinker -> latent-context expansion -> shared recurrent diffusion writer -> tied OneCore LM head`
+Implemented in:
 
-- **Compressor:** `compress_to_latents` uses adaptive average pooling on OneCore's already learned token/position/modality representations. The number of latent slots is bounded (default 16). It introduces no new projection matrix.
-- **Latent Thinker:** `think_in_latents` processes the compressed sequence with the exact same `RecurrentBlock` objects and cycle embeddings already used by the main core.
-- **Diffusion Writer:** `forward_tldm` places the expanded latent context beside the visible and masked tokens, then reuses those same recurrent blocks in bidirectional mode. The existing tied `lm_head` predicts the shared vocabulary. `generate_tldm` reveals the most confident masked positions over a bounded number of passes.
-- **Modality ownership:** text, tool, image, audio and video codes are represented in OneCore's unified vocabulary. The writer may be constrained to a modality range at inference; no external tokenizer or model is called.
+- `src/onecore/v3/core.py::OneCoreV3.forward_tldm`
+- `src/onecore/v3/core.py::OneCoreV3.generate_tldm`
+- `src/onecore/v3/training.py`
+- `src/onecore/v3/config.py`
 
-## Training contract
+The selected target positions are zeroed before compression and writing. Their original token identities are therefore not visible to the diffusion path. The latent thinker and writer are recurrent uses of the same four Transformer blocks; they do not create another stack of parameters. Generation starts with a masked block and iteratively reveals the highest-confidence token positions over a bounded number of passes.
 
-For every training micro-batch, the trainer keeps the causal next-token loss and adds a second objective:
+## Training objective
 
-1. Select one contiguous target span from the current sequence.
-2. Replace that span with the reserved `MASK` special token.
-3. Run `forward_tldm` on the corrupted sequence. The original target tokens are not present in the input.
-4. Compute cross-entropy only at the masked positions.
-5. Add `training.tldm_diffusion_weight * diffusion_loss` to the causal loss and existing modality auxiliary loss.
+For text and tool micro-batches:
 
-The initial configured weight is 0.15. The joint sampler supplies one sample from each of the five modality families per optimizer update, so the same native path is trained across the unified stream. The held-out validation and test sets remain excluded from gradient updates.
+1. Preserve the ordinary causal next-token loss.
+2. Select a contiguous span from valid target positions.
+3. Mark those positions in a Boolean mask and zero their input embeddings.
+4. Run the same model through `forward_tldm`.
+5. Compute cross-entropy only at the masked positions.
+6. Add `0.15 × masked-token loss` to the existing family objective.
 
-## Parameter and dependency guarantees
+The five-family joint update still has one micro-batch each for text, tool, image, audio and video. Image, audio and video retain their own modality-specific flow objectives; they do not use text-token T-LDM loss.
 
-- No additional trainable parameter tensors are introduced by the native T-LDM path.
-- The Compressor is parameter-free pooling over learned OneCore states.
-- The Thinker and Writer reuse OneCore's shared blocks, cycle embeddings, final norm, and tied embedding/LM head.
-- No import, weight, tokenizer, adapter, serving endpoint, or runtime dependency is taken from Sham, Nova, a donor model, or an external LLM.
-- The instantiated architecture remains at 57,579,201 parameters; CI and architecture tests enforce this.
-- The added path does increase inference/training FLOPs. Any claim of faster generation, lower memory, or better quality is blocked until measured.
+## Parameter and compute accounting
 
-## Interfaces and limits
+The exact model parameter count remains **39,906,568**. CI checks this exact count and the tied text embedding/head relationship. T-LDM adds zero trainable parameters.
 
-`OneCore.forward_tldm(ids)` provides logits for a corrupted shared-vocabulary sequence. `OneCore.generate_tldm(context_ids, block_size, diffusion_steps)` returns a completed block. This is a model-internal capability; tool execution remains governed by OneCore's existing allowlisted tool runtime and is never inferred from raw generated source code.
+For the configured FLOPs profile at 128 text tokens, the native T-LDM path is reported as:
 
-This is the initial architecture integration. It does not claim that a fully capable agent loop or verified self-evolution has already been proven. Those require separate held-out task success measurements and ingestion gates for verified outcomes.
+- Latent thinker shared core: 1,214,251,008 FLOPs.
+- Diffusion writer shared core: 11,381,243,904 FLOPs.
+- Tied text output projection: 4,194,304,000 FLOPs.
+- Total T-LDM path: 16,789,798,912 FLOPs.
+
+The text and tool paths report 31,050,432,512 dense forward FLOPs each; the five-family joint forward report is 325,426,230,272 FLOPs for the configured profile. These are analytical FLOPs estimates, not measured latency, RAM or model quality. The real CPU benchmark is still required.
+
+## Verification and limits
+
+Regression tests verify that changing the original IDs at masked positions does not change T-LDM logits, that the tied head remains tied, that parameter count does not increase, that text/tool objectives include a finite T-LDM loss, and that generation returns valid shared-vocabulary IDs.
+
+The model is not trained. No claim of improved quality or faster generation is made until a trained checkpoint passes independent real-data and human evaluation.

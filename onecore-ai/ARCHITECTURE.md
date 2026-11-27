@@ -1,58 +1,56 @@
-# OneCore unified architecture contract
+# OneCore — canonical architecture
 
-## Identity
+## Model contract
 
-OneCore is a single foundation model trained from random initialization. It is not an ensemble, a router among independent experts, a pretrained base with adapters, or a collection of modality-specific models.
+OneCore is a single from-scratch multimodal model. The only instantiated architecture is `onecore-v3-prototype-2` in `src/onecore/v3/`. All modalities share one semantic Transformer core, one embedding space, one parameter set, one checkpoint and one optimizer/scheduler/RNG lineage.
 
-## Shared parameter path
+| Property | Current value |
+|---|---:|
+| Trainable parameters | **39,906,568** |
+| Text vocabulary | 32,000 |
+| Shared width | 512 |
+| Unique Transformer blocks | 4 |
+| Recurrent cycles | 3 |
+| Effective block applications | 12 |
+| Attention heads | 8 |
+| Native T-LDM latent slots | 16 |
+| T-LDM objective weight | 0.15 (text and tool) |
 
-All tasks use one trainable checkpoint:
+CI asserts the exact parameter count and configuration/FLOPs fingerprint. T-LDM reuses existing components and contributes **zero additional trainable parameters**.
 
-1. A task-specific *input codec* converts raw values into vectors or code IDs.
-2. Text, visual, audio, motion, and action symbols use one vocabulary ID space and one embedding matrix.
-3. One recurrent Transformer core is reused for every reasoning cycle.
-4. One tied language-model head predicts the next shared symbol.
-5. A small decoder maps generated modality codes back to pixels, log-mel features, or motion deltas.
+## Shared model path
 
-The embedding matrix and LM output head are tied by parameter identity. The modality encoders/decoders are included in the parameter count. They are not loaded from another model.
+Text tokens, tool prompts/actions, image latents, waveform-audio latents and video-frame latents are projected into the shared width and processed by the same recurrent semantic core. A modality embedding marks the token family. The text output projection is tied to the text embedding. Image, audio and video have independent flow heads so their different latent distributions do not share one final projection.
 
-## Recurrent core
+A joint optimizer update accumulates one micro-batch from each family in the order text, tool, image, audio, video and performs one optimizer step after the five losses are accumulated.
 
-The current first research configuration has width 1024, 4 unique blocks and applies them for 3 cycles. Effective block applications = 12, but only 4 block parameter sets are stored. The complete trainable model has exactly **57,579,201 trainable parameters**, including all six codec Linear biases and the halt-head bias. Configuration validation, the architecture notebook, and CI enforce this exact count; any dimension change requires full recomputation and retraining.
+## Native T-LDM
 
-The core uses causal self-attention, RMSNorm, and SwiGLU. Recurrent-cycle embeddings provide a learned signal indicating which pass is being computed.
+T-LDM is not a second model or a detached head. It is an additional operation through the existing OneCore model:
 
-An optional inference-only adaptive pass estimates when successive next-token distributions have stabilized. This is a compute heuristic, not a learned proof of reasoning or halting.
+1. Embed the text/tool token sequence with the existing text embedding and modality embedding.
+2. Zero the embeddings at selected masked positions so their target identities are not visible.
+3. Compress the sequence into at most 16 latent slots with adaptive average pooling.
+4. Run those slots through the existing shared Transformer as the latent thinker.
+5. Concatenate the latent context with the visible token states and run the same shared Transformer as the diffusion writer.
+6. Use the existing tied text output projection to predict the shared vocabulary.
+7. During generation, reveal high-confidence masked positions over a bounded number of refinement passes.
 
-## Native latent-diffusion path
+The training objective keeps the causal loss and adds masked-token cross-entropy only at selected valid positions. The current T-LDM weight is 0.15 for text and tool batches. The image/audio/video families retain their modality-specific objectives.
 
-This path is an internal execution mode of `OneCore`, not a second network:
+## Modality paths
 
-1. **Compressor:** adaptive pooling maps the current embedded sequence to a bounded latent sequence. Its inputs are the model's own learned shared embeddings.
-2. **Latent Thinker:** the same recurrent blocks process the latent sequence for the configured recurrent cycles.
-3. **Diffusion Writer:** latent context is expanded into the masked sequence; the same recurrent blocks and tied LM head iteratively recover hidden tokens from the shared vocabulary.
-4. **Training:** a contiguous span is masked and reconstructed with bidirectional attention, while the causal next-token objective remains active. Only the masked positions contribute to the diffusion loss.
+- **Image:** variable-height/width patch encoding; original dimensions and aspect ratio are preserved and decoded output is cropped to the requested dimensions.
+- **Audio:** mono/stereo waveform codec with residual vector quantization; training waveform inputs are normalized to 24 kHz, and source metadata is retained.
+- **Video:** frame-wise image encoding, timestamp-aware temporal processing and bounded temporal windows. Long-range video memory is not a full KV cache.
+- **Tool use:** tool prompts and structured action/response tokens share the same text vocabulary. Generated text is not executed as code.
 
-The mask is an existing reserved special-token slot. No new parameter tensor, donor weights, adapters, external tokenizer, or external inference service is introduced. The bidirectional path receives only visible context and explicit mask tokens, so target tokens are not present in its input.
+## Checkpoint and data lineage
 
-## Modalities in the one vocabulary
+The checkpoint binds model state, optimizer, scheduler, global step, configuration fingerprint, tokenizer bytes/hash/vocabulary, manifest and asset hashes, five-family source cursors, Python/NumPy/Torch RNG states and parent-checkpoint SHA. Train, validation and test are isolated. Synthetic fixtures are for software tests only and do not count as real corpus coverage or model-quality evidence.
 
-- Text: freshly trained byte-level BPE tokenizer; text token IDs occupy the first range.
-- Images: 8×8 RGB patches at 64×64 input size; a trainable linear codec quantizes patch features to shared embedding rows and decodes them to pixels.
-- Audio: mono waveform to 80-bin log-mel features; grouped frames are encoded into shared audio code IDs. The current audio waveform decoder uses Griffin-Lim as a baseline, not a neural vocoder.
-- Video: ordered image frames plus learned motion-delta codes between adjacent frames. The shared sequence interleaves frame and transition symbols.
-- Tools/actions: text-encoded structured calls; a strict allowlisted runtime validates calls and does not execute generated shell/Python source.
+## Known limits
 
-## Current boundaries
+The model is untrained. Image, audio and video generation quality is unmeasured. The image codec is a trainable patch baseline, the audio codec is not yet a production speech/music system, and the video path uses bounded temporal windows. Attention remains quadratic. GAN discriminators do not yet have a complete alternating optimizer schedule, and current one-record-per-family micro-batches do not meaningfully activate multi-example contrastive alignment.
 
-This is the first executable research baseline, not a mature multimodal product. The initial synthetic curriculum teaches simple visual patterns, synthetic tones, basic motion, arithmetic and tool-call format. It does not supply broad world knowledge, robust speech understanding, photo-realistic image synthesis, natural speech synthesis, or high-quality video generation.
-
-The next scientific gates are:
-- test codebook usage/collapse and modality reconstruction quality;
-- train on a large, diverse, paired multimodal corpus;
-- measure text/tool and cross-modal generalization on held-out data;
-- compare recurrent cycles against an equal-compute non-recurrent baseline;
-- test quantization/low-bit inference only after a stable full-precision baseline exists;
-- benchmark the exported model on Android CPU/RAM/battery.
-
-Never describe a smoke/bootstrap checkpoint as a trained general intelligence.
+Do not describe OneCore as production-ready or claim human-level, professional or certified output quality until trained checkpoints have passed independent real-data evaluation and human review.
