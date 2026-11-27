@@ -1,501 +1,699 @@
-"""Shared, variable-length semantic backbone and multimodal integration for OneCore v3."""
 from __future__ import annotations
+
+import math
+from typing import Iterable
 
 import torch
 from torch import nn
 from torch.nn import functional as F
 
-from .audio import AudioEncoding, NeuralAudioCodec
-from .video import TemporalVideoCodec, VideoEncoding
-from .vision import ImageEncoding, VariableResolutionImageCodec
+# Special-token offsets in the model's single vocabulary.
+BOS, EOS, PAD = 0, 1, 2
+IMAGE_START, IMAGE_END = 3, 4
+AUDIO_START, AUDIO_END = 5, 6
+VIDEO_START, VIDEO_FRAME, VIDEO_END = 7, 8, 9
+TOOL_START, TOOL_END, TURN_START, TURN_END = 10, 11, 12, 13
+TEXT_START, ANSWER_START, NO_ANSWER, MOTION_START, MASK = 14, 15, 16, 17, 18
 
 
-def _sincos_1d(length: int, width: int, *, device: torch.device,
-               dtype: torch.dtype) -> torch.Tensor:
-    if width % 2:
-        raise ValueError("shared width must be even for sinusoidal positions")
-    half = width // 2
-    inv_freq = torch.exp(
-        torch.arange(half, device=device, dtype=torch.float32)
-        * (-torch.log(torch.tensor(10_000.0, device=device)) / max(half - 1, 1))
+def patchify(images: torch.Tensor, patch_size: int) -> torch.Tensor:
+    """Convert BCHW RGB images into B,N,(P*P*C) non-overlapping patches."""
+    if images.ndim != 4 or images.shape[1] != 3:
+        raise ValueError("images must have shape [batch, 3, height, width]")
+    b, c, h, w = images.shape
+    if h % patch_size or w % patch_size:
+        raise ValueError("image dimensions must be divisible by patch_size")
+    p = patch_size
+    return images.reshape(b, c, h // p, p, w // p, p).permute(0, 2, 4, 3, 5, 1).reshape(
+        b, (h // p) * (w // p), p * p * c
     )
-    positions = torch.arange(length, device=device, dtype=torch.float32).unsqueeze(1)
-    phase = positions * inv_freq.unsqueeze(0)
-    return torch.cat((phase.sin(), phase.cos()), dim=-1).to(dtype=dtype)
 
 
-class SharedSemanticCore(nn.Module):
-    """Shared Transformer over continuous modality latents or text token embeddings.
+def unpatchify(patches: torch.Tensor, height: int, width: int, patch_size: int) -> torch.Tensor:
+    b, n, d = patches.shape
+    p = patch_size
+    channels = d // (p * p)
+    if d != p * p * channels or n != (height // p) * (width // p):
+        raise ValueError("patch tensor shape does not match requested image dimensions")
+    return patches.reshape(b, height // p, width // p, p, p, channels).permute(
+        0, 5, 1, 3, 2, 4
+    ).reshape(b, channels, height, width)
 
-    Positional features are generated from the current sequence length, so there
-    is no learned 512-position table. Attention remains quadratic; long sequences
-    still require chunking, memory measurements, and an efficient-attention plan.
-    """
 
-    def __init__(self, width: int = 512, layers: int = 4, cycles: int = 3,
-                 attention_heads: int = 8, dropout: float = 0.0) -> None:
+
+class RMSNorm(nn.Module):
+    def __init__(self, width: int, eps: float = 1e-6) -> None:
         super().__init__()
-        if width % 2 or width % attention_heads:
-            raise ValueError("width must be even and divisible by attention_heads")
-        if layers < 1 or cycles < 1:
-            raise ValueError("unique layers and recurrent cycles must be positive")
-        self.layers = nn.ModuleList([
-            nn.TransformerEncoderLayer(
-                d_model=width, nhead=attention_heads, dim_feedforward=4 * width,
-                dropout=dropout, batch_first=True, norm_first=True, activation="gelu",
-            )
-            for _ in range(layers)
-        ])
-        self.cycles = cycles
-        self.norm = nn.LayerNorm(width)
-        self.width = width
+        self.weight = nn.Parameter(torch.ones(width))
+        self.eps = eps
 
-    def forward(self, latents: torch.Tensor, *, causal: bool = False) -> torch.Tensor:
-        if latents.ndim != 3 or latents.shape[-1] != self.width:
-            raise ValueError("latents must have shape [B, sequence, shared_width]")
-        if latents.shape[1] < 1:
-            raise ValueError("shared sequence cannot be empty")
-        positions = _sincos_1d(
-            latents.shape[1], self.width, device=latents.device, dtype=latents.dtype
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        normed = x.float() * torch.rsqrt(x.float().pow(2).mean(dim=-1, keepdim=True) + self.eps)
+        return normed.to(x.dtype) * self.weight
+
+
+class SharedAttention(nn.Module):
+    def __init__(self, cfg: V3Config) -> None:
+        super().__init__()
+        self.heads = cfg.attention_heads
+        self.head_dim = cfg.width // cfg.attention_heads
+        self.qkv = nn.Linear(cfg.width, 3 * cfg.width, bias=False)
+        self.out = nn.Linear(cfg.width, cfg.width, bias=False)
+        self.dropout = cfg.dropout
+
+    def forward(self, x: torch.Tensor, causal: bool) -> torch.Tensor:
+        b, t, width = x.shape
+        q, k, v = self.qkv(x).view(b, t, 3, self.heads, self.head_dim).unbind(dim=2)
+        q, k, v = (z.transpose(1, 2) for z in (q, k, v))
+        y = F.scaled_dot_product_attention(
+            q, k, v, is_causal=causal,
+            dropout_p=self.dropout if self.training else 0.0,
         )
-        mask = None
-        if causal:
-            mask = torch.triu(
-                torch.ones(
-                    latents.shape[1], latents.shape[1],
-                    device=latents.device, dtype=torch.bool,
-                ),
-                diagonal=1,
-            )
-        hidden = latents + positions.unsqueeze(0)
-        for _ in range(self.cycles):
-            for block in self.layers:
-                hidden = block(hidden, src_mask=mask)
-        return self.norm(hidden)
+        return self.out(y.transpose(1, 2).contiguous().view(b, t, width))
+
+
+class SwiGLU(nn.Module):
+    def __init__(self, width: int) -> None:
+        super().__init__()
+        hidden = int(width * 8 / 3)
+        self.gate = nn.Linear(width, hidden, bias=False)
+        self.up = nn.Linear(width, hidden, bias=False)
+        self.down = nn.Linear(hidden, width, bias=False)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.down(F.silu(self.gate(x)) * self.up(x))
+
+
+class RecurrentBlock(nn.Module):
+    """A block whose weights are reused at every recurrent reasoning cycle."""
+    def __init__(self, cfg: V3Config) -> None:
+        super().__init__()
+        self.norm1 = RMSNorm(cfg.width)
+        self.attn = SharedAttention(cfg)
+        self.norm2 = RMSNorm(cfg.width)
+        self.mlp = SwiGLU(cfg.width)
+
+    def forward(self, x: torch.Tensor, causal: bool) -> torch.Tensor:
+        x = x + self.attn(self.norm1(x), causal=causal)
+        x = x + self.mlp(self.norm2(x))
+        return x
+
+
+class VectorQuantizer:
+    """Straight-through nearest-neighbour quantization against a slice of shared token embeddings."""
+    def __init__(self, owner: "OneCoreV3", offset: int, count: int) -> None:
+        self.owner = owner
+        self.offset = offset
+        self.count = count
+
+    def forward(self, features: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        codebook = self.owner.token_embedding.weight[self.offset:self.offset + self.count]
+        flat = features.reshape(-1, features.shape[-1]).float()
+        cb = codebook.float()
+        distances = (
+            flat.pow(2).sum(dim=1, keepdim=True)
+            - 2 * flat @ cb.t()
+            + cb.pow(2).sum(dim=1).unsqueeze(0)
+        )
+        local_ids = distances.argmin(dim=-1).view(features.shape[:-1])
+        ids = local_ids + self.offset
+        quantized = F.embedding(ids, self.owner.token_embedding.weight)
+        commitment = F.mse_loss(features.float(), quantized.detach().float())
+        codebook_loss = F.mse_loss(quantized.float(), features.detach().float())
+        straight_through = features + (quantized - features).detach()
+        return ids, straight_through, commitment + 0.25 * codebook_loss
+
+    def __call__(self, features: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        # Deliberately not an nn.Module: it references the owner's shared embedding
+        # table, so registering the owner as a child would create a module cycle.
+        return self.forward(features)
 
 
 class OneCoreV3(nn.Module):
-    """A shared semantic core with variable-resolution/duration modality codecs.
+    """One randomly initialized, shared-weight, recurrent multimodal model.
 
-    This class defines the integrated trainable architecture. It is deliberately
-    checkpoint-incompatible with v2. It is not a pretrained or quality-certified
-    generator; dedicated generation objectives and corpus-scale training remain
-    required before claiming production capability.
+    Text, image, audio, video-motion and tool/action symbols share one
+    vocabulary, embedding table, recurrent Transformer core and LM head.
+    Every trainable front-end/decoder is part of this same checkpoint.
     """
-
-    def __init__(self, *, text_vocab_size: int = 32_000, width: int = 512,
-                 layers: int = 4, cycles: int = 3, attention_heads: int = 8, patch_size: int = 16,
-                 audio_latent_channels: int = 128, audio_hidden_channels: int = 256,
-                 audio_codebook_size: int = 1024, audio_quantizer_stages: int = 8,
-                 audio_channels: int = 2, audio_sample_rate: int = 24_000,
-                 temporal_layers: int = 2, dropout: float = 0.0,
-                 max_image_context_tokens: int = 256, max_video_context_tokens: int = 256,
-                 max_flow_context_tokens: int = 256, temporal_window_frames: int = 32,
-                 temporal_memory_frames: int = 4, video_generation_chunk_frames: int = 8,
-                 tldm_latent_slots: int = 16) -> None:
+    def __init__(self, cfg: V3Config) -> None:
         super().__init__()
-        if text_vocab_size < 2:
-            raise ValueError("text_vocab_size must be at least two")
-        if min(max_image_context_tokens, max_video_context_tokens, max_flow_context_tokens,
-               video_generation_chunk_frames) < 1 or temporal_window_frames < 1 or temporal_memory_frames < 0:
-            raise ValueError("context budgets and temporal windows must be positive; memory non-negative")
-        if tldm_latent_slots < 1:
-            raise ValueError("T-LDM latent slots must be positive")
-        self.width = width
-        self.tldm_latent_slots = int(tldm_latent_slots)
-        self.max_image_context_tokens = max_image_context_tokens
-        self.max_video_context_tokens = max_video_context_tokens
-        self.max_flow_context_tokens = max_flow_context_tokens
-        self.video_generation_chunk_frames = video_generation_chunk_frames
-        self.text_embedding = nn.Embedding(text_vocab_size, width)
-        self.modality_embedding = nn.Embedding(5, width)
-        self.shared_core = SharedSemanticCore(width, layers, cycles, attention_heads, dropout)
-        self.text_head = nn.Linear(width, text_vocab_size, bias=False)
-        self.text_head.weight = self.text_embedding.weight
-        self.flow_time = nn.Sequential(nn.Linear(1, width), nn.SiLU(), nn.Linear(width, width))
-        self.flow_velocity_heads = nn.ModuleDict({
-            "image": nn.Linear(width, width),
-            "audio": nn.Linear(width, width),
-            "video": nn.Linear(width, width),
-        })
+        self.cfg = cfg
+        self.token_embedding = nn.Embedding(cfg.vocab_size, cfg.width)
+        self.position_embedding = nn.Embedding(cfg.max_sequence_length, cfg.width)
+        self.modality_embedding = nn.Embedding(5, cfg.width)
+        self.cycle_embedding = nn.Embedding(cfg.recurrent_cycles, cfg.width)
+        self.blocks = nn.ModuleList([RecurrentBlock(cfg) for _ in range(cfg.unique_blocks)])
+        self.final_norm = RMSNorm(cfg.width)
+        self.lm_head = nn.Linear(cfg.width, cfg.vocab_size, bias=False)
+        self.lm_head.weight = self.token_embedding.weight
 
-        self.image_codec = VariableResolutionImageCodec(width, patch_size)
-        self.audio_codec = NeuralAudioCodec(
-            audio_latent_channels, audio_hidden_channels,
-            audio_codebook_size, audio_quantizer_stages, audio_channels, audio_sample_rate,
-        )
-        self.audio_to_shared = nn.Conv1d(audio_latent_channels, width, kernel_size=1)
-        self.shared_to_audio = nn.Conv1d(width, audio_latent_channels, kernel_size=1)
-        self.video_codec = TemporalVideoCodec(
-            width, patch_size, temporal_layers, attention_heads,
-            temporal_window_frames, temporal_memory_frames,
-        )
+        patch_dim = cfg.patch_size * cfg.patch_size * 3
+        self.image_encoder = nn.Linear(patch_dim, cfg.width)
+        self.image_decoder = nn.Linear(cfg.width, patch_dim)
+        self.audio_encoder = nn.Linear(cfg.audio_token_dim, cfg.width)
+        self.audio_decoder = nn.Linear(cfg.width, cfg.audio_token_dim)
+        self.motion_encoder = nn.Linear(patch_dim, cfg.width)
+        self.motion_decoder = nn.Linear(cfg.width, patch_dim)
+        self.halt_head = nn.Linear(cfg.width, 1)
 
-    def forward_text(self, token_ids: torch.Tensor) -> torch.Tensor:
-        if token_ids.ndim != 2 or token_ids.dtype not in (torch.int32, torch.int64):
-            raise ValueError("token_ids must be an integer tensor [B,T]")
-        hidden = self.shared_core(
-            self.text_embedding(token_ids) + self.modality_embedding.weight[0], causal=True
-        )
-        return self.text_head(hidden)
+        self.vision_quantizer = VectorQuantizer(self, cfg.vision_start, cfg.vision_codebook_size)
+        self.audio_quantizer = VectorQuantizer(self, cfg.audio_start, cfg.audio_codebook_size)
+        self.motion_quantizer = VectorQuantizer(self, cfg.motion_start, cfg.motion_codebook_size)
 
-    def forward_image(self, images: torch.Tensor) -> tuple[torch.Tensor, ImageEncoding]:
-        encoding = self.image_codec.encode(images)
-        batch = encoding.tokens.shape[0]
-        local = encoding.tokens.reshape(
-            batch, encoding.grid_height, encoding.grid_width, self.width
-        ).permute(0, 3, 1, 2)
-        grid_height, grid_width = encoding.grid_height, encoding.grid_width
-        scale = min(1.0, (self.max_image_context_tokens / (grid_height * grid_width)) ** 0.5)
-        context_height = max(1, min(grid_height, self.max_image_context_tokens, int(grid_height * scale)))
-        context_width = max(1, min(grid_width, self.max_image_context_tokens // context_height))
-        context = F.adaptive_avg_pool2d(local, (context_height, context_width))
-        context_tokens = context.flatten(2).transpose(1, 2)
-        shared_context = self.shared_core(
-            context_tokens + self.modality_embedding.weight[1], causal=False
-        )
-        shared_grid = shared_context.transpose(1, 2).reshape(
-            batch, self.width, context_height, context_width
-        )
-        broadcast = F.interpolate(
-            shared_grid, size=(grid_height, grid_width), mode="bilinear", align_corners=False
-        )
-        processed_tokens = (
-            local + broadcast
-        ).permute(0, 2, 3, 1).reshape(batch, grid_height * grid_width, self.width)
-        processed = ImageEncoding(
-            processed_tokens, grid_height, grid_width,
-            encoding.image_height, encoding.image_width,
-        )
-        return self.image_codec.decode(processed), processed
+        nn.init.normal_(self.token_embedding.weight, mean=0.0, std=0.02)
+        nn.init.normal_(self.position_embedding.weight, mean=0.0, std=0.01)
+        nn.init.normal_(self.modality_embedding.weight, mean=0.0, std=0.01)
+        nn.init.normal_(self.cycle_embedding.weight, mean=0.0, std=0.01)
+        # Explicitly tied after initialization; no separate output parameter exists.
+        self.lm_head.weight = self.token_embedding.weight
 
-    def forward_audio(self, waveform: torch.Tensor, *, sample_rate: int) -> tuple[torch.Tensor, AudioEncoding]:
-        encoding = self.audio_codec.encode(waveform, sample_rate=sample_rate)
-        shared = self.audio_to_shared(encoding.quantized).transpose(1, 2)
-        shared = self.shared_core(
-            shared + self.modality_embedding.weight[2], causal=False
-        ).transpose(1, 2)
-        decoded_latents = self.shared_to_audio(shared)
-        processed = AudioEncoding(
-            encoding.codes, decoded_latents, encoding.commitment_loss,
-            encoding.original_samples, encoding.padded_samples,
-            encoding.sample_rate, encoding.original_channels,
-        )
-        reconstruction = self.audio_codec.decode(processed)
-        if waveform.ndim == 2:
-            reconstruction = reconstruction.squeeze(1)
-        return reconstruction, processed
+    def count_parameters(self) -> int:
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)
 
-    def _iter_forward_video_chunks(self, video: torch.Tensor,
-                                   timestamps: torch.Tensor | None = None,
-                                   frame_chunk_size: int | None = None):
-        memory = None
-        for encoding in self.video_codec.iter_encode(
-            video, timestamps=timestamps, frame_chunk_size=frame_chunk_size
-        ):
-            batch, frames, patches, width = encoding.tokens.shape
-            local = encoding.tokens.reshape(batch, frames * patches, width)
-            context = F.adaptive_avg_pool1d(
-                local.transpose(1, 2),
-                min(self.max_video_context_tokens, local.shape[1]),
-            ).transpose(1, 2)
-            context = context + self.modality_embedding.weight[3]
-            sequence = context if memory is None else torch.cat((memory, context), dim=1)
-            shared_sequence = self.shared_core(sequence, causal=True)
-            current_shared = shared_sequence[:, -context.shape[1]:]
-            broadcast = F.interpolate(
-                current_shared.transpose(1, 2), size=local.shape[1],
-                mode="linear", align_corners=False,
-            ).transpose(1, 2)
-            processed_tokens = (local + broadcast).reshape(
-                batch, frames, patches, width
-            )
-            processed = VideoEncoding(
-                processed_tokens, encoding.grid_height, encoding.grid_width,
-                encoding.frame_count, encoding.image_height, encoding.image_width,
-                encoding.timestamps,
-            )
-            yield self.video_codec.decode_frames(processed), processed
-            history = current_shared if memory is None else torch.cat(
-                (memory, current_shared), dim=1
-            )
-            memory = F.adaptive_avg_pool1d(
-                history.transpose(1, 2), min(32, history.shape[1])
-            ).transpose(1, 2).detach()
+    @torch.no_grad()
+    def initialize_codebook(self, features: torch.Tensor, offset: int, count: int,
+                            iterations: int = 8, seed: int = 0) -> None:
+        """Initialize a modality codebook from this model's own random-init encoder features.
 
-    def forward_video_chunks(self, video: torch.Tensor,
-                             timestamps: torch.Tensor | None = None,
-                             frame_chunk_size: int | None = None):
-        """Yield decoded input-video chunks with bounded temporal/global context."""
-        for reconstruction, _encoding in self._iter_forward_video_chunks(
-            video, timestamps=timestamps, frame_chunk_size=frame_chunk_size
-        ):
-            yield reconstruction
-
-    def forward_video(self, video: torch.Tensor,
-                      timestamps: torch.Tensor | None = None,
-                      frame_chunk_size: int | None = None) -> tuple[torch.Tensor, VideoEncoding]:
-        chunks = list(self._iter_forward_video_chunks(
-            video, timestamps=timestamps, frame_chunk_size=frame_chunk_size
-        ))
-        reconstructions, encodings = zip(*chunks, strict=True)
-        first = encodings[0]
-        encoding = VideoEncoding(
-            torch.cat([chunk.tokens for chunk in encodings], dim=1),
-            first.grid_height, first.grid_width,
-            sum(chunk.frame_count for chunk in encodings),
-            first.image_height, first.image_width,
-            torch.cat([chunk.timestamps for chunk in encodings], dim=1),
-        )
-        return torch.cat(reconstructions, dim=1), encoding
-
-    def text_condition(self, token_ids: torch.Tensor | None) -> torch.Tensor | None:
-        if token_ids is None:
-            return None
-        if token_ids.ndim != 2 or token_ids.dtype not in (torch.int32, torch.int64):
-            raise ValueError("condition token_ids must be an integer tensor [B,T]")
-        return self.text_embedding(token_ids) + self.modality_embedding.weight[0]
-
-    def forward_tldm(self, token_ids: torch.Tensor, masked_positions: torch.Tensor) -> torch.Tensor:
-        """Masked-token prediction using the same shared core and tied text head.
-
-        Masked token embeddings are zeroed before compression and writing. The latent
-        thinker/writer are recurrent passes through existing modules, not a second model.
+        This is activation-based codebook seeding, not imported/pretrained weights.
+        It prevents the scale mismatch between random embedding rows and encoder
+        activations from collapsing every patch onto a tiny subset of codes.
         """
-        if token_ids.ndim != 2 or token_ids.dtype not in (torch.int32, torch.int64):
-            raise ValueError("T-LDM token_ids must be an integer tensor [B,T]")
-        if token_ids.shape[1] < 1:
-            raise ValueError("T-LDM sequence must not be empty")
-        if masked_positions.shape != token_ids.shape or masked_positions.dtype != torch.bool:
-            raise ValueError("T-LDM masked_positions must be a boolean tensor matching token_ids")
-        if token_ids.min().item() < 0 or token_ids.max().item() >= self.text_embedding.num_embeddings:
-            raise ValueError("T-LDM token id is outside the text vocabulary")
-        token_states = self.text_embedding(token_ids) + self.modality_embedding.weight[0]
-        visible_states = token_states.masked_fill(masked_positions.unsqueeze(-1), 0.0)
-        slots = min(self.tldm_latent_slots, token_ids.shape[1])
-        compressed = F.adaptive_avg_pool1d(visible_states.transpose(1, 2), slots).transpose(1, 2)
-        latent_context = self.shared_core(compressed, causal=False)
-        writer_input = torch.cat((latent_context, visible_states), dim=1)
-        writer_hidden = self.shared_core(writer_input, causal=False)[:, slots:]
-        return self.text_head(writer_hidden)
-
-    @torch.no_grad()
-    def generate_tldm(
-        self, context_ids: torch.Tensor, block_size: int, *,
-        diffusion_steps: int = 8, temperature: float = 1.0,
-    ) -> torch.Tensor:
-        """Fill a token block by revealing highest-confidence masked positions."""
-        if context_ids.ndim != 2 or context_ids.dtype not in (torch.int32, torch.int64):
-            raise ValueError("T-LDM context_ids must be an integer tensor [B,T]")
-        if block_size < 1 or diffusion_steps < 1:
-            raise ValueError("T-LDM block_size and diffusion_steps must be positive")
-        if not torch.isfinite(torch.tensor(float(temperature))) or temperature <= 0:
-            raise ValueError("T-LDM temperature must be finite and positive")
-        if context_ids.numel() and (
-            context_ids.min().item() < 0 or context_ids.max().item() >= self.text_embedding.num_embeddings
-        ):
-            raise ValueError("T-LDM context token is outside the text vocabulary")
-        batch, context_length = context_ids.shape
-        sequence = torch.cat((context_ids, torch.zeros(
-            (batch, block_size), device=context_ids.device, dtype=context_ids.dtype
-        )), dim=1)
-        masked = torch.zeros_like(sequence, dtype=torch.bool)
-        masked[:, context_length:] = True
-        for step in range(diffusion_steps):
-            logits = self.forward_tldm(sequence, masked)[:, context_length:] / float(temperature)
-            probabilities = torch.softmax(logits, dim=-1)
-            confidence, predictions = probabilities.max(dim=-1)
-            remaining_steps = diffusion_steps - step
-            for row in range(batch):
-                remaining = torch.nonzero(masked[row, context_length:], as_tuple=False).flatten()
-                if remaining.numel() == 0:
-                    continue
-                count = max(1, (remaining.numel() + remaining_steps - 1) // remaining_steps)
-                top = torch.topk(confidence[row, remaining], k=min(count, remaining.numel())).indices
-                positions = remaining[top]
-                sequence[row, context_length + positions] = predictions[row, positions]
-                masked[row, context_length + positions] = False
-        return sequence[:, context_length:]
-    def predict_flow_velocity(self, noisy_latents: torch.Tensor, times: torch.Tensor,
-                              modality: int,
-                              condition_tokens: torch.Tensor | None = None) -> torch.Tensor:
-        """Predict the flow-matching velocity for one modality's continuous latents."""
-        if noisy_latents.ndim != 3 or noisy_latents.shape[-1] != self.width:
-            raise ValueError("noisy_latents must have shape [B,N,shared_width]")
-        if not 1 <= modality <= 3:
-            raise ValueError("flow modality must be image=1, audio=2, or video=3")
-        batch = noisy_latents.shape[0]
-        times = torch.as_tensor(times, device=noisy_latents.device, dtype=noisy_latents.dtype)
-        if times.ndim == 0:
-            times = times.expand(batch)
-        if times.shape != (batch,):
-            raise ValueError("times must be scalar or shape [B]")
-        if condition_tokens is None:
-            condition_tokens = noisy_latents.new_zeros((batch, 0, self.width))
-        if condition_tokens.ndim != 3 or condition_tokens.shape[0] != batch or condition_tokens.shape[2] != self.width:
-            raise ValueError("condition_tokens must have shape [B,C,shared_width]")
-        time_features = self.flow_time(times.reshape(batch, 1)).unsqueeze(1)
-        modality_features = self.modality_embedding.weight[modality].view(1, 1, -1)
-        target_tokens = noisy_latents + time_features + modality_features
-        context_budget = self.max_flow_context_tokens
-        condition_budget = min(condition_tokens.shape[1], max(0, context_budget // 2))
-        target_budget = max(1, context_budget - condition_budget)
-        if condition_tokens.shape[1] > condition_budget:
-            condition_tokens = F.adaptive_avg_pool1d(
-                condition_tokens.transpose(1, 2), condition_budget
-            ).transpose(1, 2)
-        if target_tokens.shape[1] > target_budget:
-            compact_target = F.adaptive_avg_pool1d(
-                target_tokens.transpose(1, 2), target_budget
-            ).transpose(1, 2)
+        if iterations < 1:
+            raise ValueError("iterations must be positive")
+        vectors = features.detach().reshape(-1, self.cfg.width).float()
+        if vectors.shape[0] == 0:
+            raise ValueError("cannot initialize a codebook from zero feature vectors")
+        generator = torch.Generator(device=vectors.device).manual_seed(seed)
+        if vectors.shape[0] >= count:
+            indices = torch.randperm(vectors.shape[0], generator=generator, device=vectors.device)[:count]
+            centers = vectors[indices].clone()
         else:
-            compact_target = target_tokens
-        sequence = torch.cat((condition_tokens, compact_target), dim=1)
-        hidden = self.shared_core(sequence, causal=False)
-        head_name = {1: "image", 2: "audio", 3: "video"}[modality]
-        predicted = self.flow_velocity_heads[head_name](
-            hidden[:, condition_tokens.shape[1]:]
-        )
-        if predicted.shape[1] != noisy_latents.shape[1]:
-            predicted = F.interpolate(
-                predicted.transpose(1, 2), size=noisy_latents.shape[1],
-                mode="linear", align_corners=False,
-            ).transpose(1, 2)
-        return predicted
-
-    def flow_matching_loss(self, clean_latents: torch.Tensor, modality: int,
-                           condition_tokens: torch.Tensor | None = None,
-                           noise: torch.Tensor | None = None,
-                           times: torch.Tensor | None = None) -> torch.Tensor:
-        """Rectified-flow objective; training data and modality-specific sampling remain external."""
-        if clean_latents.ndim != 3 or clean_latents.shape[-1] != self.width:
-            raise ValueError("clean_latents must have shape [B,N,shared_width]")
-        if noise is None:
-            noise = torch.randn_like(clean_latents)
-        if noise.shape != clean_latents.shape:
-            raise ValueError("noise shape must match clean_latents")
-        if times is None:
-            times = torch.rand(clean_latents.shape[0], device=clean_latents.device,
-                               dtype=clean_latents.dtype)
-        times = torch.as_tensor(times, device=clean_latents.device, dtype=clean_latents.dtype)
-        if times.ndim == 0:
-            times = times.expand(clean_latents.shape[0])
-        if times.shape != (clean_latents.shape[0],):
-            raise ValueError("times must be scalar or shape [B]")
-        noisy = clean_latents * (1.0 - times[:, None, None]) + noise * times[:, None, None]
-        target_velocity = noise - clean_latents
-        predicted = self.predict_flow_velocity(noisy, times, modality, condition_tokens)
-        return torch.nn.functional.mse_loss(predicted, target_velocity)
-
-    @torch.no_grad()
-    def sample_flow_latents(self, shape: tuple[int, int, int], modality: int,
-                            condition_tokens: torch.Tensor | None = None,
-                            steps: int = 32, generator: torch.Generator | None = None,
-                            device: torch.device | str | None = None) -> torch.Tensor:
-        """Euler sampler for a trained rectified-flow head; untrained output is noise-like."""
-        if len(shape) != 3 or min(shape) < 1 or shape[-1] != self.width:
-            raise ValueError("shape must be positive [B,N,shared_width]")
-        if steps < 1:
-            raise ValueError("steps must be positive")
-        if modality not in (1, 2, 3):
-            raise ValueError("flow modality must be image=1, audio=2, or video=3")
-        if device is None:
-            device = self.text_embedding.weight.device
-        sample = torch.randn(shape, device=device, dtype=self.text_embedding.weight.dtype,
-                             generator=generator)
-        for index in range(steps):
-            time_value = 1.0 - index / steps
-            times = torch.full((shape[0],), time_value, device=sample.device,
-                               dtype=sample.dtype)
-            velocity = self.predict_flow_velocity(sample, times, modality, condition_tokens)
-            sample = sample - velocity / steps
-        return sample
-
-    @torch.no_grad()
-    def generate_image(self, height: int, width: int, condition_ids: torch.Tensor | None = None,
-                       steps: int = 32) -> torch.Tensor:
-        if min(height, width) < 1:
-            raise ValueError("image height and width must be positive")
-        patch = self.image_codec.patch_size
-        grid_height = (height + patch - 1) // patch
-        grid_width = (width + patch - 1) // patch
-        condition = self.text_condition(condition_ids)
-        batch = 1 if condition is None else condition.shape[0]
-        latents = self.sample_flow_latents(
-            (batch, grid_height * grid_width, self.width), 1, condition, steps
-        )
-        return self.image_codec.decode(
-            ImageEncoding(latents, grid_height, grid_width, height, width)
-        )
-
-    @torch.no_grad()
-    def generate_audio(self, samples: int, condition_ids: torch.Tensor | None = None,
-                       steps: int = 32) -> torch.Tensor:
-        if samples < 1:
-            raise ValueError("samples must be positive")
-        latent_length = (samples + self.audio_codec.downsample_factor - 1) // self.audio_codec.downsample_factor
-        condition = self.text_condition(condition_ids)
-        batch = 1 if condition is None else condition.shape[0]
-        shared_latents = self.sample_flow_latents(
-            (batch, latent_length, self.width), 2, condition, steps
-        )
-        audio_latents = self.shared_to_audio(shared_latents.transpose(1, 2))
-        return self.audio_codec.decode(audio_latents, original_samples=samples)
-
-    @torch.no_grad()
-    def generate_video_chunks(self, frames: int, height: int, width: int,
-                              condition_ids: torch.Tensor | None = None,
-                              timestamps: torch.Tensor | None = None,
-                              steps: int = 32, chunk_frames: int | None = None):
-        """Yield decoded video chunks while carrying a compact latent memory forward."""
-        if min(frames, height, width) < 1:
-            raise ValueError("video frames, height, and width must be positive")
-        chunk_frames = self.video_generation_chunk_frames if chunk_frames is None else int(chunk_frames)
-        if chunk_frames < 1:
-            raise ValueError("chunk_frames must be positive")
-        patch = self.video_codec.image_codec.patch_size
-        grid_height = (height + patch - 1) // patch
-        grid_width = (width + patch - 1) // patch
-        patches = grid_height * grid_width
-        condition = self.text_condition(condition_ids)
-        batch = 1 if condition is None else condition.shape[0]
-        if timestamps is None:
-            timestamps = torch.arange(frames, device=self.text_embedding.weight.device,
-                                      dtype=self.text_embedding.weight.dtype)
-            timestamps = timestamps.unsqueeze(0).expand(batch, -1)
-        if timestamps.shape != (batch, frames):
-            raise ValueError("timestamps must have shape [B,frames]")
-        memory = None
-        for start in range(0, frames, chunk_frames):
-            stop = min(frames, start + chunk_frames)
-            current_timestamps = timestamps[:, start:stop]
-            time_tokens = self.video_codec.time_projection(
-                current_timestamps.to(self.text_embedding.weight.dtype).unsqueeze(-1)
+            indices = torch.randint(vectors.shape[0], (count,), generator=generator, device=vectors.device)
+            centers = vectors[indices].clone()
+            centers = centers + torch.randn(centers.shape, generator=generator, device=vectors.device) * (
+                vectors.std().clamp_min(1e-4) * 0.01
             )
-            condition_parts = [part for part in (condition, memory, time_tokens) if part is not None]
-            current_condition = torch.cat(condition_parts, dim=1)
-            current_frames = stop - start
-            latents = self.sample_flow_latents(
-                (batch, current_frames * patches, self.width), 3,
-                current_condition, steps,
-            ).reshape(batch, current_frames, patches, self.width)
-            encoding = VideoEncoding(
-                latents, grid_height, grid_width, current_frames, height, width,
-                current_timestamps,
+        for _ in range(iterations):
+            distances = (
+                vectors.square().sum(dim=1, keepdim=True)
+                - 2.0 * vectors @ centers.t()
+                + centers.square().sum(dim=1).unsqueeze(0)
             )
-            yield self.video_codec.decode_frames(encoding)
-            history = latents.reshape(batch, current_frames * patches, self.width)
-            combined_history = history if memory is None else torch.cat((memory, history), dim=1)
-            memory = F.adaptive_avg_pool1d(
-                combined_history.transpose(1, 2), min(32, combined_history.shape[1])
-            ).transpose(1, 2)
+            assignments = distances.argmin(dim=1)
+            sums = torch.zeros_like(centers)
+            sums.index_add_(0, assignments, vectors)
+            cluster_counts = torch.bincount(assignments, minlength=count).to(vectors.device)
+            nonempty = cluster_counts > 0
+            centers[nonempty] = sums[nonempty] / cluster_counts[nonempty].unsqueeze(1)
+            if (~nonempty).any():
+                replacement = torch.randint(
+                    vectors.shape[0], ((~nonempty).sum().item(),),
+                    generator=generator, device=vectors.device,
+                )
+                centers[~nonempty] = vectors[replacement]
+        self.token_embedding.weight[offset:offset + count].copy_(
+            centers.to(self.token_embedding.weight.dtype)
+        )
 
     @torch.no_grad()
-    def generate_video(self, frames: int, height: int, width: int,
-                       condition_ids: torch.Tensor | None = None,
-                       timestamps: torch.Tensor | None = None,
-                       steps: int = 32, chunk_frames: int | None = None) -> torch.Tensor:
-        chunks = list(self.generate_video_chunks(
-            frames, height, width, condition_ids, timestamps, steps, chunk_frames
-        ))
-        return torch.cat(chunks, dim=1)
+    def codebook_usage(self, features: torch.Tensor, offset: int, count: int) -> dict[str, int | float]:
+        ids, _, _ = VectorQuantizer(self, offset, count).forward(features)
+        used = int(torch.unique(ids).numel())
+        return {"used_codes": used, "total_codes": count, "usage_fraction": used / count}
+
+    def _modality_ids(self, ids: torch.Tensor) -> torch.Tensor:
+        result = torch.zeros_like(ids)
+        result = torch.where((ids >= self.cfg.vision_start) & (ids < self.cfg.audio_start), 1, result)
+        result = torch.where((ids >= self.cfg.audio_start) & (ids < self.cfg.motion_start), 2, result)
+        result = torch.where((ids >= self.cfg.motion_start) & (ids < self.cfg.special_start), 3, result)
+        special = ids >= self.cfg.special_start
+        result = torch.where(special, 4, result)
+        return result.long()
+
+    def forward_hidden(self, ids: torch.Tensor, causal: bool = True) -> torch.Tensor:
+        if ids.ndim != 2:
+            raise ValueError("token ids must have shape [batch, sequence]")
+        if ids.shape[1] > self.cfg.max_sequence_length:
+            raise ValueError("sequence exceeds configured maximum length")
+        if ids.min().item() < 0 or ids.max().item() >= self.cfg.vocab_size:
+            raise ValueError("token id outside configured vocabulary")
+        positions = torch.arange(ids.shape[1], device=ids.device).unsqueeze(0)
+        x = self.token_embedding(ids) + self.position_embedding(positions)
+        x = x + self.modality_embedding(self._modality_ids(ids))
+        for cycle in range(self.cfg.recurrent_cycles):
+            x = x + self.cycle_embedding.weight[cycle].view(1, 1, -1)
+            for block in self.blocks:
+                x = block(x, causal=causal)
+        return self.final_norm(x)
+
+    def compress_to_latents(self, hidden: torch.Tensor, latent_slots: int = 16) -> torch.Tensor:
+        """Compress this model's own token states into a short latent sequence.
+
+        Adaptive pooling is deliberately parameter-free: the compressor uses
+        OneCoreV3's learned token/modality embeddings rather than a donor encoder
+        or a separately trained adapter.
+        """
+        if hidden.ndim != 3 or hidden.shape[1] < 1:
+            raise ValueError("hidden states must have shape [batch, sequence, width]")
+        if latent_slots < 1:
+            raise ValueError("latent_slots must be positive")
+        slots = min(int(latent_slots), hidden.shape[1])
+        return F.adaptive_avg_pool1d(hidden.transpose(1, 2), slots).transpose(1, 2)
+
+    def think_in_latents(self, latents: torch.Tensor) -> torch.Tensor:
+        """Run latent reasoning through OneCoreV3's shared recurrent blocks."""
+        if latents.ndim != 3 or latents.shape[-1] != self.cfg.width:
+            raise ValueError("latents must have shape [batch, slots, model_width]")
+        thought = latents
+        for cycle in range(self.cfg.recurrent_cycles):
+            thought = thought + self.cycle_embedding.weight[cycle].view(1, 1, -1)
+            for block in self.blocks:
+                thought = block(thought, causal=False)
+        return thought
+
+    def forward_tldm_hidden(self, ids: torch.Tensor, latent_slots: int = 16) -> torch.Tensor:
+        """Native OneCoreV3 latent-compression / latent-thinking / block-writer path.
+
+        The compressor, thinker and writer are not separate heads. They reuse
+        this OneCoreV3 instance's embeddings, recurrent blocks, final norm and
+        tied LM head. Bidirectional attention is safe here because diffusion
+        targets are explicitly masked before this method is called.
+        """
+        if ids.ndim != 2 or ids.shape[1] < 1:
+            raise ValueError("token ids must have shape [batch, non-empty sequence]")
+        if ids.shape[1] > self.cfg.max_sequence_length:
+            raise ValueError("sequence exceeds configured maximum length")
+        if ids.min().item() < 0 or ids.max().item() >= self.cfg.vocab_size:
+            raise ValueError("token id outside configured vocabulary")
+
+        positions = torch.arange(ids.shape[1], device=ids.device).unsqueeze(0)
+        token_states = self.token_embedding(ids) + self.position_embedding(positions)
+        token_states = token_states + self.modality_embedding(self._modality_ids(ids))
+
+        latents = self.compress_to_latents(token_states, latent_slots=latent_slots)
+        latents = self.think_in_latents(latents)
+        latent_context = F.interpolate(
+            latents.transpose(1, 2),
+            size=token_states.shape[1],
+            mode="linear",
+            align_corners=False,
+        ).transpose(1, 2)
+        writer_states = token_states + latent_context
+
+        # The diffusion writer is the same recurrent OneCoreV3 body, now allowed
+        # to attend across the masked block and the visible context.
+        for cycle in range(self.cfg.recurrent_cycles):
+            writer_states = writer_states + self.cycle_embedding.weight[cycle].view(1, 1, -1)
+            for block in self.blocks:
+                writer_states = block(writer_states, causal=False)
+        return self.final_norm(writer_states)
+
+    def forward_tldm(self, ids: torch.Tensor, latent_slots: int = 16) -> torch.Tensor:
+        """Predict masked shared-vocabulary tokens from native latent context."""
+        return self.lm_head(self.forward_tldm_hidden(ids, latent_slots=latent_slots))
+
+    def forward_text(self, ids: torch.Tensor) -> torch.Tensor:
+        return self.forward(ids, causal=True)
+
+    def forward_image(self, images: torch.Tensor):
+        from types import SimpleNamespace
+        images = F.interpolate(images.float(), size=(self.cfg.image_size, self.cfg.image_size), mode="bilinear", align_corners=False)
+        ids, latents, qloss = self.encode_image(images)
+        reconstruction = self.decode_image_latents(latents)
+        return reconstruction, SimpleNamespace(tokens=ids, quantized=latents, commitment_loss=qloss)
+
+    def _waveform_to_log_mel(self, waveform: torch.Tensor, sample_rate: int) -> torch.Tensor:
+        if sample_rate != self.cfg.audio_sample_rate:
+            raise ValueError(f"audio must be normalized to {self.cfg.audio_sample_rate} Hz")
+        if waveform.ndim == 3:
+            waveform = waveform.mean(dim=1)
+        elif waveform.ndim != 2:
+            raise ValueError("waveform must have shape [batch, samples] or [batch, channels, samples]")
+        waveform = waveform.float()
+        n_fft, hop = 400, 160
+        window = torch.hann_window(n_fft, device=waveform.device, dtype=waveform.dtype)
+        spectrum = torch.stft(waveform, n_fft=n_fft, hop_length=hop, win_length=n_fft,
+                              window=window, center=True, return_complex=True)
+        power = spectrum.abs().square()
+        frequencies = torch.linspace(0, sample_rate / 2, power.shape[1], device=waveform.device)
+        mel_min, mel_max = 2595.0 * torch.log10(torch.tensor(1.0, device=waveform.device) + 0.0), 2595.0 * torch.log10(torch.tensor(1.0 + (sample_rate / 2) / 700.0, device=waveform.device))
+        mel_points = torch.linspace(float(mel_min), float(mel_max), self.cfg.audio_bins + 2, device=waveform.device)
+        hz_points = 700.0 * (torch.pow(10.0, mel_points / 2595.0) - 1.0)
+        filters = []
+        for index in range(self.cfg.audio_bins):
+            left, center, right = hz_points[index:index + 3]
+            rising = (frequencies - left) / (center - left).clamp_min(1e-6)
+            falling = (right - frequencies) / (right - center).clamp_min(1e-6)
+            filters.append(torch.minimum(rising, falling).clamp(0.0, 1.0))
+        bank = torch.stack(filters, dim=0)
+        mel_power = torch.einsum("mf,bft->btm", bank, power)
+        return torch.log(mel_power.clamp_min(1e-6))
+
+    def forward_audio(self, waveform: torch.Tensor, sample_rate: int):
+        from types import SimpleNamespace
+        mel = self._waveform_to_log_mel(waveform, sample_rate)
+        ids, latents, qloss = self.encode_audio(mel)
+        reconstruction = self.decode_audio_latents(latents).reshape(mel.shape[0], -1, self.cfg.audio_bins)
+        reconstruction = F.interpolate(reconstruction.transpose(1, 2), size=mel.shape[1], mode="linear", align_corners=False).transpose(1, 2)
+        return reconstruction, SimpleNamespace(tokens=ids, quantized=latents, commitment_loss=qloss)
+
+    def forward_video_chunks(self, frames: torch.Tensor, timestamps: torch.Tensor | None = None,
+                             frame_chunk_size: int = 4):
+        if frames.ndim != 5 or frames.shape[1] < 1 or frames.shape[1] > self.cfg.max_video_frames:
+            raise ValueError(f"video must contain 1..{self.cfg.max_video_frames} frames")
+        if frame_chunk_size < 1:
+            raise ValueError("frame_chunk_size must be positive")
+        batch, count = frames.shape[:2]
+        for start in range(0, count, frame_chunk_size):
+            chunk = frames[:, start:start + frame_chunk_size].flatten(0, 1)
+            chunk = F.interpolate(chunk.float(), size=(self.cfg.image_size, self.cfg.image_size), mode="bilinear", align_corners=False)
+            _ids, latents, _qloss = self.encode_image(chunk)
+            reconstruction = self.decode_image_latents(latents)
+            yield reconstruction.reshape(batch, -1, 3, self.cfg.image_size, self.cfg.image_size)
+
+    @torch.no_grad()
+    def generate_tldm(self, context_ids: torch.Tensor, block_size: int = 32,
+                      diffusion_steps: int = 8, latent_slots: int = 16,
+                      allowed_token_ids: list[int] | None = None,
+                      temperature: float = 0.0, top_k: int = 0) -> torch.Tensor:
+        """Generate a block through iterative masked-token refinement (discrete diffusion)."""
+        if context_ids.ndim != 2 or context_ids.shape[1] < 1:
+            raise ValueError("context_ids must be a non-empty [batch, sequence] tensor")
+        if block_size < 1 or diffusion_steps < 1 or temperature < 0:
+            raise ValueError("block_size and diffusion_steps must be positive; temperature cannot be negative")
+        if context_ids.shape[1] + block_size > self.cfg.max_sequence_length:
+            raise ValueError("context plus diffusion block exceeds configured maximum length")
+        mask_id = self.cfg.special_id(MASK)
+        allowed = allowed_token_ids or (
+            list(range(self.cfg.text_vocab_size))
+            + [self.cfg.special_id(EOS), self.cfg.special_id(TOOL_END)]
+        )
+        if not allowed or mask_id in allowed:
+            raise ValueError("allowed token IDs must be non-empty and exclude the mask token")
+        if any(token < 0 or token >= self.cfg.vocab_size for token in allowed):
+            raise ValueError("allowed token ID lies outside the shared vocabulary")
+
+        self.eval()
+        block = torch.full(
+            (context_ids.shape[0], block_size), mask_id,
+            dtype=context_ids.dtype, device=context_ids.device,
+        )
+        for step in range(diffusion_steps):
+            masked = block.eq(mask_id)
+            if not bool(masked.any()):
+                break
+            complete_input = torch.cat([context_ids, block], dim=1)
+            logits = self.forward_tldm(complete_input, latent_slots=latent_slots)[:, -block_size:, :].float()
+            allowed_mask = torch.ones(logits.shape[-1], dtype=torch.bool, device=logits.device)
+            allowed_mask[allowed] = False
+            logits = logits.masked_fill(allowed_mask.view(1, 1, -1), float("-inf"))
+            if temperature > 0:
+                logits = logits / temperature
+            if top_k > 0:
+                k = min(top_k, len(allowed))
+                threshold = torch.topk(logits, k, dim=-1).values[..., -1:]
+                logits = logits.masked_fill(logits < threshold, float("-inf"))
+            probabilities = torch.softmax(logits, dim=-1)
+            predictions = probabilities.argmax(dim=-1) if temperature == 0 else torch.multinomial(
+                probabilities.reshape(-1, probabilities.shape[-1]), 1
+            ).reshape(block.shape)
+            confidence = probabilities.max(dim=-1).values
+
+            # Reveal the most confident positions first; the final pass fills
+            # every remaining mask, exactly as a bounded discrete denoiser.
+            for batch_index in range(block.shape[0]):
+                positions_to_fill = masked[batch_index].nonzero(as_tuple=False).flatten()
+                remaining_passes = diffusion_steps - step
+                reveal_count = max(1, math.ceil(positions_to_fill.numel() / remaining_passes))
+                ranked = torch.topk(
+                    confidence[batch_index, positions_to_fill],
+                    min(reveal_count, positions_to_fill.numel()),
+                ).indices
+                selected = positions_to_fill[ranked]
+                block[batch_index, selected] = predictions[batch_index, selected]
+        if bool(block.eq(mask_id).any()):
+            raise RuntimeError("T-LDM diffusion writer left masked tokens unrevealed")
+        return block
+
+    def forward(self, ids: torch.Tensor, causal: bool = True) -> torch.Tensor:
+        return self.lm_head(self.forward_hidden(ids, causal=causal))
+
+    def encode_image(self, images: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        images = images.float()
+        patches = patchify(images, self.cfg.patch_size)
+        features = self.image_encoder(patches)
+        ids, quantized, qloss = self.vision_quantizer(features)
+        return ids, quantized, qloss
+
+    def decode_image_latents(self, latents: torch.Tensor, height: int | None = None,
+                             width: int | None = None) -> torch.Tensor:
+        h = height or self.cfg.image_size
+        w = width or self.cfg.image_size
+        patches = torch.sigmoid(self.image_decoder(latents))
+        return unpatchify(patches, h, w, self.cfg.patch_size)
+
+    def decode_image_codes(self, ids: torch.Tensor, height: int | None = None,
+                           width: int | None = None) -> torch.Tensor:
+        return self.decode_image_latents(self.token_embedding(ids), height, width)
+
+    def encode_audio(self, log_mel: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        if log_mel.ndim != 3 or log_mel.shape[-1] != self.cfg.audio_bins:
+            raise ValueError("log_mel must have shape [batch, frames, audio_bins]")
+        group = self.cfg.audio_group_frames
+        pad = (-log_mel.shape[1]) % group
+        if pad:
+            log_mel = F.pad(log_mel, (0, 0, 0, pad))
+        chunks = log_mel.reshape(log_mel.shape[0], -1, self.cfg.audio_token_dim)
+        features = self.audio_encoder(chunks)
+        ids, quantized, qloss = self.audio_quantizer(features)
+        return ids, quantized, qloss
+
+    def decode_audio_latents(self, latents: torch.Tensor) -> torch.Tensor:
+        return self.audio_decoder(latents)
+
+    def decode_audio_codes(self, ids: torch.Tensor) -> torch.Tensor:
+        return self.decode_audio_latents(self.token_embedding(ids))
+
+    def encode_motion(self, frame_differences: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        patches = patchify(frame_differences, self.cfg.patch_size)
+        features = self.motion_encoder(patches)
+        return self.motion_quantizer(features)
+
+    def decode_motion_latents(self, latents: torch.Tensor, height: int | None = None,
+                              width: int | None = None) -> torch.Tensor:
+        h = height or self.cfg.image_size
+        w = width or self.cfg.image_size
+        patches = self.motion_decoder(latents)
+        return unpatchify(torch.tanh(patches), h, w, self.cfg.patch_size)
+
+    def decode_motion_codes(self, ids: torch.Tensor, height: int | None = None,
+                            width: int | None = None) -> torch.Tensor:
+        return self.decode_motion_latents(self.token_embedding(ids), height, width)
+
+    @torch.no_grad()
+    def generate(self, prompt_ids: torch.Tensor, max_new_tokens: int = 64,
+                 allowed_range: tuple[int, int] | None = None,
+                 allowed_token_ids: list[int] | None = None,
+                 stop_token_ids: list[int] | None = None,
+                 temperature: float = 0.8, top_k: int = 40) -> torch.Tensor:
+        if prompt_ids.ndim != 2 or prompt_ids.shape[1] == 0:
+            raise ValueError("prompt_ids must be a non-empty [batch, sequence] tensor")
+        if temperature <= 0 or max_new_tokens < 0:
+            raise ValueError("temperature must be positive and max_new_tokens non-negative")
+        if allowed_range is not None and allowed_token_ids is not None:
+            raise ValueError("choose allowed_range or allowed_token_ids, not both")
+        if allowed_range is not None:
+            start, end = allowed_range
+            if not 0 <= start < end <= self.cfg.vocab_size:
+                raise ValueError("invalid allowed token range")
+        if allowed_token_ids is not None:
+            if not allowed_token_ids or any(i < 0 or i >= self.cfg.vocab_size for i in allowed_token_ids):
+                raise ValueError("allowed_token_ids must contain valid token IDs")
+        stop_ids = set(stop_token_ids or [])
+        if any(i < 0 or i >= self.cfg.vocab_size for i in stop_ids):
+            raise ValueError("stop token outside model vocabulary")
+        if allowed_range is not None and any(not allowed_range[0] <= i < allowed_range[1] for i in stop_ids):
+            raise ValueError("stop tokens must be included in the allowed token set")
+        if allowed_token_ids is not None and not stop_ids.issubset(set(allowed_token_ids)):
+            raise ValueError("stop tokens must be included in allowed_token_ids")
+        self.eval()
+        output = prompt_ids
+        stopped = torch.zeros(prompt_ids.shape[0], dtype=torch.bool, device=prompt_ids.device)
+        for _ in range(max_new_tokens):
+            context = output[:, -self.cfg.max_sequence_length:]
+            logits = self(context, causal=True)[:, -1, :] / temperature
+            if allowed_range is not None:
+                mask = torch.ones_like(logits, dtype=torch.bool)
+                mask[:, allowed_range[0]:allowed_range[1]] = False
+                logits = logits.masked_fill(mask, float("-inf"))
+            if allowed_token_ids is not None:
+                mask = torch.ones_like(logits, dtype=torch.bool)
+                mask[:, allowed_token_ids] = False
+                logits = logits.masked_fill(mask, float("-inf"))
+            if top_k > 0:
+                finite_counts = torch.isfinite(logits).sum(dim=-1)
+                k = min(top_k, int(finite_counts.min().item()))
+                if k > 0:
+                    threshold = torch.topk(logits, k, dim=-1).values[:, -1, None]
+                    logits = logits.masked_fill(logits < threshold, float("-inf"))
+            next_id = torch.multinomial(torch.softmax(logits, dim=-1), num_samples=1)
+            next_id = torch.where(stopped[:, None], torch.full_like(next_id, self.cfg.special_id(PAD)), next_id)
+            output = torch.cat([output, next_id], dim=1)
+            if stop_ids:
+                just_stopped = torch.zeros_like(stopped)
+                for token_id in stop_ids:
+                    just_stopped |= next_id.squeeze(1).eq(token_id)
+                stopped |= just_stopped
+                if bool(stopped.all()):
+                    break
+        return output
+
+    @torch.no_grad()
+    def generate_text(self, prompt_ids: torch.Tensor, max_new_tokens: int = 128,
+                      temperature: float = 0.8, top_k: int = 40) -> torch.Tensor:
+        """Generate text-only tokens through the unified core."""
+        allowed = list(range(self.cfg.text_vocab_size)) + [self.cfg.special_id(EOS)]
+        return self.generate(
+            prompt_ids, max_new_tokens=max_new_tokens, allowed_token_ids=allowed,
+            stop_token_ids=[self.cfg.special_id(EOS)], temperature=temperature, top_k=top_k,
+        )
+
+    @torch.no_grad()
+    def generate_tool_payload(self, prompt_ids: torch.Tensor, max_new_tokens: int = 96,
+                              temperature: float = 0.5, top_k: int = 20) -> torch.Tensor:
+        """Generate a bounded JSON tool payload and stop at the trained tool terminator."""
+        allowed = list(range(self.cfg.text_vocab_size)) + [
+            self.cfg.special_id(TOOL_END), self.cfg.special_id(EOS),
+        ]
+        return self.generate(
+            prompt_ids, max_new_tokens=max_new_tokens,
+            allowed_token_ids=allowed,
+            stop_token_ids=[self.cfg.special_id(TOOL_END), self.cfg.special_id(EOS)],
+            temperature=temperature, top_k=top_k,
+        )
+
+    @torch.no_grad()
+    def forward_hidden_adaptive(self, ids: torch.Tensor, min_cycles: int = 1,
+                                max_cycles: int | None = None,
+                                tolerance: float = 0.015) -> tuple[torch.Tensor, int]:
+        """Inference-time recurrent compute, stopping when next-token distributions stabilize.
+
+        Training uses the configured fixed cycle count. This parameter-free
+        rule is an adaptive-compute heuristic, not a learned halting guarantee.
+        """
+        if ids.ndim != 2 or ids.shape[1] > self.cfg.max_sequence_length:
+            raise ValueError("invalid token tensor for adaptive inference")
+        max_cycles = max_cycles or self.cfg.recurrent_cycles
+        if not 1 <= min_cycles <= max_cycles <= self.cfg.recurrent_cycles:
+            raise ValueError("adaptive cycles must be within configured recurrent depth")
+        positions = torch.arange(ids.shape[1], device=ids.device).unsqueeze(0)
+        x = self.token_embedding(ids) + self.position_embedding(positions)
+        x = x + self.modality_embedding(self._modality_ids(ids))
+        previous_logits = None
+        used_cycles = max_cycles
+        for cycle in range(max_cycles):
+            x = x + self.cycle_embedding.weight[cycle].view(1, 1, -1)
+            for block in self.blocks:
+                x = block(x, causal=True)
+            current_logits = self.lm_head(self.final_norm(x)[:, -1, :]).float()
+            if cycle + 1 >= min_cycles and previous_logits is not None:
+                delta = (torch.softmax(current_logits, -1) - torch.softmax(previous_logits, -1)).abs().mean()
+                if float(delta) <= tolerance:
+                    used_cycles = cycle + 1
+                    break
+            previous_logits = current_logits
+        return self.final_norm(x), used_cycles
+
+    @torch.no_grad()
+    def generate_image(self, max_new_tokens: int | None = None,
+                       temperature: float = 0.8, top_k: int = 40) -> tuple[torch.Tensor, torch.Tensor]:
+        prompt = torch.tensor([[self.cfg.special_id(BOS), self.cfg.special_id(IMAGE_START)]])
+        count = max_new_tokens or self.cfg.image_tokens_per_frame
+        generated = self.generate(
+            prompt, max_new_tokens=count,
+            allowed_range=(self.cfg.vision_start, self.cfg.audio_start),
+            temperature=temperature, top_k=top_k,
+        )
+        codes = generated[:, prompt.shape[1]:]
+        return codes, self.decode_image_codes(codes)
+
+    @torch.no_grad()
+    def generate_audio(self, code_count: int, temperature: float = 0.8,
+                       top_k: int = 40) -> tuple[torch.Tensor, torch.Tensor]:
+        if code_count <= 0:
+            raise ValueError("audio code_count must be positive")
+        prompt = torch.tensor([[self.cfg.special_id(BOS), self.cfg.special_id(AUDIO_START)]])
+        generated = self.generate(
+            prompt, max_new_tokens=code_count,
+            allowed_range=(self.cfg.audio_start, self.cfg.motion_start),
+            temperature=temperature, top_k=top_k,
+        )
+        codes = generated[:, prompt.shape[1]:]
+        mel = self.decode_audio_codes(codes).reshape(
+            codes.shape[0], -1, self.cfg.audio_bins
+        )
+        return codes, mel
+
+    @torch.no_grad()
+    def generate_video(self, frame_count: int = 4, temperature: float = 0.8,
+                       top_k: int = 40) -> tuple[torch.Tensor, torch.Tensor]:
+        """Autoregressively generate a frame/motion token stream through the shared core."""
+        if not 1 <= frame_count <= self.cfg.max_video_frames:
+            raise ValueError(f"frame_count must be between 1 and {self.cfg.max_video_frames}")
+        prompt = torch.tensor([[
+            self.cfg.special_id(BOS), self.cfg.special_id(VIDEO_START),
+            self.cfg.special_id(VIDEO_FRAME),
+        ]])
+        frame_codes = self.generate(
+            prompt, max_new_tokens=self.cfg.image_tokens_per_frame,
+            allowed_range=(self.cfg.vision_start, self.cfg.audio_start),
+            temperature=temperature, top_k=top_k,
+        )[:, prompt.shape[1]:]
+        stream = torch.cat([prompt, frame_codes], dim=1)
+        frames = [self.decode_image_codes(frame_codes)]
+        for _ in range(frame_count - 1):
+            motion_prefix = torch.tensor([[self.cfg.special_id(MOTION_START)]])
+            stream = torch.cat([stream, motion_prefix], dim=1)
+            motion_codes_full = self.generate(
+                stream, max_new_tokens=self.cfg.image_tokens_per_frame,
+                allowed_range=(self.cfg.motion_start, self.cfg.special_start),
+                temperature=temperature, top_k=top_k,
+            )
+            motion_codes = motion_codes_full[:, stream.shape[1]:]
+            stream = torch.cat([motion_codes_full, torch.tensor([[self.cfg.special_id(VIDEO_FRAME)]])], dim=1)
+            frame_codes_full = self.generate(
+                stream, max_new_tokens=self.cfg.image_tokens_per_frame,
+                allowed_range=(self.cfg.vision_start, self.cfg.audio_start),
+                temperature=temperature, top_k=top_k,
+            )
+            frame_codes = frame_codes_full[:, stream.shape[1]:]
+            stream = frame_codes_full
+            frames.append(self.decode_image_codes(frame_codes))
+        return torch.cat(frames, dim=0), stream
+
+    def adaptive_thought_steps(self, ids: torch.Tensor) -> torch.Tensor:
+        """Predict a scalar continuation score per token; used by research evaluation only."""
+        hidden = self.forward_hidden(ids, causal=True)
+        return torch.sigmoid(self.halt_head(hidden)).squeeze(-1)
+
+    def parameter_report(self) -> dict[str, int | float | str]:
+        total = self.count_parameters()
+        return {
+            "parameters": total,
+            "parameters_millions": round(total / 1_000_000, 3),
+            "fp32_weight_bytes": total * 4,
+            "fp16_weight_bytes": total * 2,
+            "theoretical_4bit_weight_bytes": math.ceil(total / 2),
+            "theoretical_1_58bit_weight_bytes": math.ceil(total * 1.58 / 8),
+            "quantization_status": "full-precision training; low-bit packing is not yet enabled",
+            "unique_blocks": self.cfg.unique_blocks,
+            "recurrent_cycles": self.cfg.recurrent_cycles,
+            "effective_block_applications": self.cfg.unique_blocks * self.cfg.recurrent_cycles,
+            "native_tldm": "shared-embedding latent compressor + shared recurrent thinker + tied-vocabulary diffusion writer",
+            "tldm_additional_trainable_parameters": 0,
+            "tldm_latent_slots_default": 16,
+            "tldm_thinker_block_applications": self.cfg.unique_blocks * self.cfg.recurrent_cycles,
+            "tldm_writer_block_applications": self.cfg.unique_blocks * self.cfg.recurrent_cycles,
+        }
