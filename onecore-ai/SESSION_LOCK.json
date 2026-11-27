@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
-  "status": "active",
-  "holder": "ChatGPT GPT-6",
-  "session_id": "onecore-maintenance-20261127-03",
-  "client": "ChatGPT scheduled supervisor",
-  "started_at_utc": "2026-11-27T06:46:30Z",
-  "lease_expires_at_utc": "2026-11-27T07:46:30Z",
-  "base_head_sha": "64b0f3e2b892e41cf1ee9f14629c38e9e26e531e",
-  "planned_scope": "Require valid positive image/video width and height distributions in the V3 CPU resource-evidence gate and add targeted regression tests. No benchmark dispatch, data, tokenizer, model, checkpoint, workflow, or optimizer changes.",
-  "last_released_at_utc": "2026-11-27T06:42:03Z",
-  "last_session_summary": "Added explicit video width/height distributions to the existing V3 real-train resource profile and extended its regression fixture. Verify Run #756 passed 390 tests with 45 warnings and all 17 steps. No runtime benchmark or optimizer update occurred; writer lease released.",
-  "last_verified_branch_head": "315e290db71eec9b88f98a211cc59dde5a94442e",
-  "last_result": "Run #756 (45953181164) on 315e290db71eec9b88f98a211cc59dde5a94442e completed successfully: 390 passed, 45 warnings, all 17 Verify steps passed. CPU benchmark, corpus restore, step-zero audit and held-out evaluation were skipped; no artifacts, resource measurements or optimizer updates."
+  "status": "released",
+  "holder": null,
+  "session_id": null,
+  "client": null,
+  "started_at_utc": null,
+  "lease_expires_at_utc": null,
+  "base_head_sha": null,
+  "planned_scope": null,
+  "last_released_at_utc": "2026-11-27T06:57:28Z",
+  "last_session_summary": "Bound the V3 CPU resource JSON report to the exact verified manual Actions run, repository, branch and commit; required complete positive integer image/video dimension distributions in the training evidence gate; added regression coverage. Verify Run #760 passed 398 tests with 45 warnings and all 17 steps. No benchmark or optimizer update occurred; writer lease released.",
+  "last_verified_branch_head": "ffacf81eddf5dfc524c3008e0eff05c6fa43bd24",
+  "last_result": "Run #760 (45954992347) on ffacf81eddf5dfc524c3008e0eff05c6fa43bd24 completed successfully: 398 passed, 45 warnings, all 17 Verify steps passed. CPU benchmark, corpus restore, step-zero audit and held-out evaluation were skipped; no artifacts, resource measurements or optimizer updates."
 }
