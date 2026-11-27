@@ -68,6 +68,8 @@ class V3Config:
     @property
     def hidden_size(self) -> int: return int(self.width * 8 / 3)
     @property
+    def video_generation_chunk_frames(self) -> int: return self.max_video_frames
+    @property
     def is_canonical(self) -> bool:
         expected = (1024,4,3,8,512,4096,512,256,256,24,8,64,80,4,24000,2,4,16,0.05)
         actual = (self.width,self.unique_blocks,self.recurrent_cycles,self.attention_heads,

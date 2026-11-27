@@ -23,14 +23,14 @@ class V3ObjectiveWeights:
 
 
 def _append_condition(sequence: torch.Tensor, condition: torch.Tensor | None,
-                      *, limit: int) -> torch.Tensor:
+                      *, limit: int, config: Any) -> torch.Tensor:
     if condition is None:
-        return torch.cat((sequence, sequence.new_full((sequence.shape[0], 1), sequence.new_tensor(1).item() + sequence.new_tensor(5119).item())), dim=1)
+        return torch.cat((sequence, sequence.new_full((sequence.shape[0], 1), config.special_id(EOS))), dim=1)
     if limit < 0:
         raise ValueError("family sequence leaves no room for its text condition")
     condition = condition.to(device=sequence.device, dtype=torch.long)[:, :limit]
-    marker = sequence.new_full((sequence.shape[0], 1), sequence.new_tensor(5_134).item())
-    end = sequence.new_full((sequence.shape[0], 1), sequence.new_tensor(5_121).item())
+    marker = sequence.new_full((sequence.shape[0], 1), config.special_id(TEXT_START))
+    end = sequence.new_full((sequence.shape[0], 1), config.special_id(EOS))
     return torch.cat((sequence, marker, condition, end), dim=1)
 
 
@@ -105,7 +105,7 @@ class OneCoreV3Objective(nn.Module):
                                   codes.new_full((codes.shape[0], 1), cfg.special_id(IMAGE_START)),
                                   codes.reshape(codes.shape[0], -1),
                                   codes.new_full((codes.shape[0], 1), cfg.special_id(IMAGE_END))), dim=1)
-            sequence = _append_condition(sequence, condition, limit=cfg.max_sequence_length - sequence.shape[1] - 2)
+            sequence = _append_condition(sequence, condition, limit=cfg.max_sequence_length - sequence.shape[1] - 2, config=cfg)
         elif family == "audio":
             waveform = sample.get("waveform")
             rate = sample.get("sample_rate")
@@ -120,7 +120,7 @@ class OneCoreV3Objective(nn.Module):
                                   codes.new_full((codes.shape[0], 1), cfg.special_id(AUDIO_START)),
                                   codes.reshape(codes.shape[0], -1),
                                   codes.new_full((codes.shape[0], 1), cfg.special_id(AUDIO_END))), dim=1)
-            sequence = _append_condition(sequence, condition, limit=min(52, cfg.max_sequence_length - sequence.shape[1] - 2))
+            sequence = _append_condition(sequence, condition, limit=min(52, cfg.max_sequence_length - sequence.shape[1] - 2), config=cfg)
         else:
             frames = sample.get("frames")
             if not isinstance(frames, torch.Tensor) or frames.ndim != 5 or not 1 <= frames.shape[1] <= cfg.max_video_frames:

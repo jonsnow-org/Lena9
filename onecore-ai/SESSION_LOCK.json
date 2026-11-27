@@ -5,11 +5,11 @@
   "session_id": "onecore-corrected-spec-single-model-20261127-03",
   "client": "ChatGPT",
   "started_at_utc": "2026-11-27T19:02:23Z",
-  "lease_expires_at_utc": "2026-11-27T20:16:43Z",
+  "lease_expires_at_utc": "2026-11-27T20:46:43Z",
   "base_head_sha": "c9119610510742624b2e00be5bacee039b40bd17",
   "planned_scope": "Replace the one canonical OneCore implementation contract with the corrected engineering specification (57,579,201 parameters, width 1024, vocab 5144, four shared blocks over three cycles), preserve native T-LDM in the same model, align model/config/tokenizer/FLOPs/data gates and exact tests/docs, fix CI handover assertion, preserve one trainer/checkpoint lineage, keep all training fail-closed. No model training, no main mutation, no parallel V2/V3 model path or new branch.",
   "last_released_at_utc": "2026-11-27T07:51:21Z",
   "last_session_summary": "Prior cleanup removed old parallel model/trainer/notebook workflow and integrated native T-LDM. Last source package passed; CI run #774 failed only on a brittle handover heading assertion. Corrected spec v2 now being applied as canonical single model.",
-  "last_verified_branch_head": "472e3f902aa359a2d6db49f4cb1450d14f89f507",
-  "last_result": "The corrected architecture is now the only core at src/onecore/v3/core.py. Joint objective now consumes shared 5,144-token sequences, includes VQ/MSE auxiliaries and native T-LDM. Data loader normalizes image/video to 64x64 and caps videos at 4 frames; checkpoint assertions now bind to corrected tensor layout. CI #run for first architecture commit is being reviewed. No training or optimizer update."
+  "last_verified_branch_head": "51f93aaa0fd003f1badcaa6f8e1c1a7eb1a6f95d",
+  "last_result": "Training uses one shared 5,144-token sequence objective; config supports test-only small fixtures but marks canonical configuration explicitly; CI parameter/FLOPs checks now target exact PDF values; package exports only the single unified OneCore model (no duplicate SharedSemanticCore or standalone flow codecs). No training performed."
 }

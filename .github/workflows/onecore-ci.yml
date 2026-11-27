@@ -75,28 +75,34 @@ jobs:
       - name: Compile the complete OneCore package
         run: python -m compileall -q onecore-ai/src
 
-      - name: Verify exact parameters, shared T-LDM and forward FLOPs
+      - name: Verify exact corrected parameters, shared T-LDM and FLOPs
         env:
           PYTHONPATH: onecore-ai/src
         run: |
           python - <<'PY'
           import json
+          from onecore.v3 import V3Config
           from onecore.v3.report import build_report
           report = build_report()
-          assert report["architecture_version"] == "onecore-v3-prototype-2", report
-          assert report["trainable_parameters"] == 39_906_568, report
-          assert report["fp32_parameter_storage_bytes"] == 159_626_272, report
-          assert report["fp16_parameter_storage_bytes"] == 79_813_136, report
+          assert report["architecture_version"] == "onecore-v3-corrected-spec-2", report
+          assert report["trainable_parameters"] == 57_579_201, report
+          assert report["fp32_parameter_storage_bytes"] == 230_316_804, report
+          assert report["fp16_parameter_storage_bytes"] == 115_158_402, report
+          assert report["unified_vocab_size"] == 5_144, report
+          assert report["width"] == 1_024 and report["hidden_size"] == 2_730, report
+          assert report["shared_block_applications"] == 12, report
+          assert report["tldm_additional_trainable_parameters"] == 0, report
           assert report["quality_certified"] is False, report
+          cfg = V3Config()
+          assert cfg.is_canonical and cfg.fingerprint == report["config_sha256"]
           flops = report["flops"]
           assert flops["config_sha256"] == report["config_sha256"]
-          assert flops["paths"]["text"]["dense_flops"] == 31_050_432_512, flops
-          assert flops["paths"]["tool"]["dense_flops"] == 31_050_432_512, flops
-          assert flops["paths"]["image"]["dense_flops"] == 21_340_618_752, flops
-          assert flops["paths"]["audio"]["dense_flops"] == 173_752_320_000, flops
-          assert flops["paths"]["video"]["dense_flops"] == 68_232_426_496, flops
-          assert flops["joint_five_family_forward_dense_flops"] == 325_426_230_272, flops
+          assert flops["sequence_length_examples"]["128"]["joint_step_train_flops"] == 1_296_720_199_680, flops
+          assert flops["sequence_length_examples"]["512"]["joint_step_train_flops"] == 5_258_827_530_240, flops
           assert flops["paths"]["text"]["breakdown"]["native_tldm"]["tied_text_output_projection"] > 0
+          assert flops["paths"]["video"]["sequence_tokens"] <= 512, flops
+          assert flops["joint_micro_batches_per_update"] == 5
+          assert report["quantized_runtime_available"] is False
           print(json.dumps(report, ensure_ascii=False, indent=2))
           PY
 
