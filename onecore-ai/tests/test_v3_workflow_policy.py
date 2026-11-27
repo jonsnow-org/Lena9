@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 PROJECT = ROOT / "onecore-ai"
@@ -77,3 +78,16 @@ def test_every_onecore_agent_reads_the_cross_session_protocol_and_handover():
     assert lock["schema_version"] == 1 and lock["status"] in {"active", "released"}
     if lock["status"] == "active":
         assert lock["holder"] and lock["lease_expires_at_utc"]
+
+def test_source_cursor_is_pipeline_scoped_not_notebook_scoped():
+    registry = yaml.safe_load((PROJECT / "data/sources.yaml").read_text(encoding="utf-8"))
+    sources = registry.get("sources") or []
+    assert sources and all("notebook_id" not in source for source in sources if isinstance(source, dict))
+    cursor = (PROJECT / "src/onecore/crawlers.py").read_text(encoding="utf-8")
+    assert "class StatefulStreamCursor" in cursor
+    assert "pipeline_id: str" in cursor
+    assert '"pipeline_id": self.pipeline_id' in cursor
+    assert 'payload.get("pipeline_id", payload.get("notebook_id"))' in cursor
+    assert "def notebook_for_source" not in cursor
+    assert "def notebook_cursor_summary" not in cursor
+    assert "def source_ids_for_notebook" not in cursor

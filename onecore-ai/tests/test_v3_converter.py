@@ -642,7 +642,7 @@ def test_v3_restore_uses_stateful_cursor_to_resume_bounded_source_scan(tmp_path)
         "source_id": "cursor-source", "split": "train", "remaining_records": 1,
         "reason": "bounded_scan_or_retry_checkpoint",
     }]
-    cursor_file = tmp_path / "data/resume-cache/crawlers/v3-corpus-restore-image-source_corpus-identity/cursor-source/train.json"
+    cursor_file = tmp_path / "data/resume-cache/crawlers/v3-corpus-restore-image-identity/cursor-source/train.json"
     assert cursor_file.is_file()
     cursor_state = json.loads(cursor_file.read_text(encoding="utf-8"))
     assert cursor_state["rows_read"] == 2
