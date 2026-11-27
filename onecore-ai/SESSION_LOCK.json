@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
-  "status": "active",
-  "holder": "ChatGPT GPT-6",
-  "session_id": "onecore-daily-review-20261127-01",
-  "client": "ChatGPT",
-  "started_at_utc": "2026-11-27T06:18:22Z",
-  "lease_expires_at_utc": "2026-11-27T07:18:22Z",
-  "base_head_sha": "2fd5e28e5b4c7cd5e9dd64cc04c621f377a6ec75",
-  "planned_scope": "Update onecore-ai/docs/EXECUTIVE_HANDOVER.md with live Run #750, CPU/checkpoint gates, and current license-evidence status; run push Verify and release the writer lease. No model/data/workflow/training changes.",
-  "last_released_at_utc": "2026-11-26T19:20:00Z",
-  "last_session_summary": "Corrected the V3 CPU benchmark RSS sampling interval metadata to match the actual 250 ms sampler, added an exact regression assertion, verified Run #749 (390 passed, 45 warnings, all Verify steps successful), and recorded the handoff.",
-  "last_verified_branch_head": "e3be5e613595a1816df9ab5886f37668332f4aa7",
-  "last_result": "Run #749 on e3be5e613595a1816df9ab5886f37668332f4aa7 succeeded; all Verify steps passed. Optional CPU benchmark, corpus restore, step-zero audit and held-out evaluation were skipped on push. No optimizer updates or training. No active OneCore Actions runs at release."
+  "status": "released",
+  "holder": null,
+  "session_id": null,
+  "client": null,
+  "started_at_utc": null,
+  "lease_expires_at_utc": null,
+  "base_head_sha": null,
+  "planned_scope": null,
+  "last_released_at_utc": "2026-11-27T06:35:27.305Z",
+  "last_session_summary": "Reconciled the live V3 branch, verified Runs #750–#753, recorded the absence of source-license evidence and the remaining CPU/checkpoint/training gates, corrected exact artifact digests and historical-run status, and released the writer lease. No model, data, training or workflow code changed.",
+  "last_verified_branch_head": "d9cdb1f8cd8daa313b88d28dfc4f74b2db0cbc69",
+  "last_result": "Run #753 on d9cdb1f8cd8daa313b88d28dfc4f74b2db0cbc69 succeeded: 390 passed, 45 warnings, all 17 Verify steps passed. Optional CPU benchmark, corpus restore, step-zero audit and held-out evaluation jobs were skipped; no resource measurement or training occurred. Handover updated and writer lease released in this final commit."
 }
