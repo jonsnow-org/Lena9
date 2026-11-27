@@ -95,11 +95,11 @@ jobs:
           assert report["quality_certified"] is False
           flops = report["flops"]
           assert flops["config_sha256"] == report["config_sha256"]
-          assert flops["paths"]["text"]["dense_flops"] == 14_260_633_600, flops
+          assert flops["paths"]["text"]["dense_flops"] == 31_050_432_512, flops
           assert flops["paths"]["image"]["dense_flops"] == 21_340_618_752, flops
           assert flops["paths"]["audio"]["dense_flops"] == 173_752_320_000, flops
           assert flops["paths"]["video"]["dense_flops"] == 68_232_426_496, flops
-          assert flops["joint_five_family_forward_dense_flops"] == 291_846_632_448, flops
+          assert flops["joint_five_family_forward_dense_flops"] == 325_426_230_272, flops
           print(json.dumps(report, ensure_ascii=False, indent=2))
           PY
 

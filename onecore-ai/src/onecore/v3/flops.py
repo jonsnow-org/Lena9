@@ -161,6 +161,19 @@ def _shared_core_flops(model: OneCoreV3, batch: int, sequence: int) -> int:
     return one_cycle * int(model.shared_core.cycles)
 
 
+def _tldm_path_flops(model: OneCoreV3, batch: int, text_tokens: int) -> tuple[int, dict[str, int]]:
+    slots = min(int(model.tldm_latent_slots), text_tokens)
+    thinker = _shared_core_flops(model, batch, slots)
+    writer = _shared_core_flops(model, batch, slots + text_tokens)
+    tied_head = _linear_flops(model.text_head, batch * text_tokens)
+    parts = {
+        "latent_thinker_shared_core": thinker,
+        "diffusion_writer_shared_core": writer,
+        "tied_text_output_projection": tied_head,
+    }
+    return sum(parts.values()), parts
+
+
 def _linear_stack_flops(module: nn.Module, batch_positions: int) -> int:
     return sum(
         _linear_flops(layer, batch_positions)
@@ -359,6 +372,7 @@ def _assert_model_matches_config(model: OneCoreV3, config: V3Config) -> None:
         "temporal window": int(model.video_codec.temporal_window_frames) == int(config.temporal_window_frames),
         "temporal memory": int(model.video_codec.temporal_memory_frames) == int(config.temporal_memory_frames),
         "video generation chunk": int(model.video_generation_chunk_frames) == int(config.video_generation_chunk_frames),
+        "T-LDM latent slots": int(model.tldm_latent_slots) == int(config.tldm_latent_slots),
     }
     mismatches = [name for name, matches in checks.items() if not matches]
     if mismatches:
@@ -395,7 +409,8 @@ def build_v3_flops_report(
 
     text_core = _shared_core_flops(model, batch_size, text_tokens)
     text_head = _linear_flops(model.text_head, batch_size * text_tokens)
-    text_total = text_core + text_head
+    tldm_total, tldm_parts = _tldm_path_flops(model, batch_size, text_tokens)
+    text_total = text_core + text_head + tldm_total
 
     image_total, image_grid_h, image_grid_w, image_encoder = _image_codec_flops(
         model.image_codec, batch_size, image_height, image_width
@@ -439,7 +454,9 @@ def build_v3_flops_report(
 
     paths = {
         "text": {"dense_flops": text_total, "breakdown": {
-            "shared_recurrent_core": text_core, "tied_text_output_projection": text_head,
+            "causal_shared_recurrent_core": text_core,
+            "causal_tied_text_output_projection": text_head,
+            "native_tldm": tldm_parts,
         }},
         "tool": {"dense_flops": text_total, "same_path_as": "text"},
         "image": {"dense_flops": image_forward, "context_tokens": image_context, "breakdown": {

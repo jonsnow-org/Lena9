@@ -39,7 +39,16 @@ def test_v3_flops_counts_shared_recurrent_core_and_tied_text_projection():
         flow_steps=2,
     )
     text = report["paths"]["text"]["dense_flops"]
-    expected = _core_flops(2, 5, 32, 1, 2) + 2 * 2 * 5 * 32 * 64
+    base_text = _core_flops(2, 5, 32, 1, 2) + 2 * 2 * 5 * 32 * 64
+    slots = min(config.tldm_latent_slots, 5)
+    thinker = _core_flops(2, slots, 32, 1, 2)
+    writer = _core_flops(2, slots + 5, 32, 1, 2)
+    tied_head = 2 * 2 * 5 * 32 * 64
+    expected = base_text + thinker + writer + tied_head
+    tldm = report["paths"]["text"]["breakdown"]["native_tldm"]
+    assert tldm["latent_thinker_shared_core"] == thinker
+    assert tldm["diffusion_writer_shared_core"] == writer
+    assert tldm["tied_text_output_projection"] == tied_head
     assert text == expected
     assert report["paths"]["tool"]["dense_flops"] == text
     assert report["paths"]["tool"]["same_path_as"] == "text"

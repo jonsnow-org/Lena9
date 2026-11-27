@@ -144,3 +144,42 @@ def test_v3_joint_step_rejects_missing_or_reordered_family_batches():
     with pytest.raises(ValueError, match="ordered text, tool, image, audio, video"):
         train_v3_joint_step(model, optimizer, reordered)
 
+
+def test_native_tldm_reuses_shared_core_and_hides_masked_token_identity():
+    torch.manual_seed(131)
+    model = _tiny_model()
+    parameter_count = sum(parameter.numel() for parameter in model.parameters())
+    token_ids = torch.randint(0, 128, (2, 8))
+    masked = torch.zeros_like(token_ids, dtype=torch.bool)
+    masked[:, 2:5] = True
+    first = model.forward_tldm(token_ids, masked)
+    changed = token_ids.clone()
+    changed[:, 2:5] = (changed[:, 2:5] + 37) % 128
+    second = model.forward_tldm(changed, masked)
+    assert first.shape == (2, 8, 128)
+    assert torch.allclose(first, second, atol=1e-6, rtol=1e-6)
+    assert sum(parameter.numel() for parameter in model.parameters()) == parameter_count
+    assert model.text_head.weight is model.text_embedding.weight
+    assert not any("tldm" in name.lower() for name, _ in model.named_parameters())
+
+def test_native_tldm_adds_masked_diffusion_loss_to_text_and_tool_objectives():
+    torch.manual_seed(137)
+    model = _tiny_model()
+    objective = OneCoreV3Objective(model)
+    losses = objective({
+        "text": {"input_ids": torch.randint(0, 128, (2, 8))},
+        "tool": {"input_ids": torch.randint(0, 128, (2, 8)), "labels": torch.randint(0, 128, (2, 8))},
+    })
+    assert "text_tldm_loss" in losses and "tool_tldm_loss" in losses
+    assert torch.isfinite(losses["text_tldm_loss"]) and losses["text_tldm_loss"] > 0
+    assert torch.isfinite(losses["tool_tldm_loss"]) and losses["tool_tldm_loss"] > 0
+    losses["total"].backward()
+    assert model.shared_core.layers[0].self_attn.in_proj_weight.grad is not None
+
+def test_native_tldm_generation_fills_a_valid_shared_vocabulary_block():
+    torch.manual_seed(139)
+    model = _tiny_model().eval()
+    context = torch.randint(0, 128, (2, 4))
+    generated = model.generate_tldm(context, 6, diffusion_steps=4)
+    assert generated.shape == (2, 6)
+    assert int(generated.min()) >= 0 and int(generated.max()) < 128

@@ -15,4 +15,5 @@ def test_v3_config_fingerprint_and_parameter_report_are_deterministic():
     assert len(config.fingerprint) == 64
     assert first == second
     assert first["architecture_version"] == "onecore-v3-prototype-2"
+    assert config.tldm_latent_slots == 16
     assert first["trainable_parameters"] > 0
