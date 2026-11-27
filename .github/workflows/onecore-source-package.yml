@@ -1,11 +1,11 @@
-name: OneCore source package
+name: OneCore single-model source package
 
 on:
   push:
-    branches:
-      - research/onecore-foundation
+    branches: [research/onecore-v3-implementation]
     paths:
-      - .github/workflows/onecore-source-package.yml
+      - "onecore-ai/**"
+      - ".github/workflows/onecore-source-package.yml"
   workflow_dispatch:
 
 permissions:
@@ -13,63 +13,57 @@ permissions:
 
 jobs:
   package:
-    name: Build clean OneCore source archive
+    name: Build the canonical OneCore source-only archive
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - name: Checkout the exact reviewed OneCore source revision
+      - name: Checkout the exact triggering OneCore revision
         uses: actions/checkout@v5
         with:
-          ref: 2a6118acc799e6386ce9c5ea570f8e0531ba299c
+          ref: ${{ github.sha }}
           sparse-checkout: |
             onecore-ai
-            .github/actions/onecore-acquire
-            .github/actions/onecore-train
-            .github/workflows/onecore-bootstrap.yml
             .github/workflows/onecore-ci.yml
-            .github/workflows/onecore-training.yml
+            .github/workflows/onecore-v3-tokenizer.yml
+            .github/workflows/onecore-v3-training.yml
+            .github/workflows/onecore-source-package.yml
 
       - name: Assemble source-only package
         shell: bash
         run: |
           set -euo pipefail
+          SHORT_SHA="${GITHUB_SHA:0:7}"
           ROOT="$RUNNER_TEMP/onecore-package"
-          mkdir -p "$ROOT/OneCore/.github/actions" "$ROOT/OneCore/.github/workflows"
+          mkdir -p "$ROOT/OneCore/.github/workflows"
           cp -a onecore-ai "$ROOT/OneCore/"
-          cp -a .github/actions/onecore-acquire "$ROOT/OneCore/.github/actions/"
-          cp -a .github/actions/onecore-train "$ROOT/OneCore/.github/actions/"
-          cp .github/workflows/onecore-bootstrap.yml "$ROOT/OneCore/.github/workflows/"
           cp .github/workflows/onecore-ci.yml "$ROOT/OneCore/.github/workflows/"
-          cp .github/workflows/onecore-training.yml "$ROOT/OneCore/.github/workflows/"
-
-          # Remove runtime products, caches, downloaded corpora, and model weights.
+          cp .github/workflows/onecore-v3-tokenizer.yml "$ROOT/OneCore/.github/workflows/"
+          cp .github/workflows/onecore-v3-training.yml "$ROOT/OneCore/.github/workflows/"
+          cp .github/workflows/onecore-source-package.yml "$ROOT/OneCore/.github/workflows/"
           find "$ROOT/OneCore" -type d \( -name .git -o -name .venv -o -name __pycache__ -o -name .pytest_cache -o -name run-state -o -name checkpoints -o -name cache -o -name node_modules \) -prune -exec rm -rf {} +
           find "$ROOT/OneCore" -type f \( -name '*.pyc' -o -name '*.pyo' -o -name '*.pt' -o -name '*.pth' -o -name '*.bin' -o -name '*.safetensors' -o -name '*.ckpt' -o -name '*.onnx' -o -name '*.gguf' -o -name '*.tar' -o -name '*.tar.gz' -o -name '*.zip' \) -delete
-
-          cat > "$ROOT/OneCore/SOURCE-REVISION.txt" <<'EOF'
+          cat > "$ROOT/OneCore/SOURCE-REVISION.txt" <<EOF
           Repository: jonsnow-org/Lena9
-          Source branch: research/onecore-foundation
-          Source commit: 2a6118acc799e6386ce9c5ea570f8e0531ba299c
-          Contents: OneCore source package, configuration, notebooks, tests, and OneCore GitHub workflows/actions.
-          Excluded: trained checkpoints, model weights, datasets/corpora, runtime state, caches, virtual environments, and secrets.
+          Canonical branch: research/onecore-v3-implementation
+          Source commit: $GITHUB_SHA
+          Contents: the single OneCore implementation, configs, tests, docs and canonical workflows.
+          Excluded: checkpoints, model weights, datasets/corpora, runtime state, caches, virtual environments and secrets.
           EOF
-
           mkdir -p "$RUNNER_TEMP/onecore-export"
           cd "$ROOT"
-          zip -q -r -9 "$RUNNER_TEMP/onecore-export/OneCore-Source-2a6118a.zip" OneCore
+          ARCHIVE="OneCore-Source-${SHORT_SHA}.zip"
+          zip -q -r -9 "$RUNNER_TEMP/onecore-export/$ARCHIVE" OneCore
           cd "$RUNNER_TEMP/onecore-export"
-          sha256sum OneCore-Source-2a6118a.zip > OneCore-Source-2a6118a.zip.sha256
-          SIZE=$(stat -c '%s' OneCore-Source-2a6118a.zip)
+          sha256sum "$ARCHIVE" > "$ARCHIVE.sha256"
+          SIZE=$(stat -c '%s' "$ARCHIVE")
           echo "Archive size: $SIZE bytes"
           test "$SIZE" -le 41943040
-          unzip -t OneCore-Source-2a6118a.zip
+          unzip -t "$ARCHIVE"
 
-      - name: Upload source archive
+      - name: Upload OneCore source archive
         uses: actions/upload-artifact@v6
         with:
-          name: onecore-source-code-2a6118a
-          path: |
-            ${{ runner.temp }}/onecore-export/OneCore-Source-2a6118a.zip
-            ${{ runner.temp }}/onecore-export/OneCore-Source-2a6118a.zip.sha256
+          name: onecore-source-code-${{ github.sha }}
+          path: ${{ runner.temp }}/onecore-export/*
           if-no-files-found: error
           retention-days: 30

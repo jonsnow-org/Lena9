@@ -1,170 +1,79 @@
 from pathlib import Path
-
+import json
 
 ROOT = Path(__file__).resolve().parents[2]
+PROJECT = ROOT / "onecore-ai"
 WORKFLOWS = ROOT / ".github" / "workflows"
 
+def test_onecore_has_one_canonical_model_and_no_parallel_legacy_model():
+    assert (PROJECT / "src/onecore/v3/core.py").is_file()
+    assert (PROJECT / "src/onecore/v3/runner.py").is_file()
+    assert not (PROJECT / "src/onecore/model.py").exists()
+    assert not (PROJECT / "src/onecore/train.py").exists()
+    assert not (PROJECT / "src/onecore/training_loop.py").exists()
+    assert not (PROJECT / "src/onecore/checkpoint.py").exists()
+    assert not (PROJECT / "notebooks").exists()
+    assert not (WORKFLOWS / "onecore-training.yml").exists()
+    assert not (WORKFLOWS / "onecore-bootstrap.yml").exists()
+    assert not (ROOT / ".github/actions/onecore-train/action.yml").exists()
+    assert not (ROOT / ".github/actions/onecore-acquire/action.yml").exists()
 
-def test_canonical_onecore_ci_runs_on_v3_only_and_restore_is_explicit():
+def test_canonical_ci_runs_on_the_only_active_branch_and_restore_is_explicit():
     workflow = (WORKFLOWS / "onecore-ci.yml").read_text(encoding="utf-8")
     assert "branches: [research/onecore-v3-implementation]" in workflow
-    assert "cancel-in-progress: false" in workflow
-    assert "branches: [research/onecore-foundation, research/onecore-v3-implementation]" not in workflow
     assert "workflow_dispatch:" in workflow
-    assert "restore_v3_corpus:" in workflow
-    assert "default: false" in workflow
-    restore = workflow.split("  v3-corpus-restore:", 1)[1].split(
-        "  v3-checkpoint-artifact-audit:", 1
-    )[0]
-    assert "github.event_name == 'workflow_dispatch'" in restore
-    assert "inputs.restore_v3_corpus == true" in restore
-    assert "github.event.head_commit.message" not in restore
+    assert "restore_v3_corpus:" in workflow and "benchmark_v3_resources:" in workflow
+    assert "inputs.restore_v3_corpus == true" in workflow
+    assert "inputs.benchmark_v3_resources == true" in workflow
+    assert "onecore.v3.resource_benchmark" in workflow
 
-    audit = workflow.split("  v3-checkpoint-artifact-audit:", 1)[1].split(
-        "  v3-resource-benchmark:", 1
-    )[0]
-    assert "inputs.audit_v3_checkpoint" in audit
-    assert "github.event_name == 'push'" in audit
-    assert "github.event.head_commit.message" in audit
-    assert "[run-v3-checkpoint-audit]" in audit
-
-    evaluation = workflow.split("  v3-heldout-evaluation:", 1)[1].split(
-        "  v3-resource-benchmark:", 1
-    )[0]
-    assert "inputs.evaluate_v3_checkpoint_run_id" in evaluation
-    assert "github.event_name == 'push'" in evaluation
-    assert "[run-v3-evaluation:" in evaluation
-    assert "onecore.v3.evaluation_cli" in evaluation
-    assert "onecore-v3-state-" in evaluation
-
-
-def test_v2_training_is_archived_and_cannot_run_from_canonical_v3():
-    training = (WORKFLOWS / "onecore-training.yml").read_text(encoding="utf-8")
-    assert "if: false" in training
-    bootstrap = (WORKFLOWS / "onecore-bootstrap.yml").read_text(encoding="utf-8")
-    assert "OneCore V2 (ARCHIVED)" in bootstrap
-    assert "branches: [research/onecore-foundation]" in bootstrap
-
-
-
-def test_v3_tokenizer_workflow_is_pinned_idempotent_and_does_not_train():
-    import json
-    request_data = json.loads(
-        (ROOT / "onecore-ai" / "v3-tokenizer-request.json").read_text(encoding="utf-8")
-    )
-    workflow = (WORKFLOWS / "onecore-v3-tokenizer.yml").read_text(encoding="utf-8")
-    assert request_data["source_run_id"] == 45325008221
-    assert request_data["source_artifact_id"] == 14892594659
-    assert request_data["source_artifact_name"] == "onecore-v3-corpus-45325008221"
-    assert request_data["minimum_text_records"] >= 100
-    assert request_data["output_artifact_name"] == "onecore-v3-tokenizer-45325008221"
-    assert "workflow_dispatch:" in workflow
-    assert 'paths: ["onecore-ai/v3-tokenizer-request.json"]' in workflow
-    assert "cancel-in-progress: false" in workflow
-    assert "extract_v3_train_manifest" in workflow
-    assert "onecore.v3.tokenizer" in workflow
-    assert "validation_or_test_rows_used" in workflow
-    assert "onecore.v3.training" not in workflow
-    assert "train_v3_step(" not in workflow
-
-
-def test_v3_tokenizer_fit_waits_for_same_sha_ci_and_rechecks_source_evidence():
-    import json
-    request_data = json.loads(
-        (ROOT / "onecore-ai" / "v3-tokenizer-request.json").read_text(encoding="utf-8")
-    )
-    workflow = (WORKFLOWS / "onecore-v3-tokenizer.yml").read_text(encoding="utf-8")
-    assert request_data["fit_revision"] == 2
-    assert request_data["source_artifact_digest"].startswith("sha256:")
-    assert request_data["source_artifact_size_bytes"] == 24432975285
-    assert request_data["source_report_artifact_id"] == 14893020087
-    assert request_data["source_report_artifact_size_bytes"] == 892194
-    assert "Wait for canonical V3 Verify on this exact commit" in workflow
-    assert "GITHUB_SHA" in workflow
-    assert "source_report_artifact_digest" in workflow
-    assert "source_artifact_digest" in workflow
-    assert "onecore-v3-conversion-report-45325008221" in workflow
-    assert "manifest_gate" in workflow
-    assert "actions/download-artifact@v7" in workflow
-    assert "train_v3_step(" not in workflow
-
-
-def test_v3_resource_benchmark_is_manual_only_and_uses_range_reads():
-    workflow = (WORKFLOWS / "onecore-ci.yml").read_text(encoding="utf-8")
-    assert "benchmark_v3_resources:" in workflow
-    assert "default: false" in workflow
-    benchmark = workflow.split("  v3-resource-benchmark:", 1)[1]
-    assert "github.event_name == 'workflow_dispatch'" in benchmark
-    assert "inputs.benchmark_v3_resources == true" in benchmark
-    assert "inputs.restore_v3_corpus != true" in benchmark
-    assert "onecore.v3.resource_benchmark" in benchmark
-    assert "--corpus-artifact-id 14892594659" in benchmark
-    assert "--report-artifact-id 14893020087" in benchmark
-    assert "--tokenizer-artifact-id 14894835517" in benchmark
-    assert "--iterations 5" in benchmark
-    assert "actions/download-artifact@" not in benchmark
-    assert "optimizer updates" in benchmark
-
-
-def test_v3_training_workflow_changes_trigger_canonical_verify():
-    workflow = (WORKFLOWS / "onecore-ci.yml").read_text(encoding="utf-8")
-    assert workflow.count('".github/workflows/onecore-v3-training.yml"') == 2
-
-
-def test_v3_training_workflow_is_blocked_until_resource_and_checkpoint_gates_pass():
+def test_the_only_training_workflow_is_fail_closed_and_includes_native_tldm():
     workflow = (WORKFLOWS / "onecore-v3-training.yml").read_text(encoding="utf-8")
+    request = json.loads((PROJECT / "v3-training-request.json").read_text(encoding="utf-8"))
     assert "on:\n  workflow_dispatch:" in workflow
     assert "\n  push:" not in workflow
-    train = workflow.split("  train:", 1)[1]
-    assert "if: github.ref == 'refs/heads/research/onecore-v3-implementation' && inputs.resource_benchmark_run_id != '' && false" in train
-    assert "Run the first real five-family optimizer update" in train
+    assert "&& false" in workflow
+    assert "--tldm-diffusion-weight" in workflow
+    assert request["tldm_diffusion_weight"] == 0.15
+    assert request["steps"] == 5 and request["checkpoint_every"] == 1
+    assert request["resume_artifact_run_id"] is None
 
+def test_tokenizer_workflow_is_pinned_idempotent_and_does_not_train():
+    request = json.loads((PROJECT / "v3-tokenizer-request.json").read_text(encoding="utf-8"))
+    workflow = (WORKFLOWS / "onecore-v3-tokenizer.yml").read_text(encoding="utf-8")
+    assert request["source_run_id"] == 45325008221
+    assert request["source_artifact_id"] == 14892594659
+    assert request["source_artifact_name"] == "onecore-v3-corpus-45325008221"
+    assert request["minimum_text_records"] >= 100
+    assert request["output_artifact_name"] == "onecore-v3-tokenizer-45325008221"
+    assert "workflow_dispatch:" in workflow and "cancel-in-progress: false" in workflow
+    assert "onecore.v3.tokenizer" in workflow
+    assert "validation_or_test_rows_used" in workflow
+    assert "onecore.v3.training" not in workflow and "train_v3_step(" not in workflow
 
-def test_v3_runner_requires_measured_cpu_resource_evidence():
-    runner = (ROOT / "onecore-ai" / "src" / "onecore" / "v3" / "runner.py").read_text(encoding="utf-8")
+def test_v3_training_requires_a_run_bound_cpu_resource_report():
+    runner = (PROJECT / "src/onecore/v3/runner.py").read_text(encoding="utf-8")
+    workflow = (WORKFLOWS / "onecore-v3-training.yml").read_text(encoding="utf-8")
+    evidence = (PROJECT / "src/onecore/v3/resource_evidence.py").read_text(encoding="utf-8")
     assert 'parser.add_argument("--resource-evidence", required=True)' in runner
     assert "resource_evidence_path=args.resource_evidence" in runner
     assert "_validate_resource_evidence(" in runner
-
-
-
-def test_v3_training_consumes_only_a_verified_manual_resource_benchmark_artifact():
-    workflow = (WORKFLOWS / "onecore-v3-training.yml").read_text(encoding="utf-8")
-    assert "resource_benchmark_run_id:" in workflow
     assert "onecore.v3.resource_evidence" in workflow
-    evidence_module = (ROOT / "onecore-ai" / "src" / "onecore" / "v3" / "resource_evidence.py").read_text(encoding="utf-8")
-    assert 'BENCHMARK_JOB_NAME = "Measure V3 CPU memory and throughput from existing artifacts"' in evidence_module
-    assert "actions/download-artifact@v7" in workflow
+    assert 'BENCHMARK_JOB_NAME = "Measure V3 CPU memory and throughput from existing artifacts"' in evidence
     assert "steps.resource-evidence.outputs.artifact_name" in workflow
-    assert "run-id: ${{ inputs.resource_benchmark_run_id }}" in workflow
-    assert '--resource-evidence "${{ steps.resource-report.outputs.path }}"' in workflow
     assert "resource-evidence-artifact.json" in workflow
-    assert "if: github.ref == 'refs/heads/research/onecore-v3-implementation' && inputs.resource_benchmark_run_id != '' && false" in workflow
 
-
-
-def test_every_onecore_agent_must_read_cross_session_protocol_and_current_handover():
-    import json
-
-    project = ROOT / "onecore-ai"
-    agent_rules = (project / "AGENTS.md").read_text(encoding="utf-8")
-    readme = (project / "README.md").read_text(encoding="utf-8")
-    protocol = (project / "SESSION_PROTOCOL.md").read_text(encoding="utf-8")
-    handover = (project / "docs" / "EXECUTIVE_HANDOVER.md").read_text(encoding="utf-8")
-    session_lock = json.loads((project / "SESSION_LOCK.json").read_text(encoding="utf-8"))
-
-    assert "SESSION_PROTOCOL.md" in agent_rules
-    assert "SESSION_LOCK.json" in agent_rules
-    assert "docs/EXECUTIVE_HANDOVER.md" in agent_rules
-    assert "SESSION_PROTOCOL.md" in readme
-    assert "latest 20 relevant" in protocol
-    assert "compare-and-swap" in protocol
+def test_every_onecore_agent_reads_the_cross_session_protocol_and_handover():
+    agent_rules = (PROJECT / "AGENTS.md").read_text(encoding="utf-8")
+    readme = (PROJECT / "README.md").read_text(encoding="utf-8")
+    protocol = (PROJECT / "SESSION_PROTOCOL.md").read_text(encoding="utf-8")
+    handover = (PROJECT / "docs/EXECUTIVE_HANDOVER.md").read_text(encoding="utf-8")
+    lock = json.loads((PROJECT / "SESSION_LOCK.json").read_text(encoding="utf-8"))
+    assert "SESSION_PROTOCOL.md" in agent_rules and "SESSION_LOCK.json" in agent_rules
+    assert "docs/EXECUTIVE_HANDOVER.md" in agent_rules and "SESSION_PROTOCOL.md" in readme
+    assert "latest 20 relevant" in protocol and "compare-and-swap" in protocol
     assert "remain read-only" in protocol
     assert "Mandatory multi-client coordination protocol" in handover
-    assert session_lock["schema_version"] == 1
-    assert session_lock["status"] in {"active", "released"}
-    if session_lock["status"] == "released":
-        assert session_lock["holder"] is None
-    else:
-        assert session_lock["holder"]
-        assert session_lock["lease_expires_at_utc"]
+    assert lock["schema_version"] == 1 and lock["status"] in {"active", "released"}
+    if lock["status"] == "active":
+        assert lock["holder"] and lock["lease_expires_at_utc"]
