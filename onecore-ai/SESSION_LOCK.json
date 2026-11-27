@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
-  "status": "active",
-  "holder": "ChatGPT GPT-6",
-  "session_id": "onecore-single-model-consolidation-20261127-01",
-  "client": "ChatGPT",
-  "started_at_utc": "2026-11-27T07:46:00Z",
-  "lease_expires_at_utc": "2026-11-27T08:40:00Z",
-  "base_head_sha": "d2a0734404aa73187005dd1c4400e0027ed8a725",
-  "planned_scope": "Remove notebook-specific cursor/source routing, preserve the pinned source-only corpus snapshot, correct the cursor regression and strengthen single-model CI. No training, checkpoint, corpus restore or tokenizer refit.",
-  "last_released_at_utc": "2026-11-27T06:57:28Z",
-  "last_session_summary": "Previous session completed V3 CPU evidence binding and released lock; #761 passed.",
-  "last_verified_branch_head": "d2a0734404aa73187005dd1c4400e0027ed8a725",
-  "last_result": "Run #769 (45960222457) compiled and passed exact parameter/FLOPs checks; 208 tests passed, one stale image-cursor path assertion failed. Corrected here; no runtime measurement or optimizer update."
+  "status": "released",
+  "holder": null,
+  "session_id": null,
+  "client": null,
+  "started_at_utc": null,
+  "lease_expires_at_utc": null,
+  "base_head_sha": null,
+  "planned_scope": null,
+  "last_released_at_utc": "2026-11-27T07:51:21Z",
+  "last_session_summary": "Completed single-model consolidation: native T-LDM integrated into the shared model; legacy model/trainer/notebook files removed from the active branch; source cursor unified; corpus provenance preserved as a data-only snapshot; CI #771 and source package #8 succeeded.",
+  "last_verified_branch_head": "6dcf4f54787a68bae06c90265f016e744620f228",
+  "last_result": "Run #771 (45961095125) passed all Verify steps with 211 passed and 47 warnings. Source package Run #8 (45961095117) succeeded; artifact 15181136805 is 250632 bytes with SHA-256 b3956136fb5e73ac05057ccedfb73e536e2df8554badcd6d7e245ff82efae151. CPU benchmark and optimizer training remain unperformed."
 }
