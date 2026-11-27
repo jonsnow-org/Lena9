@@ -8,11 +8,11 @@ import yaml
 from PIL import Image
 from datasets import Image as HFImage
 
-from onecore.acquire import _row_identity
+from onecore.v3.source_utils import sourcesource_row_identity
 from onecore.v3 import converter as converter_module
 from onecore.v3.converter import (
-    _default_source_loader, acquire_missing_media_rows, convert_v2_corpus,
-    restore_v2_media_records, write_v3_manifests,
+    _default_source_loader, acquire_missing_media_rows, convert_existing_corpus,
+    restore_source_media_records, write_v3_manifests,
 )
 
 
@@ -20,7 +20,7 @@ REVISION = "a" * 40
 
 
 def _record(source_id, row, task, record_id, **fields):
-    row_id = _row_identity(row, source_id, 0)
+    row_id = source_row_identity(row, source_id, 0)
     return {
         "id": record_id,
         "source_id": source_id,
@@ -61,7 +61,7 @@ def test_v3_converter_reuses_text_and_rehydrates_native_image_from_pinned_revisi
         calls.append((repo, config, split, revision))
         return [row]
 
-    converted, report = restore_v2_media_records(
+    converted, report = restore_source_media_records(
         [text_record, image_record], registry, tmp_path / "assets",
         source_loader=loader,
     )
@@ -91,7 +91,7 @@ def test_v3_converter_resamples_audio_and_keeps_source_and_training_assets(tmp_p
         "text_fields": ["transcription"], "enabled": True,
     }])
 
-    converted, report = restore_v2_media_records(
+    converted, report = restore_source_media_records(
         [record], registry, tmp_path / "assets",
         source_loader=lambda *_: [row],
     )
@@ -119,7 +119,7 @@ def test_v3_converter_restores_every_video_frame_and_preserves_timestamps(tmp_pa
         "enabled": True,
     }])
 
-    converted, report = restore_v2_media_records(
+    converted, report = restore_source_media_records(
         [record], registry, tmp_path / "assets",
         source_loader=lambda *_: [row],
     )
@@ -143,7 +143,7 @@ def test_v3_converter_never_fetches_disabled_sources_or_adds_synthetic_rows(tmp_
         "enabled": False,
     }])
     calls = []
-    converted, report = restore_v2_media_records(
+    converted, report = restore_source_media_records(
         [record], registry, tmp_path / "assets",
         source_loader=lambda *args: calls.append(args) or [row],
     )
@@ -168,8 +168,8 @@ def test_v3_manifest_writer_atomically_writes_three_split_files(tmp_path):
 
 
 def test_v3_corpus_conversion_writes_all_splits_and_reports_manifest_gate(tmp_path):
-    v2 = tmp_path / "v2-data"
-    v2.mkdir()
+    source_corpus = tmp_path / "source-corpus-data"
+    source_corpus.mkdir()
     for split in ("train", "validation", "test"):
         record = {
             "id": f"{split}-text", "source_id": "text-source", "source_revision": REVISION,
@@ -178,11 +178,11 @@ def test_v3_corpus_conversion_writes_all_splits_and_reports_manifest_gate(tmp_pa
             "data_class": "external", "task": "text",
             "text": "A sufficiently long existing text sample.",
         }
-        (v2 / f"{split}.jsonl").write_text(json.dumps(record) + "\n", encoding="utf-8")
+        (source_corpus / f"{split}.jsonl").write_text(json.dumps(record) + "\n", encoding="utf-8")
     registry = tmp_path / "sources.yaml"
     _write_registry(registry, [])
-    report = convert_v2_corpus(
-        v2, registry, tmp_path / "v3", minimum_train=0, minimum_holdout=0,
+    report = convert_existing_corpus(
+        source_corpus, registry, tmp_path / "v3", minimum_train=0, minimum_holdout=0,
     )
     assert report["converted_records"] == 3
     assert report["manifest_gate"]["passed"] is True
@@ -221,7 +221,7 @@ def test_v3_converter_acquires_only_missing_image_holdouts_from_pinned_native_sp
         ("finedet/openimages", "default", "test", REVISION),
     ]
 
-    restored, restore_report = restore_v2_media_records(
+    restored, restore_report = restore_source_media_records(
         records, registry, tmp_path / "assets", source_loader=loader,
     )
     assert len(restored) == 2
@@ -245,7 +245,7 @@ def test_v3_converter_searches_all_nonstandard_source_splits_for_legacy_rows(tmp
         calls.append(split)
         return [] if split == "catalog-a" else [row]
 
-    restored, report = restore_v2_media_records(
+    restored, report = restore_source_media_records(
         [record], registry, tmp_path / "assets", source_loader=loader,
     )
     assert len(restored) == 1
@@ -273,7 +273,7 @@ def test_v3_image_identity_stream_reenables_only_hf_image_decoding():
     stream = FakeStreamingDataset()
     source = {"adapter": "image", "image_field": "image"}
 
-    result = converter_module._enable_v2_image_identity_decoding(stream, source)
+    result = converter_module._enable_source_image_identity_decoding(stream, source)
 
     assert result is stream
     assert [name for name, _ in stream.cast_calls] == ["image"]
@@ -284,10 +284,10 @@ def test_v3_image_identity_stream_reenables_only_hf_image_decoding():
 
 def test_v3_image_identity_decode_does_not_change_audio_or_video_streams():
     stream = object()
-    assert converter_module._enable_v2_image_identity_decoding(
+    assert converter_module._enable_source_image_identity_decoding(
         stream, {"adapter": "audio", "audio_field": "audio"}
     ) is stream
-    assert converter_module._enable_v2_image_identity_decoding(
+    assert converter_module._enable_source_image_identity_decoding(
         stream, {"adapter": "video", "video_field": "video"}
     ) is stream
 
@@ -382,7 +382,7 @@ def test_v3_converter_restores_missing_local_media_path_from_pinned_dataset_view
 
     monkeypatch.setattr(converter_module, "preserve_audio_payload", fake_preserve_audio_payload)
     monkeypatch.setattr(converter_module, "resample_audio_source", fake_resample_audio_source)
-    restored, report = restore_v2_media_records(
+    restored, report = restore_source_media_records(
         [record], registry, tmp_path / "assets",
         source_loader=lambda *_: [row], viewer_row_loader=viewer_loader,
     )
@@ -429,7 +429,7 @@ def test_v3_converter_rejects_dataset_viewer_media_from_a_different_revision(tmp
         converter_module, "preserve_audio_payload",
         lambda *_: (_ for _ in ()).throw(AssertionError("unpinned media must not be opened")),
     )
-    restored, report = restore_v2_media_records(
+    restored, report = restore_source_media_records(
         [record], registry, tmp_path / "assets",
         source_loader=lambda *_: [row],
         viewer_row_loader=lambda *_: {"rows": [{"row_idx": 0, "row": viewer_row}]},
@@ -473,7 +473,7 @@ def test_v3_converter_prefers_encoded_bytes_over_a_missing_local_path(tmp_path, 
 
     monkeypatch.setattr(converter_module, "preserve_audio_payload", fake_preserve_audio_payload)
     monkeypatch.setattr(converter_module, "resample_audio_source", fake_resample_audio_source)
-    restored, report = restore_v2_media_records(
+    restored, report = restore_source_media_records(
         [record], registry, tmp_path / "assets",
         source_loader=lambda *_: [row],
         viewer_row_loader=lambda *_: (_ for _ in ()).throw(
@@ -500,14 +500,14 @@ def test_restore_progress_reuses_completed_media_without_rescanning(tmp_path):
     }])
     assets = tmp_path / "assets"
     progress = tmp_path / "restore-progress.jsonl"
-    restored, first = restore_v2_media_records(
+    restored, first = restore_source_media_records(
         [record], registry, assets, source_loader=lambda *_: [row], progress_path=progress,
     )
     assert len(restored) == 1 and first["resumed_media_records"] == 0
     assert progress.is_file()
     def must_not_scan(*_):
         raise AssertionError("completed media must be resumed without re-scanning")
-    resumed, second = restore_v2_media_records(
+    resumed, second = restore_source_media_records(
         [record], registry, assets, source_loader=must_not_scan, progress_path=progress,
     )
     assert len(resumed) == 1 and second["resumed_media_records"] == 1
@@ -630,7 +630,7 @@ def test_v3_restore_uses_stateful_cursor_to_resume_bounded_source_scan(tmp_path)
             return self
 
     progress = tmp_path / "restore-progress.jsonl"
-    first, first_report = restore_v2_media_records(
+    first, first_report = restore_source_media_records(
         [record], registry, tmp_path / "assets",
         source_loader=lambda *_: StatefulRows(rows),
         progress_path=progress,
@@ -642,13 +642,13 @@ def test_v3_restore_uses_stateful_cursor_to_resume_bounded_source_scan(tmp_path)
         "source_id": "cursor-source", "split": "train", "remaining_records": 1,
         "reason": "bounded_scan_or_retry_checkpoint",
     }]
-    cursor_file = tmp_path / "data/resume-cache/crawlers/v3-corpus-restore-image-v2-identity/cursor-source/train.json"
+    cursor_file = tmp_path / "data/resume-cache/crawlers/v3-corpus-restore-image-source_corpus-identity/cursor-source/train.json"
     assert cursor_file.is_file()
     cursor_state = json.loads(cursor_file.read_text(encoding="utf-8"))
     assert cursor_state["rows_read"] == 2
     assert cursor_state["cursor_mode"] == "state_dict"
 
-    second, second_report = restore_v2_media_records(
+    second, second_report = restore_source_media_records(
         [record], registry, tmp_path / "assets",
         source_loader=lambda *_: StatefulRows(rows),
         progress_path=progress,
@@ -690,7 +690,7 @@ def test_v3_image_restore_retries_pinned_viewer_if_local_path_disappears(tmp_pat
     monkeypatch.setattr(converter_module, "preserve_image_payload", fake_preserve)
     monkeypatch.setattr(converter_module, "_needs_dataset_viewer_fallback", lambda value: False)
     viewer_row = {"id": "image-viewer-race-001", "image": {"src": media_url}}
-    restored, report = restore_v2_media_records(
+    restored, report = restore_source_media_records(
         [record], registry, tmp_path / "assets",
         source_loader=lambda *_: [row],
         viewer_row_loader=lambda *_: {"rows": [{"row_idx": 0, "row": viewer_row}]},
@@ -758,10 +758,10 @@ def test_dataset_viewer_filter_loader_does_not_retry_permanent_http_errors(monke
     ("gate_passed", "expected_blocked"),
     [(True, False), (False, True)],
 )
-def test_convert_v2_corpus_blocks_only_when_final_manifest_gate_fails(
+def test_convert_existing_corpus_blocks_only_when_final_manifest_gate_fails(
     tmp_path, monkeypatch, gate_passed, expected_blocked,
 ):
-    source_root = tmp_path / "v2"
+    source_root = tmp_path / "source_corpus"
     source_root.mkdir()
     legacy_record = {
         "id": "legacy-text-001",
@@ -788,14 +788,14 @@ def test_convert_v2_corpus_blocks_only_when_final_manifest_gate_fails(
         assert len(records) == 1
         return records, dict(restore_report)
 
-    monkeypatch.setattr(converter_module, "restore_v2_media_records", fake_restore)
+    monkeypatch.setattr(converter_module, "restore_source_media_records", fake_restore)
     monkeypatch.setattr(
         converter_module,
         "validate_v3_manifest",
         lambda *args, **kwargs: {"passed": gate_passed, "errors": []},
     )
 
-    report = convert_v2_corpus(
+    report = convert_existing_corpus(
         source_root,
         tmp_path / "sources.yaml",
         tmp_path / "output",

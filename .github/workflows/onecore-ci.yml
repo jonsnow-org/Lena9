@@ -174,7 +174,7 @@ jobs:
           PY
 
   v3-corpus-restore:
-    name: Restore and validate V3 corpus from existing V2 artifact
+    name: Restore and validate the existing OneCore corpus snapshot
     needs: verify
     # The multi-gigabyte corpus restore is manual-only and disabled unless explicitly selected.
     if: github.ref == 'refs/heads/research/onecore-v3-implementation' && github.event_name == 'workflow_dispatch' && inputs.restore_v3_corpus == true
@@ -226,10 +226,10 @@ jobs:
           })
           PY
 
-      - name: Restore the exact V2 source registry snapshot
+      - name: Use the canonical OneCore source registry
         run: |
           git fetch --no-tags --depth=1 origin 5489900c3662082ad39efbfac5b6a2c7d22a7c4c
-          git show 5489900c3662082ad39efbfac5b6a2c7d22a7c4c:onecore-ai/data/sources.yaml > "$RUNNER_TEMP/onecore-v2-sources.yaml"
+          cp onecore-ai/data/sources.yaml "$RUNNER_TEMP/onecore-sources.yaml"
 
       - name: Locate latest durable V3 media progress snapshot
         id: resume-progress
@@ -271,7 +271,7 @@ jobs:
                   print({"resume_run_id": selected[0], "artifact_name": selected[1]})
               else:
                   output.write("available=false\n")
-                  print("No prior V3 progress artifact; restoring from the durable V2 corpus.")
+                  print("No prior V3 progress artifact; restoring from the existing validated corpus snapshot.")
           PY
 
       - name: Restore prior V3 media progress and raw assets
@@ -299,7 +299,7 @@ jobs:
           python -m onecore.v3.cli \
             --artifact-id 14715699177 \
             --github-repo jonsnow-org/Lena9 \
-            --source-registry "$RUNNER_TEMP/onecore-v2-sources.yaml" \
+            --source-registry "$RUNNER_TEMP/onecore-sources.yaml" \
             --output-root "$RUNNER_TEMP/onecore-v3-corpus" \
             --report-output "$RUNNER_TEMP/onecore-v3-conversion-report.json" \
             --resume-progress "$RUNNER_TEMP/onecore-v3-corpus/v3/restore-progress.jsonl" \

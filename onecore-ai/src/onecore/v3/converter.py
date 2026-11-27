@@ -1,6 +1,6 @@
-"""Selective V2-to-V3 corpus conversion with pinned-source media restoration.
+"""Selective existing-corpus corpus conversion with pinned-source media restoration.
 
-Text/tool records are reused verbatim. Media derivatives from V2 are never
+Text/tool records are reused verbatim. Media derivatives from source snapshot are never
 misrepresented as raw assets: their source rows are rehydrated from the exact
 immutable source revision, and all native media is preserved before training
 derivatives are created.
@@ -26,7 +26,7 @@ import yaml
 from datasets import Image as HFImage, load_dataset
 from huggingface_hub import hf_hub_download
 
-from onecore.acquire import _first_text, _nested, _resolve_video_asset, _row_identity
+from .source_utils import first_text_field, nested_field, resolve_pinned_video_asset, sourcesource_row_identity
 from onecore.crawlers import StatefulStreamCursor
 from onecore.data import external_record_is_trainable, has_immutable_external_provenance, iter_manifest
 from .manifest import validate_v3_manifest
@@ -186,7 +186,7 @@ def _filter_candidates(source_row: dict[str, Any], family: str, source: dict[str
     field_name = str(source.get(f"{family}_field") or {
         "image": "image", "audio": "audio", "video": "video",
     }[family])
-    media_value = _nested(source_row, field_name)
+    media_value = nested_field(source_row, field_name)
     if isinstance(media_value, dict):
         for key in ("path", "src", "url"):
             value = media_value.get(key)
@@ -253,7 +253,7 @@ def _dataset_viewer_filter_media_value(
         viewer_key = _row_primary_key(viewer_row)
         if source_key is not None and viewer_key is not None and source_key != viewer_key:
             continue
-        media_url = _find_media_source_url(_nested(viewer_row, media_field))
+        media_url = _find_media_source_url(nested_field(viewer_row, media_field))
         if media_url:
             return {"src": _validate_pinned_media_url(media_url, revision)}
     suffix = "; ".join(errors[:3])
@@ -329,7 +329,7 @@ def _dataset_viewer_media_value(
             }[family])
             if not _viewer_row_matches_source(source_row, viewer_row, media_field):
                 raise ValueError("Dataset Viewer row identity does not match the pinned streaming source row")
-            media_url = _find_media_source_url(_nested(viewer_row, media_field))
+            media_url = _find_media_source_url(nested_field(viewer_row, media_field))
             if not media_url:
                 raise ValueError(f"Dataset Viewer row {row_index} has no usable {family} media URL")
             return {"src": _validate_pinned_media_url(media_url, revision)}
@@ -412,13 +412,13 @@ def _needs_dataset_viewer_fallback(value: Any) -> bool:
     return False
 
 
-def _enable_v2_image_identity_decoding(stream: Any, source: dict[str, Any]) -> Any:
-    """Reproduce V2's decoded-PIL image row identity before hashing source rows.
+def _enable_source_image_identity_decoding(stream: Any, source: dict[str, Any]) -> Any:
+    """Reproduce source snapshot's decoded-PIL image row identity before hashing source rows.
 
-    V2 acquisition left Hugging Face Image columns decoded as PIL images while
+    source snapshot acquisition left Hugging Face Image columns decoded as PIL images while
     explicitly disabling automatic Audio/Video decoding. V3 disables all media
     decoding for safe raw-payload ingestion. Hashing an Image(decode=False)
-    path dictionary therefore cannot match the immutable V2 row hash. Re-enable
+    path dictionary therefore cannot match the immutable source snapshot row hash. Re-enable
     only the Image feature so row identity is byte-for-byte compatible; audio
     and video remain undecoded and under the explicit V3 ingest path.
     """
@@ -435,13 +435,13 @@ def _enable_v2_image_identity_decoding(stream: Any, source: dict[str, Any]) -> A
     if not callable(cast_column):
         raise RuntimeError(
             f"pinned image source exposes Image(decode=False) for {field!r} "
-            "but does not support cast_column; cannot reproduce V2 source-row hashes"
+            "but does not support cast_column; cannot reproduce source snapshot source-row hashes"
         )
     try:
         return cast_column(field, HFImage(decode=True))
     except Exception as exc:
         raise RuntimeError(
-            f"could not enable V2-compatible Image decoding for {field!r}: "
+            f"could not enable source snapshot-compatible Image decoding for {field!r}: "
             f"{type(exc).__name__}: {str(exc)[:200]}"
         ) from exc
 
@@ -485,15 +485,15 @@ def _safe_image_value(value: Any, source: dict[str, Any]) -> Any:
 
 def _video_value(row: dict[str, Any], source: dict[str, Any], revision: str) -> Any:
     field = str(source.get("video_field") or "video")
-    value = _nested(row, field)
+    value = nested_field(row, field)
     adapter = str(source.get("adapter", ""))
     pinned_source = {**source, "_resolved_revision": revision}
     if adapter == "video":
-        return _resolve_video_asset(value, pinned_source)
+        return resolve_pinned_video_asset(value, pinned_source)
     if adapter == "video_url":
         aliases = source.get("video_url_fields") or [field, "video_url", "contentUrl", "url"]
         candidates = [value]
-        candidates.extend(_nested(row, str(name)) for name in aliases)
+        candidates.extend(nested_field(row, str(name)) for name in aliases)
         for candidate in candidates:
             if isinstance(candidate, dict):
                 candidate = candidate.get("src") or candidate.get("path") or candidate.get("url")
@@ -566,7 +566,7 @@ def _rehydrate_record(
         return value
 
     if family == "image":
-        value = (media_value_overrides or {}).get("image", _nested(row, str(source.get("image_field") or "image")))
+        value = (media_value_overrides or {}).get("image", nested_field(row, str(source.get("image_field") or "image")))
         value = _safe_image_value(value, source)
         value = _prefer_available_media_payload(value)
         if _needs_dataset_viewer_fallback(value):
@@ -581,7 +581,7 @@ def _rehydrate_record(
         result["assets"] = {"image": metadata}
 
     elif family == "audio":
-        value = (media_value_overrides or {}).get("audio", _nested(row, str(source.get("audio_field") or "audio")))
+        value = (media_value_overrides or {}).get("audio", nested_field(row, str(source.get("audio_field") or "audio")))
         if isinstance(value, (list, tuple)):
             media_url = _find_media_source_url(value)
             if media_url:
@@ -766,20 +766,20 @@ def acquire_missing_media_rows(
                             break
                         if not isinstance(row, dict):
                             continue
-                        row_id = _row_identity(row, source_id, index)
+                        row_id = source_row_identity(row, source_id, index)
                         row_hash = _sha256_text(row_id)
                         identity = (source_id, row_hash)
                         if identity in seen:
                             continue
                         if family == "image":
-                            value = _nested(row, str(source.get("image_field") or "image"))
+                            value = nested_field(row, str(source.get("image_field") or "image"))
                         elif family == "audio":
-                            value = _nested(row, str(source.get("audio_field") or "audio"))
+                            value = nested_field(row, str(source.get("audio_field") or "audio"))
                         else:
-                            value = _nested(row, str(source.get("video_field") or "video"))
+                            value = nested_field(row, str(source.get("video_field") or "video"))
                         if value is None:
                             continue
-                        text = _first_text(row, list(source.get("text_fields") or []))
+                        text = first_text_field(row, list(source.get("text_fields") or []))
                         task = {
                             "image": "image_caption" if text else "image_reconstruction",
                             "audio": "audio_text" if text else "audio_reconstruction",
@@ -921,7 +921,7 @@ def _extract_fleurs_audio_for_rows(
     field = str(source.get("audio_field") or "audio")
     wanted: dict[str, list[str]] = defaultdict(list)
     for _row_hash, record, row, _index in matched_rows:
-        basename = _local_media_basename(_nested(row, field))
+        basename = _local_media_basename(nested_field(row, field))
         if basename and basename.lower().endswith(".wav"):
             wanted[basename].append(str(record["id"]))
     if not wanted:
@@ -952,7 +952,7 @@ def _extract_fleurs_audio_for_rows(
     return extracted, staging
 
 
-def restore_v2_media_records(
+def restore_source_media_records(
     records: Iterable[dict[str, Any]],
     sources_registry: str | Path,
     assets_root: str | Path,
@@ -965,7 +965,7 @@ def restore_v2_media_records(
     max_scan_rows_per_source_split: int = 10_000,
     cursor_root: str | Path | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Reuse external text/tool rows and selectively restore only V2 media rows.
+    """Reuse external text/tool rows and selectively restore only source snapshot media rows.
 
     The loader is injectable for deterministic tests. Production loading is
     streaming and always uses each record's immutable source_revision.
@@ -1008,7 +1008,7 @@ def restore_v2_media_records(
         record_id = str(record.get("id", "")).strip()
         if not record_id or record_id in seen_input_ids:
             skipped["missing_or_duplicate_id"] += 1
-            errors.append("input V2 row has a missing or duplicate record ID")
+            errors.append("input source snapshot row has a missing or duplicate record ID")
             continue
         seen_input_ids.add(record_id)
         if record_id in converted:
@@ -1028,7 +1028,7 @@ def restore_v2_media_records(
             continue
         if not has_immutable_external_provenance(record):
             skipped["not_immutable_external"] += 1
-            errors.append(f"{record_id}: external V2 row lacks immutable provenance")
+            errors.append(f"{record_id}: external source snapshot row lacks immutable provenance")
             continue
         task = str(record.get("task", ""))
         if task in {"text", "tool_use"}:
@@ -1036,7 +1036,7 @@ def restore_v2_media_records(
             continue
         if task not in MEDIA_TASKS:
             skipped["unsupported_task"] += 1
-            errors.append(f"{record_id}: unsupported V2 task {task!r}")
+            errors.append(f"{record_id}: unsupported source snapshot task {task!r}")
             continue
         source_id = str(record.get("source_id", ""))
         revision = str(record.get("source_revision", ""))
@@ -1074,7 +1074,7 @@ def restore_v2_media_records(
         group = pending[(source_id, revision, hf_split)]
         if row_hash in group:
             skipped["duplicate_source_row_hash"] += 1
-            errors.append(f"{record_id}: duplicate source row hash in the V2 manifests")
+            errors.append(f"{record_id}: duplicate source row hash in the source snapshot manifests")
             continue
         group[row_hash] = record
 
@@ -1111,7 +1111,7 @@ def restore_v2_media_records(
             rows_scanned = 0
             scan_stop_reason = "stream_exhausted"
             cursor_namespace = (
-                "v3-corpus-restore-image-v2-identity"
+                "v3-corpus-restore-image-identity"
                 if str(source.get("adapter", "")) == "image"
                 else "v3-corpus-restore"
             )
@@ -1121,7 +1121,7 @@ def restore_v2_media_records(
             )
             try:
                 stream = loader(repo, source.get("config"), str(source_split), revision)
-                stream = _enable_v2_image_identity_decoding(stream, source)
+                stream = _enable_source_image_identity_decoding(stream, source)
                 stream, start_offset, cursor_mode = cursor.restore(stream, 0)
                 print(
                     f"[onecore-v3] source {group_index}/{len(pending)} {source_id}/{source_split}: "
@@ -1138,7 +1138,7 @@ def restore_v2_media_records(
                             flush=True,
                         )
                     if isinstance(row, dict):
-                        row_id = _row_identity(row, source_id, index)
+                        row_id = source_row_identity(row, source_id, index)
                         row_hash = _sha256_text(row_id)
                         if row_hash in targets and row_hash not in found:
                             matched_rows.append((row_hash, targets[row_hash], row, index))
@@ -1294,7 +1294,7 @@ def restore_v2_media_records(
         "skipped": dict(skipped),
         "errors": errors,
         "target_audio_rate": target_audio_rate,
-        "source_restore_mode": "pinned_revision_streaming_v2_compatible_image_row_hash_lookup_with_resumable_stateful_cursors_and_indexed_filter_and_fleurs_tar_fallback",
+        "source_restore_mode": "pinned_revision_streaming_source_image_identity_lookup_with_resumable_stateful_cursors_and_indexed_filter_and_fleurs_tar_fallback",
         "deferred_source_splits": deferred_source_splits,
         "source_scan_checkpoints": source_scan_checkpoints,
         "max_scan_rows_per_source_split": max_scan_rows_per_source_split,
@@ -1353,8 +1353,8 @@ def write_v3_manifests(records: Iterable[dict[str, Any]], output_root: str | Pat
 
 
 
-def convert_v2_corpus(
-    v2_data_root: str | Path,
+def convert_existing_corpus(
+    existing_data_root: str | Path,
     sources_registry: str | Path,
     output_root: str | Path,
     *,
@@ -1369,19 +1369,19 @@ def convert_v2_corpus(
     filter_row_loader: Callable[[str, str, str, str], dict[str, Any]] | None = None,
     progress_path: str | Path | None = None,
 ) -> dict[str, Any]:
-    """Convert existing V2 split manifests and run the complete V3 external gate.
+    """Convert existing source snapshot split manifests and run the complete V3 external gate.
 
-    v2_data_root must contain train.jsonl, validation.jsonl and test.jsonl.
+    existing_data_root must contain train.jsonl, validation.jsonl and test.jsonl.
     The output is written to output_root/data/{split}.jsonl and its assets folder.
     A failed quota/provenance/asset gate is returned as blocked; it never starts
     training or invents records to fill missing modality families.
     """
-    source_root = Path(v2_data_root).resolve()
+    source_root = Path(existing_data_root).resolve()
     records: list[dict[str, Any]] = []
     for split in ("train", "validation", "test"):
         manifest = source_root / f"{split}.jsonl"
         if not manifest.is_file():
-            raise FileNotFoundError(f"V2 {split} manifest not found: {manifest}")
+            raise FileNotFoundError(f"source snapshot {split} manifest not found: {manifest}")
         records.extend(iter_manifest(manifest))
 
     acquisition_report: dict[str, Any] | None = None
@@ -1394,7 +1394,7 @@ def convert_v2_corpus(
         )
     destination = Path(output_root).resolve()
     assets_root = destination / "data" / "assets"
-    converted, report = restore_v2_media_records(
+    converted, report = restore_source_media_records(
         records, sources_registry, assets_root,
         target_audio_rate=target_audio_rate, source_loader=source_loader,
         viewer_row_loader=viewer_row_loader,
