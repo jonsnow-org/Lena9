@@ -2,14 +2,14 @@
   "schema_version": 1,
   "status": "active",
   "holder": "ChatGPT GPT-6",
-  "session_id": "onecore-single-path-tools-parity-20261127-01",
+  "session_id": "onecore-single-canonical-spec-alignment-20261127-02",
   "client": "ChatGPT",
-  "started_at_utc": "2026-11-27T08:15:00Z",
-  "lease_expires_at_utc": "2026-11-27T09:15:00Z",
-  "base_head_sha": "5e38a80656fc4d6779e0af39d4c027a1fbf652bd",
-  "planned_scope": "Restore the limited allowlisted calculator/text-count runtime under the sole OneCore v3 package, preserve inert-by-default model output, repair stale handover-policy assertion, and run CI. No optimizer updates, checkpoint mutation or corpus/tokenizer refit.",
+  "started_at_utc": "2026-11-27T15:55:00Z",
+  "lease_expires_at_utc": "2026-11-27T16:50:00Z",
+  "base_head_sha": "dbd74d8be22b51bd388ea98b260df0fa5f0cde13",
+  "planned_scope": "Align the only adopted OneCore model to the corrected engineering specification while keeping all later V3 operational/data/checkpoint/tooling improvements in the same single path. Replace model/config/tokenizer/FLOPs contracts, keep one joint trainer and fail-closed gates, remove remaining version-labelled model branch/path names where supported. Do not train, mutate weights, change main or refit data except a required single new 4,096-text-plus-codebook tokenizer artifact from the already-pinned train manifest.",
   "last_released_at_utc": "2026-11-27T07:51:21Z",
   "last_session_summary": "Completed single-model consolidation: native T-LDM integrated into the shared model; legacy model/trainer/notebook files removed from the active branch; source cursor unified; corpus provenance preserved as a data-only snapshot; CI #771 and source package #8 succeeded.",
-  "last_verified_branch_head": "6dcf4f54787a68bae06c90265f016e744620f228",
-  "last_result": "Run #771 (45961095125) passed all Verify steps with 211 passed and 47 warnings. Source package Run #8 (45961095117) succeeded; artifact 15181136805 is 250632 bytes with SHA-256 b3956136fb5e73ac05057ccedfb73e536e2df8554badcd6d7e245ff82efae151. CPU benchmark and optimizer training remain unperformed."
+  "last_verified_branch_head": "dbd74d8be22b51bd388ea98b260df0fa5f0cde13",
+  "last_result": "Previous single-model consolidation and source package completed. #771 passed (211 passed/47 warnings), #772/#773 failed only due stale handover assertion; no runtime benchmark or optimizer updates. Previous lease expired at 2026-11-27T09:15:00Z."
 }
