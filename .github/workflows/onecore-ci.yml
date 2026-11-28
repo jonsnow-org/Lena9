@@ -84,11 +84,11 @@ jobs:
           from onecore.v3 import V3Config
           from onecore.v3.report import build_report
           report = build_report()
-          assert report["architecture_version"] == "onecore-v3-corrected-spec-2", report
-          assert report["trainable_parameters"] == 57_579_201, report
-          assert report["fp32_parameter_storage_bytes"] == 230_316_804, report
-          assert report["fp16_parameter_storage_bytes"] == 115_158_402, report
-          assert report["unified_vocab_size"] == 5_144, report
+          assert report["architecture_version"] == "onecore-v3-corrected-spec-3", report
+          assert report["trainable_parameters"] == 86_152_897, report
+          assert report["fp32_parameter_storage_bytes"] == 344_611_588, report
+          assert report["fp16_parameter_storage_bytes"] == 172_305_794, report
+          assert report["unified_vocab_size"] == 33_048, report
           assert report["width"] == 1_024 and report["hidden_size"] == 2_730, report
           assert report["shared_block_applications"] == 12, report
           assert report["tldm_additional_trainable_parameters"] == 0, report
@@ -97,8 +97,8 @@ jobs:
           assert cfg.is_canonical and cfg.fingerprint == report["config_sha256"]
           flops = report["flops"]
           assert flops["config_sha256"] == report["config_sha256"]
-          assert flops["sequence_length_examples"]["128"]["joint_step_train_flops"] == 1_296_720_199_680, flops
-          assert flops["sequence_length_examples"]["512"]["joint_step_train_flops"] == 5_258_827_530_240, flops
+          assert flops["sequence_length_examples"]["128"]["joint_step_train_flops"] == 1_516_166_184_960, flops
+          assert flops["sequence_length_examples"]["512"]["joint_step_train_flops"] == 6_136_611_471_360, flops
           assert flops["paths"]["text"]["breakdown"]["native_tldm"]["tied_text_output_projection"] > 0
           assert flops["paths"]["video"]["sequence_tokens"] <= 512, flops
           assert flops["joint_micro_batches_per_update"] == 5
