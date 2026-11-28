@@ -34,6 +34,20 @@ def _require_sha256(value: Any, field: str) -> str:
     return value
 
 
+def _tokenizer_contract_sha256(config: V3Config, special_token_ids: dict[str, int]) -> str:
+    contract = {
+        "format_version": 1,
+        "tokenizer_algorithm": "byte-level BPE",
+        "unicode_normalization": "NFC",
+        "text_vocab_size": int(config.text_vocab_size),
+        "special_tokens": list(SPECIAL_TOKENS),
+        "special_token_ids": special_token_ids,
+    }
+    encoded = json.dumps(contract, ensure_ascii=False, sort_keys=True,
+                         separators=(",", ":"), allow_nan=False).encode("utf-8")
+    return _sha256_bytes(encoded)
+
+
 def sha256_file(path: str | Path) -> str:
     digest = hashlib.sha256()
     with Path(path).open("rb") as stream:
@@ -229,6 +243,7 @@ def train_v3_tokenizer(
         "tokenizer_file": target.name,
         "validation_or_test_rows_used": 0,
         "v2_tokenizer_imported": False,
+        "tokenizer_contract_sha256": _tokenizer_contract_sha256(config, special_token_ids),
     }
     evidence_json = (
         json.dumps(evidence, ensure_ascii=False, sort_keys=True, indent=2) + "\n"
@@ -252,6 +267,101 @@ def train_v3_tokenizer(
         "tokenizer_path": str(target),
         "evidence_path": str(evidence_path),
     }
+
+
+def adopt_v3_tokenizer(
+    source_tokenizer_path: str | Path, source_evidence_path: str | Path, output_path: str | Path,
+    *, config: V3Config, expected_source_tokenizer_sha256: str,
+    expected_source_evidence_sha256: str, expected_train_manifest_sha256: str,
+    expected_external_text_rows_sha256: str, expected_external_train_text_records: int,
+    source_run_id: int, source_artifact_id: int, source_artifact_sha256: str,
+) -> dict[str, Any]:
+    """Re-attest an immutable old V3 tokenizer without refitting or altering its JSON bytes."""
+    if not isinstance(config, V3Config) or not config.is_canonical:
+        raise ValueError("tokenizer adoption requires the canonical OneCore V3 config")
+    source = Path(source_tokenizer_path).resolve()
+    sidecar = Path(source_evidence_path).resolve()
+    if not source.is_file() or not sidecar.is_file():
+        raise FileNotFoundError("original tokenizer JSON and evidence sidecar are required")
+    token_bytes, evidence_bytes = source.read_bytes(), sidecar.read_bytes()
+    token_sha, evidence_sha = _sha256_bytes(token_bytes), _sha256_bytes(evidence_bytes)
+    if token_sha != expected_source_tokenizer_sha256 or evidence_sha != expected_source_evidence_sha256:
+        raise ValueError("historical tokenizer JSON/evidence SHA-256 mismatch")
+    try:
+        evidence = json.loads(evidence_bytes.decode("utf-8"))
+        serialized = json.loads(token_bytes.decode("utf-8"))
+        tokenizer = Tokenizer.from_str(token_bytes.decode("utf-8"))
+    except Exception as exc:
+        raise ValueError(f"historical tokenizer or evidence is invalid: {exc}") from exc
+    if not isinstance(evidence, dict) or not isinstance(serialized, dict):
+        raise ValueError("historical tokenizer and evidence must be JSON objects")
+    if (not isinstance(serialized.get("model"), dict) or serialized["model"].get("type") != "BPE"
+        or not isinstance(serialized.get("normalizer"), dict) or serialized["normalizer"].get("type") != "NFC"
+        or not isinstance(serialized.get("pre_tokenizer"), dict) or serialized["pre_tokenizer"].get("type") != "ByteLevel"
+        or not isinstance(serialized.get("decoder"), dict) or serialized["decoder"].get("type") != "ByteLevel"):
+        raise ValueError("historical tokenizer must be NFC-normalized byte-level BPE")
+    vocab = int(tokenizer.get_vocab_size(with_added_tokens=True))
+    special_ids = {token: tokenizer.token_to_id(token) for token in SPECIAL_TOKENS}
+    if vocab != config.text_vocab_size:
+        raise ValueError("historical tokenizer vocabulary does not match canonical text vocabulary")
+    if evidence.get("format_version") != FORMAT_VERSION or evidence.get("architecture_family") != "onecore-v3":
+        raise ValueError("unsupported historical OneCore V3 tokenizer evidence")
+    if evidence.get("tokenizer_file") != source.name or evidence.get("tokenizer_sha256") != token_sha:
+        raise ValueError("historical tokenizer filename or JSON hash differs from its evidence")
+    if evidence.get("vocab_size_actual") != vocab or evidence.get("vocab_size_requested") != vocab:
+        raise ValueError("historical tokenizer vocabulary evidence mismatch")
+    if evidence.get("tokenizer_algorithm") != "byte-level BPE" or evidence.get("unicode_normalization") != "NFC":
+        raise ValueError("historical tokenizer algorithm/normalization evidence mismatch")
+    if evidence.get("special_tokens") != list(SPECIAL_TOKENS) or evidence.get("special_token_ids") != special_ids:
+        raise ValueError("historical tokenizer special-token evidence mismatch")
+    checks = {
+        "data_class": "external", "training_split": "train", "training_family": "text",
+        "external_train_text_records": int(expected_external_train_text_records),
+        "train_manifest_sha256": expected_train_manifest_sha256,
+        "external_text_rows_sha256": expected_external_text_rows_sha256,
+        "validation_or_test_rows_used": 0, "v2_tokenizer_imported": False,
+    }
+    for key, expected in checks.items():
+        if evidence.get(key) != expected:
+            raise ValueError(f"historical tokenizer provenance mismatch for {key}")
+    minimum = evidence.get("minimum_text_records_required")
+    if isinstance(minimum, bool) or not isinstance(minimum, int) or minimum < 100 or expected_external_train_text_records < minimum:
+        raise ValueError("historical tokenizer fails recorded external TRAIN minimum")
+    target = Path(output_path).resolve()
+    target_sidecar = target.with_name(target.name + ".evidence.json")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists() or target_sidecar.exists():
+        raise FileExistsError("adopted tokenizer output already exists; choose a new versioned path")
+    adopted = dict(evidence)
+    adopted.update({
+        "architecture_version": config.architecture_version,
+        "config_sha256": config.fingerprint,
+        "tokenizer_contract_sha256": _tokenizer_contract_sha256(config, special_ids),
+        "tokenizer_file": target.name,
+        "vocab_size_requested": config.text_vocab_size,
+        "vocab_size_actual": vocab,
+        "adopted_from": {
+            "source_run_id": int(source_run_id), "source_artifact_id": int(source_artifact_id),
+            "source_artifact_sha256": source_artifact_sha256, "source_tokenizer_file": source.name,
+            "source_tokenizer_sha256": token_sha, "source_evidence_sha256": evidence_sha,
+            "source_architecture_version": evidence.get("architecture_version"),
+            "tokenizer_bytes_modified": False, "refit_performed": False,
+        },
+    })
+    evidence_out = (json.dumps(adopted, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
+    token_temp, evidence_temp = _write_new_file(target, token_bytes), _write_new_file(target_sidecar, evidence_out)
+    try:
+        os.replace(token_temp, target)
+        os.replace(evidence_temp, target_sidecar)
+    except Exception:
+        target.unlink(missing_ok=True)
+        target_sidecar.unlink(missing_ok=True)
+        raise
+    finally:
+        token_temp.unlink(missing_ok=True)
+        evidence_temp.unlink(missing_ok=True)
+    return {**adopted, "tokenizer_path": str(target), "evidence_path": str(target_sidecar),
+            "source_tokenizer_bytes_preserved": target.read_bytes() == token_bytes}
 
 
 def verify_v3_tokenizer(
@@ -323,6 +433,8 @@ def verify_v3_tokenizer(
         raise ValueError("V3 tokenizer is missing one or more required special tokens")
     if evidence.get("special_token_ids") != actual_special_ids:
         raise ValueError("V3 tokenizer special-token IDs do not match the evidence sidecar")
+    if evidence.get("tokenizer_contract_sha256") != _tokenizer_contract_sha256(config, actual_special_ids):
+        raise ValueError("V3 tokenizer contract fingerprint mismatch")
     if evidence.get("training_split") != "train" or evidence.get("training_family") != "text":
         raise ValueError("V3 tokenizer was not fitted on train text only")
     if evidence.get("data_class") != "external":

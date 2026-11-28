@@ -16,13 +16,13 @@ def test_canonical_configuration_matches_corrected_spec():
     cfg = V3Config()
     assert cfg.is_canonical
     assert (cfg.width, cfg.unique_blocks, cfg.recurrent_cycles, cfg.attention_heads) == (1024,4,3,8)
-    assert (cfg.hidden_size, cfg.vocab_size, cfg.max_sequence_length, cfg.tldm_latent_slots) == (2730,5144,512,16)
+    assert (cfg.hidden_size, cfg.vocab_size, cfg.max_sequence_length, cfg.tldm_latent_slots) == (2730,33048,512,16)
     assert cfg.fingerprint == V3Config(**cfg.to_dict()).fingerprint
 
 
 def test_canonical_model_parameter_count_and_tied_tldm_head_are_exact():
     model = V3Config().build_model()
-    assert model.count_parameters() == 57_579_201
+    assert model.count_parameters() == 86_152_897
     assert model.lm_head.weight is model.token_embedding.weight
     assert model.parameter_report()["tldm_additional_trainable_parameters"] == 0
     assert len(model.blocks) == 4
