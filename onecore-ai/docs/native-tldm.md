@@ -36,12 +36,12 @@ The exact corrected-spec-3 model parameter count is **86,152,897** with 32,000 t
 
 For corrected-spec-3, the joint five-family training update at 128 tokens is 1,516,166,184,960 analytic dense FLOPs (the five-family 512/512/121/244/512 train profile totals 4,542,378,835,968). These are analytic counts, not runtime benchmarks. The native T-LDM path is:
 
-- Latent thinker shared core: 1,214,251,008 FLOPs.
-- Diffusion writer shared core: 11,381,243,904 FLOPs.
-- Tied text output projection: 4,194,304,000 FLOPs.
-- Total T-LDM path: 16,789,798,912 FLOPs.
+- Latent thinker shared core (12 shared block applications at 16 slots): 4,843,634,688 FLOPs.
+- Diffusion writer shared core (12 shared block applications at 128 tokens): 39,453,720,576 FLOPs.
+- Tied text output projection at 128 tokens and 33,048 unified IDs: 8,663,334,912 FLOPs.
+- Total native T-LDM path at 128 tokens: 52,960,690,176 FLOPs.
 
-The text and tool paths report 31,050,432,512 dense forward FLOPs each; the five-family joint forward report is 325,426,230,272 FLOPs for the configured profile. These are analytical FLOPs estimates, not measured latency, RAM or model quality. The real CPU benchmark is still required.
+For the 512/512/121/244/512 text/tool/image/audio/video paths, text and tool dense forward paths each report 409,107,431,424 FLOPs; the five-family joint forward report is 1,514,126,278,656 FLOPs and the corresponding dense train sum is 4,542,378,835,968 FLOPs. These are analytical FLOPs estimates, not measured latency, RAM or model quality. The real CPU benchmark is still required.
 
 ## Verification and limits
 

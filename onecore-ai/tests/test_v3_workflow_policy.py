@@ -90,6 +90,7 @@ def test_tokenizer_workflow_is_pinned_idempotent_and_does_not_train():
     assert "adopt_v3_tokenizer" in workflow
     assert "external_train_text_records" in workflow and "validation_or_test_rows_used" in workflow
     assert "workflow_dispatch:" in workflow and "cancel-in-progress: false" in workflow
+    assert ".github/workflows/onecore-v3-tokenizer.yml" in workflow
     assert "onecore.v3.tokenizer" in workflow
     assert "source_artifact_digest" in workflow and "source_evidence_sha256" in workflow
     assert "archive_sha" in workflow
