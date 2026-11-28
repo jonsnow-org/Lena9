@@ -74,6 +74,6 @@ The GitHub connection used for this work can inspect and rerun existing jobs but
 - `main` remains at `10c4f01663bd65e30335bfe7b4ed3cdfe6584815`; it has **not** been modified or merged.
 - The old `research/onecore-foundation` ref remains at `6d5dd21982f8f4a835e07b0f004b1621be57ba96`. Do not delete or repoint it before PR #12 merges. After that merge, neutralize the legacy ref with compare-and-swap so it no longer retains a distinct active implementation. The available connection has no branch-delete operation.
 
-## Multi-client coordination
+## Mandatory multi-client coordination protocol
 
 Every client must read `SESSION_PROTOCOL.md`, `AGENTS.md` and this complete handover before writing. Check live HEAD and the latest 20 relevant runs, acquire/renew the shared writer lock with compare-and-swap, and record commits, tests, jobs, artifacts, failures and skipped gates. Never start a second model, trainer, notebook workflow, branch or checkpoint lineage.
