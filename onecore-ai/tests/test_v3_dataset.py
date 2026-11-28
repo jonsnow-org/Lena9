@@ -11,7 +11,7 @@ from tokenizers import Tokenizer, decoders, models, normalizers, pre_tokenizers
 from onecore.v3.checkpoint import _normalise_data_state
 from onecore.v3.config import V3Config
 from onecore.v3.dataset import FAMILIES, V3JointDataLoader
-from onecore.v3.tokenizer import SPECIAL_TOKENS
+from onecore.v3.tokenizer import SPECIAL_TOKENS, _tokenizer_contract_sha256
 
 
 def _write_project(root):

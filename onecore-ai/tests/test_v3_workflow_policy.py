@@ -86,7 +86,8 @@ def test_tokenizer_workflow_is_pinned_idempotent_and_does_not_train():
     assert config["architecture_version"] == request["architecture_version"]
     assert config["model"]["text_vocab_size"] == 32000
     assert sum(config["model"][key] for key in ("text_vocab_size", "vision_codebook_size", "audio_codebook_size", "motion_codebook_size", "special_tokens")) == 33048
-    assert "onecore-v3-tokenizer-run605-vocab32000.json" in workflow
+    assert request["source_tokenizer_file_name"] == "onecore-v3-tokenizer-run605-vocab32000.json"
+    assert 'req["source_tokenizer_file_name"]' in workflow
     assert "adopt_v3_tokenizer" in workflow
     assert "external_train_text_records" in workflow and "validation_or_test_rows_used" in workflow
     assert "workflow_dispatch:" in workflow and "cancel-in-progress: false" in workflow
