@@ -10,16 +10,16 @@ This directory contains the single adopted OneCore model implementation. It is n
 - `vision.py`, `audio.py`, `video.py`: trainable modality codecs.
 - `losses.py`: image, audio and video reconstruction/flow objectives.
 - `dataset.py`, `manifest.py`, `converter.py`, `source_utils.py`, `artifact.py`: data preparation, provenance, pinned media restoration and integrity checks.
-- `tokenizer.py`: the sole 32,000-token byte-level BPE tokenizer path.
+- `tokenizer.py`: the sole 4,096-token text tokenizer path under the corrected configuration.
 - `checkpoint.py`, `checkpoint_audit.py`: one checkpoint format and integrity/round-trip validation.
 - `resource_benchmark.py`, `resource_evidence.py`: measured CPU-resource report and run/artifact binding.
 - `runner.py`, `inference.py`, `evaluation.py`: the only training, inference and evaluation paths.
 
 ## Exact current architecture
 
-The model has 39,906,568 trainable parameters, width 512, 32,000 text tokens, four unique Transformer blocks reused over three cycles and eight attention heads. T-LDM uses 16 latent slots and reuses the same shared Transformer and tied text head; it contributes no additional trainable parameters. The T-LDM objective weight is 0.15 for text and tool batches.
+The model has 57,579,201 trainable parameters, width 1,024, 4,096 text tokens (5,144 unified tokens), four unique Transformer blocks reused over three cycles and eight attention heads. T-LDM uses 16 latent slots and reuses the same shared Transformer and tied text head; it contributes no additional trainable parameters. The T-LDM objective weight is 0.15 for text and tool batches.
 
-The parameter count and analytic FLOPs are checked in CI. The real CPU measurement, full current-config checkpoint round-trip and trained held-out quality evaluation are separate gates.
+The parameter count and analytic FLOPs are checked in CI. The preserved tokenizer artifact records 32,000 tokens and does not match the corrected 4,096-token text vocabulary; it remains blocked pending an explicit owner decision. The real CPU measurement, full current-config checkpoint round-trip and trained held-out quality evaluation are separate gates.
 
 ## Data and training constraints
 

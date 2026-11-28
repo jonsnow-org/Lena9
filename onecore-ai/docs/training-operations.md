@@ -14,7 +14,7 @@ Do not use notebook-based training, a second request file, an alternate trainer 
 
 The external five-family corpus is already present as artifact `14892594659` from run `45325008221`; its SHA-256 is `302e6eb082ad82ee892b00153ac068f60505cdf5de5d14f3b82a919e576740a2`. The associated conversion report is artifact `14893020087`, SHA-256 `151677083079aee3cfe5a39cbe07fbd47908e9c74560312cef9c137c64fcd1ba`.
 
-The 32,000-token byte-level BPE tokenizer was fitted from 591,525 external train-text rows only. Its artifact is `14894835517`; tokenizer JSON SHA-256 is `569f1b61e017dcf5c8ba9fef22a8002cc48d5ea3c26504bdae83f53834d00e76`. Do not restore, replace or refit these artifacts unless live evidence shows the exact artifact is missing, expired or corrupt.
+The preserved tokenizer artifact is `14894835517` from run `45336933362`; its GitHub ZIP digest is `47246c85500ed2647aacfd00187dacf4dedae1f10b180910ff55f71463851bd6`, and the recorded tokenizer JSON SHA-256 is `569f1b61e017dcf5c8ba9fef22a8002cc48d5ea3c26504bdae83f53834d00e76`. Its evidence records 32,000 tokens, but the corrected model config requires 4,096 text tokens. The artifact is preserved and must not be silently truncated, remapped or refitted; owner approval is required to resolve this compatibility blocker.
 
 ## First authorized training segment
 
@@ -40,7 +40,7 @@ One joint optimizer update accumulates one micro-batch per family in this exact 
 
 1. A real-corpus CPU benchmark must measure process-tree peak RSS, production loader throughput, per-family forward/backward timings and joint objective/AdamW allocation for the current configuration.
 2. A full real-artifact step-zero checkpoint save/restore audit must pass for the current configuration fingerprint. The earlier step-zero artifact predates native T-LDM and does not qualify for the current fingerprint.
-3. The external-only five-family corpus report and exact tokenizer evidence must pass their hash, split and payload checks.
+3. The external-only five-family corpus report and exact tokenizer evidence must pass their hash, split and payload checks, including exact vocabulary equality with the current config. The existing 32,000-token artifact currently fails that 4,096-token compatibility requirement.
 4. No conflicting run may be active.
 5. The owner must explicitly authorize the first bounded segment.
 
@@ -52,4 +52,4 @@ Before any longer run, perform a separate non-zero-step continuation audit. It m
 
 ## Current state
 
-No optimizer update has been verified for the current T-LDM-enabled configuration. No trained checkpoint or independent held-out quality evaluation exists. Keep the `&& false` training guard in `onecore-v3-training.yml` intact until the resource, checkpoint and authorization gates are complete. Do not start training by changing a push trigger or substituting an ordinary CI run.
+No optimizer update has been verified for the current T-LDM-enabled configuration. No trained checkpoint or independent held-out quality evaluation exists. The pinned tokenizer artifact is 32,000 tokens, while the corrected config expects 4,096 text tokens; this must be resolved by the owner before training. Keep the `&& false` training guard in `onecore-v3-training.yml` intact until the resource, checkpoint and authorization gates are complete. Do not start training by changing a push trigger or substituting an ordinary CI run.

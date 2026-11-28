@@ -6,9 +6,9 @@ OneCore is a single from-scratch multimodal model. The only instantiated archite
 
 | Property | Current value |
 |---|---:|
-| Trainable parameters | **39,906,568** |
-| Text vocabulary | 32,000 |
-| Shared width | 512 |
+| Trainable parameters | **57,579,201** |
+| Text vocabulary | 4,096 (5,144 unified tokens including modality/special ranges) |
+| Shared width | 1,024 |
 | Unique Transformer blocks | 4 |
 | Recurrent cycles | 3 |
 | Effective block applications | 12 |
@@ -47,7 +47,7 @@ The training objective keeps the causal loss and adds masked-token cross-entropy
 
 ## Checkpoint and data lineage
 
-The checkpoint binds model state, optimizer, scheduler, global step, configuration fingerprint, tokenizer bytes/hash/vocabulary, manifest and asset hashes, five-family source cursors, Python/NumPy/Torch RNG states and parent-checkpoint SHA. Train, validation and test are isolated. Synthetic fixtures are for software tests only and do not count as real corpus coverage or model-quality evidence.
+The checkpoint binds model state, optimizer, scheduler, global step, configuration fingerprint, tokenizer bytes/hash/vocabulary, manifest and asset hashes, five-family source cursors, Python/NumPy/Torch RNG states and parent-checkpoint SHA. Train, validation and test are isolated. Synthetic fixtures are for software tests only and do not count as real corpus coverage or model-quality evidence. The preserved tokenizer artifact currently records 32,000 tokens, but this corrected configuration requires 4,096 text tokens; its vocabulary cannot pass the exact tokenizer gate. Do not silently truncate, remap or refit it. Owner approval is required to choose a compatible tokenizer or revise the model contract.
 
 ## Known limits
 

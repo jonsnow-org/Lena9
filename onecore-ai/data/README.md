@@ -4,7 +4,7 @@ The source registry supplies one unified corpus for the single OneCore model. It
 
 ## Five training families
 
-External data is organized as text, tool-use, images, waveform audio and video. These families share the same 32,000-token vocabulary and semantic Transformer. Image/audio/video codecs and flow heads are modules inside the same OneCore checkpoint.
+External data is organized as text, tool-use, images, waveform audio and video. These families share one semantic Transformer and a 5,144-token unified vocabulary: 4,096 text tokens plus modality-code and special-token ranges. The preserved 32,000-token tokenizer artifact is incompatible with the current 4,096-token text vocabulary. Image/audio/video codecs and flow heads are modules inside the same OneCore checkpoint.
 
 ## Manifest contract
 

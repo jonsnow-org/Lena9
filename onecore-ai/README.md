@@ -8,11 +8,11 @@ Before any engineering change, read `AGENTS.md`, `SESSION_PROTOCOL.md`, and the 
 
 ## Canonical model
 
-The current adopted architecture is `onecore-v3-prototype-2`:
+The current adopted architecture is `onecore-v3-corrected-spec-2`:
 
-- **39,906,568 trainable parameters**, checked exactly in CI.
-- **32,000-token byte-level BPE vocabulary**.
-- Shared semantic Transformer, width 512, four unique blocks reused over three cycles, eight attention heads.
+- **57,579,201 trainable parameters**, checked exactly in CI.
+- **4,096 text BPE tokens within a 5,144-token unified vocabulary**.
+- Shared semantic Transformer, width 1,024, four unique blocks reused over three cycles, eight attention heads, SwiGLU hidden width 2,730 and maximum context 512.
 - One shared text embedding and tied text output projection.
 - Text and tool tasks use the causal objective plus native masked-token T-LDM.
 - Image, waveform-audio and video paths use their modality codecs, shared semantic core and independent flow heads.
@@ -38,7 +38,7 @@ The already validated external corpus and tokenizer are immutable inputs. Preser
 
 - Corpus artifact: `14892594659`, created by run `45325008221`; 24,432,975,285 bytes; SHA-256 `302e6eb082ad82ee892b00153ac068f60505cdf5de5d14f3b82a919e576740a2`.
 - Conversion report artifact: `14893020087`, run `45325008221`; SHA-256 `151677083079aee3cfe5a39cbe07fbd47908e9c74560312cef9c137c64fcd1ba`.
-- Tokenizer artifact: `14894835517`, created by run `45336933362`; tokenizer JSON SHA-256 `569f1b61e017dcf5c8ba9fef22a8002cc48d5ea3c26504bdae83f53834d00e76`; 32,000 vocabulary items from 591,525 external train-text rows only.
+- Tokenizer artifact: `14894835517`, created by run `45336933362`; GitHub ZIP digest `47246c85500ed2647aacfd00187dacf4dedae1f10b180910ff55f71463851bd6`; recorded tokenizer JSON SHA-256 `569f1b61e017dcf5c8ba9fef22a8002cc48d5ea3c26504bdae83f53834d00e76`. Its evidence records 32,000 vocabulary items, while the corrected model requires 4,096 text tokens. Preserve this artifact, but do not use it for the corrected configuration until the owner resolves the mismatch; no refit is authorized by this documentation change.
 
 The source corpus archive is data only: it contains manifests and source-media payloads, not another model, weights, optimizer state or checkpoint. All training eligibility and split-integrity checks remain enforced. Only verified external train records may enter tokenizer fitting or optimizer updates; validation and test remain held out.
 
@@ -47,7 +47,7 @@ The source corpus archive is data only: it contains manifests and source-media p
 There is one active implementation branch: `research/onecore-v3-implementation`.
 
 - `.github/workflows/onecore-ci.yml`: canonical integrity checks plus explicitly selected corpus, CPU benchmark, checkpoint-audit and held-out jobs.
-- `.github/workflows/onecore-v3-tokenizer.yml`: the single tokenizer workflow; the already fitted tokenizer is not to be regenerated.
+- `.github/workflows/onecore-v3-tokenizer.yml`: the single tokenizer workflow; the pinned 32,000-token artifact is preserved but is not compatible with the current 4,096-token model config; resolve this mismatch with the owner before any fit or training.
 - `.github/workflows/onecore-v3-training.yml`: the only optimizer workflow. Its training job remains fail-closed until all runtime gates pass and training is explicitly authorized.
 - `.github/workflows/onecore-source-package.yml`: builds a source-only archive with no weights, datasets, checkpoints, secrets or runtime state.
 
@@ -60,7 +60,7 @@ The model is **not trained** and its output quality is **not certified**. CI suc
 Training must remain blocked until:
 1. A successful real-corpus CPU benchmark measures process-tree peak RSS, loader throughput and per-family compute on the current configuration.
 2. A full real-artifact step-zero checkpoint save/restore audit passes for the current configuration fingerprint.
-3. The pinned corpus, manifest, tokenizer and five-family gates remain valid.
+3. The pinned corpus, manifest and five-family gates must remain valid, and the tokenizer vocabulary must exactly match the current config. The currently pinned 32,000-token tokenizer does not match the 4,096-token text vocabulary and is therefore blocked.
 4. The owner explicitly authorizes the first bounded segment.
 
 After the first authorized optimizer update, a separate continuation audit must verify populated AdamW moments, advanced five-family cursors, parent checkpoint SHA and RNG state before any longer run.
