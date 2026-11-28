@@ -77,7 +77,7 @@ def test_tokenizer_workflow_is_pinned_idempotent_and_does_not_train():
     assert request["source_evidence_sha256"] == "b60e5077767f79b1316635ed45343ed5c59ce2602f41d24759a25a386ea33e16"
     assert request["external_train_text_records"] == 591525
     assert request["architecture_version"] == "onecore-v3-corrected-spec-3"
-    assert request["output_artifact_name"] == "onecore-v3-tokenizer-45325008221"
+    assert request["output_artifact_name"] == "onecore-v3-tokenizer-32000-adopted-45336933362"
     assert request["tokenizer_file_name"] == "onecore-tokenizer-text32000-adopted-20261128.json"
     assert request["refit_performed"] is False and request["tokenizer_bytes_modified"] is False
     assert request["train_manifest_sha256"] == "d499968cdd5e1869ae7b5d9866261e8aad8fe091ad9096b13067bfb6a83f9205"
@@ -88,11 +88,11 @@ def test_tokenizer_workflow_is_pinned_idempotent_and_does_not_train():
     assert sum(config["model"][key] for key in ("text_vocab_size", "vision_codebook_size", "audio_codebook_size", "motion_codebook_size", "special_tokens")) == 33048
     assert "onecore-v3-tokenizer-run605-vocab32000.json" in workflow
     assert "adopt_v3_tokenizer" in workflow
-    assert 'request_data["train_manifest_member"]' in workflow
     assert "external_train_text_records" in workflow and "validation_or_test_rows_used" in workflow
     assert "workflow_dispatch:" in workflow and "cancel-in-progress: false" in workflow
     assert "onecore.v3.tokenizer" in workflow
-    assert '"Pillow>=10,<13"' in workflow and '"soundfile>=0.12,<1"' in workflow
+    assert "source_artifact_digest" in workflow and "source_evidence_sha256" in workflow
+    assert "archive_sha" in workflow
     assert "validation_or_test_rows_used" in workflow
     assert "onecore.v3.training" not in workflow and "train_v3_step(" not in workflow
 

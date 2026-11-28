@@ -149,6 +149,7 @@ def _write_exact_v3_test_tokenizer(train_manifest, path, config):
         "tokenizer_file": path.name,
         "validation_or_test_rows_used": 0,
         "v2_tokenizer_imported": False,
+        "tokenizer_contract_sha256": _tokenizer_contract_sha256(config, {token: tokenizer.token_to_id(token) for token in SPECIAL_TOKENS}),
     }
     path.with_name(path.name + ".evidence.json").write_text(
         json.dumps(evidence, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
