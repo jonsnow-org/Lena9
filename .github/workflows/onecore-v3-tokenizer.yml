@@ -249,13 +249,13 @@ jobs:
           project = Path("onecore-ai")
           raw = yaml.safe_load((project / "configs/onecore-v3-research.yaml").read_text(encoding="utf-8"))
           config = V3Config(**raw["model"])
+          request_data = json.loads(Path("onecore-ai/v3-tokenizer-request.json").read_text(encoding="utf-8"))
           if raw.get("architecture_version") != config.architecture_version:
               raise RuntimeError("OneCore YAML and V3Config architecture versions differ")
           if not config.is_canonical or config.text_vocab_size != 4096 or config.vocab_size != 5144:
               raise RuntimeError("tokenizer fit must target the corrected single-model 4096/5144 vocabulary")
           if request_data.get("architecture_version") != config.architecture_version:
               raise RuntimeError("tokenizer request does not name the canonical corrected architecture")
-          request_data = json.loads(Path("onecore-ai/v3-tokenizer-request.json").read_text(encoding="utf-8"))
           work = Path(os.environ["RUNNER_TEMP"]) / "onecore-v3-tokenizer-input"
           manifest = work / "train.jsonl"
           output = work / request_data["tokenizer_file_name"]
