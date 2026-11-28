@@ -240,7 +240,7 @@ def _assert_model_matches_config(model: OneCoreV3, config: V3Config) -> None:
     if mismatched:
         raise ValueError("OneCore corrected architecture mismatch: " + ", ".join(mismatched))
     actual = model.count_parameters()
-    if config.is_canonical and actual != 57_579_201:
+    if config.is_canonical and actual != 86_152_897:
         raise ValueError(f"canonical OneCore parameter count mismatch: expected 57,579,201, got {actual:,}")
     if model.lm_head.weight is not model.token_embedding.weight:
         raise ValueError("T-LDM and causal decoding must reuse the tied shared text head")

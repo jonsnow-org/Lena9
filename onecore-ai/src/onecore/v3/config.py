@@ -11,13 +11,13 @@ from .core import OneCoreV3
 
 @dataclass(frozen=True)
 class V3Config:
-    architecture_version: str = "onecore-v3-corrected-spec-2"
+    architecture_version: str = "onecore-v3-corrected-spec-3"
     width: int = 1024
     unique_blocks: int = 4
     recurrent_cycles: int = 3
     attention_heads: int = 8
     max_sequence_length: int = 512
-    text_vocab_size: int = 4096
+    text_vocab_size: int = 32000
     vision_codebook_size: int = 512
     audio_codebook_size: int = 256
     motion_codebook_size: int = 256
@@ -33,7 +33,7 @@ class V3Config:
     dropout: float = 0.05
 
     def __post_init__(self) -> None:
-        if self.architecture_version not in {"onecore-v3-corrected-spec-2", "onecore-v3-test-fixture"}:
+        if self.architecture_version not in {"onecore-v3-corrected-spec-3", "onecore-v3-test-fixture"}:
             raise ValueError("unknown OneCore architecture contract")
         fields = (self.width, self.unique_blocks, self.recurrent_cycles, self.attention_heads,
                   self.max_sequence_length, self.text_vocab_size, self.vision_codebook_size,
@@ -71,14 +71,14 @@ class V3Config:
     def video_generation_chunk_frames(self) -> int: return self.max_video_frames
     @property
     def is_canonical(self) -> bool:
-        expected = (1024,4,3,8,512,4096,512,256,256,24,8,64,80,4,24000,2,4,16,0.05)
+        expected = (1024,4,3,8,512,32000,512,256,256,24,8,64,80,4,24000,2,4,16,0.05)
         actual = (self.width,self.unique_blocks,self.recurrent_cycles,self.attention_heads,
                   self.max_sequence_length,self.text_vocab_size,self.vision_codebook_size,
                   self.audio_codebook_size,self.motion_codebook_size,self.special_tokens,
                   self.patch_size,self.image_size,self.audio_bins,self.audio_group_frames,
                   self.audio_sample_rate,self.audio_channels,self.max_video_frames,
                   self.tldm_latent_slots,self.dropout)
-        return self.architecture_version == "onecore-v3-corrected-spec-2" and actual == expected
+        return self.architecture_version == "onecore-v3-corrected-spec-3" and actual == expected
 
     def special_id(self, offset: int) -> int:
         if isinstance(offset, bool) or not isinstance(offset, int) or not 0 <= offset < self.special_tokens:

@@ -12,7 +12,7 @@ def build_report() -> dict[str, Any]:
     config = V3Config()
     model = config.build_model()
     parameters = model.count_parameters()
-    if config.is_canonical and parameters != 57_579_201:
+    if config.is_canonical and parameters != 86_152_897:
         raise AssertionError(f"OneCore parameter budget must be 57,579,201, got {parameters:,}")
     report: dict[str, Any] = {
         "architecture_version": config.architecture_version,

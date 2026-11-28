@@ -1,5 +1,5 @@
 # OneCore is one corrected V3 model; this file is its sole tensor-shape contract.
-architecture_version: onecore-v3-corrected-spec-2
+architecture_version: onecore-v3-corrected-spec-3
 seed: 20261124
 model:
   width: 1024
@@ -7,7 +7,7 @@ model:
   recurrent_cycles: 3
   attention_heads: 8
   max_sequence_length: 512
-  text_vocab_size: 4096
+  text_vocab_size: 32000
   vision_codebook_size: 512
   audio_codebook_size: 256
   motion_codebook_size: 256
