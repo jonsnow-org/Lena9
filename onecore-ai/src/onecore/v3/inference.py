@@ -323,7 +323,8 @@ class OneCoreV3Inference:
             waveform = torch.istft(spectrum, n_fft=n_fft, hop_length=hop, win_length=n_fft,
                                    window=window, center=True, length=samples)
             rebuilt = torch.stft(waveform, n_fft=n_fft, hop_length=hop, win_length=n_fft,
-                                 window=window, center=True, return_complex=True)
+                                 window=window, center=True, pad_mode="constant",
+                                 return_complex=True)
             rebuilt = rebuilt[..., :target_frames]
             if rebuilt.shape[-1] < target_frames:
                 rebuilt = torch.nn.functional.pad(rebuilt, (0, target_frames - rebuilt.shape[-1]))

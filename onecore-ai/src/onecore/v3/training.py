@@ -147,7 +147,11 @@ class OneCoreV3Objective(nn.Module):
                     pieces.extend((image_codes.new_full((batch_size, 1), cfg.special_id(MOTION_START)), motion_codes[:, index]))
             pieces.append(image_codes.new_full((batch_size, 1), cfg.special_id(VIDEO_END)))
             sequence = torch.cat(pieces, dim=1)
-            sequence = _append_condition(sequence, condition, limit=min(52, cfg.max_sequence_length - sequence.shape[1] - 2))
+            sequence = _append_condition(
+                sequence, condition,
+                limit=min(52, cfg.max_sequence_length - sequence.shape[1] - 2),
+                config=cfg,
+            )
 
         language = _sequence_loss(model, sequence)
         tldm = _tldm_masked_span_loss(model, sequence) if self.weights.tldm_diffusion > 0 else language.new_zeros(())
