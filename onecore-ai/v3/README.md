@@ -19,7 +19,7 @@ This directory contains the single adopted OneCore model implementation. It is n
 
 The model has 57,579,201 trainable parameters, width 1,024, 4,096 text tokens (5,144 unified tokens), four unique Transformer blocks reused over three cycles and eight attention heads. T-LDM uses 16 latent slots and reuses the same shared Transformer and tied text head; it contributes no additional trainable parameters. The T-LDM objective weight is 0.15 for text and tool batches.
 
-The parameter count and analytic FLOPs are checked in CI. The preserved tokenizer artifact records 32,000 tokens and does not match the corrected 4,096-token text vocabulary; it remains blocked pending an explicit owner decision. The real CPU measurement, full current-config checkpoint round-trip and trained held-out quality evaluation are separate gates.
+The parameter count and analytic FLOPs are checked in CI. The historic 32,000-token tokenizer is retained for provenance only. The sole active tokenizer workflow generates the corrected 4,096-token BPE from the pinned external TRAIN split; the new artifact must be hash-verified and pinned before runtime gates. The real CPU measurement, full current-config checkpoint round-trip and trained held-out quality evaluation are separate gates.
 
 ## Data and training constraints
 

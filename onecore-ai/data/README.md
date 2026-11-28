@@ -4,7 +4,7 @@ The source registry supplies one unified corpus for the single OneCore model. It
 
 ## Five training families
 
-External data is organized as text, tool-use, images, waveform audio and video. These families share one semantic Transformer and a 5,144-token unified vocabulary: 4,096 text tokens plus modality-code and special-token ranges. The preserved 32,000-token tokenizer artifact is incompatible with the current 4,096-token text vocabulary. Image/audio/video codecs and flow heads are modules inside the same OneCore checkpoint.
+External data is organized as text, tool-use, images, waveform audio and video. These families share one semantic Transformer and a 5,144-token unified vocabulary: 4,096 text tokens plus modality-code and special-token ranges. The historical 32,000-token tokenizer artifact is provenance only; the sole active tokenizer pipeline fits 4,096 BPE tokens from external train text in the pinned `train.jsonl`. Image/audio/video codecs and flow heads are modules inside the same OneCore checkpoint.
 
 ## Manifest contract
 
@@ -26,7 +26,7 @@ The five-family corpus is already stored in the pinned GitHub Actions artifact `
 
 `corpus-source-snapshot-45325008221.yaml` is the immutable data-source registry used for the already-created corpus artifact. It is used only by the explicit corpus-restore operation; it is not an alternate active source-selection policy. `sources.yaml` is the current active registry. Dataset identifiers containing words such as `stack_v2` identify upstream datasets, not another OneCore model.
 
-Do not reacquire or refit the pinned corpus/tokenizer artifacts unless live evidence establishes that an exact artifact is missing, expired or corrupt.
+Do not reacquire the pinned corpus. The historic 32,000-token tokenizer remains preserved but is not used by the corrected model; fit the one canonical 4,096-token tokenizer once from the pinned external TRAIN split, then preserve its exact artifact, bytes and provenance. Never use validation or test rows for tokenizer fitting.
 
 ## Streaming cursor
 

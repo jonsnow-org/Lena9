@@ -34,11 +34,11 @@ All tasks contribute to one model checkpoint and one optimizer lineage. No pretr
 
 ## Data and lineage
 
-The already validated external corpus and tokenizer are immutable inputs. Preserve their exact artifact IDs and hashes; do not reacquire the corpus or refit the tokenizer merely to repeat completed work.
+The already validated external corpus is an immutable input. Preserve its artifact ID and hashes; do not reacquire it. The historical 32,000-token tokenizer artifact is retained for provenance only and is not compatible with the corrected specification. The one canonical tokenizer fit is 4,096 text BPE tokens, trained from the pinned external TRAIN split only; validation and test are never tokenizer inputs.
 
 - Corpus artifact: `14892594659`, created by run `45325008221`; 24,432,975,285 bytes; SHA-256 `302e6eb082ad82ee892b00153ac068f60505cdf5de5d14f3b82a919e576740a2`.
 - Conversion report artifact: `14893020087`, run `45325008221`; SHA-256 `151677083079aee3cfe5a39cbe07fbd47908e9c74560312cef9c137c64fcd1ba`.
-- Tokenizer artifact: `14894835517`, created by run `45336933362`; GitHub ZIP digest `47246c85500ed2647aacfd00187dacf4dedae1f10b180910ff55f71463851bd6`; recorded tokenizer JSON SHA-256 `569f1b61e017dcf5c8ba9fef22a8002cc48d5ea3c26504bdae83f53834d00e76`. Its evidence records 32,000 vocabulary items, while the corrected model requires 4,096 text tokens. Preserve this artifact, but do not use it for the corrected configuration until the owner resolves the mismatch; no refit is authorized by this documentation change.
+- Historical tokenizer artifact: `14894835517`, created by run `45336933362`; it records 32,000 tokens and SHA-256 `569f1b61e017dcf5c8ba9fef22a8002cc48d5ea3c26504bdae83f53834d00e76`. It is preserved as provenance only and is not used by the corrected model. The canonical replacement request is `onecore-ai/v3-tokenizer-request.json`: 4,096 text BPE tokens from the same pinned external TRAIN manifest, with no validation/test leakage. The replacement artifact is not usable until its new run ID, artifact digest, tokenizer SHA and evidence are verified and pinned in the training request.
 
 The source corpus archive is data only: it contains manifests and source-media payloads, not another model, weights, optimizer state or checkpoint. All training eligibility and split-integrity checks remain enforced. Only verified external train records may enter tokenizer fitting or optimizer updates; validation and test remain held out.
 
@@ -47,7 +47,7 @@ The source corpus archive is data only: it contains manifests and source-media p
 There is one active implementation branch: `research/onecore-v3-implementation`.
 
 - `.github/workflows/onecore-ci.yml`: canonical integrity checks plus explicitly selected corpus, CPU benchmark, checkpoint-audit and held-out jobs.
-- `.github/workflows/onecore-v3-tokenizer.yml`: the single tokenizer workflow; the pinned 32,000-token artifact is preserved but is not compatible with the current 4,096-token model config; resolve this mismatch with the owner before any fit or training.
+- `.github/workflows/onecore-v3-tokenizer.yml`: the sole tokenizer workflow; it fits the corrected 4,096-token BPE from the immutable external TRAIN split and publishes a new content-addressed artifact. The old 32,000-token artifact is not used.
 - `.github/workflows/onecore-v3-training.yml`: the only optimizer workflow. Its training job remains fail-closed until all runtime gates pass and training is explicitly authorized.
 - `.github/workflows/onecore-source-package.yml`: builds a source-only archive with no weights, datasets, checkpoints, secrets or runtime state.
 
@@ -60,7 +60,7 @@ The model is **not trained** and its output quality is **not certified**. CI suc
 Training must remain blocked until:
 1. A successful real-corpus CPU benchmark measures process-tree peak RSS, loader throughput and per-family compute on the current configuration.
 2. A full real-artifact step-zero checkpoint save/restore audit passes for the current configuration fingerprint.
-3. The pinned corpus, manifest and five-family gates must remain valid, and the tokenizer vocabulary must exactly match the current config. The currently pinned 32,000-token tokenizer does not match the 4,096-token text vocabulary and is therefore blocked.
+3. The pinned corpus, manifest and five-family gates must remain valid, and the replacement tokenizer must have exactly 4,096 tokens with verified TRAIN-only provenance, manifest SHA and content SHA.
 4. The owner explicitly authorizes the first bounded segment.
 
 After the first authorized optimizer update, a separate continuation audit must verify populated AdamW moments, advanced five-family cursors, parent checkpoint SHA and RNG state before any longer run.

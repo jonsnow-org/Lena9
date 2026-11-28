@@ -47,7 +47,7 @@ The training objective keeps the causal loss and adds masked-token cross-entropy
 
 ## Checkpoint and data lineage
 
-The checkpoint binds model state, optimizer, scheduler, global step, configuration fingerprint, tokenizer bytes/hash/vocabulary, manifest and asset hashes, five-family source cursors, Python/NumPy/Torch RNG states and parent-checkpoint SHA. Train, validation and test are isolated. Synthetic fixtures are for software tests only and do not count as real corpus coverage or model-quality evidence. The preserved tokenizer artifact currently records 32,000 tokens, but this corrected configuration requires 4,096 text tokens; its vocabulary cannot pass the exact tokenizer gate. Do not silently truncate, remap or refit it. Owner approval is required to choose a compatible tokenizer or revise the model contract.
+The checkpoint binds model state, optimizer, scheduler, global step, configuration fingerprint, tokenizer bytes/hash/vocabulary, manifest and asset hashes, five-family source cursors, Python/NumPy/Torch RNG states and parent-checkpoint SHA. Train, validation and test are isolated. Synthetic fixtures are for software tests only and do not count as real corpus coverage or model-quality evidence. The historical 32,000-token tokenizer is excluded from this model. Its replacement is fitted from the pinned external TRAIN text only to exactly 4,096 tokens; validation and test are excluded. The new artifact must be content-hash verified and pinned before checkpoint audits or training.
 
 ## Known limits
 
