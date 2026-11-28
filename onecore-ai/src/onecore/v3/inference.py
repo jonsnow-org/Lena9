@@ -278,10 +278,13 @@ class OneCoreV3Inference:
         return self.tokenizer.decode(decoded, skip_special_tokens=True)
 
     @torch.inference_mode()
-    def generate_image(self, prompt: str | None = None, *, height: int = 64, width: int = 64,
-                       temperature: float = 0.8, top_k: int = 40) -> torch.Tensor:
+    def generate_image(self, prompt: str | None = None, *, height: int | None = None,
+                       width: int | None = None, temperature: float = 0.8,
+                       top_k: int = 40) -> torch.Tensor:
         if prompt and prompt.strip():
             raise ValueError("this corrected model image path is unconditional; text-to-image conditioning is not implemented")
+        height = self.config.image_size if height is None else height
+        width = self.config.image_size if width is None else width
         if (height, width) != (self.config.image_size, self.config.image_size):
             raise ValueError(f"OneCore images are fixed at {self.config.image_size}x{self.config.image_size}")
         _codes, image = self.model.generate_image(temperature=temperature, top_k=top_k)
@@ -344,11 +347,13 @@ class OneCoreV3Inference:
 
     @torch.inference_mode()
     def generate_video_chunks(self, prompt: str | None = None, *, frames: int = 4,
-                              height: int = 64, width: int = 64,
+                              height: int | None = None, width: int | None = None,
                               temperature: float = 0.8, top_k: int = 40,
                               chunk_frames: int | None = None):
         if prompt and prompt.strip():
             raise ValueError("this corrected model video path is unconditional; text-to-video conditioning is not implemented")
+        height = self.config.image_size if height is None else height
+        width = self.config.image_size if width is None else width
         if not 1 <= frames <= self.config.max_video_frames:
             raise ValueError(f"video frame count must be from 1 to {self.config.max_video_frames}")
         if (height, width) != (self.config.image_size, self.config.image_size):
@@ -363,7 +368,7 @@ class OneCoreV3Inference:
 
     @torch.inference_mode()
     def generate_video(self, prompt: str | None = None, *, frames: int = 4,
-                       height: int = 64, width: int = 64,
+                       height: int | None = None, width: int | None = None,
                        temperature: float = 0.8, top_k: int = 40,
                        chunk_frames: int | None = None) -> torch.Tensor:
         return torch.cat(list(self.generate_video_chunks(

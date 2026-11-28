@@ -208,8 +208,14 @@ def _normalise_data_state(
 
 
 def _assert_model_matches_config(model: OneCoreV3, config: V3Config) -> None:
-    if model.cfg.to_dict() != config.to_dict():
-        raise ValueError("OneCore model config does not match the checkpoint config")
+    model_values = model.cfg.to_dict()
+    requested_values = config.to_dict()
+    if model_values != requested_values:
+        mismatched_fields = [
+            field for field in sorted(set(model_values) | set(requested_values))
+            if model_values.get(field) != requested_values.get(field)
+        ]
+        raise ValueError("model/config mismatch: " + ", ".join(mismatched_fields))
     checks = {
         "shared vocabulary": int(model.token_embedding.num_embeddings) == config.vocab_size,
         "tied text head": model.lm_head.weight is model.token_embedding.weight,

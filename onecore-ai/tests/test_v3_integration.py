@@ -1,5 +1,6 @@
 import torch
 
+from onecore.v3.config import V3Config
 from onecore.v3.core import MASK
 
 def tiny_config(**overrides):

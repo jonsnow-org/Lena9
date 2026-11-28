@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import pytest
 import torch
 
+from onecore.v3.config import V3Config
 from onecore.v3.core import MASK
 from onecore.v3.training import OneCoreV3Objective, V3ObjectiveWeights, train_v3_joint_step, train_v3_step
 

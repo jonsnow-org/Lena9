@@ -35,7 +35,10 @@ def test_image_audio_motion_codecs_are_projection_heads_of_one_shared_vocabulary
     motion_out = model.decode_motion_latents(motion_latents)
     assert motion_ids.shape == (6, 16)
     assert motion_out.shape == differences.flatten(0, 1).shape
-    (image_out.square().mean() + audio_out.square().mean() + motion_out.square().mean()).backward()
+    (
+        image_out.square().mean() + audio_out.square().mean() + motion_out.square().mean()
+        + image_loss + audio_loss + motion_loss
+    ).backward()
     assert model.token_embedding.weight.grad is not None
     assert image.grad is not None and mel.grad is not None and differences.grad is not None
 

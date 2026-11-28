@@ -458,7 +458,7 @@ def test_v3_heldout_evaluator_reports_validation_and_test_without_updates(tmp_pa
     from onecore.v3.evaluation import evaluate_v3_heldout_splits
 
     config = V3Config(architecture_version="onecore-v3-test-fixture", width=32, unique_blocks=1,
-        recurrent_cycles=2, attention_heads=4, max_sequence_length=128, text_vocab_size=64,
+        recurrent_cycles=2, attention_heads=4, max_sequence_length=128, text_vocab_size=512,
         vision_codebook_size=16, audio_codebook_size=8, motion_codebook_size=8, special_tokens=24,
         patch_size=8, image_size=32, audio_bins=8, audio_group_frames=2, audio_sample_rate=24000,
         audio_channels=2, max_video_frames=4, tldm_latent_slots=4, dropout=0.0)

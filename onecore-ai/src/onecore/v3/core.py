@@ -326,7 +326,9 @@ class OneCoreV3(nn.Module):
 
     def _waveform_to_log_mel(self, waveform: torch.Tensor, sample_rate: int) -> torch.Tensor:
         if sample_rate != self.cfg.audio_sample_rate:
-            raise ValueError(f"audio must be normalized to {self.cfg.audio_sample_rate} Hz")
+            raise ValueError(
+                f"audio must be normalized to 24 kHz ({self.cfg.audio_sample_rate} Hz)"
+            )
         if waveform.ndim == 3:
             waveform = waveform.mean(dim=1)
         elif waveform.ndim != 2:
