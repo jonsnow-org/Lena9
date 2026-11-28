@@ -49,13 +49,14 @@ def test_tokenizer_workflow_is_pinned_idempotent_and_does_not_train():
     assert request["architecture_version"] == "onecore-v3-corrected-spec-2"
     assert request["output_artifact_name"] == "onecore-corrected-spec-tokenizer-4096-45325008221"
     assert request["tokenizer_file_name"] == "onecore-tokenizer-text4096-20261128.json"
-    assert request["fit_revision"] >= 3
+    assert request["fit_revision"] >= 4
+    assert request["train_manifest_member"] == "data/train.jsonl"
     config = yaml.safe_load((PROJECT / "configs/onecore-v3-research.yaml").read_text(encoding="utf-8"))
     assert config["architecture_version"] == request["architecture_version"]
     assert config["model"]["text_vocab_size"] == 4096
     assert sum(config["model"][key] for key in ("text_vocab_size", "vision_codebook_size", "audio_codebook_size", "motion_codebook_size", "special_tokens")) == 5144
     assert "onecore-v3-tokenizer-run605-vocab32000.json" not in workflow
-    assert "data/train.jsonl" in workflow
+    assert 'request_data["train_manifest_member"]' in workflow
     assert "external_train_text_records" in workflow and "validation_or_test_rows_used" in workflow
     assert "workflow_dispatch:" in workflow and "cancel-in-progress: false" in workflow
     assert "onecore.v3.tokenizer" in workflow
