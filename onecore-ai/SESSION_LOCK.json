@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "status": "released",
+  "holder": null,
+  "session_id": null,
+  "client": null,
+  "started_at_utc": null,
+  "lease_expires_at_utc": null,
+  "base_head_sha": "71dc755055587d3e9a89f432072ad0ab6e268560",
+  "planned_scope": null,
+  "last_released_at_utc": "2026-11-28T10:38:22Z",
+  "last_session_summary": "Owner-authorized corrected-spec-3 recovery completed; the original 32K tokenizer was adopted unchanged and verified. CI push/PR passed 209 tests each on code/docs head efc02442d3803df686880a30c14d60ce3d4dc81f and again on lock-only head f64bbd83cc747a1d8c11f1d1c1878643ea077d05. The new 32K tokenizer evidence artifact is 15258954403 (SHA-256 0fb1339bded0560673dc794b02e25e72b8c2014d940d02a63940147908e809b0); source package artifact 15259149323 is 245146 bytes and 15259956970 is 245206 bytes. CPU benchmark, step-zero checkpoint audit, corpus restore and held-out evaluation were skipped; no optimizer update/training occurred. PR #12 remains open/unmerged; main is unchanged. The short handover-correction lease has now been released.",
+  "last_verified_branch_head": "71dc755055587d3e9a89f432072ad0ab6e268560",
+  "last_result": "All code/docs migration complete; tokenizer adoption and CI/source package successful; final handover updated; no active writer lease. Training remains safely blocked pending runtime/checkpoint gates and explicit owner approval.",
+  "released_at_utc": "2026-11-28T10:38:22Z",
+  "released_from_head_sha": "71dc755055587d3e9a89f432072ad0ab6e268560"
+}

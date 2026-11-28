@@ -1,146 +1,77 @@
+from types import SimpleNamespace
+
 import pytest
 import torch
 
-from onecore.v3 import OneCoreV3
-from onecore.v3.training import OneCoreV3Objective, train_v3_step
+from onecore.v3.config import V3Config
+from onecore.v3.core import MASK
+from onecore.v3.training import OneCoreV3Objective, V3ObjectiveWeights, train_v3_joint_step, train_v3_step
+
+def tiny_config(**overrides):
+    values = dict(architecture_version="onecore-v3-test-fixture", width=32, unique_blocks=1,
+                  recurrent_cycles=2, attention_heads=4, max_sequence_length=128,
+                  text_vocab_size=64, vision_codebook_size=16, audio_codebook_size=8,
+                  motion_codebook_size=8, special_tokens=24, patch_size=8, image_size=32,
+                  audio_bins=8, audio_group_frames=2, audio_sample_rate=24000,
+                  audio_channels=1, max_video_frames=4, tldm_latent_slots=4, dropout=0.0)
+    values.update(overrides)
+    return V3Config(**values)
 
 
-def _tiny_model():
-    return OneCoreV3(
-        text_vocab_size=128, width=32, layers=1, attention_heads=4,
-        patch_size=8, audio_latent_channels=16, audio_hidden_channels=24,
-        audio_codebook_size=32, audio_quantizer_stages=3,
-        temporal_layers=1, max_image_context_tokens=16,
-        max_video_context_tokens=16, max_flow_context_tokens=16,
-        temporal_window_frames=8, temporal_memory_frames=2,
-        video_generation_chunk_frames=4, dropout=0.0,
+def _micro_batches():
+    return (
+        SimpleNamespace(family="text", batch={"text":{"input_ids":torch.randint(0,64,(1,12))}}),
+        SimpleNamespace(family="tool", batch={"tool":{"input_ids":torch.randint(0,64,(1,12))}}),
+        SimpleNamespace(family="image", batch={"image":{"images":torch.rand(1,3,32,32),"condition_ids":torch.randint(0,64,(1,8))}}),
+        SimpleNamespace(family="audio", batch={"audio":{"waveform":torch.randn(1,2048),"sample_rate":24000,"condition_ids":torch.randint(0,64,(1,8))}}),
+        SimpleNamespace(family="video", batch={"video":{"frames":torch.rand(1,4,3,32,32),"condition_ids":torch.randint(0,64,(1,8))}}),
     )
 
 
-def test_v3_joint_objective_and_optimizer_step_cover_all_modalities():
+def test_shared_objective_produces_language_codec_and_tldm_losses_for_each_family():
     torch.manual_seed(31)
-    model = _tiny_model()
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
-    batch = {
-        "text": {"input_ids": torch.randint(0, 128, (2, 8))},
-        "tool": {
-            "input_ids": torch.randint(0, 128, (2, 8)),
-            "labels": torch.randint(0, 128, (2, 8)),
-        },
-        "image": {
-            "images": torch.rand(2, 3, 32, 32),
-            "condition_ids": torch.randint(0, 128, (2, 5)),
-        },
-        "audio": {
-            "waveform": torch.rand(2, 1024),
-            "sample_rate": 24_000,
-            "condition_ids": torch.randint(0, 128, (2, 5)),
-        },
-        "video": {
-            "frames": torch.rand(2, 3, 3, 16, 16),
-            "timestamps": torch.tensor([[0.0, 0.1, 0.2], [0.0, 0.12, 0.24]]),
-            "condition_ids": torch.randint(0, 128, (2, 5)),
-        },
-    }
-    metrics = train_v3_step(model, optimizer, batch, max_grad_norm=1.0)
-
-    assert "total" in metrics and metrics["total"] > 0
-    assert "text_loss" in metrics and "tool_loss" in metrics
-    assert "image_flow_loss" in metrics and "image_reconstruction_loss" in metrics
-    assert "audio_flow_loss" in metrics and "audio_reconstruction_loss" in metrics
-    assert "video_flow_loss" in metrics and "video_temporal_loss" in metrics
-    assert "alignment_loss" in metrics
-    assert metrics["gradient_norm"] > 0
+    model=tiny_config().build_model()
+    objective=OneCoreV3Objective(model,V3ObjectiveWeights())
+    for item in _micro_batches():
+        losses=objective(item.batch)
+        assert set(losses)=={"language_loss","aux_loss","tldm_loss","total"}
+        assert all(torch.isfinite(value) for value in losses.values())
+        assert losses["language_loss"]>0 and losses["tldm_loss"]>=0
 
 
-def test_v3_objective_rejects_empty_batches():
-    model = _tiny_model()
-    objective = OneCoreV3Objective(model)
-    try:
-        objective({})
-    except ValueError as exc:
-        assert "at least one modality" in str(exc)
-    else:
-        raise AssertionError("empty joint batch must fail")
-
-
-def test_v3_audio_objective_accepts_stereo_waveform():
-    torch.manual_seed(37)
-    model = _tiny_model()
-    objective = OneCoreV3Objective(model)
-    waveform = torch.rand(2, 2, 2048)
-
-    losses = objective({
-        "audio": {
-            "waveform": waveform,
-            "sample_rate": 24_000,
-        }
-    })
-    losses["total"].backward()
-
-    assert torch.isfinite(losses["audio_reconstruction_loss"])
-    assert "audio_flow_loss" in losses
-    assert any(parameter.grad is not None for parameter in model.parameters())
-
-def test_v3_joint_step_accumulates_five_ordered_micro_batches_before_one_update():
-    from types import SimpleNamespace
-    from onecore.v3.training import train_v3_joint_step
-
+def test_joint_step_accumulates_five_families_and_runs_one_optimizer_update():
     torch.manual_seed(71)
-    model = _tiny_model()
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
-    before = [parameter.detach().clone() for parameter in model.parameters()]
-    batches = (
-        SimpleNamespace(family="text", batch={"text": {
-            "input_ids": torch.randint(0, 128, (1, 8)),
-        }}),
-        SimpleNamespace(family="tool", batch={"tool": {
-            "input_ids": torch.randint(0, 128, (1, 8)),
-            "labels": torch.randint(0, 128, (1, 8)),
-        }}),
-        SimpleNamespace(family="image", batch={"image": {
-            "images": torch.rand(1, 3, 32, 32),
-            "condition_ids": torch.randint(0, 128, (1, 5)),
-        }}),
-        SimpleNamespace(family="audio", batch={"audio": {
-            "waveform": torch.rand(1, 1024),
-            "sample_rate": 24_000,
-            "condition_ids": torch.randint(0, 128, (1, 5)),
-        }}),
-        SimpleNamespace(family="video", batch={"video": {
-            "frames": torch.rand(1, 3, 3, 16, 16),
-            "timestamps": torch.tensor([[0.0, 0.1, 0.2]]),
-            "condition_ids": torch.randint(0, 128, (1, 5)),
-        }}),
-    )
-
-    metrics = train_v3_joint_step(model, optimizer, batches)
-
-    assert metrics["optimizer_updates"] == 1.0
-    assert metrics["family_micro_batches"] == 5.0
-    assert metrics["total"] > 0
-    assert metrics["gradient_norm"] > 0
-    assert all(f"{family}/total" in metrics for family in ("text", "tool", "image", "audio", "video"))
-    assert any(not torch.equal(old, new) for old, new in zip(before, model.parameters(), strict=True))
+    model=tiny_config().build_model(); optimizer=torch.optim.AdamW(model.parameters(),lr=1e-4)
+    before=[p.detach().clone() for p in model.parameters()]
+    metrics=train_v3_joint_step(model,optimizer,_micro_batches())
+    assert metrics["optimizer_updates"]==1.0 and metrics["family_micro_batches"]==5.0
+    assert metrics["total"]>0 and metrics["gradient_norm"]>0
+    assert all(f"{f}/total" in metrics for f in ("text","tool","image","audio","video"))
+    assert any(not torch.equal(a,b) for a,b in zip(before,model.parameters(),strict=True))
 
 
-def test_v3_joint_step_rejects_missing_or_reordered_family_batches():
-    from types import SimpleNamespace
-    from onecore.v3.training import train_v3_joint_step
+def test_joint_step_rejects_missing_or_reordered_microbatches_without_update():
+    model=tiny_config().build_model(); optimizer=torch.optim.AdamW(model.parameters(),lr=1e-4)
+    before=[p.detach().clone() for p in model.parameters()]
+    incomplete=(SimpleNamespace(family="text",batch={"text":{}}),)
+    with pytest.raises(ValueError,match="exactly text/tool/image/audio/video"):
+        train_v3_joint_step(model,optimizer,incomplete)
+    reordered=tuple(SimpleNamespace(family=f,batch={f:{}}) for f in ("tool","text","image","audio","video"))
+    with pytest.raises(ValueError,match="exactly text/tool/image/audio/video"):
+        train_v3_joint_step(model,optimizer,reordered)
+    assert all(torch.equal(a,b) for a,b in zip(before,model.parameters(),strict=True))
 
-    model = _tiny_model()
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
-    incomplete = tuple(
-        SimpleNamespace(family=family, batch={family: {}})
-        for family in ("text", "tool", "image", "audio")
-    )
-    with pytest.raises(ValueError, match="exactly five"):
-        train_v3_joint_step(model, optimizer, incomplete)
 
-    reordered = tuple(
-        SimpleNamespace(family=family, batch={family: {}})
-        for family in ("tool", "text", "image", "audio", "video")
-    )
-    with pytest.raises(ValueError, match="ordered text, tool, image, audio, video"):
-        train_v3_joint_step(model, optimizer, reordered)
+def test_tldm_masks_shared_vocab_tokens_without_dedicated_trainable_parameters():
+    model=tiny_config().build_model()
+    ids=torch.randint(0,64,(1,12)); ids[:,4:8]=model.cfg.special_id(MASK)
+    logits=model.forward_tldm(ids,latent_slots=4)
+    assert logits.shape==(1,12,model.cfg.vocab_size)
+    assert model.lm_head.weight is model.token_embedding.weight
+    assert not any("tldm" in name.lower() for name,_ in model.named_parameters())
 
+
+def test_single_family_smoke_step_remains_distinct_from_five_family_production_update():
+    model=tiny_config().build_model(); optimizer=torch.optim.AdamW(model.parameters(),lr=1e-4)
+    metrics=train_v3_step(model,optimizer,{"text":{"input_ids":torch.randint(0,64,(1,8))}})
+    assert metrics["optimizer_updates"]==1.0 and metrics["total"]>0

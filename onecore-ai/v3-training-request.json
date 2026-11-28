@@ -15,5 +15,20 @@
   "checkpoint_every": 1,
   "seed": 20261124,
   "threads": 4,
-  "resume_artifact_run_id": null
+  "resume_artifact_run_id": null,
+  "tldm_diffusion_weight": 0.15,
+  "tokenizer_artifact_id": 14894835517,
+  "tokenizer_artifact_digest": "sha256:47246c85500ed2647aacfd00187dacf4dedae1f10b180910ff55f71463851bd6",
+  "tokenizer_artifact_size_bytes": 394036,
+  "tokenizer_source_head_sha": "065daaa646a9b8ba1a3908476202bb4acddecd5c",
+  "tokenizer_file_name": "onecore-tokenizer-text32000-adopted-20261128.json",
+  "tokenizer_vocab_size": 32000,
+  "tokenizer_external_train_text_records": 591525,
+  "tokenizer_train_manifest_sha256": "d499968cdd5e1869ae7b5d9866261e8aad8fe091ad9096b13067bfb6a83f9205",
+  "tokenizer_external_text_rows_sha256": "6d60d6a07fbd82932373c449735d1b73cd882bcd14390e07a60400c2cc97e720",
+  "tokenizer_validation_or_test_rows_used": 0,
+  "v2_tokenizer_imported": false,
+  "tokenizer_fit_revision": 605,
+  "tokenizer_source_file_name": "onecore-v3-tokenizer-run605-vocab32000.json",
+  "tokenizer_source_evidence_sha256": "b60e5077767f79b1316635ed45343ed5c59ce2602f41d24759a25a386ea33e16"
 }

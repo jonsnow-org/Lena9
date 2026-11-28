@@ -142,7 +142,9 @@ def test_benchmark_rejects_unsafe_asset_paths(value):
 
 
 def test_process_tree_memory_accounting_includes_loader_worker_peak():
-    from onecore.v3.resource_benchmark import _process_tree_memory_accounting
+    from onecore.v3 import resource_benchmark as benchmark
+
+    _process_tree_memory_accounting = benchmark._process_tree_memory_accounting
 
     per_family = {"peak_rss_bytes": 180, "process_tree_peak_rss_bytes_observed": 240}
     loader = {"peak_rss_bytes": 320, "process_tree_peak_rss_bytes_observed": 370}
@@ -154,6 +156,7 @@ def test_process_tree_memory_accounting_includes_loader_worker_peak():
     assert result["max_worker_process_peak_rss_bytes"] == 320
     assert result["observed_process_tree_peak_rss_bytes"] == 370
     assert result["conservative_process_tree_rss_upper_bound_bytes"] == 470
+    assert result["sampling_interval_seconds"] == benchmark.RSS_SAMPLE_INTERVAL_SECONDS == 0.25
     assert "loader" in result["method"]
 
 
@@ -626,15 +629,28 @@ def test_select_train_samples_preserves_same_row_media_conditions(tmp_path):
                 "duration_seconds": 0.08, "fps": 25.0,
             },
         }),
+        base("video-2", "video_caption", caption="A car crosses a bridge.", assets={
+            "video": {
+                "frames": [f"other-frames/{index}.png" for index in range(8)],
+                "frame_count": 8, "width": 1280, "height": 720,
+                "duration_seconds": 1.0, "fps": 24.0,
+            },
+        }),
     ]
     manifest = tmp_path / "train.jsonl"
     manifest.write_text("".join(json.dumps(row) + chr(10) for row in rows), encoding="utf-8")
 
-    selected, _stats = _select_train_samples(
+    selected, stats = _select_train_samples(
         manifest, max_image_megapixels=1.0, max_audio_seconds=5.0,
         max_video_megapixel_frames=16.0, max_video_frames=16,
     )
 
+    assert stats["video_width"] == {
+        "count": 2, "min": 1280.0, "median": 1600.0, "p95": 1920.0, "max": 1920.0,
+    }
+    assert stats["video_height"] == {
+        "count": 2, "min": 720.0, "median": 900.0, "p95": 1080.0, "max": 1080.0,
+    }
     assert selected["image"]["condition_field"] == "caption"
     assert selected["image"]["condition_text"] == "A red boat on a lake."
     assert selected["audio"]["condition_field"] == "transcript"
@@ -649,13 +665,14 @@ def test_select_train_samples_preserves_same_row_media_conditions(tmp_path):
 
 
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="RSS sampling uses Linux /proc")
-def test_monitored_subprocess_samples_parent_and_worker_rss():
+def test_monitored_subprocess_samples_parent_and_worker_rss_and_emits_heartbeats():
     from onecore.v3.resource_benchmark import (
         _load_current_rss_bytes,
         _run_monitored_subprocess,
     )
 
     baseline_parent_rss = _load_current_rss_bytes()
+    heartbeats = []
     code = (
         "import time; "
         "payload = bytearray(32 * 1024 * 1024); "
@@ -663,11 +680,75 @@ def test_monitored_subprocess_samples_parent_and_worker_rss():
         "time.sleep(0.3)"
     )
     completed, observed_tree_peak = _run_monitored_subprocess(
-        [sys.executable, "-c", code], timeout=10,
+        [sys.executable, "-c", code],
+        timeout=10,
+        poll_interval=0.01,
+        heartbeat_interval=0.05,
+        heartbeat_callback=lambda elapsed, peak: heartbeats.append((elapsed, peak)),
     )
 
     assert completed.returncode == 0
     assert observed_tree_peak >= baseline_parent_rss + 16 * 1024 * 1024
+    assert heartbeats and heartbeats[-1][0] >= heartbeats[0][0]
+
+
+def test_atomic_progress_snapshot_replaces_the_previous_state_without_partial_files(tmp_path):
+    from onecore.v3.resource_benchmark import _write_json_atomic
+
+    output = tmp_path / "resource-report.json"
+    _write_json_atomic(output, {"status": "in_progress", "current_stage": "loader"})
+    assert json.loads(output.read_text(encoding="utf-8"))["current_stage"] == "loader"
+
+    _write_json_atomic(output, {"status": "failed", "current_stage": "loader", "error": "worker timeout"})
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["status"] == "failed"
+    assert payload["error"] == "worker timeout"
+    assert not output.with_name(output.name + ".partial").exists()
+
+
+def test_parent_failure_preserves_current_run_progress_snapshot(monkeypatch, tmp_path):
+    from pathlib import Path
+    from onecore.v3 import resource_benchmark as benchmark
+
+    output = tmp_path / "resource-report.json"
+    monkeypatch.setenv("GITHUB_RUN_ID", "12345")
+
+    def fail_after_progress(args):
+        benchmark._write_json_atomic(Path(args.output), {
+            "format_version": 1,
+            "status": "in_progress",
+            "github_run_id": "12345",
+            "current_stage": "benchmark_production_v3_joint_data_loader",
+            "completed_stages": ["validate_pinned_artifacts"],
+            "optimizer_updates": 0,
+        })
+        raise RuntimeError("simulated worker failure")
+
+    monkeypatch.setattr(benchmark, "_run_parent", fail_after_progress)
+    assert benchmark.main(["--github-token", "test-token", "--output", str(output)]) == 1
+
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["status"] == "failed"
+    assert payload["current_stage"] == "benchmark_production_v3_joint_data_loader"
+    assert payload["completed_stages"] == ["validate_pinned_artifacts"]
+    assert payload["error"] == "RuntimeError: simulated worker failure"
+    assert payload["optimizer_updates"] == 0
+
+
+def test_parent_failure_does_not_overwrite_a_previous_run_report(monkeypatch, tmp_path):
+    from onecore.v3 import resource_benchmark as benchmark
+
+    output = tmp_path / "resource-report.json"
+    original = {"status": "measured", "github_run_id": "previous-run"}
+    benchmark._write_json_atomic(output, original)
+    monkeypatch.setenv("GITHUB_RUN_ID", "current-run")
+    monkeypatch.setattr(
+        benchmark, "_run_parent",
+        lambda _args: (_ for _ in ()).throw(FileExistsError("refusing to overwrite")),
+    )
+
+    assert benchmark.main(["--github-token", "test-token", "--output", str(output)]) == 1
+    assert json.loads(output.read_text(encoding="utf-8")) == original
 
 
 def test_parent_benchmark_defaults_to_five_measured_iterations_and_rejects_short_runs(monkeypatch):
@@ -781,3 +862,111 @@ def test_loader_video_quota_uses_adaptive_native_resolution_frame_windows(monkey
 
     for split, path in manifests.items():
         assert path.read_text(encoding="utf-8") == originals[split]
+
+
+def test_refreshing_artifact_session_retries_expired_signed_urls_for_get_and_head():
+    from onecore.v3 import resource_benchmark as benchmark
+
+    class Response:
+        def __init__(self, status_code):
+            self.status_code = status_code
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    class FakeSession:
+        def __init__(self, responses):
+            self.responses = list(responses)
+            self.calls = []
+            self.closed = False
+
+        def get(self, url, **kwargs):
+            self.calls.append(("get", url, kwargs))
+            return self.responses.pop(0)
+
+        def head(self, url, **kwargs):
+            self.calls.append(("head", url, kwargs))
+            return self.responses.pop(0)
+
+        def close(self):
+            self.closed = True
+
+    for method in ("get", "head"):
+        expired = Response(403)
+        accepted = Response(206 if method == "get" else 200)
+        fake = FakeSession([expired, accepted])
+        refreshes = []
+        old_url = "https://artifact.invalid/archive.zip?sig=expired-secret"
+        new_url = "https://artifact.invalid/archive.zip?sig=fresh-secret"
+        client = benchmark._RefreshingArtifactSession(
+            old_url,
+            lambda: (refreshes.append(True) or new_url),
+            session=fake,
+        )
+        response = getattr(client, method)(
+            "the-original-remotezip-url",
+            headers={"Range": "bytes=10-20"},
+            stream=True,
+        )
+
+        assert response is accepted
+        assert refreshes == [True]
+        assert expired.closed is True
+        assert [call[1] for call in fake.calls] == [old_url, new_url]
+        assert all(call[2]["headers"]["Range"] == "bytes=10-20" for call in fake.calls)
+        client.close()
+        assert fake.closed is True
+
+
+def test_refreshing_artifact_session_redacts_signed_url_after_second_403():
+    from onecore.v3 import resource_benchmark as benchmark
+
+    class Response:
+        def __init__(self):
+            self.status_code = 403
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    class FakeSession:
+        def __init__(self, responses):
+            self.responses = list(responses)
+            self.urls = []
+
+        def get(self, url, **kwargs):
+            self.urls.append(url)
+            return self.responses.pop(0)
+
+    first, second = Response(), Response()
+    old_url = "https://artifact.invalid/archive.zip?sig=expired-secret"
+    new_url = "https://artifact.invalid/archive.zip?sig=fresh-secret"
+    fake = FakeSession([first, second])
+    client = benchmark._RefreshingArtifactSession(
+        old_url, lambda: new_url, session=fake
+    )
+
+    with pytest.raises(RuntimeError, match="signed URL redacted") as error:
+        client.get("ignored", headers={"Range": "bytes=0-1"}, stream=True)
+
+    assert fake.urls == [old_url, new_url]
+    assert old_url not in str(error.value)
+    assert new_url not in str(error.value)
+    assert first.closed is True and second.closed is True
+
+
+
+def test_github_run_identity_captures_the_exact_actions_run_and_commit(monkeypatch):
+    from onecore.v3.resource_benchmark import _github_run_identity
+
+    monkeypatch.setenv("GITHUB_RUN_ID", "123456")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "jonsnow-org/Lena9")
+    monkeypatch.setenv("GITHUB_REF", "refs/heads/research/onecore-v3-implementation")
+    monkeypatch.setenv("GITHUB_SHA", "a" * 40)
+    assert _github_run_identity() == {
+        "github_run_id": "123456",
+        "github_repository": "jonsnow-org/Lena9",
+        "github_ref": "refs/heads/research/onecore-v3-implementation",
+        "github_sha": "a" * 40,
+    }

@@ -2,11 +2,13 @@ import hashlib
 import json
 
 import pytest
-from tokenizers import Tokenizer
+from tokenizers import Tokenizer, decoders, models, normalizers, pre_tokenizers
 
 from onecore.v3 import V3Config
 from onecore.v3.tokenizer import (
     SPECIAL_TOKENS,
+    adopt_v3_tokenizer,
+    _tokenizer_contract_sha256,
     iter_external_v3_train_text,
     train_v3_tokenizer,
     verify_v3_tokenizer,
@@ -65,6 +67,7 @@ def test_iter_external_v3_train_text_filters_non_text_and_requires_external_line
     [
         ({**_external_text_record(1), "data_class": "bootstrap"}, "non-external or synthetic"),
         ({**_external_text_record(1), "data_class": "owner_curated"}, "non-external or synthetic"),
+        ({**_external_text_record(1), "data_class": "unapproved"}, "non-external or synthetic"),
         ({**_external_text_record(1), "split": "validation"}, "train records only"),
         ({**_external_text_record(1), "source_revision": "main"}, "immutable source revision"),
         ({**_external_text_record(1), "source_row_id_sha256": "bad"}, "immutable source revision"),
@@ -113,6 +116,73 @@ def test_train_and_verify_v3_tokenizer_uses_exact_vocabulary_and_external_train_
     )
     assert verified["tokenizer_sha256"] == report["tokenizer_sha256"]
     assert verified["external_text_rows_sha256"] == report["external_text_rows_sha256"]
+
+
+def test_adopt_v3_tokenizer_preserves_original_bytes_and_rebinds_only_evidence(tmp_path):
+    config = V3Config()
+    vocab = {token: index for index, token in enumerate(SPECIAL_TOKENS)}
+    for token in sorted(pre_tokenizers.ByteLevel.alphabet()):
+        if token not in vocab:
+            vocab[token] = len(vocab)
+    while len(vocab) < config.text_vocab_size:
+        token = f"<unused_{len(vocab):05d}>"
+        if token not in vocab:
+            vocab[token] = len(vocab)
+    tokenizer = Tokenizer(models.BPE(vocab=vocab, merges=[], unk_token=SPECIAL_TOKENS[0]))
+    tokenizer.normalizer = normalizers.NFC()
+    tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
+    tokenizer.decoder = decoders.ByteLevel()
+    token_bytes = tokenizer.to_str(pretty=False).encode("utf-8")
+    source = tmp_path / "source-32k.json"
+    source.write_bytes(token_bytes)
+    special_ids = {token: tokenizer.token_to_id(token) for token in SPECIAL_TOKENS}
+    manifest_sha = "a" * 64
+    rows_sha = "b" * 64
+    evidence = {
+        "format_version": 1,
+        "architecture_family": "onecore-v3",
+        "architecture_version": "onecore-v3-prototype-2",
+        "config_sha256": "c" * 64,
+        "tokenizer_algorithm": "byte-level BPE",
+        "unicode_normalization": "NFC",
+        "vocab_size_requested": 32000,
+        "vocab_size_actual": 32000,
+        "special_tokens": list(SPECIAL_TOKENS),
+        "special_token_ids": special_ids,
+        "training_split": "train",
+        "training_family": "text",
+        "data_class": "external",
+        "external_train_text_records": 100,
+        "train_manifest_sha256": manifest_sha,
+        "external_text_rows_sha256": rows_sha,
+        "minimum_text_records_required": 100,
+        "tokenizer_sha256": hashlib.sha256(token_bytes).hexdigest(),
+        "tokenizer_file": source.name,
+        "validation_or_test_rows_used": 0,
+        "v2_tokenizer_imported": False,
+    }
+    source_evidence = source.with_name(source.name + ".evidence.json")
+    source_evidence.write_text(json.dumps(evidence, sort_keys=True), encoding="utf-8")
+    source_evidence_sha = hashlib.sha256(source_evidence.read_bytes()).hexdigest()
+    output = tmp_path / "adopted-32k.json"
+    adopted = adopt_v3_tokenizer(
+        source, source_evidence, output, config=config,
+        expected_source_tokenizer_sha256=hashlib.sha256(token_bytes).hexdigest(),
+        expected_source_evidence_sha256=source_evidence_sha,
+        expected_train_manifest_sha256=manifest_sha,
+        expected_external_text_rows_sha256=rows_sha,
+        expected_external_train_text_records=100,
+        source_run_id=123, source_artifact_id=456,
+        source_artifact_sha256="sha256:" + "d" * 64,
+    )
+    verified = verify_v3_tokenizer(output, config=config, expected_train_manifest_sha256=manifest_sha)
+    assert output.read_bytes() == token_bytes == source.read_bytes()
+    assert adopted["source_tokenizer_bytes_preserved"] is True
+    assert adopted["adopted_from"]["refit_performed"] is False
+    assert verified["vocab_size_actual"] == 32000
+    assert verified["tokenizer_contract_sha256"] == _tokenizer_contract_sha256(config, special_ids)
+    assert verified["config_sha256"] == config.fingerprint
+    assert verified["adopted_from"]["source_run_id"] == 123
 
 
 def test_train_v3_tokenizer_rejects_bootstrap_text_before_writing_any_artifact(tmp_path):

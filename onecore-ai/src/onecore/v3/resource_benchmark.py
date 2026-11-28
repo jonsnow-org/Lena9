@@ -7,6 +7,7 @@ five-family loader slice, and performs no optimizer steps or checkpoint writes.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import hashlib
 import json
 import math
@@ -22,7 +23,7 @@ import time
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 import soundfile as sf
@@ -47,10 +48,32 @@ from onecore.v3.tokenizer import sha256_file, verify_v3_tokenizer
 from onecore.v3.training import OneCoreV3Objective
 
 MIN_MEASURED_ITERATIONS = 5
+RSS_SAMPLE_INTERVAL_SECONDS = 0.25
 
 
 def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def _github_run_identity() -> dict[str, str | None]:
+    """Bind benchmark reports to the exact GitHub Actions run and commit."""
+    return {
+        "github_run_id": os.environ.get("GITHUB_RUN_ID"),
+        "github_repository": os.environ.get("GITHUB_REPOSITORY"),
+        "github_ref": os.environ.get("GITHUB_REF"),
+        "github_sha": os.environ.get("GITHUB_SHA"),
+    }
+
+
+def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
+    """Atomically publish a bounded JSON progress or final evidence snapshot."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + ".partial")
+    temporary.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True, allow_nan=False) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(path)
 
 
 def _artifact_headers(token: str) -> dict[str, str]:
@@ -187,6 +210,82 @@ def _signed_artifact_url(repo: str, artifact_id: int, token: str) -> str:
         response.close()
 
 
+class _RefreshingArtifactSession:
+    """Refresh short-lived GitHub Actions artifact URLs after storage rejects them."""
+
+    def __init__(self, initial_url: str, refresh_url: Any, *, session: Any = None):
+        if not isinstance(initial_url, str) or not initial_url:
+            raise ValueError("initial signed artifact URL must be non-empty")
+        if not callable(refresh_url):
+            raise TypeError("refresh_url must be callable")
+        if session is None:
+            if requests is None:
+                raise RuntimeError("artifact range reads require the corpus-restore extra")
+            session = requests.Session()
+        self._url = initial_url
+        self._refresh_url = refresh_url
+        self._session = session
+        self._closed = False
+
+    def _request(self, method: str, **kwargs: Any) -> Any:
+        if self._closed:
+            raise RuntimeError("artifact session is closed")
+        request = getattr(self._session, method, None)
+        if not callable(request):
+            raise TypeError(f"artifact session does not support {method}")
+        response = request(self._url, **kwargs)
+        status = getattr(response, "status_code", None)
+        if status == 403:
+            close = getattr(response, "close", None)
+            if callable(close):
+                close()
+            self._url = self._refresh_url()
+            response = request(self._url, **kwargs)
+            status = getattr(response, "status_code", None)
+        if isinstance(status, int) and status >= 400:
+            close = getattr(response, "close", None)
+            if callable(close):
+                close()
+            raise RuntimeError(
+                f"HTTP {status} while reading a pinned GitHub Actions artifact; signed URL redacted"
+            )
+        return response
+
+    def get(self, _url: str, **kwargs: Any) -> Any:
+        # RemoteZip retains its original URL; this session deliberately uses the
+        # refreshed URL after a storage 403 without rebuilding the ZIP reader.
+        return self._request("get", **kwargs)
+
+    def head(self, _url: str, **kwargs: Any) -> Any:
+        return self._request("head", **kwargs)
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        close = getattr(self._session, "close", None)
+        if callable(close):
+            close()
+
+
+@contextmanager
+def _open_remote_zip(repo: str, artifact_id: int, token: str):
+    if requests is None or RemoteZip is None:
+        raise RuntimeError("artifact range reads require onecore-ai[corpus-restore]")
+    initial_url = _signed_artifact_url(repo, artifact_id, token)
+    session = _RefreshingArtifactSession(
+        initial_url,
+        lambda: _signed_artifact_url(repo, artifact_id, token),
+    )
+    try:
+        with RemoteZip(
+            initial_url, session=session, support_suffix_range=False
+        ) as archive:
+            yield archive
+    finally:
+        session.close()
+
+
 def _unique_suffix(names: list[str], suffix: str) -> str:
     normalized = [str(name).replace("\\", "/") for name in names]
     matches = [name for name in normalized if name == suffix or name.endswith("/" + suffix)]
@@ -263,9 +362,8 @@ def _extract_verified_asset(
 
 
 def _read_conversion_report(repo: str, artifact_id: int, token: str) -> tuple[dict[str, Any], bytes]:
-    url = _signed_artifact_url(repo, artifact_id, token)
     matches: list[tuple[dict[str, Any], bytes]] = []
-    with RemoteZip(url, support_suffix_range=False) as archive:
+    with _open_remote_zip(repo, artifact_id, token) as archive:
         for name in archive.namelist():
             if not str(name).lower().endswith(".json"):
                 continue
@@ -351,6 +449,7 @@ def _select_train_samples(
         "audio_duration_seconds": [], "audio_source_sample_rate": [],
         "audio_training_sample_rate": [], "audio_training_channels": [],
         "video_frame_count": [], "video_duration_seconds": [],
+        "video_width": [], "video_height": [],
         "video_megapixels_per_frame": [], "video_fps": [],
     }
 
@@ -479,6 +578,8 @@ def _select_train_samples(
             if isinstance(duration, (int, float)) and duration > 0:
                 stats["video_duration_seconds"].append(float(duration))
             if megapixels > 0:
+                stats["video_width"].append(width)
+                stats["video_height"].append(height)
                 stats["video_megapixels_per_frame"].append(megapixels)
             if isinstance(fps, (int, float)) and fps > 0:
                 stats["video_fps"].append(float(fps))
@@ -795,7 +896,10 @@ def _load_pid_rss_bytes(pid: int) -> int:
 
 
 def _run_monitored_subprocess(
-    command: list[str], *, timeout: int, poll_interval: float = 0.02,
+    command: list[str], *, timeout: int,
+    poll_interval: float = RSS_SAMPLE_INTERVAL_SECONDS,
+    heartbeat_interval: float = 30.0,
+    heartbeat_callback: Callable[[float, int], None] | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], int]:
     """Run one worker and sample the combined parent+child resident set.
 
@@ -805,9 +909,11 @@ def _run_monitored_subprocess(
     """
     if not sys.platform.startswith("linux"):
         raise RuntimeError("process-tree RSS sampling requires a Linux runner")
-    if timeout < 1 or poll_interval <= 0:
-        raise ValueError("worker timeout and RSS sampling interval must be positive")
+    if timeout < 1 or poll_interval <= 0 or heartbeat_interval <= 0:
+        raise ValueError("worker timeout and RSS/heartbeat sampling intervals must be positive")
 
+    started = time.monotonic()
+    last_heartbeat = started
     process = subprocess.Popen(
         command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
     )
@@ -832,8 +938,14 @@ def _run_monitored_subprocess(
                 _load_current_rss_bytes() + _load_pid_rss_bytes(process.pid)
             )
             peak_tree_rss = max(peak_tree_rss, current_tree_rss)
+            now = time.monotonic()
+            if heartbeat_callback is not None and now - last_heartbeat >= heartbeat_interval:
+                heartbeat_callback(now - started, peak_tree_rss)
+                last_heartbeat = now
 
     peak_tree_rss = max(peak_tree_rss, _load_current_rss_bytes())
+    if heartbeat_callback is not None:
+        heartbeat_callback(time.monotonic() - started, peak_tree_rss)
     completed = subprocess.CompletedProcess(
         command, process.returncode, stdout, stderr,
     )
@@ -1699,7 +1811,7 @@ def _process_tree_memory_accounting(
         "conservative_process_tree_rss_upper_bound_bytes": (
             parent_peak_rss_bytes + max_worker_peak_rss
         ),
-        "sampling_interval_seconds": 0.02,
+        "sampling_interval_seconds": RSS_SAMPLE_INTERVAL_SECONDS,
         "method": (
             "Linux per-process ru_maxrss plus sampled /proc parent+worker RSS, "
             "including per-family, five-family loader and joint workers; the conservative "
@@ -1718,6 +1830,65 @@ def _run_parent(args: argparse.Namespace) -> int:
     if output.exists():
         raise FileExistsError(f"refusing to overwrite resource benchmark report: {output}")
     output.parent.mkdir(parents=True, exist_ok=True)
+    started_monotonic = time.monotonic()
+    progress_state: dict[str, Any] = {
+        "format_version": 1,
+        "status": "in_progress",
+        "benchmark_kind": "cpu_v3_joint_loader_plus_per_family_diagnostics_and_joint_objective_without_optimizer_step",
+        "created_at_utc": datetime.now(timezone.utc).isoformat(),
+        "updated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "github_run_id": os.environ.get("GITHUB_RUN_ID"),
+        "current_stage": "validate_pinned_artifacts",
+        "completed_stages": [],
+        "active_worker": None,
+        "benchmarks": [],
+        "data_loader_benchmark": None,
+        "joint_training_memory": None,
+        "optimizer_updates": 0,
+        "checkpoint_writes": 0,
+    }
+
+    def persist_progress(
+        stage: str,
+        *,
+        active_worker: str | None = None,
+        worker_elapsed_seconds: float | None = None,
+        process_tree_peak_rss_bytes_observed: int | None = None,
+        completed_stage: str | None = None,
+    ) -> None:
+        if completed_stage and completed_stage not in progress_state["completed_stages"]:
+            progress_state["completed_stages"].append(completed_stage)
+        progress_state.update({
+            "status": "in_progress",
+            "current_stage": stage,
+            "active_worker": active_worker,
+            "updated_at_utc": datetime.now(timezone.utc).isoformat(),
+            "elapsed_seconds": round(time.monotonic() - started_monotonic, 3),
+            "optimizer_updates": 0,
+            "checkpoint_writes": 0,
+        })
+        if active_worker is None:
+            progress_state.pop("active_worker_elapsed_seconds", None)
+            progress_state.pop("active_worker_process_tree_peak_rss_bytes_observed", None)
+        if worker_elapsed_seconds is not None:
+            progress_state["active_worker_elapsed_seconds"] = round(worker_elapsed_seconds, 3)
+        if process_tree_peak_rss_bytes_observed is not None:
+            progress_state["active_worker_process_tree_peak_rss_bytes_observed"] = int(
+                process_tree_peak_rss_bytes_observed
+            )
+        _write_json_atomic(output, progress_state)
+
+    def heartbeat_for(stage: str, worker: str):
+        def update(elapsed_seconds: float, peak_rss_bytes: int) -> None:
+            persist_progress(
+                stage,
+                active_worker=worker,
+                worker_elapsed_seconds=elapsed_seconds,
+                process_tree_peak_rss_bytes_observed=peak_rss_bytes,
+            )
+        return update
+
+    persist_progress("validate_pinned_artifacts")
 
     artifact_info = {
         "corpus": _pinned_artifact_metadata(
@@ -1733,6 +1904,8 @@ def _run_parent(args: argparse.Namespace) -> int:
             args.tokenizer_artifact_id, args.expected_tokenizer_run_id,
         ),
     }
+    progress_state["artifacts"] = artifact_info
+    persist_progress("validate_conversion_report")
     with tempfile.TemporaryDirectory(prefix="onecore-v3-resource-benchmark-") as temporary:
         root = Path(temporary)
         gate_report, gate_payload = _read_conversion_report(
@@ -1751,13 +1924,13 @@ def _run_parent(args: argparse.Namespace) -> int:
                 if count < minimum:
                     raise RuntimeError(f"V3 manifest gate coverage below quota: {split}/{family}={count}")
 
-        corpus_url = _signed_artifact_url(args.github_repo, args.corpus_artifact_id, args.github_token)
         data_root = root / "corpus" / "data"
         data_root.mkdir(parents=True)
         manifest_paths: dict[str, Path] = {}
         loader_manifest_paths: dict[str, Path] = {}
         loader_selection: dict[str, Any] = {}
-        with RemoteZip(corpus_url, support_suffix_range=False) as archive:
+        persist_progress("extract_validated_corpus_and_media_assets")
+        with _open_remote_zip(args.github_repo, args.corpus_artifact_id, args.github_token) as archive:
             names = archive.namelist()
             for split in ("train", "validation", "test"):
                 member = _unique_suffix(names, f"data/{split}.jsonl")
@@ -1805,10 +1978,9 @@ def _run_parent(args: argparse.Namespace) -> int:
                             )
                             extracted_loader_assets.add(relative)
 
-        tokenizer_url = _signed_artifact_url(args.github_repo, args.tokenizer_artifact_id, args.github_token)
         tokenizer_root = root / "tokenizer"
         tokenizer_root.mkdir()
-        with RemoteZip(tokenizer_url, support_suffix_range=False) as archive:
+        with _open_remote_zip(args.github_repo, args.tokenizer_artifact_id, args.github_token) as archive:
             names = archive.namelist()
             evidence_candidates = [
                 name for name in names
@@ -1843,6 +2015,13 @@ def _run_parent(args: argparse.Namespace) -> int:
             manifest_paths["train"], tokenizer_path,
         )
 
+        progress_state["manifest_bundle_sha256"] = manifest_bundle_sha
+        progress_state["train_manifest_sha256"] = train_manifest_sha
+        progress_state["tokenizer"] = tokenizer_evidence
+        progress_state["shape_distributions"] = distributions
+        progress_state["sequence_length_distributions"] = sequence_distributions
+        persist_progress("benchmark_production_v3_joint_data_loader")
+
         loader_plan_path = root / "loader-benchmark-plan.json"
         loader_plan_path.write_text(json.dumps({
             "manifest_paths": {split: str(path) for split, path in loader_manifest_paths.items()},
@@ -1863,7 +2042,9 @@ def _run_parent(args: argparse.Namespace) -> int:
             "--threads", str(args.threads),
         ]
         loader_completed, loader_process_tree_peak = _run_monitored_subprocess(
-            loader_command, timeout=args.worker_timeout_seconds,
+            loader_command,
+            timeout=args.worker_timeout_seconds,
+            heartbeat_callback=heartbeat_for("benchmark_production_v3_joint_data_loader", "V3JointDataLoader"),
         )
         try:
             loader_result = json.loads(loader_completed.stdout.strip())
@@ -1881,6 +2062,11 @@ def _run_parent(args: argparse.Namespace) -> int:
             loader_result["error"] = f"loader worker exit code {loader_completed.returncode}"
         loader_result["process_tree_peak_rss_bytes_observed"] = loader_process_tree_peak
         loader_result["sample_selection"] = loader_selection
+        progress_state["data_loader_benchmark"] = loader_result
+        persist_progress(
+            "benchmark_per_family_model_paths",
+            completed_stage="benchmark_production_v3_joint_data_loader",
+        )
 
         for family in ("text", "tool"):
             sample = selected[family]
@@ -1888,6 +2074,8 @@ def _run_parent(args: argparse.Namespace) -> int:
         plans = _build_plans(selected, tokenizer_path, args.max_video_frames)
         benchmark_results: list[dict[str, Any]] = []
         for index, plan in enumerate(plans, 1):
+            family_name = str(plan.get("family", f"case-{index}"))
+            persist_progress("benchmark_per_family_model_paths", active_worker=family_name)
             plan_path = root / f"worker-plan-{index:02d}.json"
             plan_path.write_text(json.dumps(plan, ensure_ascii=False), encoding="utf-8")
             command = [
@@ -1898,7 +2086,9 @@ def _run_parent(args: argparse.Namespace) -> int:
                 "--iterations", str(args.iterations),
             ]
             completed, process_tree_peak = _run_monitored_subprocess(
-                command, timeout=args.worker_timeout_seconds,
+                command,
+                timeout=args.worker_timeout_seconds,
+                heartbeat_callback=heartbeat_for("benchmark_per_family_model_paths", family_name),
             )
             try:
                 worker_result = json.loads(completed.stdout.strip())
@@ -1915,7 +2105,13 @@ def _run_parent(args: argparse.Namespace) -> int:
             worker_result["process_tree_peak_rss_bytes_observed"] = process_tree_peak
             worker_result["case_index"] = index
             benchmark_results.append(worker_result)
+            progress_state["benchmarks"] = benchmark_results
+            persist_progress(
+                "benchmark_per_family_model_paths",
+                completed_stage=f"family:{family_name}",
+            )
 
+        persist_progress("benchmark_joint_five_family_objective", active_worker="joint_five_family")
         joint_plan = _build_joint_plan(
             selected,
             tokenizer_path,
@@ -1933,7 +2129,9 @@ def _run_parent(args: argparse.Namespace) -> int:
             "--threads", str(args.threads),
         ]
         joint_completed, joint_process_tree_peak = _run_monitored_subprocess(
-            joint_command, timeout=args.worker_timeout_seconds,
+            joint_command,
+            timeout=args.worker_timeout_seconds,
+            heartbeat_callback=heartbeat_for("benchmark_joint_five_family_objective", "joint_five_family"),
         )
         try:
             joint_result = json.loads(joint_completed.stdout.strip())
@@ -1950,6 +2148,11 @@ def _run_parent(args: argparse.Namespace) -> int:
             joint_result["status"] = "failed"
             joint_result["error"] = f"joint worker exit code {joint_completed.returncode}"
         joint_result["process_tree_peak_rss_bytes_observed"] = joint_process_tree_peak
+        progress_state["joint_training_memory"] = joint_result
+        persist_progress(
+            "assemble_final_resource_report",
+            completed_stage="benchmark_joint_five_family_objective",
+        )
 
         model_report = build_report()
         failed = [item for item in benchmark_results if item.get("status") != "success"]
@@ -1966,7 +2169,7 @@ def _run_parent(args: argparse.Namespace) -> int:
             "status": "blocked" if failed else "measured",
             "benchmark_kind": "cpu_v3_joint_loader_plus_per_family_diagnostics_and_joint_objective_without_optimizer_step",
             "created_at_utc": datetime.now(timezone.utc).isoformat(),
-            "github_run_id": os.environ.get("GITHUB_RUN_ID"),
+            **_github_run_identity(),
             "artifacts": artifact_info,
             "conversion_report_sha256": _sha256(gate_payload),
             "manifest_gate": {
@@ -1983,6 +2186,7 @@ def _run_parent(args: argparse.Namespace) -> int:
             "config_sha256": V3Config().fingerprint,
             "model_report": model_report,
             "memory_accounting": memory_accounting,
+            "process_tree_rss_sampling_interval_seconds": RSS_SAMPLE_INTERVAL_SECONDS,
             "cpu": {
                 "platform": platform.platform(),
                 "machine": platform.machine(),
@@ -2013,16 +2217,11 @@ def _run_parent(args: argparse.Namespace) -> int:
                 "The joint case uses one bounded real train micro-batch per family; optional GAN discriminators and paired alignment loss are absent unless the selected sample provides condition_ids. It is a measured resource sample, not a full training run or a quality result.",
                 "The production V3JointDataLoader is separately measured on a deterministic quota-complete 100/10/10-per-family sample; it measures data materialization only and does not represent a full-corpus epoch or model compute.",
                 "Image resolution is native; audio is the preserved 24 kHz training derivative; video uses original stored frame PNGs and timestamps.",
-                "Per-worker peak RSS is the Linux kernel ru_maxrss value; sampled process-tree RSS includes the parent and active worker, while the conservative bound sums separate per-process maxima and may overestimate simultaneous use.",
+                "Per-worker peak RSS is the Linux kernel ru_maxrss value; sampled process-tree RSS includes the parent and active worker at 0.25-second intervals, while the conservative bound sums separate per-process maxima and may overestimate simultaneous use.",
                 "No source acquisition, corpus conversion, tokenizer fitting, V2 import, or checkpoint mutation occurs.",
             ],
         }
-        temporary_output = output.with_name(output.name + ".partial")
-        temporary_output.write_text(
-            json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-        temporary_output.replace(output)
+        _write_json_atomic(output, result)
         print(json.dumps({
             "status": result["status"],
             "report": str(output),
@@ -2111,18 +2310,34 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return _run_parent(args)
     except Exception as exc:
+        output = Path(args.output).resolve()
         failure = {
-            "format_version": 1,
             "status": "failed",
-            "created_at_utc": datetime.now(timezone.utc).isoformat(),
+            "failed_at_utc": datetime.now(timezone.utc).isoformat(),
+            "updated_at_utc": datetime.now(timezone.utc).isoformat(),
             "error": f"{type(exc).__name__}: {str(exc)}",
             "traceback": traceback.format_exc()[-6000:],
             "optimizer_updates": 0,
+            "checkpoint_writes": 0,
         }
-        output = Path(args.output).resolve()
-        if not output.exists():
-            output.parent.mkdir(parents=True, exist_ok=True)
-            output.write_text(json.dumps(failure, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        if output.exists():
+            try:
+                existing = json.loads(output.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                existing = {}
+            current_run = os.environ.get("GITHUB_RUN_ID")
+            belongs_to_current_run = (
+                existing.get("status") == "in_progress"
+                and current_run is not None
+                and str(existing.get("github_run_id")) == current_run
+            )
+            if belongs_to_current_run:
+                existing.update(failure)
+                _write_json_atomic(output, existing)
+        else:
+            failure["format_version"] = 1
+            failure["created_at_utc"] = failure["failed_at_utc"]
+            _write_json_atomic(output, failure)
         print(json.dumps(failure, ensure_ascii=False, indent=2))
         return 1
 

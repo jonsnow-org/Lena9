@@ -11,17 +11,6 @@ CURSOR_SCHEMA = "onecore-stream-cursor-v1"
 LEGACY_SKIP_REPLAY_THRESHOLD = 5_000
 
 
-def notebook_for_source(source: dict[str, Any]) -> str:
-    """Keep text/code crawlers separate from media crawlers, like Sham's per-notebook ledgers."""
-    explicit = str(source.get("notebook_id") or "").strip()
-    if explicit:
-        return explicit
-    adapter = str(source.get("adapter", "text")).strip().lower()
-    if adapter in {"text", "tool_use", "stack_v2_code"}:
-        return "03_text_pretraining"
-    return "04_multimodal_curriculum"
-
-
 def _safe_component(value: str) -> str:
     value = re.sub(r"[^A-Za-z0-9_.-]+", "-", str(value)).strip("-.")
     if not value or value in {".", ".."}:
@@ -47,7 +36,7 @@ def _jsonable(value: Any) -> Any:
 
 
 class StatefulStreamCursor:
-    """Per-notebook/source/split checkpoint for Hugging Face IterableDataset streams.
+    """Per-pipeline/source/split checkpoint for Hugging Face IterableDataset streams.
 
     HF's state_dict captures the current shard and row position. A raw row offset is
     retained as a compatibility fallback for iterable datasets that do not implement
@@ -58,14 +47,14 @@ class StatefulStreamCursor:
     def __init__(
         self,
         project_root: str | Path,
-        notebook_id: str,
+        pipeline_id: str,
         source_id: str,
         repo: str,
         config: str | None,
         split: str,
         revision: str,
     ) -> None:
-        self.notebook_id = _safe_component(notebook_id)
+        self.pipeline_id = _safe_component(pipeline_id)
         self.source_id = _safe_component(source_id)
         self.repo = str(repo)
         self.config = str(config or "")
@@ -76,7 +65,7 @@ class StatefulStreamCursor:
             / "data"
             / "resume-cache"
             / "crawlers"
-            / self.notebook_id
+            / self.pipeline_id
             / self.source_id
             / f"{self.split}.json"
         )
@@ -88,7 +77,7 @@ class StatefulStreamCursor:
                 payload = json.loads(self.path.read_text(encoding="utf-8"))
                 matches = (
                     payload.get("schema") == CURSOR_SCHEMA
-                    and payload.get("notebook_id") == self.notebook_id
+                    and payload.get("pipeline_id", payload.get("notebook_id")) == self.pipeline_id
                     and payload.get("source_id") == self.source_id
                     and payload.get("repo") == self.repo
                     and str(payload.get("config") or "") == self.config
@@ -148,7 +137,7 @@ class StatefulStreamCursor:
 
         payload = {
             "schema": CURSOR_SCHEMA,
-            "notebook_id": self.notebook_id,
+            "pipeline_id": self.pipeline_id,
             "source_id": self.source_id,
             "repo": self.repo,
             "config": self.config,
@@ -170,39 +159,3 @@ class StatefulStreamCursor:
         }
 
 
-def notebook_cursor_summary(project_root: str | Path, notebook_id: str) -> dict[str, Any]:
-    root = Path(project_root).resolve() / "data" / "resume-cache" / "crawlers" / _safe_component(notebook_id)
-    files = sorted(root.rglob("*.json")) if root.exists() else []
-    sources: dict[str, dict[str, int]] = {}
-    for path in files:
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-            source_id = str(payload.get("source_id", path.parent.name))
-            split = str(payload.get("split", path.stem))
-            sources.setdefault(source_id, {})[split] = int(payload.get("rows_read", 0))
-        except Exception:
-            continue
-    return {
-        "notebook_id": notebook_id,
-        "cursor_files": len(files),
-        "sources": sources,
-    }
-
-
-def source_ids_for_notebook(project_root: str | Path, notebook_id: str) -> list[str]:
-    """Return enabled registry sources owned by one training notebook, in registry order."""
-    import yaml
-
-    root = Path(project_root).resolve()
-    registry_path = root / "data" / "sources.yaml"
-    registry = yaml.safe_load(registry_path.read_text(encoding="utf-8")) or {}
-    sources = registry.get("sources") or []
-    notebook_id = str(notebook_id)
-    return [
-        str(source["id"])
-        for source in sources
-        if isinstance(source, dict)
-        and source.get("enabled", True)
-        and source.get("id")
-        and notebook_for_source(source) == notebook_id
-    ]

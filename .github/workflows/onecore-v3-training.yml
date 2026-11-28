@@ -82,8 +82,22 @@ jobs:
               "corpus_artifact_id": 14892594659,
               "corpus_artifact_name": "onecore-v3-corpus-45325008221",
               "tokenizer_run_id": 45336933362,
+              "tokenizer_artifact_id": 14894835517,
               "tokenizer_artifact_name": "onecore-v3-tokenizer-45325008221",
+              "tokenizer_artifact_digest": "sha256:47246c85500ed2647aacfd00187dacf4dedae1f10b180910ff55f71463851bd6",
+              "tokenizer_artifact_size_bytes": 394036,
+              "tokenizer_source_head_sha": "065daaa646a9b8ba1a3908476202bb4acddecd5c",
+              "tokenizer_source_file_name": "onecore-v3-tokenizer-run605-vocab32000.json",
+              "tokenizer_source_evidence_sha256": "b60e5077767f79b1316635ed45343ed5c59ce2602f41d24759a25a386ea33e16",
+              "tokenizer_file_name": "onecore-tokenizer-text32000-adopted-20261128.json",
               "tokenizer_sha256": "569f1b61e017dcf5c8ba9fef22a8002cc48d5ea3c26504bdae83f53834d00e76",
+              "tokenizer_vocab_size": 32000,
+              "tokenizer_external_train_text_records": 591525,
+              "tokenizer_train_manifest_sha256": "d499968cdd5e1869ae7b5d9866261e8aad8fe091ad9096b13067bfb6a83f9205",
+              "tokenizer_external_text_rows_sha256": "6d60d6a07fbd82932373c449735d1b73cd882bcd14390e07a60400c2cc97e720",
+              "tokenizer_validation_or_test_rows_used": 0,
+              "v2_tokenizer_imported": false,
+              "tokenizer_fit_revision": 605,
               "conversion_report_artifact_name": "onecore-v3-conversion-report-45325008221",
           }
           for key, value in expected.items():
@@ -97,16 +111,28 @@ jobs:
           if total != 20000 or warmup != 200:
               raise SystemExit("the first V3 schedule is pinned to total_steps=20000 and warmup_steps=200")
           if request.get("learning_rate") != 0.0003 or request.get("weight_decay") != 0.1:
-              raise SystemExit("unexpected V3 optimizer hyperparameters")
+              raise SystemExit("unexpected OneCore optimizer hyperparameters")
+          if request.get("tldm_diffusion_weight") != 0.15:
+              raise SystemExit("native OneCore T-LDM weight must be explicitly pinned to 0.15")
           if request.get("max_grad_norm") != 1.0 or request.get("checkpoint_every") != 1:
               raise SystemExit("the first real V3 run must checkpoint every update with grad clip 1.0")
           if request.get("resume_artifact_run_id") is not None:
-              raise SystemExit("initial V3 training must start from random initialization, not a foreign checkpoint")
+              raise SystemExit("initial OneCore training must start from random initialization, not a foreign checkpoint")
+          if request.get("tokenizer_vocab_size") != 32000 or request.get("tokenizer_validation_or_test_rows_used") != 0:
+              raise SystemExit("corrected OneCore training requires exactly 32000 TRAIN-only text tokens")
+          if request.get("tokenizer_external_train_text_records") != 591525 or request.get("v2_tokenizer_imported") is not False:
+              raise SystemExit("the immutable tokenizer must preserve the pinned external TRAIN-only evidence; re-attestation is not a refit")
+          if request.get("tokenizer_artifact_size_bytes") != 394036 or request.get("tokenizer_fit_revision") != 605:
+              raise SystemExit("tokenizer artifact metadata or fit revision changed")
           outputs = {
               "steps": steps, "total_steps": total, "warmup_steps": warmup,
               "learning_rate": request["learning_rate"], "weight_decay": request["weight_decay"],
               "max_grad_norm": request["max_grad_norm"], "checkpoint_every": request["checkpoint_every"],
+              "tldm_diffusion_weight": request["tldm_diffusion_weight"],
               "seed": request.get("seed", 20261124), "threads": request.get("threads", 4),
+              "tokenizer_run_id": request["tokenizer_run_id"],
+              "tokenizer_artifact_name": request["tokenizer_artifact_name"],
+              "tokenizer_file_name": request["tokenizer_file_name"],
           }
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as stream:
               for key, value in outputs.items():
@@ -167,11 +193,60 @@ jobs:
               "benchmark_head_sha": metadata.get("head_sha"),
           })
           PY
-      - name: Download the independently trained V3 tokenizer
+      - name: Verify the immutable corrected-spec tokenizer run and artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          from urllib.request import Request, urlopen
+          request = json.loads(Path("onecore-ai/v3-training-request.json").read_text(encoding="utf-8"))
+          headers = {"Authorization": f"Bearer {os.environ['GH_TOKEN']}", "Accept": "application/vnd.github+json"}
+          def get(path):
+              with urlopen(Request(f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}{path}", headers=headers), timeout=45) as response:
+                  return json.loads(response.read().decode("utf-8"))
+          run = get(f"/actions/runs/{request['tokenizer_run_id']}")
+          expected_run = {
+              "id": request["tokenizer_run_id"],
+              "head_branch": "research/onecore-v3-implementation",
+              "head_sha": request["tokenizer_source_head_sha"],
+              "path": ".github/workflows/onecore-v3-tokenizer.yml",
+              "event": "push",
+              "status": "completed",
+              "conclusion": "success",
+          }
+          actual_run = {key: run.get(key) for key in expected_run}
+          if actual_run != expected_run:
+              raise SystemExit(f"corrected tokenizer run metadata mismatch: {actual_run}")
+          artifacts = get(f"/actions/runs/{request['tokenizer_run_id']}/artifacts?per_page=100").get("artifacts", [])
+          matches = [item for item in artifacts if int(item.get("id", 0)) == int(request["tokenizer_artifact_id"])]
+          if len(matches) != 1:
+              raise SystemExit("pinned corrected tokenizer artifact is missing or ambiguous")
+          item = matches[0]
+          expected_artifact = {
+              "name": request["tokenizer_artifact_name"],
+              "digest": request["tokenizer_artifact_digest"],
+              "size_in_bytes": request["tokenizer_artifact_size_bytes"],
+              "expired": False,
+          }
+          actual_artifact = {
+              "name": item.get("name"),
+              "digest": item.get("digest"),
+              "size_in_bytes": int(item.get("size_in_bytes", 0)),
+              "expired": item.get("expired"),
+          }
+          if actual_artifact != expected_artifact:
+              raise SystemExit(f"corrected tokenizer artifact metadata mismatch: {actual_artifact}")
+          print({"tokenizer_run_id": run["id"], "tokenizer_artifact": actual_artifact, "tokenizer_head_sha": run["head_sha"]})
+          PY
+
+      - name: Download the single corrected-spec OneCore tokenizer
         uses: actions/download-artifact@v7
         with:
-          name: onecore-v3-tokenizer-45325008221
-          run-id: 45336933362
+          name: ${{ steps.request.outputs.tokenizer_artifact_name }}
+          run-id: ${{ steps.request.outputs.tokenizer_run_id }}
           repository: ${{ github.repository }}
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/onecore-v3-tokenizer
@@ -183,23 +258,51 @@ jobs:
           repository: ${{ github.repository }}
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/onecore-v3-conversion-report
-      - name: Verify tokenizer bytes and conversion report
+      - name: Re-attest the unchanged historical 32K tokenizer and verify all evidence
         id: inputs
+        env:
+          PYTHONPATH: onecore-ai/src
         run: |
           python - <<'PY'
           import hashlib, json, os
           from pathlib import Path
+          from onecore.v3.config import V3Config
+          from onecore.v3.tokenizer import adopt_v3_tokenizer, verify_v3_tokenizer
           root = Path(os.environ["RUNNER_TEMP"])
-          tokenizer_path = root / "onecore-v3-tokenizer" / "onecore-v3-tokenizer-run605-vocab32000.json"
-          token_files = [tokenizer_path] if tokenizer_path.is_file() else []
-          sidecar = Path(str(tokenizer_path) + ".evidence.json")
-          reports = list((root / "onecore-v3-conversion-report").glob("*.json"))
-          if len(token_files) != 1 or not sidecar.is_file() or len(reports) != 1:
-              raise SystemExit(f"expected pinned tokenizer, its evidence sidecar and one conversion report, got {token_files}, {sidecar}, {reports}")
-          token_sha = hashlib.sha256(token_files[0].read_bytes()).hexdigest()
           request = json.loads(Path("onecore-ai/v3-training-request.json").read_text(encoding="utf-8"))
-          if token_sha != request["tokenizer_sha256"]:
-              raise SystemExit(f"V3 tokenizer SHA mismatch: {token_sha}")
+          source = root / "onecore-v3-tokenizer" / request["tokenizer_source_file_name"]
+          source_sidecar = Path(str(source) + ".evidence.json")
+          output = root / "onecore-v3-tokenizer" / request["tokenizer_file_name"]
+          reports = list((root / "onecore-v3-conversion-report").glob("*.json"))
+          if not source.is_file() or not source_sidecar.is_file() or len(reports) != 1:
+              raise SystemExit(f"expected pinned source tokenizer, evidence sidecar and one conversion report; got {source}, {source_sidecar}, {reports}")
+          adopted = adopt_v3_tokenizer(
+              source, source_sidecar, output, config=V3Config(),
+              expected_source_tokenizer_sha256=request["tokenizer_sha256"],
+              expected_source_evidence_sha256=request["tokenizer_source_evidence_sha256"],
+              expected_train_manifest_sha256=request["tokenizer_train_manifest_sha256"],
+              expected_external_text_rows_sha256=request["tokenizer_external_text_rows_sha256"],
+              expected_external_train_text_records=request["tokenizer_external_train_text_records"],
+              source_run_id=request["tokenizer_run_id"],
+              source_artifact_id=request["tokenizer_artifact_id"],
+              source_artifact_sha256=request["tokenizer_artifact_digest"],
+          )
+          token_sha = hashlib.sha256(output.read_bytes()).hexdigest()
+          verified = verify_v3_tokenizer(output, config=V3Config(),
+              expected_train_manifest_sha256=request["tokenizer_train_manifest_sha256"])
+          if not adopted["source_tokenizer_bytes_preserved"] or token_sha != request["tokenizer_sha256"]:
+              raise SystemExit("32K tokenizer bytes were changed during adoption")
+          evidence_checks = {
+              "vocab_size_actual": 32000,
+              "external_train_text_records": request["tokenizer_external_train_text_records"],
+              "train_manifest_sha256": request["tokenizer_train_manifest_sha256"],
+              "external_text_rows_sha256": request["tokenizer_external_text_rows_sha256"],
+              "validation_or_test_rows_used": 0,
+              "v2_tokenizer_imported": False,
+          }
+          for key, expected_value in evidence_checks.items():
+              if verified.get(key) != expected_value:
+                  raise SystemExit(f"adopted tokenizer evidence mismatch for {key}: {verified.get(key)!r}")
           report = json.loads(reports[0].read_text(encoding="utf-8"))
           gate = report.get("manifest_gate")
           expected_coverage = {
@@ -208,7 +311,7 @@ jobs:
               "test": {"text": 22758, "tool": 400, "image": 10, "audio": 148, "video": 10},
           }
           if not isinstance(gate, dict) or gate.get("passed") is not True or gate.get("coverage") != expected_coverage:
-              raise SystemExit("pinned V3 conversion report does not match the complete external-only five-family coverage")
+              raise SystemExit("pinned V3 conversion report does not match complete external-only five-family coverage")
           if report.get("blocked") is not False or report.get("errors") != []:
               raise SystemExit("pinned V3 conversion report is blocked or contains restoration errors")
           if report.get("synthetic_records_added", 0) != 0 or report.get("acquisition_incomplete") is not False:
@@ -216,19 +319,14 @@ jobs:
           skipped = report.get("skipped") or {}
           if skipped.get("not_external_data_class") != 1302 or skipped.get("pinned_source_row_not_found") != 37:
               raise SystemExit("pinned V3 skipped-row provenance audit changed")
-          asset_hashes = gate.get("asset_hashes")
-          if not isinstance(asset_hashes, dict) or len(asset_hashes) != 20607:
-              raise SystemExit("conversion report asset hash map does not match the validated 20,607 media assets")
+          if len(gate.get("asset_hashes") or {}) != 20607:
+              raise SystemExit("conversion report asset hash map does not match 20,607 validated media assets")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as stream:
-              stream.write(f"tokenizer={token_files[0]}\n")
+              stream.write(f"tokenizer={output}\n")
               stream.write(f"conversion_report={reports[0]}\n")
-          print({
-              "tokenizer_sha256": token_sha,
-              "manifest_gate_passed": True,
-              "validated_asset_hashes": len(asset_hashes),
-              "full_24GB_corpus_downloaded": False,
-              "all_five_families_and_three_splits_verified": True,
-          })
+          print(json.dumps({"tokenizer_sha256": token_sha, "vocab_size": verified["vocab_size_actual"],
+              "train_rows": verified["external_train_text_records"], "validation_test_rows": 0,
+              "tokenizer_bytes_modified": False, "refit_performed": False}, indent=2))
           PY
       - name: Run the first real five-family optimizer update
         env:
@@ -255,7 +353,8 @@ jobs:
             --run-id "$GITHUB_RUN_ID" \
             --resource-evidence "${{ steps.resource-report.outputs.path }}" \
             --seed "${{ steps.request.outputs.seed }}" \
-            --threads "${{ steps.request.outputs.threads }}"
+            --threads "${{ steps.request.outputs.threads }}" \
+            --tldm-diffusion-weight "${{ steps.request.outputs.tldm_diffusion_weight }}"
       - name: Upload the real V3 checkpoint and training evidence
         if: always() && hashFiles('onecore-ai/run-state/v3/checkpoint.pt') != ''
         uses: actions/upload-artifact@v4

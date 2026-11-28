@@ -23,7 +23,8 @@ from .checkpoint import load_v3_checkpoint, save_v3_checkpoint, sha256_file
 from .config import V3Config
 from .core import OneCoreV3
 from .dataset import V3JointDataLoader
-from .training import OneCoreV3Objective, train_v3_joint_step
+from .training import OneCoreV3Objective, V3ObjectiveWeights, train_v3_joint_step
+from .resource_evidence import verify_resource_benchmark_report_binding
 
 
 def _atomic_json(path: Path, value: dict[str, Any]) -> None:
@@ -58,6 +59,7 @@ def _set_seed(seed: int) -> None:
 def _validate_resource_evidence(
     path: str | Path | None,
     *,
+    artifact_metadata_path: str | Path | None,
     config_fingerprint: str,
     manifest_sha256: str,
     train_manifest_sha256: str,
@@ -78,6 +80,16 @@ def _validate_resource_evidence(
         raise ValueError(f"V3 CPU resource benchmark report is unreadable: {exc}") from exc
     if not isinstance(report, dict):
         raise ValueError("V3 CPU resource benchmark report must be a JSON object")
+    if artifact_metadata_path is None:
+        raise ValueError("V3 CPU resource benchmark verified artifact metadata sidecar is required")
+    metadata_path = Path(artifact_metadata_path).resolve()
+    if not metadata_path.is_file():
+        raise FileNotFoundError(f"V3 CPU resource benchmark artifact metadata not found: {metadata_path}")
+    try:
+        artifact_metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"V3 CPU resource benchmark artifact metadata is unreadable: {exc}") from exc
+    verify_resource_benchmark_report_binding(report, artifact_metadata)
     if (
         isinstance(report.get("format_version"), bool)
         or report.get("format_version") != 1
@@ -115,6 +127,50 @@ def _validate_resource_evidence(
     ):
         raise ValueError("V3 CPU resource benchmark model report does not match the exact V3 architecture")
 
+    shape_distributions = report.get("shape_distributions")
+    if not isinstance(shape_distributions, dict):
+        raise ValueError("V3 CPU resource benchmark is missing media shape distributions")
+
+    def require_dimension_distribution(name: str) -> int:
+        distribution = shape_distributions.get(name)
+        if not isinstance(distribution, dict):
+            raise ValueError(f"V3 CPU resource benchmark is missing {name} dimension distribution")
+        count = distribution.get("count")
+        if isinstance(count, bool) or not isinstance(count, int) or count < 1:
+            raise ValueError(f"V3 CPU resource benchmark {name} dimension distribution has no positive sample count")
+        quantiles = [distribution.get(key) for key in ("min", "median", "p95", "max")]
+        numeric_quantiles: list[float] = []
+        for label, value in zip(("min", "median", "p95", "max"), quantiles):
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(float(value))
+                or float(value) <= 0
+            ):
+                raise ValueError(
+                    f"V3 CPU resource benchmark {name} dimension distribution has invalid positive {label}"
+                )
+            numeric = float(value)
+            if not numeric.is_integer():
+                raise ValueError(
+                    f"V3 CPU resource benchmark {name} dimension distribution must contain integer pixel values"
+                )
+            numeric_quantiles.append(numeric)
+        if numeric_quantiles != sorted(numeric_quantiles):
+            raise ValueError(
+                f"V3 CPU resource benchmark {name} dimension distribution quantiles are not ordered"
+            )
+        return count
+
+    dimension_counts = {
+        name: require_dimension_distribution(name)
+        for name in ("image_width", "image_height", "video_width", "video_height")
+    }
+    if dimension_counts["image_width"] != dimension_counts["image_height"]:
+        raise ValueError("V3 CPU resource benchmark image width/height dimension counts do not match")
+    if dimension_counts["video_width"] != dimension_counts["video_height"]:
+        raise ValueError("V3 CPU resource benchmark video width/height dimension counts do not match")
+
     gate = report.get("manifest_gate")
     if not isinstance(gate, dict) or gate.get("passed") is not True:
         raise ValueError("V3 CPU resource benchmark does not bind a passed external-only manifest gate")
@@ -133,11 +189,18 @@ def _validate_resource_evidence(
                 )
 
     benchmarks = report.get("benchmarks")
-    if not isinstance(benchmarks, list) or not benchmarks or any(
+    if not isinstance(benchmarks, list) or any(
         not isinstance(item, dict) or item.get("status") != "success"
         for item in benchmarks
     ):
         raise ValueError("V3 CPU resource benchmark contains a failed or missing per-family case")
+    benchmark_families = [item.get("family") for item in benchmarks]
+    if (
+        len(benchmark_families) != len(families)
+        or len(set(benchmark_families)) != len(families)
+        or set(benchmark_families) != set(families)
+    ):
+        raise ValueError("V3 CPU resource benchmark must contain exactly one successful case for each of the five families")
 
     joint = report.get("joint_training_memory")
     if not isinstance(joint, dict) or joint.get("status") != "success":
@@ -186,20 +249,60 @@ def _validate_resource_evidence(
         ):
             raise ValueError(f"V3 CPU resource benchmark is missing positive measured {label}")
 
+    # Confirm the production-loader sample itself met the quota, not only the
+    # immutable source corpus gate.
+    selection = loader.get("sample_selection")
+    selection_coverage = selection.get("coverage") if isinstance(selection, dict) else None
+    if not isinstance(selection_coverage, dict):
+        raise ValueError("V3 production loader benchmark is missing its sample-selection coverage")
+    for split, minimum in minimums.items():
+        split_counts = selection_coverage.get(split)
+        if not isinstance(split_counts, dict):
+            raise ValueError(f"V3 production loader benchmark is missing selected {split} quotas")
+        for family in families:
+            counts = split_counts.get(family)
+            if not isinstance(counts, dict):
+                raise ValueError(f"V3 production loader benchmark is missing selected {split}/{family} counts")
+            selected_rows = counts.get("selected_rows")
+            eligible_rows = counts.get("eligible_external_rows_within_caps")
+            if (
+                isinstance(selected_rows, bool)
+                or not isinstance(selected_rows, int)
+                or selected_rows != minimum
+                or isinstance(eligible_rows, bool)
+                or not isinstance(eligible_rows, int)
+                or eligible_rows < minimum
+            ):
+                raise ValueError(f"V3 production loader benchmark selected sample is below quota: {split}/{family}")
+
+    # Aggregate joint throughput cannot replace per-family modality evidence.
+    family_throughput = loader.get("family_throughput")
+    if not isinstance(family_throughput, dict) or set(family_throughput) != set(families):
+        raise ValueError("V3 production loader benchmark must report throughput for all five families")
+    for family in families:
+        rates = family_throughput.get(family)
+        if not isinstance(rates, dict):
+            raise ValueError(f"V3 production loader benchmark is missing {family} throughput")
+        require_positive(rates.get("records_per_second"), f"{family} records per second")
+        require_positive(rates.get("units_per_second"), f"{family} units per second")
+
     require_positive(joint.get("peak_rss_bytes"), "joint peak RSS")
     require_positive(joint.get("optimizer_state_bytes"), "AdamW state allocation")
     require_positive(loader.get("peak_rss_bytes"), "production loader peak RSS")
     require_positive(loader.get("joint_steps_per_second"), "production loader throughput")
-    require_positive(loader.get("measured_joint_steps"), "production loader measured steps")
+    measured_steps = loader.get("measured_joint_steps")
+    if isinstance(measured_steps, bool) or not isinstance(measured_steps, int) or measured_steps < 1:
+        raise ValueError("V3 production loader benchmark must report a positive integer number of measured steps")
 
     memory = report.get("memory_accounting")
     if not isinstance(memory, dict):
         raise ValueError("V3 CPU resource benchmark is missing process-tree memory accounting")
-    require_positive(memory.get("observed_process_tree_peak_rss_bytes"), "process-tree peak RSS")
-    require_positive(
-        memory.get("conservative_process_tree_rss_upper_bound_bytes"),
-        "conservative process-tree RSS upper bound",
-    )
+    observed_peak = memory.get("observed_process_tree_peak_rss_bytes")
+    conservative_bound = memory.get("conservative_process_tree_rss_upper_bound_bytes")
+    require_positive(observed_peak, "process-tree peak RSS")
+    require_positive(conservative_bound, "conservative process-tree RSS upper bound")
+    if conservative_bound < observed_peak:
+        raise ValueError("V3 conservative process-tree RSS upper bound is below the observed peak")
     return sha256_file(report_path)
 
 
@@ -220,6 +323,7 @@ def run_v3_training(
     resource_evidence_path: str | Path,
     seed: int = 20261124,
     threads: int = 4,
+    tldm_diffusion_weight: float = 0.15,
     resume_checkpoint: str | Path | None = None,
     expected_parent_checkpoint_sha256: str | None = None,
     trusted_asset_hashes: dict[str, str] | None = None,
@@ -242,6 +346,8 @@ def run_v3_training(
         raise ValueError("checkpoint_every must be a positive integer")
     if isinstance(threads, bool) or not isinstance(threads, int) or threads < 1:
         raise ValueError("threads must be a positive integer")
+    if not math.isfinite(tldm_diffusion_weight) or tldm_diffusion_weight < 0:
+        raise ValueError("tldm_diffusion_weight must be finite and non-negative")
     if not isinstance(run_id, str) or not run_id.strip():
         raise ValueError("run_id must be non-empty")
     if resume_checkpoint is None and expected_parent_checkpoint_sha256 is not None:
@@ -279,6 +385,7 @@ def run_v3_training(
     ) as loader:
         resource_evidence_sha256 = _validate_resource_evidence(
             resource_evidence_path,
+            artifact_metadata_path=output / "resource-evidence-artifact.json",
             config_fingerprint=config.fingerprint,
             manifest_sha256=loader.manifest_sha256,
             train_manifest_sha256=loader.train_manifest_sha256,
@@ -330,7 +437,9 @@ def run_v3_training(
         if global_step >= total_steps:
             raise ValueError("checkpoint has already reached the configured training schedule")
 
-        objective = OneCoreV3Objective(model)
+        objective = OneCoreV3Objective(
+            model, weights=V3ObjectiveWeights(tldm_diffusion=tldm_diffusion_weight),
+        )
         parameter_count = sum(
             parameter.numel() for parameter in model.parameters() if parameter.requires_grad
         )
@@ -387,6 +496,7 @@ def run_v3_training(
                     "warmup_steps": warmup_steps,
                     "learning_rate_base": learning_rate,
                     "weight_decay": weight_decay,
+                    "tldm_diffusion_weight": tldm_diffusion_weight,
                     "max_grad_norm": max_grad_norm,
                     "optimizer": "AdamW",
                     "optimizer_betas": [0.9, 0.95],
@@ -444,6 +554,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--resource-evidence", required=True)
     parser.add_argument("--seed", type=int, default=20261124)
     parser.add_argument("--threads", type=int, default=4)
+    parser.add_argument("--tldm-diffusion-weight", type=float, required=True)
     parser.add_argument("--resume-checkpoint")
     parser.add_argument("--expected-parent-checkpoint-sha256")
     args = parser.parse_args(argv)
@@ -502,6 +613,7 @@ def main(argv: list[str] | None = None) -> int:
             resource_evidence_path=args.resource_evidence,
             seed=args.seed,
             threads=args.threads,
+            tldm_diffusion_weight=args.tldm_diffusion_weight,
             resume_checkpoint=args.resume_checkpoint,
             expected_parent_checkpoint_sha256=args.expected_parent_checkpoint_sha256,
             trusted_asset_hashes=trusted_asset_hashes,

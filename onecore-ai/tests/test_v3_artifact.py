@@ -70,7 +70,7 @@ def test_artifact_extractor_uses_explicit_ranges_for_signed_blob_url(monkeypatch
             return io.BytesIO(payloads[member])
 
     monkeypatch.setattr(artifact, "RemoteZip", FakeRemoteZip)
-    result = artifact.extract_v2_artifact_manifests(
+    result = artifact.extract_source_corpus_manifests(
         "jonsnow-org/Lena9", 14715699177, "test-token", tmp_path
     )
 
@@ -138,7 +138,7 @@ def test_artifact_extractor_reads_manifests_from_stored_corpus_tar(monkeypatch, 
             return io.BytesIO(tar_bytes)
 
     monkeypatch.setattr(artifact, "RemoteZip", FakeRemoteZip)
-    result = artifact.extract_v2_artifact_manifests(
+    result = artifact.extract_source_corpus_manifests(
         "jonsnow-org/Lena9", 14715699177, "test-token", tmp_path
     )
 
@@ -169,7 +169,7 @@ def test_artifact_range_extraction_fails_fast_without_optional_dependency(monkey
 
     monkeypatch.setattr(artifact, "RemoteZip", None)
     with pytest.raises(RuntimeError, match="corpus-restore"):
-        artifact.extract_v2_artifact_manifests(
+        artifact.extract_source_corpus_manifests(
             "jonsnow-org/Lena9", 14715699177, "test-token", tmp_path
         )
 

@@ -21,7 +21,7 @@ from onecore.data import external_record_is_trainable, has_immutable_external_pr
 
 from .checkpoint import V3_DATA_STATE_FORMAT_VERSION, fingerprint_validated_v3_manifests
 from .config import V3Config
-from .manifest import TASK_GROUPS
+from .manifest import TASK_GROUPS, read_v3_manifest
 from .tokenizer import verify_v3_tokenizer
 
 FAMILIES = tuple(TASK_GROUPS)
@@ -97,8 +97,8 @@ class V3JointDataLoader:
     """Validated external-only five-family loader with strict resumable cursors.
 
     Default windows are 512 text tokens, 5 seconds of canonical-rate audio and
-    16 contiguous video frames. Raw assets remain unchanged; each epoch selects
-    a deterministic new window. Images are loaded at native resolution.
+    at most four contiguous video frames. Raw assets remain unchanged; each epoch selects
+    a deterministic new window. Images and video frames are normalized to the specified 64x64 resolution.
 
     A benchmark manifest view may index a quota-complete slice of a larger train
     manifest while verifying the tokenizer against its original full-manifest
@@ -114,7 +114,7 @@ class V3JointDataLoader:
         config: V3Config | None = None,
         max_text_tokens: int | None = 512,
         audio_window_seconds: float | None = 5.0,
-        video_window_frames: int | None = 16,
+        video_window_frames: int | None = 4,
         benchmark_manifest_view: bool = False,
         tokenizer_train_manifest_sha256: str | None = None,
         trusted_asset_hashes: Mapping[str, str] | None = None,
@@ -174,6 +174,8 @@ class V3JointDataLoader:
         self.audio_window_seconds = (
             None if audio_window_seconds is None else float(audio_window_seconds)
         )
+        if video_window_frames is not None and video_window_frames > self.config.max_video_frames:
+            raise ValueError(f"video_window_frames cannot exceed the configured {self.config.max_video_frames}-frame limit")
         self.video_window_frames = video_window_frames
 
         self.fingerprint = fingerprint_validated_v3_manifests(
@@ -437,7 +439,13 @@ class V3JointDataLoader:
         return row
 
     def _materialize(
-        self, family: str, row: dict[str, Any], source_count: int, source_size: int,
+        self,
+        family: str,
+        row: dict[str, Any],
+        source_count: int,
+        source_size: int,
+        *,
+        split: str = "train",
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         record_id = str(row["id"])
         row_hash = str(row["source_row_id_sha256"]).lower()
@@ -447,7 +455,7 @@ class V3JointDataLoader:
             "source_id": str(row["source_id"]),
             "source_revision": str(row["source_revision"]),
             "source_row_id_sha256": row_hash,
-            "split": "train",
+            "split": split,
             "data_class": "external",
         }
 
@@ -485,13 +493,16 @@ class V3JointDataLoader:
             image_path = self._resolve_asset(relative, record_id)
             try:
                 with Image.open(image_path) as image:
-                    pixels = np.asarray(image.convert("RGB"), dtype=np.float32).copy() / 255.0
+                    image = image.convert("RGB")
+                    original_size = image.size
+                    image = image.resize((self.config.image_size, self.config.image_size), Image.Resampling.BICUBIC)
+                    pixels = np.asarray(image, dtype=np.float32).copy() / 255.0
             finally:
                 self._release_asset(relative, image_path)
             tensor = torch.from_numpy(pixels).permute(2, 0, 1).unsqueeze(0).contiguous()
             metadata.update({
                 "width": int(tensor.shape[-1]), "height": int(tensor.shape[-2]),
-                "resized": False, "asset_paths": [relative],
+                "resized": original_size != (self.config.image_size, self.config.image_size), "asset_paths": [relative],
             })
             batch = {"images": tensor}
             if condition_ids is not None:
@@ -549,7 +560,8 @@ class V3JointDataLoader:
             frame_path = self._resolve_asset(relative, record_id)
             try:
                 with Image.open(frame_path) as image:
-                    pixels = np.asarray(image.convert("RGB"), dtype=np.float32).copy() / 255.0
+                    image = image.convert("RGB").resize((self.config.image_size, self.config.image_size), Image.Resampling.BICUBIC)
+                    pixels = np.asarray(image, dtype=np.float32).copy() / 255.0
                 dimensions.add((int(pixels.shape[0]), int(pixels.shape[1])))
                 frames.append(pixels)
             finally:
@@ -575,6 +587,103 @@ class V3JointDataLoader:
         if condition_ids is not None:
             batch["condition_ids"] = condition_ids
         return {"video": batch}, metadata
+
+    def iter_evaluation_micro_batches(
+        self,
+        split: str,
+        *,
+        per_family: int = 10,
+        families: tuple[str, ...] | None = None,
+        seed: int = 20261126,
+    ):
+        """Yield external-only held-out samples without advancing train cursors."""
+        if split not in {"validation", "test"}:
+            raise ValueError("V3 held-out evaluation may read validation or test only")
+        if self.benchmark_manifest_view:
+            raise RuntimeError("benchmark manifest views cannot be used for held-out evaluation")
+        if (
+            isinstance(per_family, bool)
+            or not isinstance(per_family, int)
+            or not 1 <= per_family <= 1000
+        ):
+            raise ValueError("per_family must be an integer from 1 to 1000")
+        if isinstance(seed, bool) or not isinstance(seed, int):
+            raise ValueError("evaluation seed must be an integer")
+        requested = tuple(FAMILIES if families is None else families)
+        if (
+            not requested
+            or len(set(requested)) != len(requested)
+            or any(family not in FAMILIES for family in requested)
+        ):
+            raise ValueError("evaluation families must be a non-empty unique subset of the five V3 families")
+
+        reservoirs: dict[str, list[dict[str, Any]]] = {
+            family: [] for family in requested
+        }
+        seen = {family: 0 for family in requested}
+        rngs = {
+            family: random.Random(int.from_bytes(
+                hashlib.sha256(f"{seed}:{split}:{family}".encode("utf-8")).digest()[:8],
+                "big",
+            ))
+            for family in requested
+        }
+        manifest = self.manifest_paths[split]
+        before = self._stat_signature(manifest)
+        for row in read_v3_manifest(manifest):
+            if str(row.get("split", "")) != split:
+                raise ValueError(f"V3 {split} evaluation manifest contains a row assigned to another split")
+            if not external_record_is_trainable(row):
+                continue
+            if not has_immutable_external_provenance(row):
+                raise ValueError(f"held-out V3 row lacks immutable external provenance: {row.get('id')}")
+            record_id = str(row.get("id", "")).strip()
+            if not record_id:
+                raise ValueError("held-out V3 evaluation row is missing its record ID")
+            family = TASK_TO_FAMILY.get(str(row.get("task", "")))
+            if family is None:
+                raise ValueError(f"held-out V3 evaluation row has an unsupported task: {row.get('task')!r}")
+            if family not in reservoirs:
+                continue
+            self._validate_payload(row, family)
+            seen[family] += 1
+            reservoir = reservoirs[family]
+            if len(reservoir) < per_family:
+                reservoir.append(row)
+            else:
+                replacement = rngs[family].randrange(seen[family])
+                if replacement < per_family:
+                    reservoir[replacement] = row
+        if self._stat_signature(manifest) != before:
+            raise RuntimeError(f"V3 {split} evaluation manifest changed while it was read")
+
+        for family in requested:
+            if len(reservoirs[family]) < per_family:
+                raise ValueError(
+                    f"not enough external held-out {split}/{family} rows: "
+                    f"selected {len(reservoirs[family])}, required {per_family}"
+                )
+            reservoirs[family].sort(key=lambda row: str(row["id"]))
+
+        initial_train_state = self.state_dict()
+        try:
+            for family in requested:
+                for row in reservoirs[family]:
+                    batch, metadata = self._materialize(
+                        family, row, source_count=0, source_size=1, split=split,
+                    )
+                    yield V3JointMicroBatch(
+                        family,
+                        batch,
+                        str(row["id"]),
+                        str(row["source_id"]),
+                        str(row["source_revision"]),
+                        str(row["source_row_id_sha256"]).lower(),
+                        metadata,
+                    )
+        finally:
+            if self.state_dict() != initial_train_state:
+                raise RuntimeError("held-out evaluation mutated the V3 training cursors")
 
     def _prepare_family(self, family: str) -> tuple[V3JointMicroBatch, str, str]:
         keys = self._family_sources[family]

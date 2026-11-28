@@ -208,64 +208,42 @@ def _normalise_data_state(
 
 
 def _assert_model_matches_config(model: OneCoreV3, config: V3Config) -> None:
-    shared_layers = list(model.shared_core.layers)
-    temporal_layers = list(model.video_codec.temporal.layers)
-    codebooks = list(model.audio_codec.quantizer.codebooks)
-    audio_encoder_first = model.audio_codec.encoder[0]
-    audio_encoder_last = model.audio_codec.encoder[-1]
-    audio_decoder_first = model.audio_codec.decoder[0]
-    shared_heads_match = bool(shared_layers) and all(
-        int(layer.self_attn.num_heads) == int(config.attention_heads)
-        and abs(float(layer.dropout.p) - float(config.dropout)) <= 1e-12
-        for layer in shared_layers
-    )
-    temporal_heads_match = bool(temporal_layers) and all(
-        int(layer.self_attn.num_heads) == int(config.attention_heads)
-        for layer in temporal_layers
-    )
+    model_values = model.cfg.to_dict()
+    requested_values = config.to_dict()
+    if model_values != requested_values:
+        mismatched_fields = [
+            field for field in sorted(set(model_values) | set(requested_values))
+            if model_values.get(field) != requested_values.get(field)
+        ]
+        raise ValueError("model/config mismatch: " + ", ".join(mismatched_fields))
     checks = {
-        "text_vocab_size": int(model.text_embedding.num_embeddings) == int(config.text_vocab_size)
-            and int(model.text_head.out_features) == int(config.text_vocab_size),
-        "tied_text_projection": model.text_head.weight is model.text_embedding.weight,
-        "modality_slots": int(model.modality_embedding.num_embeddings) == 5,
-        "width": int(model.width) == int(config.width)
-            and int(model.shared_core.width) == int(config.width)
-            and int(model.image_codec.width) == int(config.width)
-            and int(model.video_codec.width) == int(config.width)
-            and int(model.audio_to_shared.out_channels) == int(config.width)
-            and int(model.shared_to_audio.in_channels) == int(config.width),
-        "layers": len(shared_layers) == int(config.layers),
-        "cycles": int(model.shared_core.cycles) == int(config.cycles),
-        "attention_heads": shared_heads_match and temporal_heads_match,
-        "dropout": shared_heads_match,
-        "patch_size": int(model.image_codec.patch_size) == int(config.patch_size)
-            and int(model.video_codec.image_codec.patch_size) == int(config.patch_size),
-        "audio_latent_channels": int(model.audio_codec.latent_channels) == int(config.audio_latent_channels)
-            and int(model.audio_to_shared.in_channels) == int(config.audio_latent_channels)
-            and int(model.shared_to_audio.out_channels) == int(config.audio_latent_channels)
-            and int(audio_encoder_last.out_channels) == int(config.audio_latent_channels),
-        "audio_hidden_channels": int(audio_encoder_first.out_channels) == int(config.audio_hidden_channels)
-            and int(audio_decoder_first.out_channels) == int(config.audio_hidden_channels),
-        "audio_codebook_size": bool(codebooks)
-            and all(int(book.num_embeddings) == int(config.audio_codebook_size) for book in codebooks),
-        "audio_codebook_dimension": bool(codebooks)
-            and all(int(book.embedding_dim) == int(config.audio_latent_channels) for book in codebooks),
-        "audio_quantizer_stages": len(codebooks) == int(config.audio_quantizer_stages),
-        "audio_channels": int(model.audio_codec.channels) == int(config.audio_channels)
-            and int(model.audio_codec.encoder[0].in_channels) == int(config.audio_channels)
-            and int(model.audio_codec.decoder[-1].out_channels) == int(config.audio_channels),
-        "audio_sample_rate": int(model.audio_codec.sample_rate) == int(config.audio_sample_rate),
-        "temporal_layers": len(temporal_layers) == int(config.temporal_layers),
-        "temporal_window_frames": int(model.video_codec.temporal_window_frames) == int(config.temporal_window_frames),
-        "temporal_memory_frames": int(model.video_codec.temporal_memory_frames) == int(config.temporal_memory_frames),
-        "max_image_context_tokens": int(model.max_image_context_tokens) == int(config.max_image_context_tokens),
-        "max_video_context_tokens": int(model.max_video_context_tokens) == int(config.max_video_context_tokens),
-        "max_flow_context_tokens": int(model.max_flow_context_tokens) == int(config.max_flow_context_tokens),
-        "video_generation_chunk_frames": int(model.video_generation_chunk_frames) == int(config.video_generation_chunk_frames),
+        "shared vocabulary": int(model.token_embedding.num_embeddings) == config.vocab_size,
+        "tied text head": model.lm_head.weight is model.token_embedding.weight,
+        "position embedding": model.position_embedding.num_embeddings == config.max_sequence_length,
+        "five modality embeddings": model.modality_embedding.num_embeddings == 5,
+        "cycle embeddings": model.cycle_embedding.num_embeddings == config.recurrent_cycles,
+        "unique shared blocks": len(model.blocks) == config.unique_blocks,
+        "image encoder bias": model.image_encoder.bias is not None,
+        "image decoder bias": model.image_decoder.bias is not None,
+        "audio encoder bias": model.audio_encoder.bias is not None,
+        "audio decoder bias": model.audio_decoder.bias is not None,
+        "motion encoder bias": model.motion_encoder.bias is not None,
+        "motion decoder bias": model.motion_decoder.bias is not None,
+        "halt head bias": model.halt_head.bias is not None,
     }
-    mismatched = [name for name, matched in checks.items() if not matched]
+    for block in model.blocks:
+        checks["block QKV/output biases disabled"] = block.attn.qkv.bias is None and block.attn.out.bias is None
+        checks["SwiGLU biases disabled"] = block.mlp.gate.bias is None and block.mlp.up.bias is None and block.mlp.down.bias is None
+        checks["SwiGLU hidden dimension"] = block.mlp.gate.out_features == config.hidden_size
+        checks["RMSNorm weights"] = block.norm1.weight.numel() == config.width and block.norm2.weight.numel() == config.width
+    mismatched = [name for name, result in checks.items() if not result]
     if mismatched:
-        raise ValueError("model/config mismatch for: " + ", ".join(mismatched))
+        raise ValueError("OneCore corrected architecture mismatch: " + ", ".join(mismatched))
+    actual = model.count_parameters()
+    if config.is_canonical and actual != 86_152_897:
+        raise ValueError(f"canonical OneCore parameter count mismatch: expected 86,152,897, got {actual:,}")
+    if model.lm_head.weight is not model.token_embedding.weight:
+        raise ValueError("T-LDM and causal decoding must reuse the tied shared text head")
 
 
 def fingerprint_validated_v3_manifests(

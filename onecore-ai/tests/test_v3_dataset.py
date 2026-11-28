@@ -11,7 +11,7 @@ from tokenizers import Tokenizer, decoders, models, normalizers, pre_tokenizers
 from onecore.v3.checkpoint import _normalise_data_state
 from onecore.v3.config import V3Config
 from onecore.v3.dataset import FAMILIES, V3JointDataLoader
-from onecore.v3.tokenizer import SPECIAL_TOKENS
+from onecore.v3.tokenizer import SPECIAL_TOKENS, _tokenizer_contract_sha256
 
 
 def _write_project(root):
@@ -149,6 +149,7 @@ def _write_exact_v3_test_tokenizer(train_manifest, path, config):
         "tokenizer_file": path.name,
         "validation_or_test_rows_used": 0,
         "v2_tokenizer_imported": False,
+        "tokenizer_contract_sha256": _tokenizer_contract_sha256(config, {token: tokenizer.token_to_id(token) for token in SPECIAL_TOKENS}),
     }
     path.with_name(path.name + ".evidence.json").write_text(
         json.dumps(evidence, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
@@ -156,9 +157,9 @@ def _write_exact_v3_test_tokenizer(train_manifest, path, config):
     )
 
 
-def _build_loader(root):
+def _build_loader(root, config=None):
     manifests, assets_root = _write_project(root / "project")
-    config = V3Config()
+    config = config or V3Config()
     tokenizer_path = root / "v3-tokenizer.json"
     _write_exact_v3_test_tokenizer(manifests["train"], tokenizer_path, config)
     loader = V3JointDataLoader(
@@ -176,10 +177,10 @@ def test_v3_joint_loader_emits_five_families_and_resumes_exact_source_cursors(tm
         assert all(set(item.batch) == {item.family} for item in first)
         assert first[0].batch["text"]["input_ids"].shape[1] <= 16
         assert first[1].batch["tool"]["input_ids"].shape[1] <= 16
-        assert first[2].batch["image"]["images"].shape == (1, 3, 2, 2)
+        assert first[2].batch["image"]["images"].shape == (1, 3, 64, 64)
         assert first[3].batch["audio"]["waveform"].shape[-1] == 24
         assert first[3].batch["audio"]["sample_rate"] == 24_000
-        assert first[4].batch["video"]["frames"].shape == (1, 2, 3, 2, 2)
+        assert first[4].batch["video"]["frames"].shape == (1, 2, 3, 64, 64)
         expected_conditions = (
             (first[2], "caption", "External image caption 0 from train."),
             (first[3], "transcript", "External audio transcript 0 from train."),
@@ -398,7 +399,7 @@ def test_v3_loader_benchmark_sampling_is_deterministic_and_external_only(tmp_pat
         "max_image_megapixels": 2.0,
         "max_audio_seconds": 5.0,
         "max_video_megapixel_frames": 16.0,
-        "max_video_frames": 16,
+        "max_video_frames": 4,
     }
     first, stats = _select_loader_benchmark_rows(manifests, **kwargs)
     second, _ = _select_loader_benchmark_rows(manifests, **kwargs)
@@ -414,17 +415,121 @@ def test_v3_loader_benchmark_sampling_is_deterministic_and_external_only(tmp_pat
         row for row in first["train"]["video"] if row["id"] == video_row["id"]
     )
     assert clipped_video["source_row_id_sha256"] == original_video_row_sha
-    assert len(clipped_video["assets"]["video"]["frames"]) == 16
-    assert len(clipped_video["assets"]["video"]["timestamps"]) == 16
-    assert clipped_video["assets"]["video"]["frame_count"] == 16
+    assert len(clipped_video["assets"]["video"]["frames"]) == 4
+    assert len(clipped_video["assets"]["video"]["timestamps"]) == 4
+    assert clipped_video["assets"]["video"]["frame_count"] == 4
     assert clipped_video["benchmark_view"] == {
         "transform": "prefix_frame_window_under_megapixel_frame_budget",
         "source_frame_count": 20,
-        "selected_frame_count": 16,
+        "selected_frame_count": 4,
         "source_megapixels_per_frame": 4e-06,
-        "selected_megapixel_frames": 64e-06,
+        "selected_megapixel_frames": 16e-06,
     }
 
+
+
+
+def test_v3_joint_loader_iterates_heldout_splits_without_advancing_train_cursors(tmp_path):
+    loader, _assets_root = _build_loader(tmp_path)
+    with loader:
+        original = loader.state_dict()
+        validation = list(loader.iter_evaluation_micro_batches(
+            "validation", per_family=2, seed=43,
+        ))
+        validation_again = list(loader.iter_evaluation_micro_batches(
+            "validation", per_family=2, seed=43,
+        ))
+        test = list(loader.iter_evaluation_micro_batches(
+            "test", per_family=2, seed=43,
+        ))
+        assert len(validation) == len(test) == 2 * len(FAMILIES)
+        assert [item.record_id for item in validation] == [
+            item.record_id for item in validation_again
+        ]
+        assert all(item.metadata["split"] == "validation" for item in validation)
+        assert all(item.metadata["split"] == "test" for item in test)
+        assert all(item.metadata["data_class"] == "external" for item in validation + test)
+        assert loader.state_dict() == original
+        with pytest.raises(ValueError, match="validation or test only"):
+            list(loader.iter_evaluation_micro_batches("train", per_family=1))
+
+
+def test_v3_heldout_evaluator_reports_validation_and_test_without_updates(tmp_path):
+    import torch
+    from onecore.v3.evaluation import evaluate_v3_heldout_splits
+
+    config = V3Config(architecture_version="onecore-v3-test-fixture", width=32, unique_blocks=1,
+        recurrent_cycles=2, attention_heads=4, max_sequence_length=128, text_vocab_size=512,
+        vision_codebook_size=16, audio_codebook_size=8, motion_codebook_size=8, special_tokens=24,
+        patch_size=8, image_size=32, audio_bins=8, audio_group_frames=2, audio_sample_rate=24000,
+        audio_channels=2, max_video_frames=4, tldm_latent_slots=4, dropout=0.0)
+
+    loader, _assets_root = _build_loader(tmp_path, config=config)
+    with loader:
+        from onecore.v3.checkpoint import save_v3_checkpoint
+        from onecore.v3.inference import OneCoreV3Inference
+
+        model = config.build_model().cpu()
+        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.8)
+        objective_loss = sum(
+            parameter.float().square().mean() for parameter in model.parameters()
+        )
+        objective_loss.backward()
+        optimizer.step()
+        scheduler.step()
+        loader.next_joint_micro_batches()
+        checkpoint_path = tmp_path / "trained-fixture.pt"
+        saved = save_v3_checkpoint(
+            checkpoint_path,
+            model,
+            optimizer,
+            scheduler,
+            1,
+            config,
+            tokenizer_json=(tmp_path / "v3-tokenizer.json").read_bytes(),
+            manifest_sha256=loader.manifest_sha256,
+            data_state=loader.state_dict(),
+            lineage={
+                "run_id": "heldout-evaluation-fixture",
+                "session": 1,
+                "parent_checkpoint_sha256": None,
+            },
+        )
+        runtime = OneCoreV3Inference.from_checkpoint(
+            checkpoint_path,
+            expected_checkpoint_sha256=saved["sha256"],
+            device="cpu",
+        )
+        model = runtime.model
+        before = {name: tensor.detach().clone() for name, tensor in model.state_dict().items()}
+        train_state = loader.state_dict()
+        rng = torch.get_rng_state().clone()
+        report = evaluate_v3_heldout_splits(
+            runtime,
+            loader,
+            per_family_records=1,
+            families=FAMILIES,
+            seed=91,
+        )
+        assert report["status"] == "evaluated"
+        assert report["optimizer_updates"] == 0
+        assert report["quality_certified"] is False
+        assert report["checkpoint_sha256"] == saved["sha256"]
+        assert report["config_sha256"] == config.fingerprint
+        assert set(report["splits"]) == {"validation", "test"}
+        expected_loss = {family: "language_loss" for family in FAMILIES}
+        for split in ("validation", "test"):
+            for family in FAMILIES:
+                metrics = report["splits"][split][family]
+                assert metrics["sample_count"] == 1
+                assert metrics["mean_losses"][expected_loss[family]] >= 0
+                assert len(metrics["record_ids_sha256"]) == 64
+        assert loader.state_dict() == train_state
+        assert torch.equal(torch.get_rng_state(), rng)
+    for name, tensor in model.state_dict().items():
+        assert torch.equal(tensor, before[name]), name
+    assert all(parameter.grad is None for parameter in model.parameters())
 
 def test_v3_joint_loader_rejects_caption_task_without_paired_text(tmp_path):
     manifests, assets_root = _write_project(tmp_path / "project")

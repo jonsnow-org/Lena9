@@ -1,6 +1,6 @@
 """Range-based extraction of small manifests from large GitHub artifacts.
 
-Only the V2 JSONL manifests and acquisition report are fetched from the existing
+Only the existing corpus JSONL manifests and acquisition report are fetched from the existing
 corpus artifact. The 15.8 GB ZIP is never downloaded or expanded in full.
 """
 from __future__ import annotations
@@ -49,7 +49,7 @@ def select_artifact_members(names: Iterable[str]) -> dict[str, str]:
     return selected
 
 
-def extract_v2_artifact_manifests(
+def extract_source_corpus_manifests(
     repository_full_name: str,
     artifact_id: int,
     github_token: str,

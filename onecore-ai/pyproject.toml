@@ -30,11 +30,13 @@ corpus-restore = [
 ]
 
 [project.scripts]
-onecore = "onecore.cli:main"
-onecore-v3-convert = "onecore.v3.cli:main"
-onecore-v3-tokenizer = "onecore.v3.tokenizer:main"
-onecore-v3-train = "onecore.v3.runner:main"
-onecore-v3-resource-benchmark = "onecore.v3.resource_benchmark:main"
+onecore = "onecore.v3.inference:main"
+onecore-corpus-convert = "onecore.v3.cli:main"
+onecore-tokenizer = "onecore.v3.tokenizer:main"
+onecore-train = "onecore.v3.runner:main"
+onecore-resource-benchmark = "onecore.v3.resource_benchmark:main"
+onecore-checkpoint-audit = "onecore.v3.checkpoint_audit:main"
+onecore-evaluate = "onecore.v3.evaluation_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

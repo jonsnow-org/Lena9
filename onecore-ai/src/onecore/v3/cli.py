@@ -1,4 +1,4 @@
-"""CLI for selective V2-to-V3 corpus conversion."""
+"""CLI for preparing the canonical OneCore corpus."""
 from __future__ import annotations
 
 import argparse
@@ -7,17 +7,17 @@ import os
 from pathlib import Path
 from typing import Sequence
 
-from onecore.v3.artifact import extract_v2_artifact_manifests
-from onecore.v3.converter import convert_v2_corpus
+from onecore.v3.artifact import extract_source_corpus_manifests
+from onecore.v3.converter import convert_existing_corpus
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Reuse V2 text/tool rows and restore only pinned raw media for OneCore V3."
+        description="Reuse verified source rows and restore only pinned raw media for OneCore."
     )
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--artifact-id", type=int, help="Existing GitHub Actions artifact ID.")
-    source.add_argument("--v2-data-root", help="Directory containing train/validation/test JSONL.")
+    source.add_argument("--data-root", help="Directory containing train/validation/test JSONL.")
     parser.add_argument("--github-repo", default="jonsnow-org/Lena9")
     parser.add_argument("--github-token", default=os.environ.get("GITHUB_TOKEN", ""))
     parser.add_argument("--source-registry", required=True)
@@ -36,24 +36,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     output_root.mkdir(parents=True, exist_ok=True)
     source_revisions = None
     if args.artifact_id is not None:
-        extracted = extract_v2_artifact_manifests(
+        extracted = extract_source_corpus_manifests(
             args.github_repo, args.artifact_id, args.github_token,
-            output_root / "v2-artifact",
+            output_root / "source-corpus",
         )
-        v2_data_root = Path(str(extracted["data_root"]))
+        existing_data_root = Path(str(extracted["data_root"]))
         report_path = Path(str(extracted["files"]["acquisition-report.json"]))
         acquisition_report = json.loads(report_path.read_text(encoding="utf-8"))
         source_revisions = acquisition_report.get("source_revisions") or {}
     else:
-        v2_data_root = Path(args.v2_data_root).resolve()
+        existing_data_root = Path(args.existing_data_root).resolve()
         if args.acquisition_report:
             acquisition_report = json.loads(
                 Path(args.acquisition_report).read_text(encoding="utf-8")
             )
             source_revisions = acquisition_report.get("source_revisions") or {}
 
-    report = convert_v2_corpus(
-        v2_data_root,
+    report = convert_existing_corpus(
+        existing_data_root,
         args.source_registry,
         output_root / "v3",
         target_audio_rate=args.target_audio_rate,

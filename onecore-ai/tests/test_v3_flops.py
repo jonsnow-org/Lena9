@@ -1,93 +1,52 @@
-import pytest
-
+from onecore.v3.flops import (
+    block_flops, causal_forward_flops, joint_step_train_flops, lm_head_flops,
+    micro_batch_forward_flops, micro_batch_train_flops, text_step_train_flops,
+    tldm_forward_flops, build_v3_flops_report,
+)
 from onecore.v3 import V3Config
-from onecore.v3.flops import build_v3_flops_report
 
 
-def _tiny_config():
-    return V3Config(
-        text_vocab_size=64, width=32, layers=1, cycles=2,
-        attention_heads=4, patch_size=4,
-        audio_latent_channels=8, audio_hidden_channels=16,
-        audio_codebook_size=16, audio_quantizer_stages=2,
-        audio_channels=1, audio_sample_rate=24_000,
-        temporal_layers=1, max_image_context_tokens=8,
-        max_video_context_tokens=8, max_flow_context_tokens=8,
-        temporal_window_frames=4, temporal_memory_frames=1,
-        video_generation_chunk_frames=2,
-    )
+def test_exact_flops_formula_examples_at_128_and_512_tokens():
+    assert block_flops(128) == 3_287_810_048
+    assert lm_head_flops(128) == 8_663_334_912
+    assert causal_forward_flops(128) == 48_117_055_488
+    assert tldm_forward_flops(128) == 52_960_690_176
+    assert micro_batch_forward_flops(128) == 101_077_745_664
+    assert micro_batch_train_flops(128) == 303_233_236_992
+    assert joint_step_train_flops(128) == 1_516_166_184_960
+    assert text_step_train_flops(128) == 1_212_932_947_968
+    assert joint_step_train_flops(512) == 6_136_611_471_360
 
 
-def _core_flops(batch, sequence, width, layers, cycles):
-    per_layer = 24 * batch * sequence * width * width + 4 * batch * sequence * sequence * width
-    return per_layer * layers * cycles
+def test_flops_report_binds_to_one_canonical_config_and_native_tldm():
+    cfg = V3Config()
+    report = build_v3_flops_report(cfg)
+    assert report["config_sha256"] == cfg.fingerprint
+    assert report["shared_block_applications"] == 12
+    assert report["tldm_additional_trainable_parameters"] == 0
+    assert report["paths"]["text"]["breakdown"]["native_tldm"]["tied_text_output_projection"] > 0
+    assert report["joint_micro_batches_per_update"] == 5
+    assert report["sequence_length_examples"]["128"]["joint_step_train_flops"] == 1_516_166_184_960
+    assert report["sequence_length_examples"]["512"]["joint_step_train_flops"] == 6_136_611_471_360
 
 
-def test_v3_flops_counts_shared_recurrent_core_and_tied_text_projection():
-    config = _tiny_config()
-    report = build_v3_flops_report(
-        config,
-        batch_size=2,
-        text_tokens=5,
-        image_height=8,
-        image_width=12,
-        audio_samples=64,
-        audio_sample_rate=24_000,
-        video_frames=3,
-        video_height=8,
-        video_width=12,
-        flow_steps=2,
-    )
-    text = report["paths"]["text"]["dense_flops"]
-    expected = _core_flops(2, 5, 32, 1, 2) + 2 * 2 * 5 * 32 * 64
-    assert text == expected
-    assert report["paths"]["tool"]["dense_flops"] == text
-    assert report["paths"]["tool"]["same_path_as"] == "text"
-    assert report["joint_five_family_forward_dense_flops"] == sum(
-        report["paths"][name]["dense_flops"]
-        for name in ("text", "tool", "image", "audio", "video")
-    )
-    assert report["scope"] == "forward arithmetic only; no backward pass or training loss"
+def test_flops_helpers_bind_output_projection_to_supplied_config():
+    tiny = V3Config(architecture_version="onecore-v3-test-fixture", width=32,
+                    unique_blocks=1, recurrent_cycles=2, attention_heads=4,
+                    max_sequence_length=128, text_vocab_size=64,
+                    vision_codebook_size=16, audio_codebook_size=8,
+                    motion_codebook_size=8, special_tokens=24, patch_size=8,
+                    image_size=32, audio_bins=8, audio_group_frames=2,
+                    audio_sample_rate=24000, audio_channels=1,
+                    max_video_frames=4, tldm_latent_slots=4, dropout=0.0)
+    assert lm_head_flops(7, tiny.vocab_size, tiny.width) == 2 * 7 * tiny.vocab_size * tiny.width
+    assert joint_step_train_flops(32, tiny) < joint_step_train_flops(32, V3Config())
 
 
-def test_v3_flops_tracks_audio_latent_length_and_rejects_noncanonical_rate():
-    config = _tiny_config()
-    report = build_v3_flops_report(
-        config, image_height=8, image_width=8, audio_samples=65,
-        audio_sample_rate=24_000, video_frames=2, video_height=8, video_width=8,
-    )
-    # 65 samples are padded to 80; two stride-4 convolutions yield five latent steps.
-    assert report["paths"]["audio"]["latent_tokens"] == 5
-    assert report["paths"]["audio"]["breakdown"]["rvq_codebook_distance_matmuls"] == (
-        2 * 1 * 5 * 8 * 16 * 2
-    )
-    with pytest.raises(ValueError, match="canonical"):
-        build_v3_flops_report(
-            config, audio_samples=64, audio_sample_rate=16_000,
-            image_height=8, image_width=8, video_frames=2, video_height=8, video_width=8,
-        )
-
-
-def test_v3_flops_respects_video_chunk_memory_and_flow_context_caps():
-    config = _tiny_config()
-    report = build_v3_flops_report(
-        config, image_height=8, image_width=8, audio_samples=64,
-        video_frames=5, video_height=8, video_width=8, flow_steps=3,
-    )
-    video = report["paths"]["video"]["breakdown"]
-    assert video["video_temporal_transformer"] > 0
-    assert video["shared_recurrent_core"] > 0
-    flow = report["flow_sampling"]["modalities"]["video"]
-    assert flow["target_tokens"] == 2 * 4  # two generation frames, four spatial patches per frame
-    assert flow["effective_target_tokens_after_context_cap"] <= config.max_flow_context_tokens
-    assert flow["sampling_dense_flops"] == flow["per_step_dense_flops"] * 3
-
-
-def test_v3_flops_rejects_model_config_mismatch_and_invalid_shapes():
-    config = _tiny_config()
-    different = V3Config(**{**config.to_dict(), "width": 64, "attention_heads": 4})
-    model = config.build_model()
-    with pytest.raises(ValueError, match="model/config mismatch"):
-        build_v3_flops_report(different, model=model)
-    with pytest.raises(ValueError, match="positive"):
-        build_v3_flops_report(config, text_tokens=0)
+def test_flops_formula_rejects_invalid_dimensions():
+    try:
+        block_flops(0)
+    except ValueError as exc:
+        assert "positive" in str(exc)
+    else:
+        raise AssertionError("zero-token FLOPs request must fail")
