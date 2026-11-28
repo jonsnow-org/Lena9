@@ -49,7 +49,8 @@ jobs:
           python - <<'PY'
           import hashlib, io, json, os, zipfile
           from pathlib import Path
-          from urllib.request import Request, urlopen
+          from urllib.error import HTTPError
+          from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
           import yaml
           from onecore.v3.config import V3Config
           from onecore.v3.tokenizer import adopt_v3_tokenizer, verify_v3_tokenizer
@@ -76,8 +77,25 @@ jobs:
               "size_in_bytes": int(artifact.get("size_in_bytes", 0)), "expired": artifact.get("expired")}
           if actual != expected:
               raise SystemExit(f"historical tokenizer artifact metadata mismatch: {actual}")
-          with urlopen(Request(api + f"/actions/artifacts/{req['source_artifact_id']}/zip", headers=headers), timeout=180) as response:
-              archive_bytes = response.read()
+          # GitHub redirects artifact downloads to signed external storage.
+          # Stop the redirect here so the GitHub bearer token is never forwarded off-host.
+          class StopAtRedirect(HTTPRedirectHandler):
+              def redirect_request(self, request, file_pointer, code, message, response_headers, new_url):
+                  return None
+          api_opener = build_opener(StopAtRedirect)
+          archive_request = Request(api + f"/actions/artifacts/{req['source_artifact_id']}/zip", headers=headers)
+          try:
+              with api_opener.open(archive_request, timeout=45) as response:
+                  archive_bytes = response.read()
+          except HTTPError as redirect:
+              if redirect.code not in (301, 302, 303, 307, 308):
+                  raise
+              signed_url = redirect.headers.get("Location")
+              if not signed_url:
+                  raise SystemExit("GitHub artifact redirect did not include a signed download URL")
+              # The signed URL authenticates itself. Do not attach GH_TOKEN.
+              with urlopen(signed_url, timeout=180) as response:
+                  archive_bytes = response.read()
           archive_sha = hashlib.sha256(archive_bytes).hexdigest()
           if len(archive_bytes) != req["source_artifact_size_bytes"] or "sha256:" + archive_sha != req["source_artifact_digest"]:
               raise SystemExit("historical tokenizer archive bytes/digest mismatch")
