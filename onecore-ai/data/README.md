@@ -26,7 +26,7 @@ The five-family corpus is already stored in the pinned GitHub Actions artifact `
 
 `corpus-source-snapshot-45325008221.yaml` is the immutable data-source registry used for the already-created corpus artifact. It is used only by the explicit corpus-restore operation; it is not an alternate active source-selection policy. `sources.yaml` is the current active registry. Dataset identifiers containing words such as `stack_v2` identify upstream datasets, not another OneCore model.
 
-Do not reacquire the pinned corpus. The historic 32,000-token tokenizer remains preserved but is not used by the corrected model; fit the one canonical 4,096-token tokenizer once from the pinned external TRAIN split, then preserve its exact artifact, bytes and provenance. Never use validation or test rows for tokenizer fitting.
+Do not reacquire the pinned corpus. The historical 32,000-token tokenizer remains preserved only as provenance. The corrected single tokenizer is published as artifact `15256164799` from run `46128204163`, with 4,096 tokens and JSON SHA-256 `6e1c5ed9bf3c44f9e520edf04a90caf97c15fa622f9b5df8d651345fef27dacd`. It was fitted once from all 591,525 external TRAIN text rows in `data/train.jsonl`; validation/test rows used: 0. Preserve this exact artifact, file, sidecar and provenance.
 
 ## Streaming cursor
 

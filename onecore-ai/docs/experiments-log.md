@@ -2,13 +2,19 @@
 
 Historical note: the baseline values below document the earlier prototype-2 experiment record and are not the current architecture contract. The current corrected-spec-2 model has 57,579,201 trainable parameters, width 1,024 and 4,096 text tokens (5,144 unified tokens). See `ARCHITECTURE.md` and `docs/EXECUTIVE_HANDOVER.md` for the current contract. This log is retained for provenance, not as an active model specification.
 
-## Canonical model baseline
+## Superseded prototype-2 baseline — historical only
 
 - Implementation: `onecore-ai/src/onecore/v3/`.
 - Exact trainable parameter count: **39,906,568**.
 - Text vocabulary: 32,000 byte-level BPE, fitted on 591,525 external train-text rows only.
 - Shared core: width 512, four unique Transformer blocks, three recurrent cycles, eight attention heads.
 - Native T-LDM: 16 latent slots, same shared core and tied text head, zero additional trainable parameters, text/tool objective weight 0.15.
+
+## Corrected-spec canonical model and tokenizer
+
+- Canonical architecture: `onecore-v3-corrected-spec-2`, 57,579,201 trainable parameters, width 1,024, text BPE 4,096 and unified vocabulary 5,144. The prototype-2 39,906,568-parameter/32,000-token figures above are superseded historical measurements, not a second model.
+- Tokenizer run #6: `46128204163`, source commit `27e2e2ba5339b6f45f60fa90f88ae28d5fd5d87f`; artifact `15256164799`, name `onecore-corrected-spec-tokenizer-4096-45325008221`, 42,523 bytes, ZIP digest `sha256:ba29243d09e77ca06c9700f9529e9cf313dbd5f9eb208b903fdbb97224699370`.
+- Tokenizer JSON SHA-256 `6e1c5ed9bf3c44f9e520edf04a90caf97c15fa622f9b5df8d651345fef27dacd`; 4,096 tokens from 591,525 external TRAIN text records; TRAIN manifest SHA-256 `d499968cdd5e1869ae7b5d9866261e8aad8fe091ad9096b13067bfb6a83f9205`; external-row fingerprint `6d60d6a07fbd82932373c449735d1b73cd882bcd14390e07a60400c2cc97e720`; validation/test rows used 0; imported V2 tokenizer false. The 32,000-token artifact remains preserved for provenance only.
 
 ## Native T-LDM integration
 
