@@ -2,14 +2,14 @@
   "schema_version": 1,
   "status": "active",
   "holder": "ChatGPT GPT-6",
-  "session_id": "onecore-ci-repair-20261128-01",
-  "client": "ChatGPT scheduled supervisor",
-  "started_at_utc": "2026-11-28T06:27:00Z",
-  "lease_expires_at_utc": "2026-11-28T07:27:00Z",
-  "base_head_sha": "097ad5efbe9dfc6b7c2405f43b17d738572dbeaf",
-  "planned_scope": "Repair only the verified failing OneCore tests and small inference/checkpoint diagnostics inside onecore-ai/. Reconcile stale architecture/tokenizer documentation and handover. Preserve source artifacts and licensing status. No CPU benchmark, corpus restore, training, optimizer update, main/V2 or outside-onecore-ai writes.",
+  "session_id": "onecore-complete-canonical-20261128-01",
+  "client": "ChatGPT",
+  "started_at_utc": "2026-11-28T08:46:30Z",
+  "lease_expires_at_utc": "2026-11-28T09:46:30Z",
+  "base_head_sha": "b38231e5a816ffab732088490ca3df1788a89304",
+  "planned_scope": "Continue the single canonical OneCore corrected-spec implementation from the verified branch head. Reconcile current files and latest Actions evidence; align the only tokenizer path to 4096 text BPE tokens by fitting from the existing pinned external TRAIN split only as specified by Corrected Specification v2, without touching validation/test or reacquiring the corpus; bind a new immutable tokenizer artifact into the single training request; reconcile docs/handover and all version labels without creating a second model; fix workflow consistency; run CI and source package, prepare one reviewed PR if green. Keep optimizer training fail-closed. No optimizer update, no main mutation, no alternate model/branch, no destructive legacy-ref operation.",
   "last_released_at_utc": "2026-11-27T07:51:21Z",
-  "last_session_summary": "Prior cleanup removed old parallel model/trainer/notebook workflow and integrated native T-LDM. Last source package passed; CI run #774 failed only on a brittle handover heading assertion. Corrected spec v2 now being applied as canonical single model.",
-  "last_verified_branch_head": "097ad5efbe9dfc6b7c2405f43b17d738572dbeaf",
-  "last_result": "Read-only reconciliation found latest OneCore CI #785 failing 13 tests; CPU, checkpoint-audit and held-out jobs skipped. Existing pinned tokenizer is recorded as 32,000 tokens while current canonical text vocabulary is 4,096; owner decision required before using it."
+  "last_session_summary": "The prior bounded repair session resolved the 13 CI failures. Current head b38231e5a816ffab732088490ca3df1788a89304: Verify #792 successful with 205 tests passed, one-model/guard checks and exact FineWeb-2 cursor resume; source package #29 successful (234406 bytes). CPU benchmark, corpus restore, step-zero checkpoint audit and held-out evaluation remain skipped. Current tokenizer artifact remains 32000 tokens and is incompatible with the corrected 4096 text-vocabulary contract.",
+  "last_verified_branch_head": "b38231e5a816ffab732088490ca3df1788a89304",
+  "last_result": "Read-only reconciliation complete. The only unresolved pre-training compatibility issue is the 32000-token tokenizer artifact versus the corrected 4096-token BPE requirement. Next: complete the single canonical tokenizer replacement from external training text and run the remaining non-training gates when the available GitHub Actions execution path permits."
 }
