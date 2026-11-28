@@ -60,6 +60,7 @@ def test_tokenizer_workflow_is_pinned_idempotent_and_does_not_train():
     assert "external_train_text_records" in workflow and "validation_or_test_rows_used" in workflow
     assert "workflow_dispatch:" in workflow and "cancel-in-progress: false" in workflow
     assert "onecore.v3.tokenizer" in workflow
+    assert '"Pillow>=10,<13"' in workflow and '"soundfile>=0.12,<1"' in workflow
     assert "validation_or_test_rows_used" in workflow
     assert "onecore.v3.training" not in workflow and "train_v3_step(" not in workflow
 
