@@ -81,9 +81,21 @@ jobs:
               "corpus_run_id": 45325008221,
               "corpus_artifact_id": 14892594659,
               "corpus_artifact_name": "onecore-v3-corpus-45325008221",
-              "tokenizer_run_id": 45336933362,
-              "tokenizer_artifact_name": "onecore-v3-tokenizer-45325008221",
-              "tokenizer_sha256": "569f1b61e017dcf5c8ba9fef22a8002cc48d5ea3c26504bdae83f53834d00e76",
+              "tokenizer_run_id": 46128204163,
+              "tokenizer_artifact_id": 15256164799,
+              "tokenizer_artifact_name": "onecore-corrected-spec-tokenizer-4096-45325008221",
+              "tokenizer_artifact_digest": "sha256:ba29243d09e77ca06c9700f9529e9cf313dbd5f9eb208b903fdbb97224699370",
+              "tokenizer_artifact_size_bytes": 42523,
+              "tokenizer_source_head_sha": "27e2e2ba5339b6f45f60fa90f88ae28d5fd5d87f",
+              "tokenizer_file_name": "onecore-tokenizer-text4096-20261128.json",
+              "tokenizer_sha256": "6e1c5ed9bf3c44f9e520edf04a90caf97c15fa622f9b5df8d651345fef27dacd",
+              "tokenizer_vocab_size": 4096,
+              "tokenizer_external_train_text_records": 591525,
+              "tokenizer_train_manifest_sha256": "d499968cdd5e1869ae7b5d9866261e8aad8fe091ad9096b13067bfb6a83f9205",
+              "tokenizer_external_text_rows_sha256": "6d60d6a07fbd82932373c449735d1b73cd882bcd14390e07a60400c2cc97e720",
+              "tokenizer_validation_or_test_rows_used": 0,
+              "v2_tokenizer_imported": false,
+              "tokenizer_fit_revision": 6,
               "conversion_report_artifact_name": "onecore-v3-conversion-report-45325008221",
           }
           for key, value in expected.items():
@@ -103,13 +115,22 @@ jobs:
           if request.get("max_grad_norm") != 1.0 or request.get("checkpoint_every") != 1:
               raise SystemExit("the first real V3 run must checkpoint every update with grad clip 1.0")
           if request.get("resume_artifact_run_id") is not None:
-              raise SystemExit("initial V3 training must start from random initialization, not a foreign checkpoint")
+              raise SystemExit("initial OneCore training must start from random initialization, not a foreign checkpoint")
+          if request.get("tokenizer_vocab_size") != 4096 or request.get("tokenizer_validation_or_test_rows_used") != 0:
+              raise SystemExit("corrected OneCore training requires exactly 4096 TRAIN-only text tokens")
+          if request.get("tokenizer_external_train_text_records") != 591525 or request.get("v2_tokenizer_imported") is not False:
+              raise SystemExit("tokenizer must be fitted on the full pinned external train-text set from scratch")
+          if request.get("tokenizer_artifact_size_bytes") != 42523 or request.get("tokenizer_fit_revision") != 6:
+              raise SystemExit("tokenizer artifact metadata or fit revision changed")
           outputs = {
               "steps": steps, "total_steps": total, "warmup_steps": warmup,
               "learning_rate": request["learning_rate"], "weight_decay": request["weight_decay"],
               "max_grad_norm": request["max_grad_norm"], "checkpoint_every": request["checkpoint_every"],
               "tldm_diffusion_weight": request["tldm_diffusion_weight"],
               "seed": request.get("seed", 20261124), "threads": request.get("threads", 4),
+              "tokenizer_run_id": request["tokenizer_run_id"],
+              "tokenizer_artifact_name": request["tokenizer_artifact_name"],
+              "tokenizer_file_name": request["tokenizer_file_name"],
           }
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as stream:
               for key, value in outputs.items():
@@ -170,11 +191,60 @@ jobs:
               "benchmark_head_sha": metadata.get("head_sha"),
           })
           PY
-      - name: Download the independently trained V3 tokenizer
+      - name: Verify the immutable corrected-spec tokenizer run and artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          from urllib.request import Request, urlopen
+          request = json.loads(Path("onecore-ai/v3-training-request.json").read_text(encoding="utf-8"))
+          headers = {"Authorization": f"Bearer {os.environ['GH_TOKEN']}", "Accept": "application/vnd.github+json"}
+          def get(path):
+              with urlopen(Request(f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}{path}", headers=headers), timeout=45) as response:
+                  return json.loads(response.read().decode("utf-8"))
+          run = get(f"/actions/runs/{request['tokenizer_run_id']}")
+          expected_run = {
+              "id": request["tokenizer_run_id"],
+              "head_branch": "research/onecore-v3-implementation",
+              "head_sha": request["tokenizer_source_head_sha"],
+              "path": ".github/workflows/onecore-v3-tokenizer.yml",
+              "event": "push",
+              "status": "completed",
+              "conclusion": "success",
+          }
+          actual_run = {key: run.get(key) for key in expected_run}
+          if actual_run != expected_run:
+              raise SystemExit(f"corrected tokenizer run metadata mismatch: {actual_run}")
+          artifacts = get(f"/actions/runs/{request['tokenizer_run_id']}/artifacts?per_page=100").get("artifacts", [])
+          matches = [item for item in artifacts if int(item.get("id", 0)) == int(request["tokenizer_artifact_id"])]
+          if len(matches) != 1:
+              raise SystemExit("pinned corrected tokenizer artifact is missing or ambiguous")
+          item = matches[0]
+          expected_artifact = {
+              "name": request["tokenizer_artifact_name"],
+              "digest": request["tokenizer_artifact_digest"],
+              "size_in_bytes": request["tokenizer_artifact_size_bytes"],
+              "expired": False,
+          }
+          actual_artifact = {
+              "name": item.get("name"),
+              "digest": item.get("digest"),
+              "size_in_bytes": int(item.get("size_in_bytes", 0)),
+              "expired": item.get("expired"),
+          }
+          if actual_artifact != expected_artifact:
+              raise SystemExit(f"corrected tokenizer artifact metadata mismatch: {actual_artifact}")
+          print({"tokenizer_run_id": run["id"], "tokenizer_artifact": actual_artifact, "tokenizer_head_sha": run["head_sha"]})
+          PY
+
+      - name: Download the single corrected-spec OneCore tokenizer
         uses: actions/download-artifact@v7
         with:
-          name: onecore-v3-tokenizer-45325008221
-          run-id: 45336933362
+          name: ${{ steps.request.outputs.tokenizer_artifact_name }}
+          run-id: ${{ steps.request.outputs.tokenizer_run_id }}
           repository: ${{ github.repository }}
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/onecore-v3-tokenizer
@@ -186,23 +256,45 @@ jobs:
           repository: ${{ github.repository }}
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/onecore-v3-conversion-report
-      - name: Verify tokenizer bytes and conversion report
+      - name: Verify corrected tokenizer bytes, sidecar and conversion report
         id: inputs
+        env:
+          PYTHONPATH: onecore-ai/src
         run: |
           python - <<'PY'
           import hashlib, json, os
           from pathlib import Path
+          from onecore.v3.config import V3Config
+          from onecore.v3.tokenizer import verify_v3_tokenizer
           root = Path(os.environ["RUNNER_TEMP"])
-          tokenizer_path = root / "onecore-v3-tokenizer" / "onecore-v3-tokenizer-run605-vocab32000.json"
+          request = json.loads(Path("onecore-ai/v3-training-request.json").read_text(encoding="utf-8"))
+          tokenizer_path = root / "onecore-v3-tokenizer" / request["tokenizer_file_name"]
           token_files = [tokenizer_path] if tokenizer_path.is_file() else []
           sidecar = Path(str(tokenizer_path) + ".evidence.json")
           reports = list((root / "onecore-v3-conversion-report").glob("*.json"))
           if len(token_files) != 1 or not sidecar.is_file() or len(reports) != 1:
-              raise SystemExit(f"expected pinned tokenizer, its evidence sidecar and one conversion report, got {token_files}, {sidecar}, {reports}")
+              raise SystemExit(f"expected the pinned corrected tokenizer, evidence sidecar and one conversion report, got {token_files}, {sidecar}, {reports}")
           token_sha = hashlib.sha256(token_files[0].read_bytes()).hexdigest()
-          request = json.loads(Path("onecore-ai/v3-training-request.json").read_text(encoding="utf-8"))
           if token_sha != request["tokenizer_sha256"]:
-              raise SystemExit(f"V3 tokenizer SHA mismatch: {token_sha}")
+              raise SystemExit(f"corrected OneCore tokenizer SHA mismatch: {token_sha}")
+          verified = verify_v3_tokenizer(
+              tokenizer_path,
+              config=V3Config(),
+              expected_train_manifest_sha256=request["tokenizer_train_manifest_sha256"],
+          )
+          evidence_checks = {
+              "vocab_size_actual": request["tokenizer_vocab_size"],
+              "external_train_text_records": request["tokenizer_external_train_text_records"],
+              "train_manifest_sha256": request["tokenizer_train_manifest_sha256"],
+              "external_text_rows_sha256": request["tokenizer_external_text_rows_sha256"],
+              "validation_or_test_rows_used": 0,
+              "v2_tokenizer_imported": False,
+          }
+          for key, expected_value in evidence_checks.items():
+              if verified.get(key) != expected_value:
+                  raise SystemExit(f"corrected tokenizer evidence mismatch for {key}: {verified.get(key)!r}")
+          if token_sha != request["tokenizer_sha256"] or verified.get("vocab_size_actual") != 4096:
+              raise SystemExit("corrected tokenizer is not the pinned 4096-token BPE")
           report = json.loads(reports[0].read_text(encoding="utf-8"))
           gate = report.get("manifest_gate")
           expected_coverage = {

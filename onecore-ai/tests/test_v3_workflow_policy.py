@@ -38,6 +38,34 @@ def test_the_only_training_workflow_is_fail_closed_and_includes_native_tldm():
     assert request["tldm_diffusion_weight"] == 0.15
     assert request["steps"] == 5 and request["checkpoint_every"] == 1
     assert request["resume_artifact_run_id"] is None
+    assert request["tokenizer_run_id"] == 46128204163
+    assert request["tokenizer_artifact_id"] == 15256164799
+    assert request["tokenizer_artifact_name"] == "onecore-corrected-spec-tokenizer-4096-45325008221"
+    assert request["tokenizer_artifact_digest"] == "sha256:ba29243d09e77ca06c9700f9529e9cf313dbd5f9eb208b903fdbb97224699370"
+    assert request["tokenizer_file_name"] == "onecore-tokenizer-text4096-20261128.json"
+    assert request["tokenizer_sha256"] == "6e1c5ed9bf3c44f9e520edf04a90caf97c15fa622f9b5df8d651345fef27dacd"
+    assert request["tokenizer_vocab_size"] == 4096 and request["tokenizer_external_train_text_records"] == 591525
+    assert request["tokenizer_validation_or_test_rows_used"] == 0 and request["v2_tokenizer_imported"] is False
+    assert "&& false" in workflow
+
+
+
+def test_training_workflow_uses_only_the_pinned_corrected_tokenizer_artifact():
+    request = json.loads((PROJECT / "v3-training-request.json").read_text(encoding="utf-8"))
+    workflow = (WORKFLOWS / "onecore-v3-training.yml").read_text(encoding="utf-8")
+    assert request["tokenizer_run_id"] == 46128204163
+    assert request["tokenizer_source_head_sha"] == "27e2e2ba5339b6f45f60fa90f88ae28d5fd5d87f"
+    assert request["tokenizer_artifact_id"] == 15256164799
+    assert request["tokenizer_artifact_size_bytes"] == 42523
+    assert request["tokenizer_vocab_size"] == 4096
+    assert request["tokenizer_train_manifest_sha256"] == "d499968cdd5e1869ae7b5d9866261e8aad8fe091ad9096b13067bfb6a83f9205"
+    assert request["tokenizer_external_text_rows_sha256"] == "6d60d6a07fbd82932373c449735d1b73cd882bcd14390e07a60400c2cc97e720"
+    assert "steps.request.outputs.tokenizer_artifact_name" in workflow
+    assert "steps.request.outputs.tokenizer_run_id" in workflow
+    assert "actions/runs/" in workflow and "tokenizer_artifact_digest" in workflow
+    assert "verify_v3_tokenizer(" in workflow
+    assert "onecore-v3-tokenizer-run605-vocab32000.json" not in workflow
+    assert "&& false" in workflow
 
 def test_tokenizer_workflow_is_pinned_idempotent_and_does_not_train():
     request = json.loads((PROJECT / "v3-tokenizer-request.json").read_text(encoding="utf-8"))
@@ -49,7 +77,7 @@ def test_tokenizer_workflow_is_pinned_idempotent_and_does_not_train():
     assert request["architecture_version"] == "onecore-v3-corrected-spec-2"
     assert request["output_artifact_name"] == "onecore-corrected-spec-tokenizer-4096-45325008221"
     assert request["tokenizer_file_name"] == "onecore-tokenizer-text4096-20261128.json"
-    assert request["fit_revision"] >= 4
+    assert request["fit_revision"] >= 6
     assert request["train_manifest_member"] == "data/train.jsonl"
     config = yaml.safe_load((PROJECT / "configs/onecore-v3-research.yaml").read_text(encoding="utf-8"))
     assert config["architecture_version"] == request["architecture_version"]
