@@ -1,6 +1,6 @@
 # OneCore executive handover
 
-Updated: 2026-11-28 (owner-directed corrected-spec-3 recovery)
+Updated: 2026-11-28 (owner-directed corrected-spec-3 recovery; tokenizer adoption and current CI verified)
 
 ## Canonical product state
 
@@ -29,7 +29,7 @@ Config-aware analytic FLOPs:
 - Corresponding dense training sum = 4,542,378,835,968.
 These are analytic counts only, not CPU benchmarks.
 
-## Tokenizer provenance and adoption
+## Tokenizer provenance and adoption — verified
 
 The active corrected-spec-3 tokenizer is the immutable original 32K byte-level BPE artifact:
 - Source workflow run **45336933362** (head `065daaa646a9b8ba1a3908476202bb4acddecd5c`).
@@ -38,7 +38,9 @@ The active corrected-spec-3 tokenizer is the immutable original 32K byte-level B
 - Source sidecar SHA-256 `b60e5077767f79b1316635ed45343ed5c59ce2602f41d24759a25a386ea33e16`.
 - BPE / NFC / ByteLevel; exact vocabulary 32,000; 591,525 external TRAIN text records; manifest SHA-256 `d499968cdd5e1869ae7b5d9866261e8aad8fe091ad9096b13067bfb6a83f9205`; external row fingerprint `6d60d6a07fbd82932373c449735d1b73cd882bcd14390e07a60400c2cc97e720`; validation/test rows used 0; V2 tokenizer imported false.
 
-The adoption flow verifies run/artifact metadata, ZIP digest and size, exact archive members, tokenizer JSON hash, original evidence hash, vocabulary/special IDs and train-only provenance. It preserves tokenizer JSON bytes exactly and creates a new sidecar carrying both corrected-spec-3 config fingerprint and tokenizer-contract fingerprint. No refit or heldout data is involved. The 4K artifact `15256164799` remains immutable historical evidence only; it is no longer active.
+Adoption run **46135570153** succeeded on code head `33f4ff0546b4a013c97b05f78d320e29a3b5fa1e`. It verified source run/artifact metadata, ZIP digest/size, exact member list, original JSON and sidecar hashes, vocabulary/special IDs and train-only evidence. It preserved the tokenizer JSON bytes exactly, with no refit and no validation/test data. It published artifact **15258954403**, name `onecore-v3-tokenizer-32000-adopted-45336933362`, size **787,772 bytes**, SHA-256 `0fb1339bded0560673dc794b02e25e72b8c2014d940d02a63940147908e809b0`. The new tokenizer-contract fingerprint is `57da186c1cd3a7a460ca2772e30908525f6538ce9104ebb1ca745ffbc9bedaed`.
+
+The 4K artifact `15256164799` remains immutable historical evidence only; it is not active.
 
 ## Data lineage and caveats
 
@@ -49,17 +51,24 @@ The adoption flow verifies run/artifact metadata, ZIP digest and size, exact arc
 - Test coverage: text 22,758; tool 400; image 10; audio 148; video 10.
 - Provenance caveat: 37 historical source rows were not found and 1,302 non-external rows were excluded; no synthetic rows were added. Do not claim complete restoration of every historic source row.
 
-## Implementation and verification status
+## Implementation and verification status — current code head passed
 
-Implemented on the canonical branch in commits:
-- `b5cd6935202e23322a25b260148cc5e92de08d98`: corrected-spec-3 config, parameter accounting and config-aware FLOPs.
-- `eb0d43364593a94ee7246fea19c2aabf12058a67`: tokenizer contract fingerprint and byte-preserving adoption helper.
-- `364c88f56a9e9f37eb6433132caec6be49170a8c`: pinned 32K requests, adoption workflow and training validation.
-- `3fd7ae1d4961279f255b68578b3f18c515644fa3`: refreshed CI expectations, tokenizer-workflow torch dependency and policy-test pins.
+The current implementation includes:
+- corrected-spec-3 config, new configuration fingerprint, exact 86,152,897 parameter accounting and config-aware FLOPs;
+- tokenizer-contract fingerprint independent of the full model tensor configuration, plus a byte-preserving adoption routine;
+- canonical requests, CI assertions, tokenizer adoption workflow, training-workflow input verification, documentation, regression tests and source package;
+- lazy public exports in `onecore-ai/src/onecore/v3/__init__.py` so tokenizer/config tooling does not load all training/data/evaluation dependencies unnecessarily;
+- a corrected artifact-download redirect handler that does not forward GitHub bearer credentials to external signed storage URLs.
 
-The first CI attempts correctly failed because a central Verify assertion still pinned spec-2 values; the tokenizer-adoption job also lacked CPU PyTorch while importing the config/model package. These causes were corrected in the latest changes. The latest new CI runs must still complete before this migration is called verified. Source-package builds passed on the prior implementation heads; this is not a substitute for current CI.
+Current validated code head: **`33f4ff0546b4a013c97b05f78d320e29a3b5fa1e`**.
 
-The current canonical configuration reports 86,152,897 parameters and config-aware FLOPs. Full current test suite, corrected-spec-3 tokenizer adoption workflow and both push/PR Verify jobs remain pending final successful run evidence.
+Verification on that head:
+- CI push run **46135570126**: success; complete Verify job passed compile, exact architecture/parameter/FLOPs/T-LDM checks, **209 tests**, single-model/fail-closed policy and FineWeb-2 exact cursor-resume smoke test.
+- CI pull_request run **46135573821**: success; same Verify checks and **209 tests** passed.
+- Tokenizer adoption run **46135570153**: success; adopted artifact **15258954403**; JSON bytes preserved, vocabulary exactly 32,000, 591,525 TRAIN records, zero validation/test use.
+- Source package run **46135570132**: success; source-only artifact **15259536745**, size **243,121 bytes**, SHA-256 `578e0e80e05f937c1cccc283ca92219a91490e28d1cc1aebe39f21ebf3aa1c41`.
+
+In both Verify runs, the following optional jobs were **skipped**, not passed: real CPU resource measurement, real-artifact step-zero checkpoint save/restore, current corpus restoration and held-out evaluation.
 
 ## Training and promotion gates
 
@@ -68,7 +77,7 @@ No optimizer update has been performed. There is no corrected-spec-3 CPU resourc
 Do not authorize an optimizer update until:
 1. Real CPU benchmark measures process-tree peak RSS, loader throughput, per-family forward/backward timings and joint optimizer allocation for corrected-spec-3, corpus and tokenizer hashes.
 2. Real-artifact step-zero checkpoint save/restore passes for the exact corrected-spec-3 config and adopted 32K tokenizer.
-3. Five-family source/manifest gates pass and no conflicting writer or run is active.
+3. Five-family source/manifest gates pass and no conflicting run or writer is active.
 4. Owner explicitly authorizes the first five joint optimizer updates, checkpointing every update.
 
 After the first update, run a separate non-zero-step checkpoint continuation audit for AdamW moments, parent checkpoint SHA, global step, five-family cursors and RNG state before any longer segment. CI or analytic FLOPs never substitute for these gates.
@@ -79,9 +88,9 @@ After the first update, run a separate non-zero-step checkpoint continuation aud
 - Active branch: `research/onecore-v3-implementation`.
 - PR **#12**: <https://github.com/jonsnow-org/Lena9/pull/12> — open, unmerged, target `main`.
 - `main` remains unchanged by this work.
-- Preserve the old 4K artifacts and old foundation ref as historical until PR is reviewed/merged. Do not merge until current CI, tokenizer adoption, docs and review are complete.
+- Preserve the old `research/onecore-foundation` ref and historical 4K artifacts until PR #12 is reviewed/merged; do not retarget or delete historical refs before merge.
 
-The stopped recovery session's lock was replaced only after the owner explicitly authorized takeover. The current writer lease is `onecore-32k-owner-takeover-20261128-03`; use compare-and-swap for any renewal/release and record current HEAD and run evidence here. The lock is coordination, not evidence of successful implementation.
+The stopped recovery session's lock was replaced only after the owner explicitly authorized takeover. The active writer lease is `onecore-32k-owner-takeover-20261128-03`; use compare-and-swap for any renewal/release and record exact HEAD/Actions evidence. The lock is coordination, not evidence of a successful model gate.
 
 ## Mandatory multi-client coordination protocol
 

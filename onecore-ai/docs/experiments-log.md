@@ -1,6 +1,6 @@
 # OneCore engineering experiment log
 
-Historical note: the baseline values below document the earlier prototype-2 experiment record and are not the current architecture contract. The current corrected-spec-2 model has 57,579,201 trainable parameters, width 1,024 and 4,096 text tokens (5,144 unified tokens). See `ARCHITECTURE.md` and `docs/EXECUTIVE_HANDOVER.md` for the current contract. This log is retained for provenance, not as an active model specification.
+Historical note: the prototype-2 and corrected-spec-2 records below are historical and superseded. The active owner-approved architecture is `onecore-v3-corrected-spec-3`: 86,152,897 trainable parameters, width 1,024, 32,000 text tokens and 33,048 unified token IDs. See `ARCHITECTURE.md`, `docs/ADR-corrected-spec-3.md` and `docs/EXECUTIVE_HANDOVER.md` for the current contract. This log preserves earlier experimental evidence and is not a source of active model dimensions.
 
 ## Superseded prototype-2 baseline — historical only
 
@@ -10,11 +10,11 @@ Historical note: the baseline values below document the earlier prototype-2 expe
 - Shared core: width 512, four unique Transformer blocks, three recurrent cycles, eight attention heads.
 - Native T-LDM: 16 latent slots, same shared core and tied text head, zero additional trainable parameters, text/tool objective weight 0.15.
 
-## Corrected-spec canonical model and tokenizer
+## Superseded corrected-spec-2 model and tokenizer — historical only
 
-- Canonical architecture: `onecore-v3-corrected-spec-2`, 57,579,201 trainable parameters, width 1,024, text BPE 4,096 and unified vocabulary 5,144. The prototype-2 39,906,568-parameter/32,000-token figures above are superseded historical measurements, not a second model.
+- Historical architecture at that time: `onecore-v3-corrected-spec-2`, 57,579,201 trainable parameters, width 1,024, text BPE 4,096 and unified vocabulary 5,144. It was later superseded by corrected-spec-3. The prototype-2 39,906,568-parameter/32,000-token figures above are older measurements, not another active model.
 - Tokenizer run #6: `46128204163`, source commit `27e2e2ba5339b6f45f60fa90f88ae28d5fd5d87f`; artifact `15256164799`, name `onecore-corrected-spec-tokenizer-4096-45325008221`, 42,523 bytes, ZIP digest `sha256:ba29243d09e77ca06c9700f9529e9cf313dbd5f9eb208b903fdbb97224699370`.
-- Tokenizer JSON SHA-256 `6e1c5ed9bf3c44f9e520edf04a90caf97c15fa622f9b5df8d651345fef27dacd`; 4,096 tokens from 591,525 external TRAIN text records; TRAIN manifest SHA-256 `d499968cdd5e1869ae7b5d9866261e8aad8fe091ad9096b13067bfb6a83f9205`; external-row fingerprint `6d60d6a07fbd82932373c449735d1b73cd882bcd14390e07a60400c2cc97e720`; validation/test rows used 0; imported V2 tokenizer false. The 32,000-token artifact remains preserved for provenance only.
+- Tokenizer JSON SHA-256 `6e1c5ed9bf3c44f9e520edf04a90caf97c15fa622f9b5df8d651345fef27dacd`; 4,096 tokens from 591,525 external TRAIN text records; TRAIN manifest SHA-256 `d499968cdd5e1869ae7b5d9866261e8aad8fe091ad9096b13067bfb6a83f9205`; external-row fingerprint `6d60d6a07fbd82932373c449735d1b73cd882bcd14390e07a60400c2cc97e720`; validation/test rows used 0; imported V2 tokenizer false. This tokenizer and its run/artifact remain historical and immutable; it is not the active 32K corrected-spec-3 tokenizer.
 
 ## Native T-LDM integration
 
@@ -35,3 +35,11 @@ Historical note: the baseline values below document the earlier prototype-2 expe
 No optimizer update has been verified for the current T-LDM-enabled configuration. No trained checkpoint or independent held-out model-quality evaluation exists. The prior step-zero checkpoint audit predates the current T-LDM-enabled configuration fingerprint and cannot authorize training.
 
 Next gates: run a successful real-corpus CPU benchmark tied to current config/manifest/tokenizer hashes, repeat the real-artifact step-zero checkpoint audit for this exact fingerprint, and obtain explicit owner authorization before the first five-update segment.
+
+## Owner-directed corrected-spec-3 recovery — 2026-11-28
+
+- The repository owner explicitly reaffirmed 32,000 text tokens. The active model contract was advanced to `onecore-v3-corrected-spec-3`: 32,000 text tokens, 33,048 unified IDs, 86,152,897 trainable parameters, width 1,024 and unchanged remaining dimensions.
+- The original 32K tokenizer run `45336933362` / artifact `14894835517` was verified and adopted without refitting or modifying tokenizer JSON bytes. Original JSON SHA-256: `569f1b61e017dcf5c8ba9fef22a8002cc48d5ea3c26504bdae83f53834d00e76`; original evidence SHA-256: `b60e5077767f79b1316635ed45343ed5c59ce2602f41d24759a25a386ea33e16`.
+- Adoption run `46135570153` succeeded and published corrected-spec-3 evidence artifact `15258954403`, ZIP SHA-256 `0fb1339bded0560673dc794b02e25e72b8c2014d940d02a63940147908e809b0`. The sidecar binds tokenizer contract SHA-256 `57da186c1cd3a7a460ca2772e30908525f6538ce9104ebb1ca745ffbc9bedaed` and complete corrected-spec-3 config fingerprint.
+- CI push run `46135570126` and PR run `46135573821` succeeded on code head `33f4ff0546b4a013c97b05f78d320e29a3b5fa1e`, each with 209 tests passing. Source-package run `46135570132` succeeded; artifact `15259536745` is a 243,121-byte source-only archive.
+- CPU benchmark, step-zero checkpoint audit, corpus restoration and held-out evaluation jobs were skipped. No optimizer update occurred; the training guard remains closed. These skipped gates are not claimed as successful.
