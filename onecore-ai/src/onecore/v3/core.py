@@ -337,7 +337,8 @@ class OneCoreV3(nn.Module):
         n_fft, hop = 400, 160
         window = torch.hann_window(n_fft, device=waveform.device, dtype=waveform.dtype)
         spectrum = torch.stft(waveform, n_fft=n_fft, hop_length=hop, win_length=n_fft,
-                              window=window, center=True, return_complex=True)
+                              window=window, center=True, pad_mode="constant",
+                              return_complex=True)
         power = spectrum.abs().square()
         frequencies = torch.linspace(0, sample_rate / 2, power.shape[1], device=waveform.device)
         mel_min, mel_max = 2595.0 * torch.log10(torch.tensor(1.0, device=waveform.device) + 0.0), 2595.0 * torch.log10(torch.tensor(1.0 + (sample_rate / 2) / 700.0, device=waveform.device))
