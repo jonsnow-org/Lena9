@@ -2,14 +2,14 @@
   "schema_version": 1,
   "status": "active",
   "holder": "ChatGPT GPT-6",
-  "session_id": "onecore-corrected-spec-single-model-20261127-03",
-  "client": "ChatGPT",
-  "started_at_utc": "2026-11-27T19:02:23Z",
-  "lease_expires_at_utc": "2026-11-27T20:46:43Z",
-  "base_head_sha": "c9119610510742624b2e00be5bacee039b40bd17",
-  "planned_scope": "Replace the one canonical OneCore implementation contract with the corrected engineering specification (57,579,201 parameters, width 1024, vocab 5144, four shared blocks over three cycles), preserve native T-LDM in the same model, align model/config/tokenizer/FLOPs/data gates and exact tests/docs, fix CI handover assertion, preserve one trainer/checkpoint lineage, keep all training fail-closed. No model training, no main mutation, no parallel V2/V3 model path or new branch.",
+  "session_id": "onecore-ci-repair-20261128-01",
+  "client": "ChatGPT scheduled supervisor",
+  "started_at_utc": "2026-11-28T06:27:00Z",
+  "lease_expires_at_utc": "2026-11-28T07:27:00Z",
+  "base_head_sha": "097ad5efbe9dfc6b7c2405f43b17d738572dbeaf",
+  "planned_scope": "Repair only the verified failing OneCore tests and small inference/checkpoint diagnostics inside onecore-ai/. Reconcile stale architecture/tokenizer documentation and handover. Preserve source artifacts and licensing status. No CPU benchmark, corpus restore, training, optimizer update, main/V2 or outside-onecore-ai writes.",
   "last_released_at_utc": "2026-11-27T07:51:21Z",
   "last_session_summary": "Prior cleanup removed old parallel model/trainer/notebook workflow and integrated native T-LDM. Last source package passed; CI run #774 failed only on a brittle handover heading assertion. Corrected spec v2 now being applied as canonical single model.",
-  "last_verified_branch_head": "4e1050b1357025f91a7b6f57690f26de1cb34caa",
-  "last_result": "Structural CI and source package passed; tests now migrated from standalone conv/flow codec API to the single shared Transformer/VQ/tokenizer model, exact corrected FLOPs, native T-LDM, and five-family single-update contract. Next CI run pending."
+  "last_verified_branch_head": "097ad5efbe9dfc6b7c2405f43b17d738572dbeaf",
+  "last_result": "Read-only reconciliation found latest OneCore CI #785 failing 13 tests; CPU, checkpoint-audit and held-out jobs skipped. Existing pinned tokenizer is recorded as 32,000 tokens while current canonical text vocabulary is 4,096; owner decision required before using it."
 }
