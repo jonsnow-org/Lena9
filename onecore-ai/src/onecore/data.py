@@ -15,13 +15,12 @@ class DatasetError(ValueError):
     pass
 
 
-DATA_CLASSES = {"bootstrap", "synthetic", "external", "owner_curated", "other"}
+DATA_CLASSES = {"bootstrap", "synthetic", "external", "owner_curated", "unapproved", "other"}
 _DATA_CLASS_ALIASES = {
     "synthetic_unverified": "synthetic",
     "synthetic_verified": "synthetic",
     "external_staged": "external",
     "external_reviewed": "external",
-    "unapproved": "external",
 }
 
 
@@ -58,7 +57,7 @@ def has_immutable_external_provenance(record: dict[str, Any]) -> bool:
 
 
 def external_record_is_trainable(record: dict[str, Any]) -> bool:
-    """Identify imported records; this check has no source-policy filter."""
+    """Allow only explicitly external rows; this is not a license approval."""
     return classify_record_data(record) == "external"
 
 

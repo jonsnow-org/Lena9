@@ -65,6 +65,7 @@ def test_iter_external_v3_train_text_filters_non_text_and_requires_external_line
     [
         ({**_external_text_record(1), "data_class": "bootstrap"}, "non-external or synthetic"),
         ({**_external_text_record(1), "data_class": "owner_curated"}, "non-external or synthetic"),
+        ({**_external_text_record(1), "data_class": "unapproved"}, "non-external or synthetic"),
         ({**_external_text_record(1), "split": "validation"}, "train records only"),
         ({**_external_text_record(1), "source_revision": "main"}, "immutable source revision"),
         ({**_external_text_record(1), "source_row_id_sha256": "bad"}, "immutable source revision"),
