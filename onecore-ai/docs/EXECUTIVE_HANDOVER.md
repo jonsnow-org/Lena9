@@ -62,13 +62,14 @@ The current implementation includes:
 
 Current validated code head: **`33f4ff0546b4a013c97b05f78d320e29a3b5fa1e`**.
 
-Verification on that head:
-- CI push run **46135570126**: success; complete Verify job passed compile, exact architecture/parameter/FLOPs/T-LDM checks, **209 tests**, single-model/fail-closed policy and FineWeb-2 exact cursor-resume smoke test.
-- CI pull_request run **46135573821**: success; same Verify checks and **209 tests** passed.
-- Tokenizer adoption run **46135570153**: success; adopted artifact **15258954403**; JSON bytes preserved, vocabulary exactly 32,000, 591,525 TRAIN records, zero validation/test use.
-- Source package run **46135570132**: success; source-only artifact **15259536745**, size **243,121 bytes**, SHA-256 `578e0e80e05f937c1cccc283ca92219a91490e28d1cc1aebe39f21ebf3aa1c41`.
+Verification on the corrected-spec-3 code/documentation head `efc02442d3803df686880a30c14d60ce3d4dc81f` and subsequent lock-only commits:
+- CI push run **46135823139** and PR run **46135827011**: both success; **209 tests passed** in each.
+- After the formal session-03 lease release, CI push run **46136004203** and PR run **46136007608** on lock-only head `f64bbd83cc747a1d8c11f1d1c1878643ea077d05`: both success; **209 tests passed** in each.
+- Tokenizer adoption run **46135570153**: success; artifact **15258954403**; JSON bytes preserved, vocabulary exactly 32,000, 591,525 TRAIN records, zero validation/test use.
+- Source package run **46135823169**: success; source-only artifact **15259149323**, size **245,146 bytes**, SHA-256 `3b1c9d406e4327ae765ec724b354c443e1ac4bf33b6465ebc649d6392ec2d881`.
+- The lock-only source package after session-03 release also succeeded: run **46136004250**, artifact **15259956970**, size **245,206 bytes**, SHA-256 `5b3ac7c814589e1b456b3666de3bb80c624f0abfbfe70e867be165f44b29ae69`.
 
-In both Verify runs, the following optional jobs were **skipped**, not passed: real CPU resource measurement, real-artifact step-zero checkpoint save/restore, current corpus restoration and held-out evaluation.
+In all these Verify runs, the following optional jobs were **skipped**, not passed: real CPU resource measurement, real-artifact step-zero checkpoint save/restore, current corpus restoration and held-out evaluation. The post-release code tree is unchanged; the later commits only update handover/lock state.
 
 ## Training and promotion gates
 
@@ -90,7 +91,7 @@ After the first update, run a separate non-zero-step checkpoint continuation aud
 - `main` remains unchanged by this work.
 - Preserve the old `research/onecore-foundation` ref and historical 4K artifacts until PR #12 is reviewed/merged; do not retarget or delete historical refs before merge.
 
-The stopped recovery session's lock was replaced only after the owner explicitly authorized takeover. The active writer lease is `onecore-32k-owner-takeover-20261128-03`; use compare-and-swap for any renewal/release and record exact HEAD/Actions evidence. The lock is coordination, not evidence of a successful model gate.
+The abandoned recovery session was taken over only after the owner explicitly authorized it. Its lease `onecore-32k-owner-takeover-20261128-03` was formally released at `2026-11-28T10:36:24Z` in commit `f64bbd83cc747a1d8c11f1d1c1878643ea077d05`, recording the validated parent head `efc02442d3803df686880a30c14d60ce3d4dc81f`. A brief documentation-only lease `onecore-handover-lock-correction-20261128-04` was opened to align this handover wording with that release; it is released in the final handover/lock commit. After that commit, `SESSION_LOCK.json` is `released` with holder/session/expiry cleared. The repository is left without an active writer lease. The lock is coordination, not evidence of a successful model gate.
 
 ## Mandatory multi-client coordination protocol
 
