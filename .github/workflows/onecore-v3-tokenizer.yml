@@ -6,6 +6,7 @@ on:
     paths:
       - "onecore-ai/v3-tokenizer-request.json"
       - "onecore-ai/src/onecore/v3/tokenizer.py"
+      - "onecore-ai/src/onecore/v3/__init__.py"
       - "onecore-ai/src/onecore/v3/config.py"
       - "onecore-ai/configs/onecore-v3-research.yaml"
       - ".github/workflows/onecore-v3-tokenizer.yml"
