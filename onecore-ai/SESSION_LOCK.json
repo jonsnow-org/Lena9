@@ -1,15 +1,17 @@
 {
   "schema_version": 1,
-  "status": "active",
-  "holder": "ChatGPT GPT-6",
-  "session_id": "onecore-complete-canonical-20261128-01",
-  "client": "ChatGPT",
+  "status": "released",
+  "holder": null,
+  "session_id": null,
+  "client": null,
   "started_at_utc": "2026-11-28T08:46:30Z",
-  "lease_expires_at_utc": "2026-11-28T09:46:30Z",
-  "base_head_sha": "073d387d92fde4c393553ede7dc7c966222debe1",
+  "lease_expires_at_utc": null,
+  "base_head_sha": "00828fe9fa7e4c412ed913e61974f076fa7cb1d7",
   "planned_scope": "Continue the single canonical OneCore corrected-spec implementation from the verified branch head. Reconcile current files and latest Actions evidence; align the only tokenizer path to 4096 text BPE tokens by fitting from the existing pinned external TRAIN split only as specified by Corrected Specification v2, without touching validation/test or reacquiring the corpus; bind a new immutable tokenizer artifact into the single training request; reconcile docs/handover and all version labels without creating a second model; fix workflow consistency; run CI and source package, prepare one reviewed PR if green. Keep optimizer training fail-closed. No optimizer update, no main mutation, no alternate model/branch, no destructive legacy-ref operation.",
-  "last_released_at_utc": "2026-11-27T07:51:21Z",
-  "last_session_summary": "2026-11-28 09:10 UTC. Active branch HEAD 073d387d92fde4c393553ede7dc7c966222debe1. Corrected single model spec: 57,579,201 params, 4096 text BPE / 5144 unified vocab, native T-LDM adds zero trainable params. Tokenizer run 46128204163 succeeded: artifact 15256164799, 42,523 bytes, ZIP digest sha256:ba29243d09e77ca06c9700f9529e9cf313dbd5f9eb208b903fdbb97224699370; JSON SHA 6e1c5ed9bf3c44f9e520edf04a90caf97c15fa622f9b5df8d651345fef27dacd; 591,525 external train-text rows; heldout rows 0; no V2 tokenizer import. CI #800 on this head passed 206 tests plus architecture/T-LDM/one-model/FineWeb resume checks. Source package #36 succeeded: 238,785 bytes, SHA 7570f98ee6b60cb1dcbf5980a83d070b3b2616e0942e4701022bd1ffaaeb9cf2. CPU benchmark, step-zero audit and held-out evaluation skipped; no optimizer update. Corpus report passed external manifest gate but records 37 unmatched legacy source rows and 1,302 non-external rows skipped; no synthetic rows. Training workflow remains && false. main unchanged at 10c4f01663bd65e30335bfe7b4ed3cdfe6584815; onecore-foundation still points to legacy implementation; OneCore PR not yet opened.",
-  "last_verified_branch_head": "073d387d92fde4c393553ede7dc7c966222debe1",
-  "last_result": "Corrected single-model implementation verified; corrected tokenizer fitted and pinned to the sole training request/workflow; docs and source-only package are current; CI #800 and source package #36 green. Remaining: refresh final handover/lock, open one reviewed PR, and await manual current-config CPU benchmark, step-zero checkpoint audit and explicit owner authorization. No training started and main unchanged."
+  "last_released_at_utc": "2026-11-28T09:20:15.890Z",
+  "last_session_summary": "2026-11-28 final release. Canonical corrected OneCore single-model architecture is 57,579,201 params, width 1024, 4096 text BPE/5144 unified vocab; native T-LDM uses same core and adds zero params. Tokenizer run 46128204163 succeeded: artifact 15256164799, 42523 bytes, ZIP digest sha256:ba29243d09e77ca06c9700f9529e9cf313dbd5f9eb208b903fdbb97224699370, JSON SHA256 6e1c5ed9bf3c44f9e520edf04a90caf97c15fa622f9b5df8d651345fef27dacd; 591525 external TRAIN rows, heldout rows 0, V2 tokenizer not imported. PR #12 open/unmerged/mergeable on head 00828fe9fa7e4c412ed913e61974f076fa7cb1d7. Merge commit parents: OneCore code head eccc4baa3a6bb7b36b848e1845388cbd1253ff83 and main 10c4f01663bd65e30335bfe7b4ed3cdfe6584815; merge tree identical to eccc tree. PR CI #802 succeeded with 206 tests; source package #37 succeeded (239737 bytes, sha256 da8e13c11498a93a1dd65aa816ae2e4b4ef785f438f16b0ebeb9763361e333bb). CPU benchmark, current step-zero checkpoint audit, corpus restore and held-out evaluation skipped. No optimizer update; training remains && false. Corpus caveat: 37 unmatched old pinned rows and 1302 non-external skipped, no synthetic. main unchanged; old research/onecore-foundation remains legacy pointer pending PR merge. Writer lock released per SESSION_PROTOCOL.",
+  "last_verified_branch_head": "00828fe9fa7e4c412ed913e61974f076fa7cb1d7",
+  "last_result": "Single canonical OneCore implementation is consolidated, corrected tokenizer fitted and pinned, documentation updated, CI and source-only packaging successful, and one reviewed PR #12 is open and mergeable. No main merge or optimizer training was performed. Remaining gates: real CPU benchmark, current-config step-zero checkpoint audit, held-out evaluation after training authorization, PR review/merge, and post-merge neutralization of the legacy foundation ref.",
+  "released_at_utc": "2026-11-28T09:20:15.890Z",
+  "released_from_head_sha": "00828fe9fa7e4c412ed913e61974f076fa7cb1d7"
 }
