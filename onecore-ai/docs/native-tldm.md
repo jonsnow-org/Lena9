@@ -32,9 +32,9 @@ The five-family joint update still has one micro-batch each for text, tool, imag
 
 ## Parameter and compute accounting
 
-The exact corrected-spec-2 model parameter count is **57,579,201**. CI checks this exact count and the tied text embedding/head relationship. T-LDM adds zero trainable parameters.
+The exact corrected-spec-3 model parameter count is **86,152,897** with 32,000 text tokens and 33,048 unified tokens. This replaces the historical 4K/57,579,201 contract. CI checks this exact count and the tied text embedding/head relationship. T-LDM adds zero trainable parameters.
 
-For the configured FLOPs profile at 128 text tokens, the native T-LDM path is reported as:
+For corrected-spec-3, the joint five-family training update at 128 tokens is 1,516,166,184,960 analytic dense FLOPs (the five-family 512/512/121/244/512 train profile totals 4,542,378,835,968). These are analytic counts, not runtime benchmarks. The native T-LDM path is:
 
 - Latent thinker shared core: 1,214,251,008 FLOPs.
 - Diffusion writer shared core: 11,381,243,904 FLOPs.

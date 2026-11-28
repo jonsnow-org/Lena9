@@ -13,7 +13,7 @@ def build_report() -> dict[str, Any]:
     model = config.build_model()
     parameters = model.count_parameters()
     if config.is_canonical and parameters != 86_152_897:
-        raise AssertionError(f"OneCore parameter budget must be 57,579,201, got {parameters:,}")
+        raise AssertionError(f"OneCore parameter budget must be 86,152,897, got {parameters:,}")
     report: dict[str, Any] = {
         "architecture_version": config.architecture_version,
         "config_sha256": config.fingerprint,

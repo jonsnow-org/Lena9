@@ -1,80 +1,88 @@
 # OneCore executive handover
 
-Updated: 2026-11-28T09:27:39.139Z
+Updated: 2026-11-28 (owner-directed corrected-spec-3 recovery)
 
 ## Canonical product state
 
-**OneCore is one model, one active implementation, one tokenizer, one joint trainer, and one checkpoint lineage.** The active implementation is `onecore-ai/src/onecore/v3/` on `research/onecore-v3-implementation`. There is no V2 model, parallel trainer, or notebook-training path in the active tree. The V3 path name identifies the adopted implementation, not a second product.
+**OneCore is one model, one active implementation, one tokenizer, one joint trainer and one checkpoint lineage.** The only active implementation is `onecore-ai/src/onecore/v3/` on `research/onecore-v3-implementation`.
 
-The only adopted model contract is `onecore-v3-corrected-spec-2`:
-- **57,579,201 trainable parameters**.
-- Width 1,024; unified vocabulary 5,144, including exactly 4,096 text BPE tokens.
-- Four unique Transformer blocks reused across three cycles (12 applications); eight attention heads; SwiGLU width 2,730; RMSNorm; context 512.
-- One shared semantic Transformer with shared embeddings and tied text output projection.
-- Image, audio and video codecs and heads belong to the same model and checkpoint.
-- Native T-LDM uses 16 latent slots through the same core and tied text head. It adds zero trainable parameters; text/tool objective weight is 0.15.
+The repository owner's current architecture decision is **`onecore-v3-corrected-spec-3`**:
+- **32,000 text BPE tokens** in a **33,048-token unified vocabulary**.
+- **86,152,897 trainable parameters**.
+- Width 1,024; four unique Transformer blocks reused across three cycles (12 applications); eight heads; SwiGLU width 2,730; RMSNorm; context 512.
+- One shared semantic Transformer, shared embedding and tied text output projection.
+- Native T-LDM uses 16 latent slots and the same core/head, adding zero parameters; objective weight 0.15 for text/tool.
+- Unified ID ranges: text 0–31,999; vision 32,000–32,511; audio 32,512–32,767; motion 32,768–33,023; special 33,024–33,047.
 
-No pretrained body, external model weights, adapters, LoRA or teacher outputs are imported. The model remains **untrained** and generation quality is not certified.
+This supersedes corrected-spec-2 (4,096 text tokens, 5,144 unified IDs and 57,579,201 parameters). The change creates a new full configuration fingerprint and checkpoint lineage. Do not load old-config checkpoints as corrected-spec-3.
 
-## Single-path consolidation
+## Parameter, storage and FLOPs accounting
 
-- Removed 65 parallel legacy model, trainer, action, workflow and notebook files from the active branch in commit `432ac41054536673aa05717ca10da66926794f40`.
-- Moved shared source-row identity, nested-field and pinned-video helpers into the canonical source utilities; removed notebook-specific routing. Cursor writing is pipeline-scoped, with compatibility for reading old cursor snapshots only.
-- Retained the pinned data-only source registry snapshot for the existing corpus artifact. It is provenance/manifest data, not another model, trainer or checkpoint.
-- The active tree audit found no V2 model path, alternate trainer or notebook-training path under the canonical OneCore source tree.
+The unified embedding/tied output matrix grows by 27,904 rows × 1,024 dimensions = 28,573,696 parameters, from 57,579,201 to **86,152,897**.
 
-## Corrected tokenizer — verified and pinned
+Theoretical storage estimates (not measured memory): FP32 parameters 344,611,588 bytes; FP16 parameters 172,305,794 bytes; AdamW FP32 moments 689,223,176 bytes; parameter-plus-moments estimate 1,033,834,764 bytes; full training-state estimate 1,378,446,352 bytes.
 
-The historical 32,000-token tokenizer artifact `14894835517` (run `45336933362`, JSON SHA-256 `569f1b61e017dcf5c8ba9fef22a8002cc48d5ea3c26504bdae83f53834d00e76`) is preserved as provenance only and is not used by the adopted model.
+Config-aware analytic FLOPs:
+- Joint training update at T=128: 1,516,166,184,960.
+- Joint training update at T=512: 6,136,611,471,360.
+- Five-family forward dense sum for paths text/tool/image/audio/video = 1,514,126,278,656.
+- Corresponding dense training sum = 4,542,378,835,968.
+These are analytic counts only, not CPU benchmarks.
 
-The replacement was fitted successfully from the pinned external TRAIN text:
-- Tokenizer workflow run **#6**, ID `46128204163`, source commit `27e2e2ba5339b6f45f60fa90f88ae28d5fd5d87f`, conclusion success.
-- Artifact **`15256164799`**, name `onecore-corrected-spec-tokenizer-4096-45325008221`, **42,523 bytes**, ZIP digest `sha256:ba29243d09e77ca06c9700f9529e9cf313dbd5f9eb208b903fdbb97224699370`; expiry `2027-02-26T08:57:37Z`.
-- File `onecore-tokenizer-text4096-20261128.json`; exact vocabulary **4,096**; JSON SHA-256 `6e1c5ed9bf3c44f9e520edf04a90caf97c15fa622f9b5df8d651345fef27dacd`.
-- Fitted on **591,525 external TRAIN text records** from `data/train.jsonl`; manifest SHA-256 `d499968cdd5e1869ae7b5d9866261e8aad8fe091ad9096b13067bfb6a83f9205`; external-row fingerprint `6d60d6a07fbd82932373c449735d1b73cd882bcd14390e07a60400c2cc97e720`.
-- Validation/test rows used: **0**. Imported V2 tokenizer: **false**. The workflow range-read only `data/train.jsonl`; it did not download the full 24.4-GB corpus archive.
+## Tokenizer provenance and adoption
 
-Five-family external coverage verified by the same pipeline:
-- Train: text 591,525; tool 14,000; image 900; audio 1,100; video 100.
-- Validation: text 22,552; tool 400; image 10; audio 165; video 10.
-- Test: text 22,758; tool 400; image 10; audio 148; video 10.
+The active corrected-spec-3 tokenizer is the immutable original 32K byte-level BPE artifact:
+- Source workflow run **45336933362** (head `065daaa646a9b8ba1a3908476202bb4acddecd5c`).
+- Artifact **14894835517**, name `onecore-v3-tokenizer-45325008221`, size **394,036 bytes**, archive SHA-256 `47246c85500ed2647aacfd00187dacf4dedae1f10b180910ff55f71463851bd6`.
+- Source file `onecore-v3-tokenizer-run605-vocab32000.json`; JSON SHA-256 `569f1b61e017dcf5c8ba9fef22a8002cc48d5ea3c26504bdae83f53834d00e76`.
+- Source sidecar SHA-256 `b60e5077767f79b1316635ed45343ed5c59ce2602f41d24759a25a386ea33e16`.
+- BPE / NFC / ByteLevel; exact vocabulary 32,000; 591,525 external TRAIN text records; manifest SHA-256 `d499968cdd5e1869ae7b5d9866261e8aad8fe091ad9096b13067bfb6a83f9205`; external row fingerprint `6d60d6a07fbd82932373c449735d1b73cd882bcd14390e07a60400c2cc97e720`; validation/test rows used 0; V2 tokenizer imported false.
 
-**Data-provenance caveat:** the conversion report records 1,302 non-external rows excluded and 37 historical pinned source rows not found, with no synthetic rows added. The final external-only manifest gate passed (`blocked=false`), while `restoration_incomplete=true` remains recorded for those unmatched legacy rows. Do not claim that every historical source row was restored.
+The adoption flow verifies run/artifact metadata, ZIP digest and size, exact archive members, tokenizer JSON hash, original evidence hash, vocabulary/special IDs and train-only provenance. It preserves tokenizer JSON bytes exactly and creates a new sidecar carrying both corrected-spec-3 config fingerprint and tokenizer-contract fingerprint. No refit or heldout data is involved. The 4K artifact `15256164799` remains immutable historical evidence only; it is no longer active.
 
-The sole training request, `onecore-ai/v3-training-request.json`, pins the tokenizer run, artifact ID/name/digest/size, source commit, JSON SHA, vocabulary, row count, manifest SHA, external-row fingerprint and zero-heldout evidence. The only training workflow verifies run metadata, artifact metadata/digest, file bytes and tokenizer evidence before use.
+## Data lineage and caveats
 
-## Verification and source package
+- Pinned corpus artifact: `14892594659`, run `45325008221`; do not reacquire without proof of loss/expiry/corruption.
+- Conversion report artifact: `14893020087`.
+- External train coverage: text 591,525; tool 14,000; image 900; audio 1,100; video 100.
+- Validation coverage: text 22,552; tool 400; image 10; audio 165; video 10.
+- Test coverage: text 22,758; tool 400; image 10; audio 148; video 10.
+- Provenance caveat: 37 historical source rows were not found and 1,302 non-external rows were excluded; no synthetic rows were added. Do not claim complete restoration of every historic source row.
 
-- **CI #807** (push) and **CI #808** (pull_request), both on `2fc1e98c6e5adeaa89cff09630443b86b3c82113`: **success**.
-- Both Verify jobs passed compile, exact architecture/parameter/FLOPs/T-LDM checks, **206 tests**, single-model/fail-closed guard checks and FineWeb-2 exact cursor-resume smoke test.
-- A prior docs-only run pair failed one literal heading assertion because the handover title had been shortened. The required exact heading `Mandatory multi-client coordination protocol` was restored in `2fc1e98`; tests were not weakened and the subsequent push/PR runs both passed.
-- **Source package #40**, run `46130230139`, same code/docs head: artifact `15257372426`, **239,680 bytes**, SHA-256 `60029537146126fa2e62ec143f9c9e542d5b24d1f06c30768282f80bcae66834`. Source-only; no model weights, datasets, checkpoints, secrets or runtime state.
-- CPU benchmark, current-config step-zero checkpoint audit, corpus restore and held-out checkpoint evaluation were skipped in the passing CI runs. They are not counted as passed.
+## Implementation and verification status
 
-## Training and promotion gates still open
+Implemented on the canonical branch in commits:
+- `b5cd6935202e23322a25b260148cc5e92de08d98`: corrected-spec-3 config, parameter accounting and config-aware FLOPs.
+- `eb0d43364593a94ee7246fea19c2aabf12058a67`: tokenizer contract fingerprint and byte-preserving adoption helper.
+- `364c88f56a9e9f37eb6433132caec6be49170a8c`: pinned 32K requests, adoption workflow and training validation.
+- `3fd7ae1d4961279f255b68578b3f18c515644fa3`: refreshed CI expectations, tokenizer-workflow torch dependency and policy-test pins.
 
-No optimizer update has been performed. There is no step-zero checkpoint for the current configuration, no successful current-config CPU resource measurement, no non-zero-step continuation audit and no trained held-out evaluation.
+The first CI attempts correctly failed because a central Verify assertion still pinned spec-2 values; the tokenizer-adoption job also lacked CPU PyTorch while importing the config/model package. These causes were corrected in the latest changes. The latest new CI runs must still complete before this migration is called verified. Source-package builds passed on the prior implementation heads; this is not a substitute for current CI.
 
-The sole optimizer workflow `.github/workflows/onecore-v3-training.yml` remains fail-closed with `&& false`. Do not remove that guard or update weights until all of the following pass:
-1. A real CPU benchmark for this exact config/corpus/tokenizer: process-tree peak RSS, production loader throughput, per-family forward/backward timings and joint objective/AdamW allocation.
-2. A real-artifact step-zero save/restore audit for this exact architecture and tokenizer fingerprint.
-3. No conflicting run is active.
-4. Explicit owner authorization for the first bounded segment of **five joint updates**, checkpointing every update.
+The current canonical configuration reports 86,152,897 parameters and config-aware FLOPs. Full current test suite, corrected-spec-3 tokenizer adoption workflow and both push/PR Verify jobs remain pending final successful run evidence.
 
-After the first update, separately audit AdamW moments, parent checkpoint SHA, scheduler/global step, five-family source cursors and Python/NumPy/Torch RNG state before any longer run. CI success, analytic FLOPs, previous-config measurements or a parameter report are not substitutes for the CPU/checkpoint gates.
+## Training and promotion gates
 
-The GitHub connection used for this work can inspect and rerun existing jobs but does not expose a workflow-dispatch action for selecting the manual benchmark/checkpoint inputs. No fake benchmark or push-trigger substitute was used.
+No optimizer update has been performed. There is no corrected-spec-3 CPU resource benchmark, no real-artifact step-zero checkpoint audit for this config/tokenizer fingerprint, no continuation audit and no trained held-out evaluation. Keep `.github/workflows/onecore-v3-training.yml` fail-closed with `&& false`.
 
-## Pull request and branch state
+Do not authorize an optimizer update until:
+1. Real CPU benchmark measures process-tree peak RSS, loader throughput, per-family forward/backward timings and joint optimizer allocation for corrected-spec-3, corpus and tokenizer hashes.
+2. Real-artifact step-zero checkpoint save/restore passes for the exact corrected-spec-3 config and adopted 32K tokenizer.
+3. Five-family source/manifest gates pass and no conflicting writer or run is active.
+4. Owner explicitly authorizes the first five joint optimizer updates, checkpointing every update.
+
+After the first update, run a separate non-zero-step checkpoint continuation audit for AdamW moments, parent checkpoint SHA, global step, five-family cursors and RNG state before any longer segment. CI or analytic FLOPs never substitute for these gates.
+
+## Pull request, branch and active lock
 
 - Repository: `jonsnow-org/Lena9`.
 - Active branch: `research/onecore-v3-implementation`.
-- Last fully tested code/docs head: `2fc1e98c6e5adeaa89cff09630443b86b3c82113`. The final handover/lock release commit descends from it and changes only this handover and session-lock record.
-- **PR #12:** <https://github.com/jonsnow-org/Lena9/pull/12> — open, unmerged and `mergeable=true`; target `main`. The PR body now includes tokenizer provenance, the #807/#808 results and remaining gates.
-- The initial history divergence was resolved with ancestry-only merge commit `00828fe9fa7e4c412ed913e61974f076fa7cb1d7`; its parents are the verified OneCore head `eccc4baa3a6bb7b36b848e1845388cbd1253ff83` and main `10c4f01663bd65e30335bfe7b4ed3cdfe6584815`. Its tree is identical to the already-tested OneCore tree; no non-OneCore application files were present in the main-only diff.
-- `main` remains at `10c4f01663bd65e30335bfe7b4ed3cdfe6584815`; it has **not** been modified or merged.
-- The old `research/onecore-foundation` ref remains at `6d5dd21982f8f4a835e07b0f004b1621be57ba96`. Do not delete or repoint it before PR #12 merges. After that merge, neutralize the legacy ref with compare-and-swap so it no longer retains a distinct active implementation. The available connection has no branch-delete operation.
+- PR **#12**: <https://github.com/jonsnow-org/Lena9/pull/12> — open, unmerged, target `main`.
+- `main` remains unchanged by this work.
+- Preserve the old 4K artifacts and old foundation ref as historical until PR is reviewed/merged. Do not merge until current CI, tokenizer adoption, docs and review are complete.
+
+The stopped recovery session's lock was replaced only after the owner explicitly authorized takeover. The current writer lease is `onecore-32k-owner-takeover-20261128-03`; use compare-and-swap for any renewal/release and record current HEAD and run evidence here. The lock is coordination, not evidence of successful implementation.
 
 ## Mandatory multi-client coordination protocol
 
-Every client must read `SESSION_PROTOCOL.md`, `AGENTS.md` and this complete handover before writing. Check live HEAD and the latest 20 relevant runs, acquire/renew the shared writer lock with compare-and-swap, and record commits, tests, jobs, artifacts, failures and skipped gates. Never start a second model, trainer, notebook workflow, branch or checkpoint lineage.
+Every client must read `SESSION_PROTOCOL.md`, `AGENTS.md` and this complete handover before writing. Reconcile current branch HEAD, latest 20 relevant Actions runs, PRs and active tasks; acquire or renew the shared lock using compare-and-swap; write only to the single canonical branch. Record exact commits, test totals, workflow/job IDs, artifacts, failures and skipped gates. Never create another model/trainer/workflow/branch or bypass training gates.

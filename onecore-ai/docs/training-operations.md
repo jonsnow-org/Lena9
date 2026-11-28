@@ -40,7 +40,7 @@ One joint optimizer update accumulates one micro-batch per family in this exact 
 
 1. A real-corpus CPU benchmark must measure process-tree peak RSS, production loader throughput, per-family forward/backward timings and joint objective/AdamW allocation for the current configuration.
 2. A full real-artifact step-zero checkpoint save/restore audit must pass for the current configuration fingerprint. The earlier step-zero artifact predates native T-LDM and does not qualify for the current fingerprint.
-3. The external-only five-family corpus report and replacement tokenizer evidence must pass their hash, split and payload checks, including exact 4,096 vocabulary equality with the current config. The old 32,000-token artifact is excluded.
+3. The external-only five-family corpus report and replacement tokenizer evidence must pass their hash, split and payload checks, including exact 32,000 vocabulary equality with corrected-spec-3. The superseded 4K tokenizer artifact is not used.
 4. No conflicting run may be active.
 5. The owner must explicitly authorize the first bounded segment.
 
@@ -52,4 +52,4 @@ Before any longer run, perform a separate non-zero-step continuation audit. It m
 
 ## Current state
 
-No optimizer update has been verified for the current T-LDM-enabled configuration. No trained checkpoint or independent held-out quality evaluation exists. The corrected 4,096-token tokenizer is now fitted, verified and pinned to the immutable external TRAIN split as artifact `15256164799`. Keep the `&& false` training guard in `onecore-v3-training.yml` intact until the real CPU benchmark, current-config step-zero checkpoint audit and explicit owner authorization are complete. Do not start training by changing a push trigger or substituting an ordinary CI run.
+No optimizer update has been verified for the current T-LDM-enabled configuration. No trained checkpoint or independent held-out quality evaluation exists. The 32,000-token tokenizer is pinned to the immutable external TRAIN split and is being re-attested as the corrected-spec-3 tokenizer. Keep the `&& false` training guard in `onecore-v3-training.yml` intact until the real CPU benchmark, current-config step-zero checkpoint audit and explicit owner authorization are complete. Do not start training by changing a push trigger or substituting an ordinary CI run.

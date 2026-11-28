@@ -1,32 +1,28 @@
-# OneCore — canonical model implementation
+# OneCore V3 — canonical implementation
 
-This directory contains the single adopted OneCore model implementation. It is not a second product or an alternate model. The shared semantic Transformer, text/tool paths, image/audio/video codecs, generation heads, native T-LDM and checkpoint lineage all belong to this one model.
+This directory is the sole active model implementation. Do not create a second model, trainer, tokenizer path, workflow, or checkpoint lineage.
 
-## Core implementation
+## Current contract
 
-- `core.py`: shared semantic Transformer, text/tool model path, image/audio/video paths and native T-LDM.
-- `training.py`: one five-family joint objective, including causal text/tool loss plus native masked-token T-LDM.
-- `config.py` and `report.py`: exact model configuration, fingerprint and parameter report.
-- `vision.py`, `audio.py`, `video.py`: trainable modality codecs.
-- `losses.py`: image, audio and video reconstruction/flow objectives.
-- `dataset.py`, `manifest.py`, `converter.py`, `source_utils.py`, `artifact.py`: data preparation, provenance, pinned media restoration and integrity checks.
-- `tokenizer.py`: the sole 4,096-token text tokenizer path under the corrected configuration.
-- `checkpoint.py`, `checkpoint_audit.py`: one checkpoint format and integrity/round-trip validation.
-- `resource_benchmark.py`, `resource_evidence.py`: measured CPU-resource report and run/artifact binding.
-- `runner.py`, `inference.py`, `evaluation.py`: the only training, inference and evaluation paths.
+The only active architecture is `onecore-v3-corrected-spec-3`: 32,000 text tokens; 33,048 unified tokens; 86,152,897 trainable parameters; width 1,024; four unique Transformer blocks reused over three cycles; eight attention heads; context 512; 16 native T-LDM latent slots. The text embedding and output head are tied. T-LDM adds zero parameters and uses weight 0.15 for text/tool objectives.
 
-## Exact current architecture
+The previous corrected-spec-2 contract (4,096 text tokens, 5,144 unified tokens and 57,579,201 parameters) is superseded and has a different configuration fingerprint. It is not checkpoint-compatible with this contract.
 
-The model has 57,579,201 trainable parameters, width 1,024, 4,096 text tokens (5,144 unified tokens), four unique Transformer blocks reused over three cycles and eight attention heads. T-LDM uses 16 latent slots and reuses the same shared Transformer and tied text head; it contributes no additional trainable parameters. The T-LDM objective weight is 0.15 for text and tool batches.
+## Canonical source modules
 
-The parameter count and analytic FLOPs are checked in CI. The historic 32,000-token tokenizer is retained for provenance only. The one active tokenizer is artifact `15256164799` from run `46128204163`, with 4,096 tokens, 591,525 external TRAIN text rows and tokenizer JSON SHA-256 `6e1c5ed9bf3c44f9e520edf04a90caf97c15fa622f9b5df8d651345fef27dacd`; it used zero validation/test rows. The real CPU measurement, full current-config checkpoint round-trip and trained held-out quality evaluation are separate gates.
+- `core.py`: one shared multimodal Transformer and native T-LDM.
+- `training.py`, `runner.py`: one joint five-family training objective and bounded runner.
+- `checkpoint.py`, `checkpoint_audit.py`: strict checkpoint lineage and real-artifact audit.
+- `dataset.py`, `manifest.py`, `converter.py`, `source_utils.py`, `artifact.py`: validated five-family data and immutable source restoration.
+- `tokenizer.py`: only tokenizer training, adoption and verification path.
+- `flops.py`: config-aware analytic FLOPs accounting.
+- `resource_benchmark.py`, `resource_evidence.py`: measured CPU resource evidence.
+- `inference.py`, `evaluation.py`: canonical inference/evaluation.
 
-## Data and training constraints
+## Tokenizer
 
-Only verified external train rows contribute to tokenizer fitting and optimizer updates. Validation and test are isolated. The existing source-corpus artifact is a data snapshot, not model weights or another checkpoint.
+The active 32K tokenizer is being re-attested from immutable artifact `14894835517` (run `45336933362`). JSON SHA-256: `569f1b61e017dcf5c8ba9fef22a8002cc48d5ea3c26504bdae83f53834d00e76`; original sidecar SHA-256: `b60e5077767f79b1316635ed45343ed5c59ce2602f41d24759a25a386ea33e16`. Evidence: 591,525 external TRAIN text rows, zero validation/test rows, pinned manifest and row fingerprint. Adoption must preserve JSON bytes and independently bind the tokenizer contract to corrected-spec-3. The prior 4K tokenizer artifact remains historical provenance only.
 
-The five-family joint trainer accumulates text, tool, image, audio and video micro-batches and performs one optimizer step. The first authorized segment is limited to five updates and checkpoints each update. The trainer remains guarded until real CPU, checkpoint and explicit-authorization gates pass.
+## Execution status
 
-## Known limitations
-
-The current model is untrained and quality is not certified. Image/audio/video codecs are trainable prototypes, long video context is bounded, attention is quadratic, and contrastive alignment still requires multi-example paired batches. Read `../ARCHITECTURE.md` and `../docs/EXECUTIVE_HANDOVER.md` before making architecture or training changes.
+No optimizer update has been performed. No corrected-spec-3 CPU benchmark, step-zero real-artifact checkpoint audit, or held-out evaluation has passed. Keep the training workflow blocked. See `../docs/EXECUTIVE_HANDOVER.md`, `../docs/training-operations.md` and `../docs/ADR-corrected-spec-3.md` for current gates and provenance.

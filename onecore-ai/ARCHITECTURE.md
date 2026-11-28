@@ -1,56 +1,65 @@
 # OneCore — canonical architecture
 
-## Model contract
+## Active contract: onecore-v3-corrected-spec-3
 
-OneCore is a single from-scratch multimodal model. The only instantiated architecture is `onecore-v3-corrected-spec-2` in `src/onecore/v3/`. All modalities share one semantic Transformer core, one embedding space, one parameter set, one checkpoint and one optimizer/scheduler/RNG lineage.
+OneCore is one from-scratch multimodal model. Text, tool, image, audio and video tasks share one semantic Transformer, one embedding space, one parameter set, one checkpoint and one optimizer/scheduler/RNG lineage.
 
-| Property | Current value |
+| Property | corrected-spec-3 |
 |---|---:|
-| Trainable parameters | **57,579,201** |
-| Text vocabulary | 4,096 (5,144 unified tokens including modality/special ranges) |
+| Text BPE vocabulary | **32,000** |
+| Unified vocabulary | **33,048** |
+| Trainable parameters | **86,152,897** |
 | Shared width | 1,024 |
 | Unique Transformer blocks | 4 |
 | Recurrent cycles | 3 |
 | Effective block applications | 12 |
 | Attention heads | 8 |
+| SwiGLU hidden width | 2,730 |
+| Maximum context | 512 |
 | Native T-LDM latent slots | 16 |
-| T-LDM objective weight | 0.15 (text and tool) |
+| T-LDM objective weight | 0.15 (text/tool) |
 
-CI asserts the exact parameter count and configuration/FLOPs fingerprint. T-LDM reuses existing components and contributes **zero additional trainable parameters**.
+The shared vocabulary ranges are contiguous: text 0–31,999; vision 32,000–32,511; audio 32,512–32,767; motion 32,768–33,023; special tokens 33,024–33,047. The text output projection is tied to the shared embedding, so this matrix is counted once.
+
+Corrected-spec-3 supersedes corrected-spec-2 (4,096 text tokens, 5,144 unified tokens and 57,579,201 parameters). This deliberate change creates a new configuration fingerprint and checkpoint lineage; old step-zero or trained checkpoints must not be treated as compatible. The decision and exact provenance are recorded in [ADR-corrected-spec-3.md](docs/ADR-corrected-spec-3.md).
 
 ## Shared model path
 
-Text tokens, tool prompts/actions, image latents, waveform-audio latents and video-frame latents are projected into the shared width and processed by the same recurrent semantic core. A modality embedding marks the token family. The text output projection is tied to the text embedding. Image, audio and video have independent flow heads so their different latent distributions do not share one final projection.
+Text tokens, tool prompts/actions, image latents, waveform-audio latents and video-frame latents are projected into shared width and processed by the same recurrent semantic core. A modality embedding marks the token family. The text output projection is tied to the text embedding. Image, audio and video retain modality-specific codecs and flow heads, while all tasks use the common semantic core.
 
 A joint optimizer update accumulates one micro-batch from each family in the order text, tool, image, audio, video and performs one optimizer step after the five losses are accumulated.
 
 ## Native T-LDM
 
-T-LDM is not a second model or a detached head. It is an additional operation through the existing OneCore model:
+T-LDM is an operation through the existing OneCore model, not a second model or detached network:
+1. Embed text/tool sequence with the existing text and modality embeddings.
+2. Mask selected token embeddings so target identities are not exposed.
+3. Compress to at most 16 latent slots.
+4. Run latent slots through the shared Transformer as the thinker.
+5. Concatenate latent context with visible token states and run the shared Transformer as the writer.
+6. Predict using the same tied text output projection.
+7. During generation, reveal high-confidence masked positions over bounded refinement passes.
 
-1. Embed the text/tool token sequence with the existing text embedding and modality embedding.
-2. Zero the embeddings at selected masked positions so their target identities are not visible.
-3. Compress the sequence into at most 16 latent slots with adaptive average pooling.
-4. Run those slots through the existing shared Transformer as the latent thinker.
-5. Concatenate the latent context with the visible token states and run the same shared Transformer as the diffusion writer.
-6. Use the existing tied text output projection to predict the shared vocabulary.
-7. During generation, reveal high-confidence masked positions over a bounded number of refinement passes.
+It adds zero trainable parameters. The configured T-LDM objective weight is 0.15 for text and tool batches. Image/audio/video retain their modality-specific objectives.
 
-The training objective keeps the causal loss and adds masked-token cross-entropy only at selected valid positions. The current T-LDM weight is 0.15 for text and tool batches. The image/audio/video families retain their modality-specific objectives.
+## Tokenizer and checkpoint contract
 
-## Modality paths
+The 32K byte-level BPE tokenizer is sourced from historical artifact `14894835517` (run `45336933362`). Its JSON SHA-256 is `569f1b61e017dcf5c8ba9fef22a8002cc48d5ea3c26504bdae83f53834d00e76`, and its original evidence sidecar SHA-256 is `b60e5077767f79b1316635ed45343ed5c59ce2602f41d24759a25a386ea33e16`. It was fitted using 591,525 external TRAIN text rows only; the manifest and row fingerprints are pinned in the ADR and training request. Validation/test rows used: zero. Adoption preserves the tokenizer JSON bytes exactly and creates a new evidence sidecar binding the tokenizer contract and corrected-spec-3 configuration separately.
 
-- **Image:** variable-height/width patch encoding; original dimensions and aspect ratio are preserved and decoded output is cropped to the requested dimensions.
-- **Audio:** mono/stereo waveform codec with residual vector quantization; training waveform inputs are normalized to 24 kHz, and source metadata is retained.
-- **Video:** frame-wise image encoding, timestamp-aware temporal processing and bounded temporal windows. Long-range video memory is not a full KV cache.
-- **Tool use:** tool prompts and structured action/response tokens share the same text vocabulary. Generated text is not executed as code.
+The checkpoint binds model state, optimizer, scheduler, global step, complete configuration fingerprint, tokenizer bytes/hash/vocabulary, manifest and asset hashes, five-family source cursors, Python/NumPy/Torch RNG states and parent-checkpoint SHA. The 4K tokenizer and corrected-spec-2 checkpoints are historical and are not interchangeable with corrected-spec-3.
 
-## Checkpoint and data lineage
+## FLOPs and storage
 
-The checkpoint binds model state, optimizer, scheduler, global step, configuration fingerprint, tokenizer bytes/hash/vocabulary, manifest and asset hashes, five-family source cursors, Python/NumPy/Torch RNG states and parent-checkpoint SHA. Train, validation and test are isolated. Synthetic fixtures are for software tests only and do not count as real corpus coverage or model-quality evidence. The historical 32,000-token tokenizer is excluded from this model. The active tokenizer is artifact `15256164799` from run `46128204163`; it is byte-level BPE with 4,096 tokens, fitted on 591,525 external TRAIN text rows, TRAIN manifest SHA-256 `d499968cdd5e1869ae7b5d9866261e8aad8fe091ad9096b13067bfb6a83f9205`, tokenizer JSON SHA-256 `6e1c5ed9bf3c44f9e520edf04a90caf97c15fa622f9b5df8d651345fef27dacd`, and zero validation/test rows. The checkpoint must bind these exact bytes and evidence.
+FLOPs include QKV, QK, AV, output, SwiGLU and tied output projection, at two FLOPs per multiply-accumulate. For corrected-spec-3:
+- Joint five-family training update at T=128: 1,516,166,184,960 dense FLOPs.
+- Joint five-family training update at T=512: 6,136,611,471,360 dense FLOPs.
+- Five-family forward dense total (paths 512/512/121/244/512): 1,514,126,278,656.
+- Corresponding dense training total: 4,542,378,835,968.
 
-## Known limits
+These are analytic counts, not measured runtime. Theoretical parameter storage: FP32 344,611,588 bytes; FP16 172,305,794 bytes; AdamW moments 689,223,176 bytes. No RAM/throughput claim follows from those calculations.
 
-The model is untrained. Image, audio and video generation quality is unmeasured. The image codec is a trainable patch baseline, the audio codec is not yet a production speech/music system, and the video path uses bounded temporal windows. Attention remains quadratic. GAN discriminators do not yet have a complete alternating optimizer schedule, and current one-record-per-family micro-batches do not meaningfully activate multi-example contrastive alignment.
+## Known limitations and promotion rules
 
-Do not describe OneCore as production-ready or claim human-level, professional or certified output quality until trained checkpoints have passed independent real-data evaluation and human review.
+The model is untrained. Image, audio and video generation quality is unmeasured; attention remains quadratic; the audio codec is not a production speech/music system; video uses bounded temporal windows. Do not claim production readiness or certified quality until a trained checkpoint passes independent real-data evaluation and human review.
+
+Training remains blocked until a real CPU benchmark and real-artifact step-zero checkpoint audit pass for the exact corrected-spec-3 config/tokenizer and the owner explicitly authorizes the first five-update segment. Preserve the fail-closed training guard.
