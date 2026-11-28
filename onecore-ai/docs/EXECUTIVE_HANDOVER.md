@@ -1,6 +1,6 @@
 # OneCore executive handover
 
-Updated: 2026-11-28T09:20:15.890Z
+Updated: 2026-11-28T09:27:39.139Z
 
 ## Canonical product state
 
@@ -39,16 +39,17 @@ Five-family external coverage verified by the same pipeline:
 - Validation: text 22,552; tool 400; image 10; audio 165; video 10.
 - Test: text 22,758; tool 400; image 10; audio 148; video 10.
 
-**Data-provenance caveat:** the conversion report records 1,302 non-external rows excluded and 37 historical pinned source rows not found, with no synthetic rows added. The final external-only manifest gate passed (`blocked=false`), while `restoration_incomplete=true` remains recorded for those unmatched legacy rows. Do not claim that every historical source row was restored; only the eligible external coverage above passed.
+**Data-provenance caveat:** the conversion report records 1,302 non-external rows excluded and 37 historical pinned source rows not found, with no synthetic rows added. The final external-only manifest gate passed (`blocked=false`), while `restoration_incomplete=true` remains recorded for those unmatched legacy rows. Do not claim that every historical source row was restored.
 
 The sole training request, `onecore-ai/v3-training-request.json`, pins the tokenizer run, artifact ID/name/digest/size, source commit, JSON SHA, vocabulary, row count, manifest SHA, external-row fingerprint and zero-heldout evidence. The only training workflow verifies run metadata, artifact metadata/digest, file bytes and tokenizer evidence before use.
 
 ## Verification and source package
 
-- **CI #802**, run `46129654620`, PR event, exact merge head `00828fe9fa7e4c412ed913e61974f076fa7cb1d7`: **success**. Compile, exact architecture/parameter/FLOPs/T-LDM checks, **206 passed in 12.42s**, single-model/fail-closed guard checks and FineWeb-2 exact cursor-resume smoke test all passed.
-- Optional CPU benchmark, current-config step-zero checkpoint audit, corpus restore and held-out checkpoint evaluation were **skipped** in #802. They are not counted as passed.
-- **Source package #37**, run `46129386512`, built from the identical code tree before the ancestry-only merge commit: artifact `15256134386`, **239,737 bytes**, SHA-256 `da8e13c11498a93a1dd65aa816ae2e4b4ef785f438f16b0ebeb9763361e333bb`. Source-only; no model weights, datasets, checkpoints, secrets or runtime state.
-- CI #801 on the parent code tree also passed 206 tests; PR CI #802 separately verified the exact current PR head after its merge commit.
+- **CI #807** (push) and **CI #808** (pull_request), both on `2fc1e98c6e5adeaa89cff09630443b86b3c82113`: **success**.
+- Both Verify jobs passed compile, exact architecture/parameter/FLOPs/T-LDM checks, **206 tests**, single-model/fail-closed guard checks and FineWeb-2 exact cursor-resume smoke test.
+- A prior docs-only run pair failed one literal heading assertion because the handover title had been shortened. The required exact heading `Mandatory multi-client coordination protocol` was restored in `2fc1e98`; tests were not weakened and the subsequent push/PR runs both passed.
+- **Source package #40**, run `46130230139`, same code/docs head: artifact `15257372426`, **239,680 bytes**, SHA-256 `60029537146126fa2e62ec143f9c9e542d5b24d1f06c30768282f80bcae66834`. Source-only; no model weights, datasets, checkpoints, secrets or runtime state.
+- CPU benchmark, current-config step-zero checkpoint audit, corpus restore and held-out checkpoint evaluation were skipped in the passing CI runs. They are not counted as passed.
 
 ## Training and promotion gates still open
 
@@ -68,9 +69,9 @@ The GitHub connection used for this work can inspect and rerun existing jobs but
 
 - Repository: `jonsnow-org/Lena9`.
 - Active branch: `research/onecore-v3-implementation`.
-- Current code/ancestry head at handover: `00828fe9fa7e4c412ed913e61974f076fa7cb1d7`.
-- **PR #12:** <https://github.com/jonsnow-org/Lena9/pull/12> — open, unmerged and `mergeable=true`; target `main`. Its head is the commit above.
-- The PR's initial divergence was resolved with merge commit `00828fe9...`, whose parents are prior verified OneCore head `eccc4baa3a6bb7b36b848e1845388cbd1253ff83` and main `10c4f01663bd65e30335bfe7b4ed3cdfe6584815`. The merge commit's tree is byte-for-byte the same Git tree as the already-tested parent `eccc4baa...`; it changed ancestry only. No non-OneCore application files were present in the main-only diff.
+- Last fully tested code/docs head: `2fc1e98c6e5adeaa89cff09630443b86b3c82113`. The final handover/lock release commit descends from it and changes only this handover and session-lock record.
+- **PR #12:** <https://github.com/jonsnow-org/Lena9/pull/12> — open, unmerged and `mergeable=true`; target `main`. The PR body now includes tokenizer provenance, the #807/#808 results and remaining gates.
+- The initial history divergence was resolved with ancestry-only merge commit `00828fe9fa7e4c412ed913e61974f076fa7cb1d7`; its parents are the verified OneCore head `eccc4baa3a6bb7b36b848e1845388cbd1253ff83` and main `10c4f01663bd65e30335bfe7b4ed3cdfe6584815`. Its tree is identical to the already-tested OneCore tree; no non-OneCore application files were present in the main-only diff.
 - `main` remains at `10c4f01663bd65e30335bfe7b4ed3cdfe6584815`; it has **not** been modified or merged.
 - The old `research/onecore-foundation` ref remains at `6d5dd21982f8f4a835e07b0f004b1621be57ba96`. Do not delete or repoint it before PR #12 merges. After that merge, neutralize the legacy ref with compare-and-swap so it no longer retains a distinct active implementation. The available connection has no branch-delete operation.
 
