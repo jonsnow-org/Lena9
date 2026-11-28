@@ -1,9 +1,13 @@
-name: OneCore — corrected-spec external train-only tokenizer
+name: OneCore — adopt the pinned 32K external train-only tokenizer
 
 on:
   push:
     branches: [research/onecore-v3-implementation]
-    paths: ["onecore-ai/v3-tokenizer-request.json"]
+    paths:
+      - "onecore-ai/v3-tokenizer-request.json"
+      - "onecore-ai/src/onecore/v3/tokenizer.py"
+      - "onecore-ai/src/onecore/v3/config.py"
+      - "onecore-ai/configs/onecore-v3-research.yaml"
   workflow_dispatch:
 
 permissions:
@@ -11,15 +15,15 @@ permissions:
   actions: read
 
 concurrency:
-  group: onecore-canonical-tokenizer-corpus-45325008221
+  group: onecore-canonical-tokenizer-32000
   cancel-in-progress: false
 
 jobs:
-  fit_external_train_tokenizer:
-    name: Fit the single 4096-token OneCore BPE from external train text only
+  adopt_external_train_tokenizer:
+    name: Verify and re-attest the immutable 32K tokenizer (no refit)
     if: github.ref == 'refs/heads/research/onecore-v3-implementation'
     runs-on: ubuntu-24.04
-    timeout-minutes: 240
+    timeout-minutes: 30
     env:
       PYTHONPATH: onecore-ai/src
       GH_TOKEN: ${{ github.token }}
@@ -29,260 +33,99 @@ jobs:
         uses: actions/checkout@v5
         with:
           ref: ${{ github.ref }}
-
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
-          cache: pip
-          cache-dependency-path: onecore-ai/pyproject.toml
-      - name: Wait for canonical OneCore Verify on this exact commit
+      - name: Install tokenizer verifier dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "tokenizers>=0.19,<1" "PyYAML>=6,<7"
+      - name: Download, verify and re-attest the immutable historical tokenizer
         run: |
           python - <<'PY'
-          import json, os, time
-          from urllib.request import Request, urlopen
-
-          repo = os.environ["GITHUB_REPOSITORY"]
-          token = os.environ["GH_TOKEN"]
-          expected_sha = os.environ["GITHUB_SHA"]
-          headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
-          deadline = time.monotonic() + 2700
-
-          def get(path):
-              with urlopen(Request(f"https://api.github.com/repos/{repo}{path}", headers=headers), timeout=45) as response:
-                  return json.loads(response.read().decode("utf-8"))
-
-          while time.monotonic() < deadline:
-              runs = get("/actions/runs?branch=research/onecore-v3-implementation&per_page=100").get("workflow_runs", [])
-              matches = [
-                  run for run in runs
-                  if run.get("path") == ".github/workflows/onecore-ci.yml"
-                  and run.get("head_sha") == expected_sha
-              ]
-              if matches:
-                  current = max(matches, key=lambda run: run.get("created_at", ""))
-                  if current.get("status") == "completed":
-                      if current.get("conclusion") != "success":
-                          raise RuntimeError(
-                              f"canonical V3 Verify failed for {expected_sha}: {current.get('conclusion')}"
-                          )
-                      print({
-                          "verify_run_id": current.get("id"),
-                          "head_sha": expected_sha,
-                          "conclusion": current.get("conclusion"),
-                      })
-                      break
-              time.sleep(15)
-          else:
-              raise TimeoutError(f"canonical V3 Verify did not complete within 45 minutes for {expected_sha}")
-          PY
-
-
-      - name: Check source corpus and prevent duplicate tokenizer fitting
-        id: preflight
-        run: |
-          python - <<'PY' >> "$GITHUB_OUTPUT"
-          import json, os
+          import hashlib, io, json, os, zipfile
           from pathlib import Path
           from urllib.request import Request, urlopen
-
-          repo = os.environ["GITHUB_REPOSITORY"]
-          token = os.environ["GH_TOKEN"]
-          request_data = json.loads(Path("onecore-ai/v3-tokenizer-request.json").read_text(encoding="utf-8"))
-          headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
-
-          def get(path):
-              with urlopen(Request(f"https://api.github.com/repos/{repo}{path}", headers=headers), timeout=45) as response:
-                  return json.loads(response.read().decode("utf-8"))
-
-          source_run = get(f"/actions/runs/{request_data['source_run_id']}")
-          expected_run = {
-              "head_sha": request_data["source_run_sha"],
-              "head_branch": "research/onecore-v3-implementation",
-              "path": ".github/workflows/onecore-ci.yml",
-              "event": "push",
-              "status": "completed",
-              "conclusion": "success",
-          }
-          actual_run = {key: source_run.get(key) for key in expected_run}
-          if actual_run != expected_run:
-              raise RuntimeError(f"pinned V3 corpus source run mismatch: {actual_run}")
-
-          artifacts = get(f"/actions/runs/{request_data['source_run_id']}/artifacts?per_page=100").get("artifacts", [])
-          source = [item for item in artifacts if int(item.get("id", 0)) == int(request_data["source_artifact_id"])]
-          if len(source) != 1:
-              raise RuntimeError("pinned V3 corpus artifact id is missing or ambiguous")
-          source_item = source[0]
-          expected_source = {
-              "name": request_data["source_artifact_name"],
-              "digest": request_data["source_artifact_digest"],
-              "size_in_bytes": int(request_data["source_artifact_size_bytes"]),
-              "expired": False,
-          }
-          actual_source = {
-              "name": source_item.get("name"),
-              "digest": source_item.get("digest"),
-              "size_in_bytes": int(source_item.get("size_in_bytes", 0)),
-              "expired": source_item.get("expired"),
-          }
-          if actual_source != expected_source:
-              raise RuntimeError(f"pinned V3 corpus artifact metadata mismatch: {actual_source}")
-
-          reports = [item for item in artifacts if int(item.get("id", 0)) == int(request_data["source_report_artifact_id"])]
-          if len(reports) != 1:
-              raise RuntimeError("pinned V3 conversion report artifact id is missing or ambiguous")
-          report_item = reports[0]
-          expected_report = {
-              "name": request_data["source_report_artifact_name"],
-              "digest": request_data["source_report_artifact_digest"],
-              "size_in_bytes": int(request_data["source_report_artifact_size_bytes"]),
-              "expired": False,
-          }
-          actual_report = {
-              "name": report_item.get("name"),
-              "digest": report_item.get("digest"),
-              "size_in_bytes": int(report_item.get("size_in_bytes", 0)),
-              "expired": report_item.get("expired"),
-          }
-          if actual_report != expected_report:
-              raise RuntimeError(f"pinned V3 conversion report metadata mismatch: {actual_report}")
-
-          runs = get("/actions/runs?branch=research/onecore-v3-implementation&per_page=100").get("workflow_runs", [])
-          already_published = False
-          for run in runs:
-              if run.get("path") != ".github/workflows/onecore-v3-tokenizer.yml":
-                  continue
-              existing = get(f"/actions/runs/{run['id']}/artifacts?per_page=100").get("artifacts", [])
-              if any(a.get("name") == request_data["output_artifact_name"] and not a.get("expired", False) for a in existing):
-                  already_published = True
-                  break
-
-          print(f"source_run_id={request_data['source_run_id']}")
-          print(f"source_artifact_id={request_data['source_artifact_id']}")
-          print(f"source_artifact_bytes={source_item['size_in_bytes']}")
-          print(f"source_artifact_digest={source_item['digest']}")
-          print(f"source_report_artifact_id={request_data['source_report_artifact_id']}")
-          print(f"already_published={str(already_published).lower()}")
-          PY
-
-      - name: Install CPU-only PyTorch and tokenizer range dependencies
-        if: steps.preflight.outputs.already_published != 'true'
-        run: |
-          python -m pip install --upgrade pip setuptools wheel
-          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
-          python -m pip install "tokenizers>=0.19,<1" "PyYAML>=6,<7" "numpy>=1.26,<3" "requests>=2.31,<3" "remotezip>=0.12,<1" "Pillow>=10,<13" "soundfile>=0.12,<1"
-          python -m pip install --no-deps -e onecore-ai
-
-      - name: Download the small pinned V3 conversion report
-        if: steps.preflight.outputs.already_published != 'true'
-        uses: actions/download-artifact@v7
-        with:
-          name: onecore-v3-conversion-report-45325008221
-          github-token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          run-id: 45325008221
-          path: ${{ runner.temp }}/onecore-v3-tokenizer-input/report
-
-      - name: Revalidate the five-family external-only corpus gate
-        if: steps.preflight.outputs.already_published != 'true'
-        env:
-          REPORT_DIR: ${{ runner.temp }}/onecore-v3-tokenizer-input/report
-        run: |
-          python - <<'PY'
-          import json, os
-          from pathlib import Path
-
-          path = Path(os.environ["REPORT_DIR"]) / "onecore-v3-conversion-report.json"
-          report = json.loads(path.read_text(encoding="utf-8"))
-          expected = {
-              "train": {"audio": 1100, "image": 900, "text": 591525, "tool": 14000, "video": 100},
-              "validation": {"audio": 165, "image": 10, "text": 22552, "tool": 400, "video": 10},
-              "test": {"audio": 148, "image": 10, "text": 22758, "tool": 400, "video": 10},
-          }
-          gate = report.get("manifest_gate") or {}
-          if gate.get("passed") is not True or report.get("blocked") is not False:
-              raise RuntimeError("pinned V3 corpus report does not prove a passing manifest gate")
-          if gate.get("coverage") != expected:
-              raise RuntimeError(f"pinned V3 coverage differs from the approved report: {gate.get('coverage')}")
-          if report.get("errors") != [] or report.get("synthetic_records_added", 0) != 0:
-              raise RuntimeError("pinned V3 corpus report contains errors or synthetic records")
-          if report.get("acquisition_incomplete") is not False:
-              raise RuntimeError("pinned V3 corpus acquisition is incomplete")
-          skipped = report.get("skipped") or {}
-          if skipped.get("not_external_data_class") != 1302 or skipped.get("pinned_source_row_not_found") != 37:
-              raise RuntimeError(f"pinned V3 skipped-row audit changed: {skipped}")
-          print({
-              "manifest_gate": "passed",
-              "coverage": gate["coverage"],
-              "non_external_skipped": skipped["not_external_data_class"],
-              "unmatched_legacy_rows": skipped["pinned_source_row_not_found"],
-              "restoration_incomplete": report.get("restoration_incomplete"),
-          })
-          PY
-
-      - name: Range-extract only V3 train.jsonl from the published corpus
-        if: steps.preflight.outputs.already_published != 'true'
-        run: |
-          mkdir -p "$RUNNER_TEMP/onecore-v3-tokenizer-input"
-          python - <<'PY'
-          import json, os
-          from pathlib import Path
-          from onecore.v3.artifact import extract_v3_train_manifest
-          request_data = json.loads(Path("onecore-ai/v3-tokenizer-request.json").read_text(encoding="utf-8"))
-          output = Path(os.environ["RUNNER_TEMP"]) / "onecore-v3-tokenizer-input" / "train.jsonl"
-          result = extract_v3_train_manifest(os.environ["GITHUB_REPOSITORY"], int(request_data["source_artifact_id"]), os.environ["GH_TOKEN"], output)
-          if result["member"] != request_data["train_manifest_member"]:
-              raise RuntimeError(f"unexpected V3 train manifest member: {result['member']}")
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as stream:
-              stream.write(f"train_manifest_sha256={result['sha256']}\n")
-          print(json.dumps(result, ensure_ascii=False, indent=2))
-          PY
-
-      - name: Fit and verify exact 4096-token BPE vocabulary on external train text only
-        if: steps.preflight.outputs.already_published != 'true'
-        run: |
-          python - <<'PY'
-          import json, os, yaml
-          from pathlib import Path
+          import yaml
           from onecore.v3.config import V3Config
-          from onecore.v3.tokenizer import train_v3_tokenizer, verify_v3_tokenizer
-          project = Path("onecore-ai")
-          raw = yaml.safe_load((project / "configs/onecore-v3-research.yaml").read_text(encoding="utf-8"))
-          config = V3Config(**raw["model"])
-          request_data = json.loads(Path("onecore-ai/v3-tokenizer-request.json").read_text(encoding="utf-8"))
-          if raw.get("architecture_version") != config.architecture_version:
-              raise RuntimeError("OneCore YAML and V3Config architecture versions differ")
-          if not config.is_canonical or config.text_vocab_size != 4096 or config.vocab_size != 5144:
-              raise RuntimeError("tokenizer fit must target the corrected single-model 4096/5144 vocabulary")
-          if request_data.get("architecture_version") != config.architecture_version:
-              raise RuntimeError("tokenizer request does not name the canonical corrected architecture")
-          work = Path(os.environ["RUNNER_TEMP"]) / "onecore-v3-tokenizer-input"
-          manifest = work / "train.jsonl"
-          output = work / request_data["tokenizer_file_name"]
-          report = train_v3_tokenizer(manifest, output, config=config, minimum_text_records=int(request_data["minimum_text_records"]), minimum_characters=int(request_data["minimum_characters"]), min_frequency=int(request_data["min_frequency"]))
-          verified = verify_v3_tokenizer(output, config=config, expected_train_manifest_sha256=report["train_manifest_sha256"])
-          summary = {"source_run_id": request_data["source_run_id"], "source_run_sha": request_data["source_run_sha"], "source_artifact_id": request_data["source_artifact_id"], "source_artifact_name": request_data["source_artifact_name"], "range_extraction": {"full_archive_downloaded": False, "member": request_data["train_manifest_member"]}, "tokenizer": {"path": output.name, "sha256": verified["tokenizer_sha256"], "evidence_path": output.name + ".evidence.json", "vocab_size": verified["vocab_size_actual"], "external_train_text_records": verified["external_train_text_records"], "train_manifest_sha256": verified["train_manifest_sha256"], "external_text_rows_sha256": verified["external_text_rows_sha256"], "validation_or_test_rows_used": verified["validation_or_test_rows_used"], "v2_tokenizer_imported": verified["v2_tokenizer_imported"]}}
-          conversion_path = Path(os.environ["RUNNER_TEMP"]) / "onecore-v3-tokenizer-input" / "report" / "onecore-v3-conversion-report.json"
-          conversion = json.loads(conversion_path.read_text(encoding="utf-8"))
-          expected_train_text = int(conversion["manifest_gate"]["coverage"]["train"]["text"])
-          if summary["tokenizer"]["vocab_size"] != 4096 or summary["tokenizer"]["vocab_size"] != config.text_vocab_size:
-              raise RuntimeError("exact corrected 4096-token text vocabulary was not achieved")
-          if summary["tokenizer"]["external_train_text_records"] != expected_train_text:
-              raise RuntimeError("tokenizer did not consume the complete validated external train-text family")
-          if summary["tokenizer"]["validation_or_test_rows_used"] != 0 or summary["tokenizer"]["v2_tokenizer_imported"] is not False:
-              raise RuntimeError("V3 tokenizer provenance contract failed")
-          (work / "tokenizer-run-summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-          print(json.dumps(summary, ensure_ascii=False, indent=2))
+          from onecore.v3.tokenizer import adopt_v3_tokenizer, verify_v3_tokenizer
+          req = json.loads(Path("onecore-ai/v3-tokenizer-request.json").read_text(encoding="utf-8"))
+          headers = {"Authorization": f"Bearer {os.environ['GH_TOKEN']}", "Accept": "application/vnd.github+json"}
+          api = f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}"
+          def get(path):
+              with urlopen(Request(api + path, headers=headers), timeout=45) as response:
+                  return json.loads(response.read().decode("utf-8"))
+          run = get(f"/actions/runs/{req['source_run_id']}")
+          expected_run = {"id": req["source_run_id"], "head_branch": "research/onecore-v3-implementation",
+              "head_sha": req["source_run_sha"], "path": ".github/workflows/onecore-v3-tokenizer.yml",
+              "event": "push", "status": "completed", "conclusion": "success"}
+          if {key: run.get(key) for key in expected_run} != expected_run:
+              raise SystemExit("historical tokenizer run metadata mismatch")
+          artifacts = get(f"/actions/runs/{req['source_run_id']}/artifacts?per_page=100").get("artifacts", [])
+          matches = [a for a in artifacts if int(a.get("id", 0)) == req["source_artifact_id"]]
+          if len(matches) != 1:
+              raise SystemExit("pinned historical tokenizer artifact missing or ambiguous")
+          artifact = matches[0]
+          expected = {"name": req["source_artifact_name"], "digest": req["source_artifact_digest"],
+              "size_in_bytes": req["source_artifact_size_bytes"], "expired": False}
+          actual = {"name": artifact.get("name"), "digest": artifact.get("digest"),
+              "size_in_bytes": int(artifact.get("size_in_bytes", 0)), "expired": artifact.get("expired")}
+          if actual != expected:
+              raise SystemExit(f"historical tokenizer artifact metadata mismatch: {actual}")
+          with urlopen(Request(api + f"/actions/artifacts/{req['source_artifact_id']}/zip", headers=headers), timeout=180) as response:
+              archive_bytes = response.read()
+          archive_sha = hashlib.sha256(archive_bytes).hexdigest()
+          if len(archive_bytes) != req["source_artifact_size_bytes"] or "sha256:" + archive_sha != req["source_artifact_digest"]:
+              raise SystemExit("historical tokenizer archive bytes/digest mismatch")
+          wanted = {req["source_tokenizer_file_name"], req["source_tokenizer_file_name"] + ".evidence.json", "tokenizer-run-summary.json"}
+          work = Path(os.environ["RUNNER_TEMP"]) / "onecore-v3-tokenizer-adoption"
+          work.mkdir(parents=True, exist_ok=True)
+          with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
+              if set(archive.namelist()) != wanted:
+                  raise SystemExit("historical tokenizer archive member list mismatch")
+              for name in wanted:
+                  (work / name).write_bytes(archive.read(name))
+          source = work / req["source_tokenizer_file_name"]
+          sidecar = Path(str(source) + ".evidence.json")
+          if hashlib.sha256(source.read_bytes()).hexdigest() != req["source_tokenizer_sha256"]:
+              raise SystemExit("historical tokenizer JSON digest mismatch")
+          if hashlib.sha256(sidecar.read_bytes()).hexdigest() != req["source_evidence_sha256"]:
+              raise SystemExit("historical tokenizer evidence digest mismatch")
+          config = V3Config()
+          raw = yaml.safe_load(Path("onecore-ai/configs/onecore-v3-research.yaml").read_text(encoding="utf-8"))
+          if not config.is_canonical or raw.get("architecture_version") != config.architecture_version:
+              raise SystemExit("adoption requires exact corrected-spec-3 config")
+          output = work / req["tokenizer_file_name"]
+          adopted = adopt_v3_tokenizer(source, sidecar, output, config=config,
+              expected_source_tokenizer_sha256=req["source_tokenizer_sha256"],
+              expected_source_evidence_sha256=req["source_evidence_sha256"],
+              expected_train_manifest_sha256=req["train_manifest_sha256"],
+              expected_external_text_rows_sha256=req["external_text_rows_sha256"],
+              expected_external_train_text_records=req["external_train_text_records"],
+              source_run_id=req["source_run_id"], source_artifact_id=req["source_artifact_id"],
+              source_artifact_sha256=req["source_artifact_digest"])
+          verified = verify_v3_tokenizer(output, config=config,
+              expected_train_manifest_sha256=req["train_manifest_sha256"])
+          if not adopted["source_tokenizer_bytes_preserved"] or verified["tokenizer_sha256"] != req["source_tokenizer_sha256"]:
+              raise SystemExit("tokenizer bytes changed during adoption")
+          summary = {"architecture_version": config.architecture_version,
+              "source_run_id": req["source_run_id"], "source_artifact_id": req["source_artifact_id"],
+              "source_artifact_digest": req["source_artifact_digest"], "source_archive_sha256_verified": archive_sha,
+              "tokenizer_file": output.name, "tokenizer_sha256": verified["tokenizer_sha256"],
+              "tokenizer_contract_sha256": verified["tokenizer_contract_sha256"],
+              "vocab_size": verified["vocab_size_actual"], "external_train_text_records": verified["external_train_text_records"],
+              "train_manifest_sha256": verified["train_manifest_sha256"],
+              "external_text_rows_sha256": verified["external_text_rows_sha256"],
+              "validation_or_test_rows_used": verified["validation_or_test_rows_used"],
+              "tokenizer_bytes_modified": False, "refit_performed": False}
+          (work / "tokenizer-run-summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+          print(json.dumps(summary, indent=2))
           PY
-
-      - name: Publish the single canonical 4096-token tokenizer and provenance evidence
-        if: steps.preflight.outputs.already_published != 'true'
+      - name: Publish adopted 32K tokenizer and provenance evidence
         uses: actions/upload-artifact@v4
         with:
-          name: onecore-corrected-spec-tokenizer-4096-45325008221
-          path: |
-            ${{ runner.temp }}/onecore-v3-tokenizer-input/onecore-tokenizer-text4096-20261128.json
-            ${{ runner.temp }}/onecore-v3-tokenizer-input/onecore-tokenizer-text4096-20261128.json.evidence.json
-            ${{ runner.temp }}/onecore-v3-tokenizer-input/tokenizer-run-summary.json
+          name: ${{ fromJSON('["onecore-v3-tokenizer-32000-adopted-45336933362"]')[0] }}
+          path: ${{ runner.temp }}/onecore-v3-tokenizer-adoption/
           if-no-files-found: error
           retention-days: 90

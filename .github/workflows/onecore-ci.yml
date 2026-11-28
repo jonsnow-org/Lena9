@@ -421,12 +421,38 @@ jobs:
           repository: ${{ github.repository }}
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/onecore-v3-conversion-report
+      - name: Re-attest the unchanged historical 32K tokenizer for corrected-spec-3
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from onecore.v3.config import V3Config
+          from onecore.v3.tokenizer import adopt_v3_tokenizer, verify_v3_tokenizer
+          folder = Path("${{ runner.temp }}/onecore-v3-tokenizer")
+          source = folder / "onecore-v3-tokenizer-run605-vocab32000.json"
+          source_sidecar = Path(str(source) + ".evidence.json")
+          output = folder / "onecore-tokenizer-text32000-adopted-20261128.json"
+          adopted = adopt_v3_tokenizer(
+              source, source_sidecar, output, config=V3Config(),
+              expected_source_tokenizer_sha256="569f1b61e017dcf5c8ba9fef22a8002cc48d5ea3c26504bdae83f53834d00e76",
+              expected_source_evidence_sha256="b60e5077767f79b1316635ed45343ed5c59ce2602f41d24759a25a386ea33e16",
+              expected_train_manifest_sha256="d499968cdd5e1869ae7b5d9866261e8aad8fe091ad9096b13067bfb6a83f9205",
+              expected_external_text_rows_sha256="6d60d6a07fbd82932373c449735d1b73cd882bcd14390e07a60400c2cc97e720",
+              expected_external_train_text_records=591525, source_run_id=45336933362,
+              source_artifact_id=14894835517,
+              source_artifact_sha256="sha256:47246c85500ed2647aacfd00187dacf4dedae1f10b180910ff55f71463851bd6",
+          )
+          verified = verify_v3_tokenizer(output, config=V3Config(),
+              expected_train_manifest_sha256="d499968cdd5e1869ae7b5d9866261e8aad8fe091ad9096b13067bfb6a83f9205")
+          assert adopted["source_tokenizer_bytes_preserved"] and verified["vocab_size_actual"] == 32000
+          print({"tokenizer_sha256": verified["tokenizer_sha256"], "vocab": verified["vocab_size_actual"],
+                 "source_rows": verified["external_train_text_records"], "heldout_rows": verified["validation_or_test_rows_used"]})
+          PY
       - name: Audit real V3 manifests, tokenizer, initial source cursors and step-zero checkpoint state
         run: |
           python -m onecore.v3.checkpoint_audit \
             --repo "${{ github.repository }}" \
             --corpus-artifact-id 14892594659 \
-            --tokenizer "${{ runner.temp }}/onecore-v3-tokenizer/onecore-v3-tokenizer-run605-vocab32000.json" \
+            --tokenizer "${{ runner.temp }}/onecore-v3-tokenizer/onecore-tokenizer-text32000-adopted-20261128.json" \
             --tokenizer-sha256 569f1b61e017dcf5c8ba9fef22a8002cc48d5ea3c26504bdae83f53834d00e76 \
             --conversion-report "${{ runner.temp }}/onecore-v3-conversion-report/onecore-v3-conversion-report.json" \
             --conversion-report-sha256 5976ad7f5e3149a31bd1da67308bf228cf0afb31ba970e00481dda04b1f73941 \
