@@ -11,7 +11,7 @@
   "min_frequency": 2,
   "output_artifact_name": "onecore-corrected-spec-tokenizer-4096-45325008221",
   "tokenizer_file_name": "onecore-tokenizer-text4096-20261128.json",
-  "fit_revision": 3,
+  "fit_revision": 4,
   "source_artifact_digest": "sha256:302e6eb082ad82ee892b00153ac068f60505cdf5de5d14f3b82a919e576740a2",
   "source_artifact_size_bytes": 24432975285,
   "source_report_artifact_id": 14893020087,
