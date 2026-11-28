@@ -32,7 +32,7 @@ The five-family joint update still has one micro-batch each for text, tool, imag
 
 ## Parameter and compute accounting
 
-The exact model parameter count remains **39,906,568**. CI checks this exact count and the tied text embedding/head relationship. T-LDM adds zero trainable parameters.
+The exact corrected-spec-2 model parameter count is **57,579,201**. CI checks this exact count and the tied text embedding/head relationship. T-LDM adds zero trainable parameters.
 
 For the configured FLOPs profile at 128 text tokens, the native T-LDM path is reported as:
 

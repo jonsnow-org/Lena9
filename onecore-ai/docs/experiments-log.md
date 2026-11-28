@@ -1,6 +1,6 @@
 # OneCore engineering experiment log
 
-This log records the adopted single-model implementation only. It is not an alternate architecture or training lineage.
+Historical note: the baseline values below document the earlier prototype-2 experiment record and are not the current architecture contract. The current corrected-spec-2 model has 57,579,201 trainable parameters, width 1,024 and 4,096 text tokens (5,144 unified tokens). See `ARCHITECTURE.md` and `docs/EXECUTIVE_HANDOVER.md` for the current contract. This log is retained for provenance, not as an active model specification.
 
 ## Canonical model baseline
 

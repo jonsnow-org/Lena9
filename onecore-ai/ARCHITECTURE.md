@@ -2,7 +2,7 @@
 
 ## Model contract
 
-OneCore is a single from-scratch multimodal model. The only instantiated architecture is `onecore-v3-prototype-2` in `src/onecore/v3/`. All modalities share one semantic Transformer core, one embedding space, one parameter set, one checkpoint and one optimizer/scheduler/RNG lineage.
+OneCore is a single from-scratch multimodal model. The only instantiated architecture is `onecore-v3-corrected-spec-2` in `src/onecore/v3/`. All modalities share one semantic Transformer core, one embedding space, one parameter set, one checkpoint and one optimizer/scheduler/RNG lineage.
 
 | Property | Current value |
 |---|---:|
